@@ -1,0 +1,1071 @@
+---
+title: "RAG (检索增强生成)"
+---
+
+> **面试官为什么问这个？**
+>
+> RAG 是大模型落地企业场景的核心技术。面试官问这个，本质上是在考察你：**是否理解大模型的知识局限性，以及能不能设计一套完整的知识检索与生成系统来解决企业级问答需求。** 如果你答不清楚，说明你对 AI 应用的理解停留在"调 API"而不是"架构设计"。
+
+---
+
+## Q1: RAG 的历史？为什么要有它？
+
+<Steps>
+
+  <Step title="2020年: Facebook AI 发表 RAG 论文">
+
+2020 年，Facebook AI Research（现 Meta AI）的 Patrick Lewis 等人发表了论文《Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks》。核心思想：在 LLM 生成答案之前，先从外部知识库中检索相关文档，把检索到的文档作为上下文注入 Prompt，让 LLM 基于真实文档回答，而不是依赖训练时"记住"的知识。
+
+  </Step>
+  <Step title="致命痛点: LLM 的知识幻觉问题">
+
+LLM 的训练数据有截止日期，且无法访问私有数据。当你问它最新的 API 文档或公司内部制度时，它要么编造不存在的信息（幻觉），要么说"我不知道"。更严重的是，LLM 编造的内容往往非常"自信"——格式规范、逻辑自洽，让人难以分辨真假。
+
+  </Step>
+  <Step title="RAG 的核心价值: 让 LLM '查资料'而不是'背书'">
+
+没有 RAG 的 LLM 就像一个闭卷考试的学生——全靠记忆，记不住就瞎编。引入 RAG 后，LLM 变成了开卷考试——先翻书找到相关章节，再根据章节内容回答问题。核心价值不是让 LLM 变得更"聪明"，而是让它变得更"可靠"。
+
+  </Step>
+  <Step title="2023-2024年: RAG 成为 AI 落地的标准范式">
+
+随着 LangChain、LlamaIndex 等框架的成熟，RAG 从学术论文变成了工业标准。几乎所有企业级 AI 应用（知识库问答、客服系统、代码助手）都以 RAG 为核心架构。向量数据库（Milvus、Pinecone、Weaviate）也因此成为独立赛道。
+
+  </Step>
+  <Step title="2025年: 从 Naive RAG 到 Advanced RAG">
+
+RAG 技术持续演进。从最初的"检索 + 生成"（Naive RAG），发展到加入查询改写、混合检索、重排序、多跳推理等优化策略的 Advanced RAG。更前沿的方向包括 Agentic RAG（Agent 自主决定何时检索、检索什么）和 Graph RAG（结合知识图谱的结构化检索）。
+
+  </Step>
+
+</Steps>
+
+**RAG 解决的核心问题：**
+
+```text
+问题：LLM 知识截止 + 无法访问私有数据 → 幻觉或拒绝回答
+
+没有 RAG：LLM 根据训练数据猜测 → 编造不存在的信息（幻觉）
+
+解决：先检索真实文档，再让 LLM 基于文档回答
+
+有 RAG：检索相关文档 → 文档作为上下文 → LLM 基于文档生成答案（有据可查）
+```
+
+<Note title="💡 一句话总结">
+
+RAG 的本质是把 LLM 从"闭卷考试"变成"开卷考试"——先检索真实文档，再让 LLM 基于文档生成答案，从根本上解决知识幻觉问题。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有 RAG">
+
+你问 ChatGPT"我们公司的年假制度是什么？"，它要么说"我不知道"，要么编造一套听起来很合理的年假政策。你无法区分它是"真知道"还是"在编"。
+
+</Card>
+<Card title="✅ 引入 RAG">
+
+你把公司的制度文档导入知识库。用户提问时，系统先检索到相关制度条目，再让 LLM 基于条目回答。答案有出处、可验证、不会编造。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么"（LLM 的知识幻觉和知识截止问题），再说"怎么解决"（先检索真实文档，再基于文档生成）。面试官想听的是你理解 RAG 的设计动机，而不是背流程。
+
+</Tip>
+
+---
+
+## Q2: RAG 的核心原理
+
+RAG 的本质是**检索增强生成**，完整流程分为三个阶段：**索引（Indexing）→ 检索（Retrieval）→ 生成（Generation）**。
+
+```text
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│   索引阶段    │     │   检索阶段    │     │   生成阶段    │
+│              │     │              │     │              │
+│ 文档加载     │     │ 用户提问     │     │ 拼接 Prompt  │
+│    ↓        │     │    ↓        │     │    ↓        │
+│ 文档切片     │     │ 问题向量化   │     │ 调用 LLM     │
+│    ↓        │     │    ↓        │     │    ↓        │
+│ 向量化       │     │ 相似度检索   │     │ 生成答案     │
+│    ↓        │     │    ↓        │     │              │
+│ 存入向量库   │     │ 返回 Top-K   │     │              │
+└──────────────┘     └──────────────┘     └──────────────┘
+```
+
+```javascript
+// RAG 的完整流程伪代码
+
+// === 索引阶段 ===
+// 1. 文档加载：读取 PDF / Word / 网页
+const documents = await loadDocuments("./company-docs/");
+
+// 2. 文档切片：把长文档拆成小块
+const splitter = new RecursiveCharacterTextSplitter({
+  chunkSize: 1000,      // 每个切片 1000 字符
+  chunkOverlap: 200,    // 相邻切片重叠 200 字符
+});
+const chunks = await splitter.splitDocuments(documents);
+
+// 3. 向量化 + 存入向量数据库
+const embeddings = new OpenAIEmbeddings();
+const vectorStore = await Milvus.fromDocuments(chunks, embeddings);
+
+// === 检索阶段 ===
+// 4. 用户提问 → 向量检索 → 返回最相似的 Top-K 个切片
+const retriever = vectorStore.asRetriever({ k: 3 });
+const relevantDocs = await retriever.invoke("什么是 Fiber 架构？");
+
+// === 生成阶段 ===
+// 5. 拼接 Prompt → 调用 LLM → 生成答案
+const prompt = `根据以下文档回答问题。
+如果文档中没有相关信息，说"我不确定"。
+
+文档：
+${relevantDocs.map(d => d.pageContent).join('\n---\n')}
+
+问题：什么是 Fiber 架构？`;
+
+const answer = await llm.invoke(prompt);
+```
+
+<Warning title="⚠️ 核心机制: RAG 的质量瓶颈在检索">
+
+RAG 的质量不在 LLM，而在**检索**。检索不到正确的文档，LLM 再强也答不对。
+
+- 切片策略决定文档能不能被检索到
+- Embedding 模型决定语义理解能力
+- 检索策略决定召回率和精确率
+
+优化顺序：切片策略 > 检索策略 > Embedding 模型 > LLM 能力。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 开卷考试">
+
+RAG 就像开卷考试。闭卷考试（没有 RAG）要求你记住所有知识，记不住就只能瞎猜（幻觉）。开卷考试（有 RAG）允许你翻书——先根据题目找到相关的章节（检索），再根据章节内容回答问题（生成）。开卷考试的关键不是你有多聪明（LLM 的能力），而是你翻书的速度和准确性（检索质量）。
+
+</Tip>
+
+### 向量化原理（Embedding 模型选择）
+
+向量化是把文本转为高维向量的过程。核心思想：**语义相似的文本，向量距离相近**。
+
+```text
+文本 → Embedding 模型 → 向量（如 1536 维）
+
+"什么是 Fiber？"  →  [0.023, -0.156, 0.892, ..., 0.041]
+"Fiber 架构介绍"  →  [0.025, -0.153, 0.889, ..., 0.039]   ← 向量距离近（语义相似）
+"今天天气不错"    →  [0.782, 0.341, -0.125, ..., 0.567]   ← 向量距离远（语义无关）
+```
+
+**主流 Embedding 模型对比：**
+
+| 模型 | 维度 | MTEB 排名 | 成本 | 适用场景 |
+|------|------|----------|------|---------|
+| **text-embedding-3-large**（OpenAI） | 3072 | Top 5 | $0.13/1M tokens | 高质量英文检索 |
+| **text-embedding-3-small**（OpenAI） | 1536 | Top 20 | $0.02/1M tokens | 性价比之选 |
+| **BGE-large-zh**（BAAI） | 1024 | 中文 Top 1 | 免费（自部署） | 中文场景首选 |
+| **Jina-embeddings-v3** | 1024 | Top 10 | $0.02/1M tokens | 多语言场景 |
+| **Cohere embed-v3** | 1024 | Top 5 | $0.1/1M tokens | 多语言 + 混合检索 |
+
+### 检索策略（向量检索、BM25、混合检索）
+
+| 检索策略 | 原理 | 优势 | 劣势 |
+|---------|------|------|------|
+| **向量检索** | 计算问题向量与文档向量的余弦相似度 | 理解语义（"汽车"能匹配"轿车"） | 对精确关键词不敏感 |
+| **BM25** | 基于词频（TF）和逆文档频率（IDF）的关键词匹配 | 精确匹配能力强 | 无法理解同义词 |
+| **混合检索** | 向量检索 + BM25 加权融合 | 兼顾语义和关键词 | 实现复杂度更高 |
+
+```javascript
+// 混合检索实现（LangChain）
+import { EnsembleRetriever } from 'langchain/retrievers/ensemble';
+import { BM25Retriever } from 'langchain/retrievers/bm25';
+
+const vectorRetriever = vectorStore.asRetriever({ k: 10 });
+const bm25Retriever = BM25Retriever.fromDocuments(docs, { k: 10 });
+
+// 混合检索：向量 0.6 + BM25 0.4
+const ensembleRetriever = new EnsembleRetriever({
+  retrievers: [vectorRetriever, bm25Retriever],
+  weights: [0.6, 0.4],
+});
+```
+
+### 切片策略（语义切片、递归切片、按段落切片）
+
+切片质量直接决定检索质量——切片太大，包含太多无关信息；切片太小，语义不完整。
+
+| 切片策略 | 原理 | 适用场景 | 推荐程度 |
+|---------|------|---------|---------|
+| **语义切片** | 用 Embedding 计算相邻句子相似度，在相似度低处切分 | 高质量检索 | 效果最好但最慢 |
+| **递归切片** | 先按段落切，再按句子切，最后按字符切 | 通用场景 | 最常用的方案 |
+| **按段落切** | 按 Markdown 标题或 HTML 标签切分 | 结构化文档 | 保留文档结构 |
+
+```javascript
+// 递归切片（最通用）
+import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
+
+const splitter = new RecursiveCharacterTextSplitter({
+  chunkSize: 1000,        // 推荐 500-1500
+  chunkOverlap: 200,      // 推荐 10-20%
+  separators: ["\n\n", "\n", "。", "！", "？", "，", " "],
+});
+
+// 语义切片（效果最好但最慢）
+import { SemanticChunker } from 'langchain/text_splitter';
+
+const semanticSplitter = new SemanticChunker(
+  new OpenAIEmbeddings(),
+  {
+    breakpointThresholdType: "percentile",
+    breakpointThresholdAmount: 75,
+  }
+);
+```
+
+### 重排序（Reranking）原理
+
+重排序是 RAG 的关键优化环节。流程：先粗检索 Top-K 个候选（如 20 个），再用 Reranker 模型精排，取 Top-N（如 3 个）给 LLM。
+
+```text
+用户提问
+   ↓
+向量检索 Top-20（Bi-Encoder 粗筛：速度快，精度一般）
+   ↓
+Reranker 精排（Cross-Encoder 逐对计算相关性分数）
+   ↓
+取 Top-3（精筛：速度慢，精度高）
+   ↓
+拼接 Prompt → LLM 生成
+```
+
+向量检索用的是 **Bi-Encoder**（双编码器）——问题和文档分别编码为向量，再计算相似度。速度快，但"分别编码"会丢失问题和文档之间的细粒度交互信息。
+
+Reranker 用的是 **Cross-Encoder**（交叉编码器）——把问题和文档拼接在一起，输入同一个模型计算相关性分数。能捕获更细粒度的语义交互，但速度慢（每对都要单独计算）。
+
+```javascript
+// Reranker 实现
+import { CohereRerank } from '@langchain/cohere';
+
+const reranker = new CohereRerank({
+  model: "rerank-v3.5",
+  topN: 3,
+});
+
+// 先粗检索 20 个候选，再精排取 Top 3
+const retriever = vectorStore.asRetriever({ k: 20 });
+const retrievalChain = retriever.pipe(reranker);
+```
+
+---
+
+## Q3: 如何自主搭建企业级 RAG
+
+### 架构设计（文档加载 → 切片 → 向量化 → 存储 → 检索 → 生成）
+
+企业级 RAG 的完整架构分为 7 层：
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                     企业级 RAG 架构                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  文档层：PDF / Word / 网页 / API 文档 / 数据库                   │
+│    ↓                                                            │
+│  加载层：DocumentLoader（Unstructured / LlamaParse）             │
+│    ↓                                                            │
+│  切片层：TextSplitter（递归 / 语义 / 按段落）                    │
+│    ↓                                                            │
+│  向量化层：Embedding Model（OpenAI / BGE / Jina）                │
+│    ↓                                                            │
+│  存储层：Vector Database（Milvus / Pinecone / Weaviate）        │
+│    ↓                                                            │
+│  检索层：Retriever（向量 / BM25 / 混合检索 + Reranker）          │
+│    ↓                                                            │
+│  生成层：LLM（GPT-4o / Claude / 开源模型）                      │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 向量数据库选型（Milvus、Pinecone、Weaviate、Chroma、Qdrant）
+
+| 向量数据库 | 部署方式 | 混合检索 | 特点 | 适用场景 |
+|-----------|---------|---------|------|---------|
+| **Milvus** | 自部署 / Zilliz Cloud | 支持 | 高性能，支持亿级向量 | 大规模生产环境 |
+| **Pinecone** | 全托管 | 支持 | 开箱即用，无需运维 | 快速原型、小团队 |
+| **Weaviate** | 自部署 / Cloud | 原生支持 | 内置 BM25 + 向量混合检索 | 需要精确检索的场景 |
+| **Chroma** | 嵌入式 | 不支持 | 轻量级，零配置 | 本地开发、小型项目 |
+| **Qdrant** | 自部署 / Cloud | 支持 | Rust 实现，高性能 | 高性能生产环境 |
+
+### Embedding 模型选型（OpenAI、BGE、Jina、Cohere）
+
+| 场景 | 推荐模型 | 理由 |
+|------|---------|------|
+| **中文场景** | BGE-large-zh（BAAI） | MTEB 中文排名第一，开源免费 |
+| **英文场景** | text-embedding-3-small（OpenAI） | 性价比最高，MTEB 英文 Top 20 |
+| **多语言场景** | Jina-embeddings-v3 | 支持 89 种语言，成本低 |
+| **高质量检索** | text-embedding-3-large（OpenAI） | MTEB 英文 Top 5，效果最好 |
+| **本地部署** | BGE-large / E5-large | 开源免费，无需调用外部 API |
+
+### 质量优化（查询改写、HyDE、多路召回、重排序）
+
+RAG 质量优化的投入产出比排序：
+
+```text
+1. 切片策略（投入低，收益高）
+   └── 调整 chunkSize 和 overlap 就能显著提升效果
+
+2. 混合检索 + Reranker（投入中，收益高）
+   └── 通常能提升 20-30% 的准确率
+
+3. 查询改写 / HyDE（投入中，收益中）
+   └── 对模糊问题效果明显，对精确问题提升有限
+
+4. Embedding 模型升级（投入高，收益中）
+   └── 从 small 升级到 large，效果提升有限但成本翻倍
+
+5. Fine-tuning Embedding（投入最高，收益看场景）
+   └── 只有当通用模型在特定领域表现差时才考虑
+```
+
+<Note title="💡 一句话总结">
+
+企业级 RAG 的搭建核心是"分层设计"——文档层、切片层、向量化层、存储层、检索层、生成层各自独立，可单独优化和替换。向量数据库选型看规模，Embedding 模型选型看语言，质量优化优先调切片策略和检索策略。
+
+</Note>
+
+---
+
+## Q4: RAG 的高级优化策略
+
+### 查询改写（Query Rewriting）
+
+用 LLM 改写用户问题，提高检索命中率。用户的问题通常是口语化的短句，和文档的书面表述差异大。查询改写把口语化问题转为更适合检索的形式。
+
+```javascript
+import { ChatOpenAI } from '@langchain/openai';
+import { ChatPromptTemplate } from '@langchain/core/prompts';
+import { StringOutputParser } from '@langchain/core/output_parsers';
+
+const rewritePrompt = ChatPromptTemplate.fromTemplate(
+  `你是一个搜索查询改写专家。请把以下用户问题改写为更适合向量检索的形式，
+  保持原意但增加关键词。
+
+  用户问题：{question}
+  改写后的查询：`
+);
+
+const rewriter = rewritePrompt | new ChatOpenAI({ model: 'gpt-4o-mini' }) | new StringOutputParser();
+
+// "怎么让页面快一点" → "前端页面加载性能优化策略，减少 FCP、LCP，降低 CLS"
+const rewrittenQuery = await rewriter.invoke({ question: "怎么让页面快一点" });
+```
+
+### HyDE（Hypothetical Document Embeddings）
+
+让 LLM 先生成一个"假设性答案"，再用这个答案去检索。假设性答案虽然可能不准确，但它的语义和真实答案更接近，检索效果更好。
+
+```text
+传统 RAG：用户问题 → 向量检索 → 生成答案
+
+HyDE：    用户问题 → LLM 生成假设性答案 → 用假设性答案向量检索 → 生成最终答案
+```
+
+```javascript
+// HyDE 实现
+const hydePrompt = ChatPromptTemplate.fromTemplate(
+  `请根据以下问题，写一段可能的答案（不需要准确，只需要符合问题的语义）。
+
+  问题：{question}
+  假设性答案：`
+);
+
+const hydeChain = hydePrompt | new ChatOpenAI({ model: 'gpt-4o-mini' }) | new StringOutputParser();
+
+async function hydeRetrieve(question) {
+  // 1. 生成假设性答案
+  const hypotheticalAnswer = await hydeChain.invoke({ question });
+  // 2. 用假设性答案的向量检索
+  const docs = await retriever.invoke(hypotheticalAnswer);
+  return docs;
+}
+```
+
+### 多路召回（Multi-Route Retrieval）
+
+用 LLM 把一个问题拆成多个子问题，分别检索，合并去重。覆盖更多角度，提高召回率。
+
+```javascript
+import { MultiQueryRetriever } from 'langchain/retrievers/multi_query';
+
+const multiQueryRetriever = MultiQueryRetriever.fromLLM({
+  llm: new ChatOpenAI({ model: 'gpt-4o-mini' }),
+  retriever: vectorStore.asRetriever({ k: 5 }),
+  // LLM 会自动生成 3-5 个不同角度的查询
+});
+
+// "React 性能优化" → 拆成：
+//   "React 渲染性能优化策略"
+//   "React useMemo useCallback 使用场景"
+//   "React 虚拟列表实现方案"
+// 分别检索，合并去重
+```
+
+### 重排序（Reranking）
+
+先粗检索 Top-K 个候选，再用 Reranker（Cross-Encoder）精排取 Top-N。详见 Q2 的重排序原理部分。
+
+### 上下文压缩（Context Compression）
+
+检索到的文档切片可能包含大量无关信息。上下文压缩用 LLM 提取切片中与问题相关的部分，减少噪声，节省 Token。
+
+```javascript
+import { ContextualCompressionRetriever } from 'langchain/retrievers/contextual_compression';
+import { LLMChainExtractor } from 'langchain/retrievers/document_compressors/chain_extract';
+
+const compressor = LLMChainExtractor.fromLLM(
+  new ChatOpenAI({ model: 'gpt-4o-mini' })
+);
+
+const compressionRetriever = new ContextualCompressionRetriever({
+  baseCompressor: compressor,
+  baseRetriever: vectorStore.asRetriever({ k: 10 }),
+});
+
+// 检索到的 10 个切片会被压缩为只包含相关内容的精简版本
+```
+
+### 自适应检索（Adaptive Retrieval）
+
+让 LLM 自主决定是否需要检索、检索什么、检索几次。这是 Agentic RAG 的核心思想。
+
+```text
+传统 RAG：所有问题都检索 → 有些问题不需要检索（浪费资源）
+
+自适应 RAG：
+├── LLM 判断：这个问题需要检索吗？
+│   ├── 不需要（常识问题）→ 直接回答
+│   └── 需要（知识类问题）→ 检索
+├── LLM 判断：检索到的信息够吗？
+│   ├── 够了 → 生成答案
+│   └── 不够 → 改写查询，再检索一次（多跳）
+└── LLM 判断：答案可靠吗？
+    ├── 可靠 → 返回答案
+    └── 不可靠 → 标注"不确定"
+```
+
+<Note title="💡 一句话总结">
+
+RAG 高级优化的核心思路是"多阶段精炼"——查询改写提升检索命中率，多路召回扩大覆盖面，重排序提升精确度，上下文压缩减少噪声，自适应检索让 Agent 自主决策。实际项目中，混合检索 + Reranker 的投入产出比最高。
+
+</Note>
+
+---
+
+## Q5: LangChain + RAG 集成
+
+### LangChain RAG Chain 设计
+
+LangChain 的 RAG Chain 本质是一个 `RunnableSequence`：检索器（Retriever）+ 提示词模板（Prompt）+ LLM + 输出解析器（Parser）。
+
+```javascript
+import { RunnableSequence, RunnablePassthrough } from '@langchain/core/runnables';
+import { ChatOpenAI } from '@langchain/openai';
+import { ChatPromptTemplate } from '@langchain/core/prompts';
+import { StringOutputParser } from '@langchain/core/output_parsers';
+
+// 1. 定义 Prompt 模板
+const prompt = ChatPromptTemplate.fromTemplate(
+  `根据以下上下文回答问题。如果上下文中没有相关信息，说"我不确定"。
+
+上下文：
+{context}
+
+问题：{question}
+
+回答：`
+);
+
+// 2. 定义格式化函数
+const formatDocs = (docs) => docs.map(d => d.pageContent).join('\n---\n');
+
+// 3. 组装 RAG Chain
+const ragChain = RunnableSequence.from([
+  {
+    context: retriever.pipe(formatDocs),     // 检索 + 格式化
+    question: new RunnablePassthrough(),     // 原样传递问题
+  },
+  prompt,                                    // 拼接 Prompt
+  new ChatOpenAI({ model: 'gpt-4o' }),      // 调用 LLM
+  new StringOutputParser(),                  // 解析输出
+]);
+
+const answer = await ragChain.invoke("什么是 Fiber 架构？");
+```
+
+### Retriever 原理
+
+Retriever 是 LangChain 的检索抽象。核心接口只有一个方法：`invoke(query) → Document[]`。所有检索器都实现这个接口，可以自由组合。
+
+```text
+Retriever 接口：
+┌─────────────────────────────────────────┐
+│  invoke(query: string) → Document[]     │
+└─────────────────────────────────────────┘
+
+实现方式：
+├── VectorStoreRetriever（向量检索）
+├── BM25Retriever（关键词检索）
+├── EnsembleRetriever（混合检索）
+├── MultiQueryRetriever（多路召回）
+└── ContextualCompressionRetriever（带 Reranker 的检索）
+```
+
+### Chain 类型（Stuff、MapReduce、Refine、Map-Rerank）
+
+当检索到的文档太多，超出 LLM 上下文窗口时，需要用不同的 Chain 策略处理：
+
+| Chain 类型 | 原理 | 优势 | 劣势 | 适用场景 |
+|-----------|------|------|------|---------|
+| **Stuff** | 把所有文档拼接成一个 Prompt | 最简单，一次调用 | 文档太多会超出上下文窗口 | 文档少（&lt; 5 个） |
+| **MapReduce** | 每个文档单独摘要，再合并摘要 | 支持大量文档 | 多次调用 LLM，成本高 | 文档多且需要全局视角 |
+| **Refine** | 先用第一个文档生成答案，再用后续文档逐个修正 | 答案逐步精炼 | 后续文档的影响递减 | 需要逐步深入的场景 |
+| **Map-Rerank** | 每个文档单独评分，选最高分的答案 | 忽略无关文档 | 可能丢失跨文档信息 | 有明确答案的场景 |
+
+```javascript
+import { loadQAStuffChain, loadQAMapReduceChain } from 'langchain/chains';
+
+// Stuff Chain：所有文档拼接成一个 Prompt（最常用）
+const stuffChain = loadQAStuffChain(llm);
+const result = await stuffChain.call({
+  input_documents: docs.slice(0, 3),
+  question: "什么是 Fiber？",
+});
+
+// MapReduce Chain：每个文档单独摘要，再合并
+const mapReduceChain = loadQAMapReduceChain(llm);
+const result = await mapReduceChain.call({
+  input_documents: docs,
+  question: "总结所有文档的核心观点",
+});
+```
+
+### 自定义 RAG Pipeline
+
+实际项目中，基础的 RAG Chain 往往不够用。你需要自定义 Pipeline，加入查询改写、混合检索、Reranker、答案验证等环节。
+
+```javascript
+import { RunnableSequence } from '@langchain/core/runnables';
+
+// 自定义 RAG Pipeline：查询改写 → 混合检索 → Reranker → 生成
+const customRAGPipeline = RunnableSequence.from([
+  // Step 1: 查询改写
+  async (question) => {
+    const rewritten = await rewriter.invoke({ question });
+    return { original: question, rewritten };
+  },
+
+  // Step 2: 混合检索（向量 + BM25）
+  async ({ original, rewritten }) => {
+    const docs = await ensembleRetriever.invoke(rewritten);
+    return { question: original, docs };
+  },
+
+  // Step 3: Reranker 精排
+  async ({ question, docs }) => {
+    const rerankedDocs = await reranker.invoke({ query: question, documents: docs });
+    return { question, docs: rerankedDocs.slice(0, 3) };
+  },
+
+  // Step 4: 生成答案
+  {
+    answer: ragChain,
+    context: (input) => input.docs,
+  },
+]);
+```
+
+<Warning title="⚠️ 核心机制: Chain 类型怎么选">
+
+90% 的场景用 Stuff Chain 就够了——限制检索数量为 3-5 个切片，每个切片 1000 字符，总共 3000-5000 字符，远在 LLM 上下文窗口之内。只有当文档量特别大（如 100+ 篇文档的全局摘要）时才用 MapReduce。
+
+</Warning>
+
+---
+
+## Q6: n8n 和 Dify 是什么？
+
+### n8n：开源工作流自动化工具
+
+n8n（读作 "n-eight-n"）是一个开源的工作流自动化工具，类似 Zapier，但可以自托管。它的核心是通过可视化的节点编辑器，把不同的服务和 API 连接起来，构建自动化工作流。
+
+```text
+n8n 的核心概念：
+
+┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────┐
+│ 触发器   │ → │ 节点 A  │ → │ 节点 B  │ → │ 节点 C  │
+│ Trigger  │     │ HTTP    │     │ IF 条件  │     │ Email   │
+└─────────┘     └─────────┘     └─────────┘     └─────────┘
+
+- 触发器（Trigger）：工作流的启动条件（定时、Webhook、手动）
+- 节点（Node）：每个节点执行一个操作（调用 API、处理数据、发送邮件）
+- 连接（Connection）：节点之间的数据流转
+```
+
+**n8n 与 LLM 集成：**
+
+n8n 通过 HTTP 请求节点调用 OpenAI API，实现 AI 工作流自动化。
+
+```text
+典型场景：
+├── 定时抓取网页 → 调用 LLM 摘要 → 发送到 Slack
+├── 收到邮件 → LLM 分类 → 路由到不同处理流程
+├── 数据库变更 → LLM 生成报告 → 发送到飞书
+└── GitHub Issue → LLM 自动回复 → 标签分类
+```
+
+**适用场景：** 自动化工作流、数据同步、定时任务、API 编排、跨系统集成。
+
+### Dify：开源 LLM 应用开发平台
+
+Dify 是一个开源的 LLM 应用开发平台，提供可视化的界面来构建 RAG 应用和 Agent。它的核心价值是**让不懂代码的人也能搭建 RAG 知识库和 AI 应用**。
+
+```text
+Dify 的核心概念：
+
+┌─────────────────────────────────────────────┐
+│                  Dify 平台                    │
+├───────────┬───────────┬─────────────────────┤
+│  知识库    │   应用     │      工作流          │
+│           │           │                     │
+│ 文档上传   │ 聊天助手   │ 可视化编排           │
+│ 自动切片   │ 文本生成   │ 条件分支             │
+│ 向量化     │ Agent     │ 循环迭代             │
+│ 检索配置   │ 工具调用   │ 多步骤 LLM 调用      │
+└───────────┴───────────┴─────────────────────┘
+```
+
+**Dify 的 RAG 能力：**
+
+```text
+文档上传 → 自动切片（支持自定义切片策略）
+    → 向量化（支持多种 Embedding 模型）
+    → 存入内置向量数据库
+    → 检索配置（Top-K、相似度阈值、Reranker）
+    → 应用集成（聊天助手、Agent、工作流）
+```
+
+**Dify 的 Agent 能力：** 工具调用（Function Calling）、多轮对话、上下文管理、Agent 推理循环。
+
+**适用场景：** 快速搭建 RAG 应用、企业知识库、AI 客服、内部文档问答。
+
+### n8n vs Dify 对比
+
+| 维度 | n8n | Dify |
+|------|-----|------|
+| **核心定位** | 工作流自动化（通用） | LLM 应用开发平台（AI 专项） |
+| **RAG 能力** | 需要自行集成（HTTP 调用向量数据库） | 内置完整 RAG 流程 |
+| **Agent 能力** | 需要自行编排 | 内置 Agent 推理循环 |
+| **可视化** | 工作流节点编辑器 | 应用配置 + 工作流编排 |
+| **目标用户** | 运维/开发人员 | 产品经理/业务人员/开发者 |
+| **适用场景** | 跨系统自动化、定时任务 | AI 应用快速搭建、企业知识库 |
+
+<Note title="💡 一句话总结">
+
+n8n 是"通用的自动化胶水"——把各种 API 和服务连接起来，AI 只是其中一个节点。Dify 是"AI 专项的开发平台"——内置 RAG、Agent、工作流，专注于 LLM 应用的快速搭建。两者可以组合使用：Dify 提供 RAG 和 Agent 能力，n8n 负责把 Dify 的 AI 能力接入到更大的自动化工作流中。
+
+</Note>
+
+---
+
+## Q7: RAG vs Fine-tuning 怎么选？
+
+### 核心区别：知识注入 vs 能力注入
+
+RAG 和 Fine-tuning 解决的是完全不同类型的问题：
+
+```text
+RAG（知识注入）：让 LLM "查资料"
+├── 解决的问题：LLM 不知道某些信息
+├── 典型场景：公司制度问答、产品文档查询、技术知识库
+├── 数据流：知识库 → 检索 → LLM 上下文 → 生成
+└── 更新方式：换文档就行，实时生效
+
+Fine-tuning（能力注入）：让 LLM "学会"某种风格/格式
+├── 解决的问题：LLM 的输出风格或格式不对
+├── 典型场景：特定语气写作、特定格式输出（SQL/JSON）、领域术语理解
+├── 数据流：训练数据 → 微调模型 → 新的模型行为
+└── 更新方式：需要重新训练，成本高
+```
+
+### 适用场景对比
+
+| 维度 | RAG | Fine-tuning |
+|------|-----|-------------|
+| **解决的问题** | LLM 不知道（知识缺失） | LLM 不会（能力不足） |
+| **知识更新** | 实时（换文档就行） | 需要重新训练 |
+| **成本** | 低（只需向量数据库） | 高（需要 GPU 和训练数据） |
+| **幻觉控制** | 好（基于真实文档） | 一般（仍可能幻觉） |
+| **私有数据** | 天然支持 | 需要脱敏处理 |
+| **输出风格** | 不改变 LLM 的风格 | 可以精确控制输出风格 |
+| **适用场景** | 知识问答、文档检索 | 风格迁移、特定格式输出 |
+
+```javascript
+// RAG 场景：知识问答
+// 问题："公司的年假制度是什么？"
+// 方案：检索公司制度文档 → LLM 基于文档回答
+// 特点：知识经常变化，RAG 可以实时更新
+
+// Fine-tuning 场景：风格迁移
+// 需求：让 LLM 用公司的品牌语气写营销文案
+// 方案：用 1000 条品牌文案训练 → 微调模型
+// 特点：风格是固定的，Fine-tuning 一次训练永久使用
+
+// 组合使用：Fine-tuning + RAG
+// Fine-tuning 让模型理解行业术语和写作风格
+// RAG 提供最新的产品信息和客户数据
+// 两者互补，覆盖"知道"和"会做"两个维度
+```
+
+<Note title="💡 一句话总结">
+
+RAG 解决的是"不知道"的问题（知识注入），Fine-tuning 解决的是"不会做"的问题（能力注入）。80% 的企业场景用 RAG 就够了。Fine-tuning 只在两种场景下考虑：1) 需要特定的输出风格；2) 需要理解领域专用术语。两者也可以组合使用。
+
+</Note>
+
+---
+
+## Q8: 高频面试题
+
+**每个 Q 下面必须有 `###` 子标题（延伸知识），用于深入解释该 Q 的主题。这些子标题不是面试问题，而是对主题的深度扩展。**
+
+### RAG 的核心流程是什么？
+
+RAG 的核心流程是**索引 → 检索 → 生成**三个阶段：
+
+1. **索引阶段**：文档加载 → 文档切片（RecursiveCharacterTextSplitter，chunkSize 500-1500，overlap 10-20%） → 向量化（Embedding 模型） → 存入向量数据库
+2. **检索阶段**：用户提问 → 问题向量化 → 向量相似度检索（返回 Top-K 个切片） → 可选：Reranker 精排
+3. **生成阶段**：检索到的切片作为上下文 → 拼接 Prompt → 调用 LLM → 生成答案
+
+质量瓶颈在**检索**——检索不到正确的文档，LLM 再强也答不对。优化优先级：切片策略 > 检索策略 > Embedding 模型 > LLM 能力。
+
+### 向量数据库怎么选？
+
+向量数据库选型取决于三个维度：**规模、运维能力、是否需要混合检索**。
+
+- **小项目/本地开发**：Chroma（零配置，嵌入式）
+- **快速原型/小团队**：Pinecone（全托管，无需运维）
+- **中等规模**：Weaviate（原生支持混合检索）或 Qdrant（Rust 实现，高性能）
+- **大规模生产**：Milvus（支持亿级向量，性能最强）
+- **已有 PostgreSQL**：pgvector（零成本引入，不需要额外维护向量数据库）
+
+### RAG 的质量怎么优化？
+
+RAG 质量优化从四个维度入手：
+
+1. **切片策略**：按语义切 > 递归切 > 按段落切。chunkSize 推荐 500-1500，overlap 推荐 10-20%。
+2. **检索策略**：混合检索（向量 + BM25，权重 0.6:0.4）效果最好。加 Reranker（Cross-Encoder）精排，通常能提升 20-30% 准确率。
+3. **查询优化**：查询改写（把口语化问题转为检索友好的表述）、HyDE（用假设性答案检索）、多路召回（拆成多个子问题分别检索）。
+4. **上下文优化**：上下文压缩（提取切片中与问题相关的部分，减少噪声）、自适应检索（Agent 自主决定是否需要检索）。
+
+### RAG 和 Fine-tuning 的区别？
+
+核心区别是**解决的问题不同**：
+
+- **RAG** 解决的是"LLM 不知道"的问题——知识注入。让 LLM 查资料而不是背书。适用于知识问答、文档检索。成本低，实时更新。
+- **Fine-tuning** 解决的是"LLM 不会做"的问题——能力注入。让 LLM 学会某种风格或格式。适用于风格迁移、特定格式输出。成本高，需要重新训练。
+
+80% 的企业场景用 RAG 就够了。Fine-tuning 只在需要特定输出风格或领域术语理解时考虑。两者也可以组合：Fine-tuning 让模型理解领域术语，RAG 提供最新知识。
+
+### n8n 和 Dify 的区别？
+
+两者解决的问题不同：
+
+- **n8n** 是通用的工作流自动化工具——把各种 API 和服务连接起来，AI 只是其中一个节点。适用于跨系统自动化、定时任务、数据同步。目标用户是运维和开发人员。
+- **Dify** 是 AI 专项的 LLM 应用开发平台——内置 RAG、Agent、工作流，专注于 LLM 应用的快速搭建。适用于企业知识库、AI 客服、内部文档问答。目标用户包括产品经理和业务人员。
+
+两者可以组合：Dify 提供 RAG 和 Agent 能力，n8n 负责把 Dify 接入到更大的自动化工作流中。
+
+### RAGAS 评估指标有哪些？
+
+RAGAS（Retrieval Augmented Generation Assessment）是 RAG 系统的权威评估框架，核心指标包括：
+
+| 指标 | 评估维度 | 含义 |
+|------|---------|------|
+| **Faithfulness（忠实度）** | 生成质量 | 答案是否基于检索到的文档（不编造） |
+| **Answer Relevancy（答案相关性）** | 生成质量 | 答案是否与问题相关 |
+| **Context Precision（上下文精确度）** | 检索质量 | 检索到的文档是否与问题相关 |
+| **Context Recall（上下文召回率）** | 检索质量 | 是否检索到了所有相关文档 |
+
+<Warning title="⚠️ 核心机制: 评估驱动优化">
+
+RAG 的优化不能靠"感觉"，必须靠数据。每次优化后（如调整 chunkSize、换 Embedding 模型、加 Reranker），都要用 RAGAS 跑一遍评估，看指标是否有提升。没有评估的优化就是盲人摸象。
+
+</Warning>
+
+### 如何处理 RAG 中的多跳问题？
+
+多跳问题是指需要多次检索才能回答的问题。例如："React 的并发模式用了什么调度算法？这个算法是谁提出的？"
+
+```text
+多跳 RAG 流程：
+
+第 1 跳：问题 "React 的并发模式用了什么调度算法？"
+   → 检索 → 答案："时间片调度（Time Slicing）"
+
+第 2 跳：新问题 "时间片调度是谁提出的？"
+   → 检索 → 答案："由 Andrew Clark 设计"
+
+最终答案：合并两次检索的结果
+```
+
+实现方式：用 LangGraph 的条件路由——第一次检索后判断是否需要继续检索，如果需要就用第一次的答案构造新查询，再次检索。
+
+### 生产级 RAG 需要考虑哪些问题？
+
+生产级 RAG 需要考虑 5 个层面：
+
+1. **文档更新**：增量索引（只索引变化的文档），而不是每次全量重建。支持多种格式（PDF、Word、网页、数据库）。
+2. **性能优化**：缓存热门查询的结果，Embedding 模型批量化处理，向量数据库的索引优化（HNSW / IVF）。
+3. **安全与权限**：文档级别的访问控制——不同用户只能检索到自己有权限的文档。向量数据库需要支持元数据过滤。
+4. **监控与可观测性**：追踪每个 RAG 请求的检索质量（命中率、相关性分数）、生成质量（忠实度、答案相关性）、延迟和成本。
+5. **容错与降级**：向量数据库不可用时降级为 BM25 关键词检索；LLM 不可用时返回检索到的原始文档片段。
+
+<Note title="💡 一句话总结">
+
+RAG 面试的核心是理解"检索质量决定最终质量"——切片策略、Embedding 模型、检索策略、Reranker 四个环节环环相扣。高级话题包括 HyDE、多路召回、自适应检索、多跳推理。实际项目中，先用 RAGAS 建立评估基线，再逐步优化。
+
+</Note>
+
+---
+
+## 🔍 底层源码：向量检索是如何实现的？
+
+<div class="follow-up">
+向量数据库是怎么在百万级向量中快速找到最相似的 Top-K 个？
+</div>
+
+主流向量数据库使用 **HNSW（Hierarchical Navigable Small World）** 算法实现近似最近邻搜索。核心思想是构建一个多层的图结构，从顶层开始贪心搜索，逐层下降，最终在底层找到最近邻（详见 [HNSW 论文](https://arxiv.org/abs/1603.09320)）：
+
+```text
+HNSW 的多层图结构：
+
+Layer 2（最稀疏）:  A ──────── D
+                   / \         |
+                  /   \        |
+Layer 1:        B ── C ── E ── F
+                |    |    |    |
+Layer 0（最密集）: G ─ H ─ I ─ J ─ K ─ L
+
+搜索过程：
+1. 从 Layer 2 的入口点 A 开始
+2. 在当前层贪心搜索，找到离目标最近的节点
+3. 下降到下一层，继续贪心搜索
+4. 重复直到 Layer 0，返回 Top-K 个最近邻
+```
+
+HNSW 的时间复杂度是 O(log N)，比暴力搜索的 O(N) 快得多。100 万条 1536 维的向量，暴力搜索需要几秒，HNSW 只需要几毫秒。
+
+<div class="follow-up">
+BM25 的底层实现原理是什么？
+</div>
+
+BM25 基于**词频（TF）和逆文档频率（IDF）**的统计模型（详见 [Lucene BM25 实现](https://github.com/apache/lucene)）：
+
+```text
+BM25 公式：
+score(D, Q) = Σ IDF(qi) * (f(qi, D) * (k1 + 1)) / (f(qi, D) + k1 * (1 - b + b * |D|/avgdl))
+
+其中：
+- IDF(qi)：词 qi 的逆文档频率（越稀有的词权重越高）
+- f(qi, D)：词 qi 在文档 D 中的词频
+- |D|/avgdl：文档长度与平均文档长度的比值（归一化）
+- k1, b：超参数（通常 k1=1.2, b=0.75）
+```
+
+BM25 的优势是精确关键词匹配，劣势是无法理解语义（"汽车"和"轿车"是完全不同的词）。所以实际项目中用混合检索：向量检索捕获语义，BM25 捕获关键词。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 RAG 的核心原理和质量优化策略"
+
+**及格回答（60-70分）：**
+> "RAG 就是先检索文档，再让 LLM 根据文档回答。流程是文档切片、向量化、检索、生成。质量优化可以用更好的 Embedding 模型。"
+
+面试官评价：**知道流程但不理解瓶颈**。
+
+**满分回答（90-100分）：**
+
+> "RAG 的核心是**检索增强生成**——先从知识库中检索相关文档，再把文档作为上下文注入 Prompt，让 LLM 基于真实文档回答，而不是依赖训练时记住的知识。完整流程分三个阶段：索引（文档加载 → 切片 → 向量化 → 存入向量数据库）、检索（问题向量化 → 相似度检索 → 返回 Top-K）、生成（拼接 Prompt → 调用 LLM → 生成答案）。<sup>[1]</sup>"
+
+> "RAG 的质量瓶颈不在 LLM，而在**检索**。检索不到正确的文档，LLM 再强也答不对。优化有四个维度：1) 切片策略——推荐递归切片，chunkSize 500-1500，overlap 10-20%；2) 检索策略——混合检索（向量 + BM25，权重 0.6:0.4）效果最好，加 Reranker（Cross-Encoder）精排通常能提升 20-30% 准确率；3) 查询优化——查询改写、HyDE、多路召回；4) 上下文优化——上下文压缩减少噪声。<sup>[2]</sup>"
+
+> "实际项目中，我会先用 RAGAS 建立评估基线（Faithfulness、Answer Relevancy、Context Precision、Context Recall），然后逐步优化。优先级：切片策略 > 混合检索 + Reranker > 查询改写 > Embedding 模型升级。没有评估的优化就是盲人摸象。<sup>[3]</sup>"
+
+### 大厂高频连环拷问
+
+> 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。每个模块 **8 个 Accordion**，覆盖 4 个难度层级。
+
+<AccordionGroup>
+
+  <Accordion title="RAG 的核心流程是什么?" icon="layer-group">
+
+**答题要点：**
+说出索引、检索、生成三个阶段，以及每个阶段的关键步骤。
+
+**高分回答：**
+"RAG 的核心流程分三个阶段：
+
+1. **索引阶段**：文档加载 → 文档切片（RecursiveCharacterTextSplitter，chunkSize 500-1500，overlap 10-20%） → 向量化（Embedding 模型把文本转为高维向量） → 存入向量数据库。
+
+2. **检索阶段**：用户提问 → 问题向量化 → 向量相似度检索（返回 Top-K 个最相似的切片） → 可选：Reranker 精排。
+
+3. **生成阶段**：检索到的切片作为上下文 → 拼接 Prompt → 调用 LLM → 生成答案。
+
+关键点：质量瓶颈在检索——检索不到正确的文档，LLM 再强也答不对。"
+
+  </Accordion>
+
+  <Accordion title="向量数据库怎么选?" icon="layer-group">
+
+**答题要点：**
+从规模、运维能力、是否需要混合检索三个维度分析。
+
+**高分回答：**
+"向量数据库选型取决于三个维度：
+
+1. **规模**：小项目用 Chroma（零配置，嵌入式），中等规模用 Qdrant 或 Weaviate，大规模生产用 Milvus（支持亿级向量）。
+
+2. **运维能力**：没有运维能力的团队用 Pinecone（全托管，开箱即用），有运维能力的团队自部署 Milvus 或 Qdrant。
+
+3. **混合检索**：如果需要向量 + BM25 混合检索，首选 Weaviate（原生支持）或 Milvus。已有 PostgreSQL 的团队可以用 pgvector（零成本引入）。
+
+实际建议：先用 Chroma 本地开发验证效果，上线时切到 Pinecone 或 Milvus。"
+
+  </Accordion>
+
+  <Accordion title="RAG 的切片策略怎么选?" icon="stopwatch">
+
+**答题要点：**
+从语义完整性、检索精确性、性能三个维度分析。
+
+**高分回答：**
+"切片策略的选择取决于文档类型和检索需求：
+
+1. **递归切片**（RecursiveCharacterTextSplitter）：最通用，先按段落切，再按句子切，最后按字符切。chunkSize 推荐 500-1500 字符，overlap 10-20%。
+
+2. **语义切片**（SemanticChunker）：用 Embedding 计算相邻句子的相似度，在相似度低的地方切分。效果最好，但最慢（需要调用 Embedding API）。
+
+3. **按段落切**（MarkdownHeaderTextSplitter）：适合 Markdown 文档，保留文档结构。
+
+关键原则：每个切片应该是一个完整的语义单元，能独立回答一个问题。chunkSize 太小语义不完整，太大包含太多无关信息。"
+
+  </Accordion>
+
+  <Accordion title="混合检索为什么比纯向量检索好?" icon="stopwatch">
+
+**答题要点：**
+说出向量检索和 BM25 各自的优缺点，以及混合检索如何互补。
+
+**高分回答：**
+"纯向量检索的缺陷：当用户搜索'React 18 的 concurrent 模式'时，向量检索可能返回'Vue 3 的响应式'——因为它们在语义空间中距离很近（都是'前端框架的核心特性'），但关键词完全不同。
+
+BM25 的缺陷：当用户搜索'怎么优化首屏加载'时，BM25 无法匹配'如何提升 FCP 指标'——因为关键词完全不同，但语义完全一致。
+
+混合检索 = 向量检索（捕获语义）+ BM25（捕获关键词），两者的权重可以通过实验调优。LangChain 的 EnsembleRetriever 默认权重是 0.5:0.5，实际项目中推荐 0.6:0.4（偏向语义检索）。"
+
+  </Accordion>
+
+  <Accordion title="RAG 和 Fine-tuning 的区别?" icon="node">
+
+**答题要点：**
+从知识注入和能力注入两个维度区分，结合实际场景说明。
+
+**高分回答：**
+"RAG 和 Fine-tuning 解决的是完全不同类型的问题：
+
+RAG 解决的是'LLM 不知道'的问题——知识注入。典型场景：公司制度问答、产品文档查询。数据流：知识库 → 检索 → LLM 上下文 → 生成。成本低，实时更新。
+
+Fine-tuning 解决的是'LLM 不会做'的问题——能力注入。典型场景：特定语气写作、特定格式输出（SQL/JSON）。数据流：训练数据 → 微调模型 → 新的模型行为。成本高，需要重新训练。
+
+选择标准：80% 的场景用 RAG 就够了。Fine-tuning 只在两种场景下考虑：1) 需要特定的输出风格；2) 需要理解领域专用术语。两者也可以组合：Fine-tuning 让模型理解领域术语，RAG 提供最新知识。"
+
+  </Accordion>
+
+  <Accordion title="n8n 和 Dify 的区别?" icon="node">
+
+**答题要点：**
+从核心定位、RAG 能力、目标用户三个维度对比。
+
+**高分回答：**
+"n8n 和 Dify 解决的问题不同：
+
+n8n 是通用的工作流自动化工具——把各种 API 和服务连接起来，AI 只是其中一个节点。适用于跨系统自动化、定时任务、数据同步。目标用户是运维和开发人员。与 LLM 集成需要通过 HTTP 请求节点调用 API。
+
+Dify 是 AI 专项的 LLM 应用开发平台——内置 RAG、Agent、工作流，专注于 LLM 应用的快速搭建。适用于企业知识库、AI 客服。目标用户包括产品经理和业务人员。
+
+两者可以组合：Dify 提供 RAG 和 Agent 能力，n8n 负责把 Dify 接入到更大的自动化工作流中。"
+
+  </Accordion>
+
+  <Accordion title="🔥 Reranking 的原理是什么?为什么需要两阶段检索?" icon="skull">
+
+**答题要点：**
+说出 Bi-Encoder 和 Cross-Encoder 的区别，以及两阶段检索架构的设计动机。
+
+**高分回答：**
+"Reranking 的核心是两阶段检索架构：第一阶段用 Bi-Encoder 粗筛（快但不精确），第二阶段用 Cross-Encoder 精排（慢但精确）。
+
+Bi-Encoder 的工作方式：问题和文档分别编码为向量，再计算余弦相似度。速度快（向量可以预计算），但'分别编码'会丢失问题和文档之间的细粒度交互信息。
+
+Cross-Encoder 的工作方式：把问题和文档拼接在一起，输入同一个模型计算相关性分数。能捕获更细粒度的语义交互（比如否定词和肯定词的矛盾），但速度慢（每对都要单独计算，无法预计算）。
+
+实际架构：向量检索 Top-20（Bi-Encoder，毫秒级）→ Reranker 精排取 Top-3（Cross-Encoder，百毫秒级）。这是一个经典的'召回-精排'两阶段架构。"
+
+  </Accordion>
+
+  <Accordion title="🔥 如何搭建一个生产级的 RAG 系统?" icon="skull">
+
+**答题要点：**
+从架构设计、向量数据库选型、质量优化、监控评估四个维度回答。
+
+**高分回答：**
+"生产级 RAG 的架构设计需要考虑 5 个层面：
+
+1. **文档层**：支持多种格式（PDF、Word、网页、数据库），用 Unstructured 或 LlamaParse 解析。关键是处理好表格、图片、代码块等复杂格式。
+
+2. **切片层**：推荐递归切片（chunkSize 500-1500，overlap 10-20%）。Markdown 文档用 MarkdownHeaderTextSplitter 保留结构。
+
+3. **存储层**：小项目用 Chroma，中等项目用 Pinecone，大规模生产用 Milvus 或 Qdrant。
+
+4. **检索层**：混合检索（向量 + BM25，权重 0.6:0.4）+ Reranker 精排。加入查询改写和多路召回。
+
+5. **评估层**：用 RAGAS 框架评估忠实度、相关性、准确性。建立自动化评估流水线，每次优化后回归测试。
+
+此外还需要考虑：增量索引（不是每次全量重建）、文档级权限控制、缓存热门查询、向量数据库不可用时降级为 BM25。"
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [RAG 论文原文](https://arxiv.org/abs/2005.11401)：*Meta AI 在 2020 年发表的 RAG 原始论文，理解检索增强生成的理论基础。* <sup>[1]</sup>
+- 📖 [Lilian Weng - Retrieval Augmented Generation](https://lilianweng.github.io/posts/2023-06-23-agent/)：*OpenAI 应用研究主管 Lilian Weng 对 RAG 和 Agent 的深度解析，包含 HyDE、Reranking 等高级策略的理论分析。* <sup>[2]</sup>
+- 🔗 [LangChain RAG 教程](https://js.langchain.com/docs/tutorials/rag/)：*LangChain 官方的 RAG 实战教程，包含从文档加载到检索生成的完整流程。* <sup>[3]</sup>
+- 🟢 [MTEB Leaderboard](https://huggingface.co/spaces/mteb/leaderboard)：*Embedding 模型的权威评测排行榜，选型时的参考标准。* <sup>[4]</sup>
+- 📖 [Harrison Chase Blog](https://blog.langchain.dev/)：*LangChain 创始人 Harrison Chase 的博客，包含 RAG 架构设计、Agent 编排等前沿实践。* <sup>[5]</sup>
+- 🔗 [RAGAS 评估框架](https://docs.ragas.io/)：*RAG 系统的权威评估框架，包含 Faithfulness、Relevancy 等核心指标的定义和使用方法。* <sup>[6]</sup>
+- 🔗 [Milvus 官方文档](https://milvus.io/docs)：*大规模向量数据库 Milvus 的官方文档，理解 HNSW 索引、混合检索等底层原理。* <sup>[7]</sup>
+- 🔗 [n8n 官方文档](https://docs.n8n.io/)：*开源工作流自动化工具 n8n 的官方文档，了解节点、连接、触发器的核心概念。* <sup>[8]</sup>
+- 🔗 [Dify 官方文档](https://docs.dify.ai/)：*开源 LLM 应用开发平台 Dify 的官方文档，了解知识库、应用、工作流的核心能力。* <sup>[9]</sup>

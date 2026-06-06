@@ -1,0 +1,673 @@
+---
+title: "React 性能优化"
+---
+
+> **面试官为什么问这个？**
+>
+> React 的性能优化不仅考察你对框架底层的理解，更考察你的工程素养和排查实际项目卡顿问题的经验。面试官希望看到你不仅仅会背 `useMemo`，而是能从渲染链路、组件设计、数据流传递三个维度形成一套完整的性能优化方法论。
+
+---
+
+## Q1: React 常见的性能瓶颈有哪些？如何解决？
+
+<Steps>
+
+  <Step title="无意义的组件 Re-render">
+
+在 React 中，只要父组件重新渲染，默认情况下所有子组件都会跟着重新渲染，哪怕子组件的 props 根本没有变化。对于包含大量 DOM 节点的复杂子组件，这种"连带更新"会消耗巨大的主线程时间，导致掉帧。
+
+  </Step>
+  <Step title="庞大的状态计算">
+
+如果在组件主体中包含对大型数组或对象的复杂遍历计算（排序、过滤、聚合），每次组件更新都会重新执行这些计算。即使计算结果相同，也会白白浪费 CPU 周期。
+
+  </Step>
+  <Step title="大量 DOM 节点的同屏渲染">
+
+当页面需要渲染数万条数据的列表时，React 在一次 Commit 阶段向浏览器真实 DOM 中插入上万个节点，会触发浏览器极其沉重的 Layout 和 Paint 过程，直接导致页面无响应。
+
+  </Step>
+  <Step title="Context 的粗粒度更新">
+
+只要 Provider 的 value 发生一点点改变，所有消费了这个 Context 的组件都会被强制重新渲染，极易引发大面积的无效更新。Context 会绕过 React.memo 的优化。
+
+  </Step>
+  <Step title="高频交互的状态风暴">
+
+用户的拖拽、滚动、快速输入等高频交互会触发连续的状态更新，抢占主线程，导致 UI 响应迟缓（Input Delay）。
+
+  </Step>
+
+</Steps>
+
+**React 性能优化解决的核心问题：**
+
+```text
+问题：默认行为导致大量无效渲染和 DOM 操作
+
+父组件 re-render → 所有子组件跟着渲染（即使 props 没变）
+大型数组排序/过滤 → 每次渲染都重新计算
+万级列表 → 一次性插入上万个 DOM 节点，页面阻塞
+Context value 变化 → 所有 Consumer 强制 re-render，React.memo 也挡不住
+
+解决：少渲染 + 轻渲染 + 少操作 DOM
+
+React.memo 隔离子组件渲染 + useMemo 缓存计算
+虚拟列表按需渲染 DOM + CSS 变量绕过 Context 穿透
+```
+
+**React 性能优化的三大维度：**
+
+```text
+维度 1：减少 Re-render 次数
+  React.memo + useMemo + useCallback
+
+维度 2：减少单次 Render 的计算量
+  useMemo 缓存昂贵计算、useDeferredValue 延迟更新
+
+维度 3：减少 DOM 操作量
+  虚拟列表（只渲染可视区域）、CSS 变量替代 state 驱动样式
+```
+
+<Note title="💡 一句话总结">
+
+React 性能优化的核心是"少渲染、轻渲染、少操作 DOM"。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 缺乏优化的裸奔页面">
+
+每次父组件输入框敲击一个字母，整个页面的上百个图表组件跟着重新计算和渲染。就像餐厅经理只换了一张桌子的菜单，却强迫后厨把所有菜重新做一遍。
+
+</Card>
+<Card title="✅ 颗粒度极致的性能调优">
+
+通过 `React.memo` 隔离渲染，用 `useMemo` 缓存计算，用虚拟列表按需渲染 DOM。就像聪明的后厨，只针对那张换了菜单的桌子重新炒菜。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时按照"更新引发的计算 -> 渲染出的 DOM 数量 -> 数据流的传递"这个逻辑脉络来阐述。面试官想听的是你的分析思路，而不是罗列 API。
+
+</Tip>
+
+---
+
+## Q2: React.memo、useMemo 和 useCallback 的核心原理是什么？
+
+这三个 API 是 React 性能优化（规避无效 Re-render 和重复计算）的三板斧，但它们的底层实现几乎一样。
+
+### React 18 并发特性与性能
+
+React 18 的并发特性为性能优化提供了新维度。`startTransition` 可以将非紧急更新降级为低优先级，保证用户输入始终流畅。`useDeferredValue` 创建一个延迟版本的值，在高优先级任务完成后才更新。两者的核心区别是：`startTransition` 控制的是"更新的发起"，`useDeferredValue` 控制的是"值的消费"。
+
+### Suspense 原理
+
+Suspense 的核心机制是"抛出 Promise"。当子组件在渲染过程中 throw 一个未 resolve 的 Promise 时，React 的 Fiber 协调器会捕获它，找到最近的 Suspense boundary 渲染 fallback UI。Promise resolve 后，React 重新调度渲染该子树。在 React 18 中，Suspense 与 `startTransition` 配合可以实现"先展示旧内容，新内容就绪后无缝替换"的体验，避免白屏闪烁。
+
+```text
+┌─────────────────┐       props 未变       ┌─────────────────┐
+│ Parent Component │──────────────────────►│ Child Component │
+│ (Trigger Render) │    被 React.memo 包裹  │  (Skip Render)  │
+└─────────────────┘                        └─────────────────┘
+         │
+         │  传递回调函数 / 对象
+         ▼
+┌────────────────────────────────────────┐
+│ 如果没有 useCallback / useMemo           │
+│ 每次 Parent 渲染都会生成新的引用地址        │
+│ 导致 Child 的 React.memo 浅比较失败（===）│
+│ 从而引发 Child 无效渲染                    │
+└────────────────────────────────────────┘
+```
+
+```javascript
+// React.memo：跳过 props 未变的 re-render
+const ExpensiveChild = React.memo(function Child({ data, onClick }) {
+  console.log('Child 渲染了');
+  return <div onClick={onClick}>{expensiveRender(data)}</div>;
+});
+
+// useMemo：缓存计算结果
+function List({ items, filter }) {
+  const filtered = useMemo(
+    () => items.filter(item => item.price > filter),
+    [items, filter] // 只在 items 或 filter 变了才重新计算
+  );
+  return filtered.map(item => <Item key={item.id} data={item} />);
+}
+
+// useCallback：缓存函数引用
+function Parent() {
+  const [count, setCount] = useState(0);
+  const handleClick = useCallback((id) => {
+    dispatch({ type: 'SELECT', id });
+  }, []); // 保持引用稳定，让 MemoizedChild 的 React.memo 生效
+  return <ExpensiveChild onClick={handleClick} data={data} />;
+}
+```
+
+<Warning title="⚠️ 缓存的负面代价">
+
+不要盲目给所有组件和函数加上这三个 API！缓存本身也是有内存和执行成本的。`React.memo` 需要在每次渲染前遍历比对新旧 props（浅比较）；`useMemo` 和 `useCallback` 在首次执行时不仅要计算，还要将结果分配给 Fiber 节点的 `memoizedState` 链表保存。如果计算本身很简单，强加缓存反而是负优化。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 高档餐厅的 VIP 通行证">
+
+`React.memo` 就像餐厅的 VIP 通行证，只要你带来的客人（props）还是昨天那一拨，保安直接放行，不用重新安检。但如果客人里有一个"戴帽子的动作"（回调函数），虽然人没变，但动作每次看起来都是新的（引用地址变化），保安会认为这是新客人。这时你需要 `useCallback` 给他盖个戳，证明这依然是那个熟悉的动作。
+
+</Tip>
+
+---
+
+## Q3: 虚拟列表和 Context 穿透怎么优化？
+
+### useTransition 和 useDeferredValue 详解
+
+`useTransition` 返回 `[isPending, startTransition]`，`isPending` 表示低优先级更新是否还在进行中，可以用来展示 loading 状态。`useDeferredValue(value, timeoutMs)` 返回一个延迟版本的值，`timeoutMs` 指定最大延迟时间。两者都通过 Lanes 优先级模型实现——更新被标记为 TransitionLane，只有在没有更高优先级任务时才会执行。
+
+### 虚拟列表的实现原理
+
+虚拟列表的核心数据结构包括：滚动容器高度（totalHeight = itemCount * itemHeight）、可视区域起始索引（startIndex = Math.floor(scrollTop / itemHeight)）、渲染范围（startIndex - overscan 到 endIndex + overscan）。动态高度的虚拟列表更复杂——需要预估高度 + 实际测量 + 缓存修正。
+
+### 基础梳理
+
+| 优化手段 | 解决什么问题 | 适用场景 | 代价 |
+|---------|-------------|---------|------|
+| **虚拟列表** | 大量 DOM 节点的渲染开销 | 万级数据列表 | 快速滚动时可能白屏 |
+| **CSS 变量** | Context 穿透导致全量 re-render | 主题色、字号等样式切换 | 需要 CSS 变量支持 |
+| **原子化状态库** | Context 的粗粒度更新 | 复杂应用的全局状态 | 引入额外依赖 |
+| **startTransition** | 高频交互阻塞输入响应 | 搜索框、筛选器 | 低优先级更新可能延迟 |
+
+### 专家视角深度剖析
+
+很多候选人只知道"用虚拟列表优化长列表"，但大厂面试官真正在意的是：**虚拟列表快速滚动时的白屏问题怎么解决？Context 穿透的终极方案是什么？**
+
+虚拟列表白屏的根因是：滚动事件触发的渲染频率跟不上浏览器的重绘频率。当用户猛烈滚动时，旧的节点已被移出视口，而新的节点还在 React 的 Render 阶段计算，导致某一帧内拿不到任何可绘制的 DOM。解决方案是：第一，增加 Overscan 缓冲区（上下额外预渲染屏幕高度 50% 的节点），用空间换时间；第二，用 `startTransition` 或 `useDeferredValue` 把列表渲染降级为低优先级任务，保持主线程不会完全堵死。
+
+Context 穿透的终极方案是**脱离 React 渲染流**。把主题色存在 CSS Variables（`--primary-color`）中，React 层面只需修改 `document.body` 的 className，万级节点不需要一次 Re-render，浏览器 CSSOM 瞬间重绘完成。如果必须用状态，放弃粗粒度的 Context，改用 Jotai 或 Zustand 等原子化状态库，支持按需精准订阅。
+
+```javascript
+// CSS 变量方案：零 re-render 的主题切换
+// styles.css
+:root { --primary-color: #1890ff; }
+[data-theme="dark"] { --primary-color: #177ddc; }
+
+// React 代码：只修改 data 属性，不触发 re-render
+function ThemeSwitch() {
+  const toggleTheme = () => {
+    document.documentElement.setAttribute(
+      'data-theme',
+      document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'
+    );
+    // 没有 setState，没有 re-render，CSSOM 瞬间重绘
+  };
+  return <button onClick={toggleTheme}>切换主题</button>;
+}
+```
+
+---
+
+## Q4: React 大列表渲染怎么做优化？（虚拟列表原理）
+
+### 虚拟列表的两种实现方式
+
+固定高度的虚拟列表实现简单——通过 `scrollTop / itemHeight` 直接计算起始索引。动态高度的虚拟列表更复杂：需要先预估每项高度，渲染后测量实际高度并缓存，后续滚动时用缓存高度计算。React Window 和 React Virtual 都支持这两种模式。
+
+### 虚拟列表的性能瓶颈
+
+虚拟列表的性能瓶颈不在 JS 计算，而在 DOM 操作。每次滚动可能触发多个节点的创建和销毁。优化方案包括：节点复用（回收移出视口的 DOM 节点，修改样式而非销毁重建）、批量更新（用 `requestAnimationFrame` 合并多次滚动事件）、CSS `will-change: transform` 提升合成层。
+
+<Steps>
+
+  <Step title="万级列表的渲染瓶颈">
+
+    当列表数据达到上万条时，React 需要在 Commit 阶段向真实 DOM 中插入上万个节点。浏览器要为每个节点执行 Layout（计算位置）和 Paint（绘制像素），整个过程可能耗时数百毫秒，页面直接无响应。
+
+  </Step>
+  <Step title="虚拟列表的核心思想">
+
+    用户在某一时刻只能看到屏幕范围内的几十条数据。虚拟列表只渲染可视区域内的 DOM 节点（加上上下缓冲区），用一个占位元素撑起总高度，让用户感觉所有数据都在。
+
+  </Step>
+  <Step title="滚动时动态替换节点">
+
+    当用户滚动时，虚拟列表监听滚动事件，根据 scrollTop 计算当前可视区域对应的起始和结束索引，只渲染这个范围内的元素。被移出视口的节点被回收，新进入视口的节点被创建。
+
+  </Step>
+  <Step title="Overscan 缓冲区防白屏">
+
+    为了防止快速滚动时出现白屏，虚拟列表在可视区域的上下各多渲染几行（Overscan），用空间换时间。React Window 默认 Overscan 为 1 行，可以根据场景增加。
+
+  </Step>
+
+</Steps>
+
+**虚拟列表解决的核心问题：**
+
+```text
+问题：渲染 10000 条列表 = 向 DOM 插入 10000 个节点
+
+用户打开页面 → React 渲染 10000 个 <li> → 浏览器 Layout + Paint → 阻塞 500ms+
+
+解决：只渲染可视区域的 20 条 + Overscan 缓冲 10 条
+
+用户打开页面 → React 渲染 30 个 <li> → 浏览器 Layout + Paint → 流畅 16ms
+用户滚动 → 动态替换 DOM 节点 → 始终保持 30 个左右的 DOM 节点
+```
+
+**一句话总结：虚拟列表的核心是"只渲染看得见的"，用 CSS 撑起滚动高度，用 JS 动态计算可视区域，把万级 DOM 操作降到几十个。**
+
+<CardGroup cols={2}>
+
+<Card title="🚫 不用虚拟列表">
+
+渲染 10000 条数据，浏览器要为每个节点计算位置和绘制像素。就像一家餐厅同时做好 10000 道菜摆在桌上，桌子早就被压塌了。
+
+</Card>
+<Card title="✅ 用虚拟列表">
+
+只渲染当前能看到的 30 条，其余用空白占位撑起高度。就像餐厅只做好你面前能看到的几道菜，其余的等你翻页（滚动）再做，永远不会撑爆。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么要优化"（万级 DOM 节点的 Layout + Paint 开销），再说"虚拟列表怎么做"（可视区域渲染 + Overscan 缓冲），最后提一句"快速滚动白屏怎么解决"（加大 Overscan + startTransition 降级）。这是大厂高频的列表优化面试题。
+
+</Tip>
+
+---
+
+## Q5: 什么时候不该做性能优化？
+
+**最常见的性能优化陷阱是过早优化。** React 官方建议"先写正确的代码，再用 Profiler 找到性能瓶颈，最后才优化"。
+
+### Profiler 的使用方法
+
+React DevTools 的 Profiler 可以录制一次完整的交互流程，记录每个组件的渲染次数、渲染耗时和渲染原因。关键指标包括：`actualDuration`（本次渲染耗时）、`baseDuration`（如果没有任何缓存，整棵子树的渲染耗时）、`renderCount`（渲染次数）。通过火焰图（Flame Chart）可以快速定位渲染耗时最长的组件。
+
+### 性能优化的优先级
+
+性能优化应该按以下优先级进行：第一，减少不必要的 Re-render（React.memo、useMemo、useCallback）；第二，减少单次渲染的计算量（useDeferredValue、Web Worker）；第三，减少 DOM 操作量（虚拟列表、CSS 变量）；第四，减少网络请求（缓存、防抖、节流）。每一步都需要先用 Profiler 测量，确认瓶颈后再优化。
+
+```javascript
+// ❌ 过早优化：给每个组件都加 React.memo
+const Button = React.memo(function Button({ onClick, text }) {
+  return <button onClick={onClick}>{text}</button>;
+});
+// Button 渲染极快，React.memo 的浅比较开销反而大于重新渲染的开销
+
+// ❌ 过早优化：给每个函数都加 useCallback
+function Parent() {
+  const handleClick = useCallback(() => {
+    console.log('clicked');
+  }, []);
+  // handleClick 不传给 memo 子组件，useCallback 没有意义
+  return <div onClick={handleClick}>Click me</div>;
+}
+
+// ✅ 正确做法：用 Profiler 找到真正的瓶颈
+// React DevTools → Profiler → 录制 → 查看哪些组件渲染耗时最长
+// 只优化真正影响用户体验的瓶颈
+```
+
+**关键区别：**
+
+| 场景 | 该优化 | 不该优化 |
+|------|--------|---------|
+| 列表渲染 10000 条 | ✅ 虚拟列表 | - |
+| 子组件渲染耗时 50ms+ | ✅ React.memo | - |
+| 简单字符串拼接 | - | ❌ useMemo |
+| 不传给子组件的函数 | - | ❌ useCallback |
+| 每次渲染都一样的组件 | - | ❌ React.memo |
+
+<Tip title="最佳实践: ">
+
+性能优化的第一步永远是**测量**，而不是猜测。用 React DevTools 的 Profiler 录制一次完整的交互流程，找到渲染耗时最长的组件，针对具体瓶颈做优化。不要在每个组件上都加 `React.memo`——缓存本身也有开销。
+
+</Tip>
+
+---
+
+## Q6: 为什么 key 不能用 index？
+
+### Diff 算法的三条规则
+
+React 的 Diff 算法（Reconciliation）遵循三条规则：第一，不同类型的元素产生不同的树（直接销毁重建）；第二，通过 `key` 标识哪些元素是"同一个"；第三，同层比较，不跨层级移动。`key` 是第二条规则的核心——它帮助 React 在列表变更时正确复用 Fiber 节点和 DOM 节点。
+
+### 何时可以用 index 做 key
+
+如果列表满足以下所有条件，可以用 index 做 key：列表不会重新排序、不会在中间插入或删除、列表项没有内部状态（如输入框的值、动画进度）。典型的场景是纯展示的静态列表（如文章列表、只读表格）。但这是一个例外，不是规则。
+
+<Steps>
+
+  <Step title="React 的 Diff 算法依赖 key">
+
+    React 在协调（Reconciliation）阶段通过 `key` 来判断新旧列表中哪些元素是"同一个"。`key` 帮助 React 复用已有的 Fiber 节点和 DOM 节点，而不是销毁重建。
+
+  </Step>
+  <Step title="index 作为 key 的致命问题">
+
+    当列表发生插入、删除或排序时，index 会重新分配。原本对应 item A 的 index=0，删除第一个元素后变成了 item B。React 认为"index=0 的组件没变"，直接复用旧的 Fiber 和 DOM，导致状态错乱。
+
+  </Step>
+  <Step title="状态错乱的具体表现">
+
+    用 index 做 key 时，列表项内部的组件状态（如 `<input>` 的输入内容、动画进度）会"粘"在错误的项上。删除第一个输入框后，第二个输入框里会残留第一个的内容。
+
+  </Step>
+  <Step title="正确做法: 使用唯一稳定的 ID">
+
+    应该使用数据自带的唯一标识（如数据库 ID、UUID）作为 key。这个标识在列表操作前后保持不变，React 才能正确识别哪些项是新增、删除或移动的。
+
+  </Step>
+
+</Steps>
+
+**key 使用 index 解决的核心问题：**
+
+```text
+问题：用 index 做 key，列表操作后 React 错误复用组件
+
+列表 [A, B, C]，key 为 [0, 1, 2]
+删除 A 后，列表变为 [B, C]，key 为 [0, 1]
+React 认为 key=0 的组件没变 → 直接复用 A 的 Fiber/DOM → 显示 B 的数据但保留 A 的状态
+
+解决：用唯一 ID 做 key，React 能正确识别元素身份
+
+列表 [A, B, C]，key 为 ['a', 'b', 'c']
+删除 A 后，列表变为 [B, C]，key 为 ['b', 'c']
+React 发现 key='a' 被移除 → 正确销毁 A 的 Fiber → B 和 C 状态保持正确
+```
+
+**一句话总结：`key` 是 React 识别组件身份的唯一依据，用 index 做 key 会导致 React 在列表变动时错误复用组件，引发状态错乱和无意义的 re-render。**
+
+<CardGroup cols={2}>
+
+<Card title="🚫 用 index 做 key">
+
+列表项内部有输入框，用户在第一项输入了"hello"。删除第一项后，第二项的输入框里竟然显示了"hello"。就像快递站用货架编号贴标签，搬走第一个包裹后，第二个包裹被错误地贴上了第一个的标签。
+
+</Card>
+<Card title="✅ 用唯一 ID 做 key">
+
+每个列表项用数据库 ID 作为 key，删除某项后，其余项的状态各归各位。就像每个包裹都用自己的快递单号，不管怎么搬动，系统都能准确识别。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说 key 的作用（Diff 算法的身份标识），再举例 index 做 key 的状态错乱场景（输入框内容粘连），最后说正确做法（唯一 ID）。面试官想听的是你理解 React 的协调机制，而不是背诵规则。
+
+</Tip>
+
+---
+
+## Q7: startTransition 在列表优化中的应用
+
+### startTransition vs debounce vs throttle
+
+| 方案 | 驱动方式 | 延迟策略 | 适用场景 |
+|------|---------|---------|---------|
+| **startTransition** | 优先级驱动 | 主线程空闲时立即执行 | 搜索框+列表过滤 |
+| **debounce** | 时间驱动 | 固定等待 N ms 后执行 | 搜索框输入防抖 |
+| **throttle** | 时间驱动 | 每 N ms 最多执行一次 | 滚动/拖拽事件 |
+
+### startTransition 的底层实现
+
+`startTransition` 在底层做了三件事：第一，将回调内的 `setState` 标记为 TransitionLane（低优先级）；第二，如果有更高优先级的更新到来（如用户输入），React 会中断当前的 Transition 渲染；第三，高优先级任务完成后，React 重新调度 Transition 更新。`isPending` 状态通过 `workInProgressRootRenderLanes` 与当前正在渲染的 Lanes 比较得到。
+
+<Steps>
+
+  <Step title="高频交互的阻塞问题">
+
+    用户在搜索框输入关键字时，每次击键都会触发 filter + 排序 + 重新渲染。如果列表有 10000 条数据，这些计算可能耗时 100ms 以上，导致输入框卡顿——用户按下按键后，字母迟迟不显示。
+
+  </Step>
+  <Step title="startTransition 的优先级机制">
+
+    React 18 引入了 `startTransition`，允许开发者将状态更新标记为"低优先级"（Transition）。高优先级更新（如输入框的值）会立即响应，低优先级更新（如列表过滤）会被推迟到主线程空闲时执行。
+
+  </Step>
+  <Step title="输入响应 vs 列表渲染的分离">
+
+    用 `startTransition` 包裹列表过滤逻辑后，输入框的响应（高优先级）和列表的重新渲染（低优先级）被分离。用户永远能感受到输入框是流畅的，列表可能延迟几百毫秒才更新，但不会阻塞交互。
+
+  </Step>
+  <Step title="useDeferredValue 的替代方案">
+
+    如果无法修改状态更新的调用方（如列表数据来自 props），可以用 `useDeferredValue` 创建输入值的延迟版本。效果等同于 `startTransition`，但使用场景不同。
+
+  </Step>
+
+</Steps>
+
+**startTransition 解决的核心问题：**
+
+```text
+问题：搜索框输入触发万级列表过滤，主线程被阻塞，输入卡顿
+
+用户敲击键盘 → setState(filter) → filter + sort 10000 条数据（100ms）
+→ 主线程被占用 → 输入框无法响应 → 用户看到卡顿
+
+解决：用 startTransition 把列表渲染降级为低优先级
+
+用户敲击键盘 → setState(filter) 立即响应输入框 → 输入框流畅
+→ startTransition 内的列表过滤在空闲时执行 → 列表延迟更新但不阻塞
+```
+
+**一句话总结：`startTransition` 通过优先级调度，让高频交互（输入）和重计算（列表过滤）解耦，保证用户输入永远流畅。**
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有 startTransition">
+
+在搜索框输入"react"，每敲一个字母都要等列表过滤完成才能输入下一个。就像你在等厨师做一道大菜时，服务员被堵在厨房门口，无法去接待其他客人。
+
+</Card>
+<Card title="✅ 引入 startTransition">
+
+输入框立即响应每个字母，列表过滤在后台异步进行。就像服务员把菜单递给厨房后立刻去招待下一桌，不被后厨的繁重工作拖住。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"问题是什么"（高频输入 + 重计算 = 主线程阻塞），再说"怎么解决"（startTransition 把列表渲染降级为低优先级），最后提"和 debounce 的区别"（debounce 是时间驱动的固定延迟，startTransition 是优先级驱动的动态调度）。这个追问几乎是必问的。
+
+</Tip>
+
+---
+
+## 🔍 底层源码：useMemo 和 useCallback 的底层区别
+
+<div class="follow-up">
+useMemo 和 useCallback 在底层的源码区别是什么？
+</div>
+
+在 React 源码中，这两个 Hook 的底层逻辑几乎一模一样，只是存放的内容不同。详见 [React 源码 packages/react-reconciler/src/ReactFiberHooks.js](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/ReactFiberHooks.js#L1823)。
+
+```javascript
+// React 源码简化版：useMemo
+function updateMemo(nextCreate, deps) {
+  const hook = updateWorkInProgressHook();
+  const prevState = hook.memoizedState;
+  // 核心：比对依赖数组是否发生变化
+  if (areHookInputsEqual(deps, prevState[1])) {
+    return prevState[0]; // 依赖没变，直接返回上次的返回值
+  }
+  // 依赖变了，重新执行函数，缓存最新的【返回值】
+  const nextValue = nextCreate();
+  hook.memoizedState = [nextValue, deps];
+  return nextValue;
+}
+
+// React 源码简化版：useCallback
+function updateCallback(callback, deps) {
+  const hook = updateWorkInProgressHook();
+  const prevState = hook.memoizedState;
+  if (areHookInputsEqual(deps, prevState[1])) {
+    return prevState[0]; // 依赖没变，直接返回上次的函数引用
+  }
+  // 核心差异：useCallback 缓存的是【函数本身】，而不是执行结果
+  hook.memoizedState = [callback, deps];
+  return callback;
+}
+```
+
+这段代码揭示了两者的核心差异：`useMemo` 缓存的是函数的**执行结果**（`nextCreate()`），`useCallback` 缓存的是**函数本身**（`callback`）。两者的依赖比较逻辑完全一样——都是通过 `areHookInputsEqual`（使用 `Object.is`）逐个比较依赖数组。
+
+<div class="follow-up">
+React.memo 的浅比较在源码中是怎么实现的？
+</div>
+
+详见 [React 源码 packages/react/src/ReactMemo.js](https://github.com/facebook/react/blob/main/packages/react/src/ReactMemo.js)：
+
+```javascript
+// React.memo 的简化实现
+function memo(type, compare) {
+  const elementType = {
+    $$typeof: REACT_MEMO_TYPE,
+    type,
+    compare: compare || shallowEqual, // 默认浅比较
+  };
+  return elementType;
+}
+
+// 浅比较的实现
+function shallowEqual(objA, objB) {
+  if (Object.is(objA, objB)) return true;
+  if (typeof objA !== 'object' || typeof objB !== 'object') return false;
+  const keysA = Object.keys(objA);
+  const keysB = Object.keys(objB);
+  if (keysA.length !== keysB.length) return false;
+  for (let i = 0; i < keysA.length; i++) {
+    if (!Object.is(objA[keysA[i]], objB[keysB[i]])) return false;
+  }
+  return true;
+}
+```
+
+`shallowEqual` 只比较对象的第一层属性。如果 props 中包含嵌套对象或函数引用，每次渲染都会生成新的引用地址，导致浅比较失败——这就是为什么需要 `useMemo` 和 `useCallback` 来保持引用稳定。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："React 性能优化怎么做？"
+
+**及格回答（60-70分）：**
+> "用 React.memo 避免不必要的 re-render，用 useMemo 缓存计算，用 useCallback 缓存函数。长列表用虚拟列表。"
+
+面试官评价：**会用工具但缺乏方法论**。
+
+**满分回答（90-100分）：**
+
+> React 性能优化的核心是"少渲染、轻渲染、少操作 DOM"。第一层是减少 Re-render 次数：用 `React.memo` 包裹纯展示子组件，用 `useMemo` 缓存传递给子组件的对象/数组，用 `useCallback` 缓存传递给子组件的回调函数，三者配合才能让 `React.memo` 的浅比较生效。第二层是减少单次 Render 的计算量：用 `useMemo` 缓存昂贵的数组排序/过滤操作，用 `useDeferredValue` 延迟非紧急更新。第三层是减少 DOM 操作量：万级列表用虚拟列表（react-window/react-virtual），主题切换用 CSS 变量而非 state 驱动。
+
+> 但性能优化的第一步永远是**测量**，而不是猜测。用 React DevTools 的 Profiler 录制一次完整的交互流程，找到渲染耗时最长的组件，针对具体瓶颈做优化。不要在每个组件上都加 `React.memo`——缓存本身也有开销（浅比较 + memoizedState 存储），简单组件的重新渲染可能比缓存更快。
+
+> 最容易被忽视的性能杀手是 Context 穿透。只要 Provider 的 value 变化，所有 Consumer 都会强制 re-render，连 `React.memo` 都挡不住。终极方案是脱离 React 渲染流：主题色用 CSS 变量，复杂状态用 Jotai/Zustand 等原子化状态库精准订阅。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="React.memo 的浅比较和 shouldComponentUpdate 有什么区别?" icon="layer-group">
+
+**答题要点：**
+从比对深度和适用范围两个维度对比。
+
+**高分回答：**
+"`React.memo` 默认只进行第一层属性的浅比较（`Object.is` 比较引用地址），而类组件的 `shouldComponentUpdate` 允许开发者手动编写深层对比逻辑。深比较的缺点在于，如果遇到层级极深的嵌套对象，递归对比的 CPU 开销甚至超过了组件重新渲染的开销。现代 React 开发推荐只保持扁平化的 Props 结构，如果必须传递深层嵌套对象，应结合 `useMemo` 保证引用稳定，而不是自己写递归深比较。`React.memo` 也支持自定义比较函数作为第二个参数：`React.memo(Component, (prev, next) => ...)`。"
+
+  </Accordion>
+
+  <Accordion title="虚拟列表在快速滚动时出现白屏闪烁, 根因是什么?怎么优化?" icon="stopwatch">
+
+**答题要点：**
+从渲染频率和帧率不匹配的角度分析。
+
+**高分回答：**
+"虚拟列表的核心机制是只渲染可视区域内的几条 DOM 节点，在滚动时动态计算并替换节点。快速滚动时白屏的根本原因是：滚动事件触发的渲染频率跟不上浏览器的重绘频率（16.6ms）。当用户猛烈滚动时，旧的节点已被移出视口，而新的节点还在 React 的 Render 阶段计算，导致浏览器在某一帧内拿不到任何可绘制的 DOM。解决方案：第一，增加 Overscan 缓冲区（上下额外预渲染屏幕高度 50% 的节点），用空间换时间；第二，用 `startTransition` 或 `useDeferredValue` 把列表渲染降级为低优先级任务，保持主线程不会完全堵死。"
+
+  </Accordion>
+
+  <Accordion title="万级节点的列表中, 切换主题色导致全量 re-render, 怎么排查和解决?" icon="node">
+
+**答题要点：**
+识别 Context 穿透问题并给出终极方案。
+
+**高分回答：**
+"这是一个极度经典的 Context 穿透灾难。万级节点的应用，最外层通常包裹了一个 `ThemeProvider` 的 Context。切换主题色时，Context 的 value 发生变化，所有 `useContext(ThemeContext)` 的组件都会强制跳过 `React.memo` 的优化，发生全量 Re-render。终极方案是 CSS 变量隔离：把主题色存在 CSS Variables（`--primary-color`）中，React 层面只需修改 `document.body` 的 className，万级节点不需要一次 Re-render，浏览器 CSSOM 瞬间重绘完成。如果必须用状态，放弃粗粒度的 Context，改用 Jotai 或 Zustand 精准订阅。"
+
+  </Accordion>
+
+  <Accordion title="🔥 useDeferredValue 和 debounce 有什么本质区别?" icon="skull">
+
+**答题要点：**
+从调度优先级和用户体验两个维度对比。
+
+**高分回答：**
+"`debounce` 是时间驱动的——固定等待 N 毫秒后才执行，不管主线程是否空闲。`useDeferredValue` 是优先级驱动的——它创建一个低优先级版本的值，React 会优先处理高优先级更新（如用户输入），只在主线程空闲时才更新低优先级值。核心区别：debounce 在等待期间用户看到的是旧值，`useDeferredValue` 在等待期间用户看到的也是旧值，但一旦高优任务完成，低优更新会立即执行，没有固定延迟。另外 `useDeferredValue` 与 Suspense 天然配合——如果低优组件 suspend 了，高优 UI 不会被阻塞。"
+
+  </Accordion>
+
+  <Accordion title="React.memo 的第二个参数 (自定义比较函数) 怎么用?" icon="layer-group">
+
+**答题要点：**
+从使用场景和注意事项两个角度解释。
+
+**高分回答：**
+"`React.memo(Component, areEqual)` 的第二个参数接收一个比较函数，`(prevProps, nextProps) => boolean`，返回 `true` 表示跳过渲染，`false` 表示需要渲染。使用场景：当 props 中包含深层嵌套对象，且你确定只有一两个字段变化时有意义。但要注意：自定义比较函数的开销可能比重新渲染更大，只有在 Profiler 证明浅比较不够用时才考虑。另外，自定义比较函数不会比较 `ref`，如果子组件需要 `ref`，需要手动处理。"
+
+  </Accordion>
+
+  <Accordion title="为什么 React 要默认让所有子组件跟着父组件 re-render?" icon="stopwatch">
+
+**答题要点：**
+从框架设计哲学的角度解释。
+
+**高分回答：**
+"React 选择'默认 re-render'而非'默认跳过'是出于正确性优先的考虑。在 JavaScript 中，对象和数组是引用比较的，如果默认跳过 re-render，当父组件传递了新的对象/数组但引用没变时，子组件会展示过期的数据。React 的理念是：默认保证正确性（所有子组件都更新），让开发者在确认安全后用 `React.memo` 显式跳过。这与 Vue 的响应式系统形成对比——Vue 通过 Proxy 精确追踪依赖，自动跳过无关组件，但代价是更复杂的运行时和更难调试的依赖追踪。"
+
+  </Accordion>
+
+  <Accordion title="useMemo 的缓存什么时候会被清除?" icon="node">
+
+**答题要点：**
+从 Fiber 节点生命周期的角度解释。
+
+**高分回答：**
+"`useMemo` 的缓存存储在 Fiber 节点的 `memoizedState` 上，生命周期和 Fiber 节点一致。当组件卸载时，Fiber 节点被销毁，缓存随之清除。当组件重新挂载（key 变化）时，会创建新的 Fiber 节点，缓存也会重新初始化。另外，当依赖数组中的某个值变化时，React 会重新执行计算函数并更新缓存。注意：React 不保证缓存的持久性——在内存压力大时，React 可能会丢弃某些缓存。所以 `useMemo` 是性能优化手段，不是语义保证。"
+
+  </Accordion>
+
+  <Accordion title="🔥 大型应用中如何系统性地做 React 性能优化?" icon="skull">
+
+**答题要点：**
+从工程化角度给出系统性方法论。
+
+**高分回答：**
+"大型应用的性能优化需要分四步走：第一，建立基线——用 Lighthouse 和 React DevTools Profiler 测量当前性能指标（FCP、TTI、Long Task）。第二，定位瓶颈——通过 Profiler 的火焰图找到渲染耗时最长的组件，通过 Performance 面板找到 Long Task。第三，分层优化——渲染层用 React.memo + useMemo + useCallback 减少无效渲染，列表层用虚拟列表减少 DOM 节点，交互层用 startTransition 保证输入响应，网络层用 Suspense + 预加载减少白屏。第四，持续监控——用 React Profiler 的 `onRender` 回调上报生产环境的渲染耗时，设置告警阈值。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🟢 [React 官方文档：Optimizing Performance](https://react.dev/learn/render-and-commit)：React 最新官方文档对渲染性能的阐述。<sup>[1]</sup>
+- 📖 [react-window 虚拟列表库](https://github.com/bvaughn/react-window)：理解虚拟列表及 Overscan 缓冲区机制。<sup>[2]</sup>
+- 📖 [Jotai 官方文档](https://jotai.org/)：理解原子化状态管理如何解决 Context 重渲染灾难。<sup>[3]</sup>
+- 🟢 [React DevTools Profiler 使用指南](https://react.dev/learn/profiler)：官方对 Profiler 工具的使用说明，性能优化的第一步。<sup>[4]</sup>

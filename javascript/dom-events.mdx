@@ -1,0 +1,1015 @@
+---
+title: "DOM 事件"
+---
+
+> **面试官为什么问这个？**
+>
+> DOM 事件是前端开发最基础的能力。面试官问这个，本质上是在考察你：**你写的事件处理代码，浏览器底层到底是怎么派发的？冒泡和捕获的区别到底在哪里？事件委托为什么能优化性能？** 如果你答不清楚，说明你对 DOM 的理解停留在"能绑定事件"而不是"理解事件流"。
+
+---
+
+## Q1: DOM 事件的历史？为什么要有事件模型？
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  捕获阶段    │ → │  目标阶段    │ → │  冒泡阶段    │ → │  默认行为    │
+│  (Capture)   │ │  (Target)     │ │  (Bubble)     │ │  (Default)   │
+│              │ │  │              │ │  │              │ │  │              │
+│  window      │ │  │  目标元素    │ │  │  目标元素    │ │  │  浏览器默认  │
+│  ↓           │ │  │              │ │  │  ↑           │ │  │  处理        │
+│  document    │ │  │              │ │  │  document    │ │  │              │
+│  ↓           │ │  │              │ │  │  ↑           │ │  │              │
+│  html        │ │  │              │ │  │  html        │ │  │              │
+│  ↓           │ │  │              │ │  │  ↑           │ │  │              │
+│  body        │ │  │              │ │  │  body        │ │  │              │
+└──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
+```
+
+<Steps>
+
+  <Step title="1995年: 事件处理器的诞生">
+
+    Netscape 2.0 引入了事件处理机制，采用**捕获模型**（事件从 window 向目标元素传播）。微软 IE 3.0 则采用**冒泡模型**（事件从目标元素向 window 传播）。两种模型完全相反，开发者苦不堪言。
+
+  </Step>
+  <Step title="1997年: DOM Level 1 规范">
+
+    W3C 发布 DOM Level 1，但没有统一事件模型。不同浏览器的事件处理方式完全不同，开发者需要写大量兼容代码。
+
+  </Step>
+  <Step title="2000年: DOM Level 2 统一事件流">
+
+    W3C 发布 DOM Level 2 Events 规范，统一了事件流：**捕获阶段 → 目标阶段 → 冒泡阶段**。同时引入了 `addEventListener` API，取代了 `onclick` 等内联事件处理器。
+
+  </Step>
+
+</Steps>
+
+**DOM 事件模型解决的核心问题：**
+
+```text
+问题：Netscape 的捕获模型和 IE 的冒泡模型互相矛盾
+
+同一个事件，在 Netscape 中从外向内传播，在 IE 中从内向外传播
+→ 开发者需要写两套代码，兼容性噩梦
+
+解决：DOM Level 2 统一事件流——先捕获，再目标，最后冒泡
+
+事件从 window 出发 → 捕获到目标元素 → 目标元素处理 → 冒泡回 window
+→ 开发者可以选择在捕获或冒泡阶段处理事件
+```
+
+<Note title="💡 一句话总结">
+
+DOM 事件流 = 捕获阶段 + 目标阶段 + 冒泡阶段，开发者可以在任意阶段处理事件。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有统一的事件模型">
+
+一家公司有两个部门（捕获部门和冒泡部门），每个部门都有自己的审批流程。你提交一份申请，两个部门的流程完全不同——你需要分别按照两个部门的规则提交两次申请，才能完成审批。
+
+</Card>
+<Card title="✅ 引入统一的事件流">
+
+公司统一了审批流程：先经过捕获部门（审核资格），再经过目标部门（处理业务），最后经过冒泡部门（归档记录）。你只需要提交一次申请，流程自动走完。你还可以选择在任意阶段插入自己的审批节点（事件监听器）。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么需要事件模型"（Netscape vs IE 的兼容性问题），再说"事件流的三个阶段"。面试官想听的是你理解事件传播的完整过程，而不是只记住"冒泡"。
+
+</Tip>
+
+---
+
+## Q2: 事件流的三个阶段
+
+事件流是事件在 DOM 树中的传播路径，分为三个阶段：
+
+```text
+┌───────────────────────────────────────────────────────┐
+│                    事件流的三个阶段                      │
+│                                                        │
+│  捕获阶段 (Capture)                                    │
+│  window → document → html → body → ... → 目标元素的父级 │
+│                                                        │
+│  目标阶段 (Target)                                     │
+│  目标元素本身                                           │
+│                                                        │
+│  冒泡阶段 (Bubble)                                     │
+│  目标元素的父级 → ... → body → html → document → window │
+└───────────────────────────────────────────────────────┘
+```
+
+```javascript
+// 事件流的完整演示
+<div id="outer">
+  <button id="inner">点击</button>
+</div>
+
+const outer = document.getElementById('outer');
+const inner = document.getElementById('inner');
+
+// 捕获阶段（第三个参数为 true）
+outer.addEventListener('click', () => console.log('outer capture'), true);
+
+// 冒泡阶段（第三个参数为 false 或省略）
+outer.addEventListener('click', () => console.log('outer bubble'));
+
+// 目标元素
+inner.addEventListener('click', () => console.log('inner target'));
+
+// 点击按钮，输出：
+// outer capture → inner target → outer bubble
+```
+
+<Warning title="⚠️ 核心机制: 目标阶段的特殊性">
+
+在目标阶段（事件到达目标元素时），事件监听器的执行顺序**不区分捕获和冒泡**，而是按照**注册顺序**执行。
+
+```javascript
+// 目标阶段：按注册顺序执行，不区分捕获/冒泡
+inner.addEventListener('click', () => console.log('1'), true);  // 捕获
+inner.addEventListener('click', () => console.log('2'), false); // 冒泡
+inner.addEventListener('click', () => console.log('3'), true);  // 捕获
+
+// 点击 inner，输出：1 → 2 → 3（按注册顺序）
+// 而不是：1 → 3 → 2（按捕获/冒泡分组）
+```
+
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 快递配送">
+
+事件流就像快递配送——快递从仓库（window）出发，经过各个中转站（捕获阶段），到达收件人（目标阶段）。收件人拆开包裹后，快递单信息逐级回传到仓库（冒泡阶段）。你可以在快递到达你家之前拦截（捕获阶段），也可以在快递离开你家之后处理（冒泡阶段）。
+
+
+</Tip>
+
+### 事件监听器的注册方式
+
+```javascript
+// 1. HTML 内联事件（不推荐）
+<button onclick="handleClick()">点击</button>
+
+// 2. DOM 属性绑定（只能绑定一个）
+element.onclick = function() { console.log('click'); };
+
+// 3. addEventListener（推荐，可以绑定多个）
+element.addEventListener('click', function() { console.log('click 1'); });
+element.addEventListener('click', function() { console.log('click 2'); });
+
+// 4. addEventListener 的第三个参数
+element.addEventListener('click', handler, true);  // 捕获阶段
+element.addEventListener('click', handler, false); // 冒泡阶段（默认）
+element.addEventListener('click', handler, {       // 选项对象
+  capture: true,   // 捕获阶段
+  once: true,      // 只触发一次
+  passive: true,   // 不会调用 preventDefault
+  signal: controller.signal // 可以通过 AbortController 取消
+});
+```
+
+---
+
+## Q3: 事件委托（Event Delegation）
+
+事件委托是利用事件冒泡机制，把子元素的事件处理委托给父元素。
+
+```text
+┌───────────────────────────────────────┐
+│           父元素 (ul)                  │  ← 只绑定一个事件监听器
+│  ┌─────────────────────────────────┐  │
+│  │ 子元素 1 (li)                   │  │  ← 不需要绑定
+│  │ 子元素 2 (li)                   │  │  ← 不需要绑定
+│  │ 子元素 3 (li)                   │  │  ← 不需要绑定
+│  │ ...                             │  │  ← 动态添加的也不需要绑定
+│  └─────────────────────────────────┘  │
+└───────────────────────────────────────┘
+```
+
+```javascript
+// ❌ 不用事件委托——每个子元素都绑定事件
+const items = document.querySelectorAll('li');
+items.forEach(item => {
+  item.addEventListener('click', function() {
+    console.log(this.textContent);
+  });
+});
+// 问题：
+// 1. 100 个 li = 100 个事件监听器，内存开销大
+// 2. 动态添加的 li 没有事件监听器
+
+// ✅ 用事件委托——只在父元素绑定一个事件
+const list = document.querySelector('ul');
+list.addEventListener('click', function(e) {
+  const target = e.target;
+  if (target.tagName === 'LI') {
+    console.log(target.textContent);
+  }
+});
+// 优点：
+// 1. 只有 1 个事件监听器，内存开销小
+// 2. 动态添加的 li 自动拥有事件处理能力
+```
+
+<Warning title="⚠️ 事件委托的陷阱: e.target vs e.currentTarget">
+
+`e.target` 是实际触发事件的元素，`e.currentTarget` 是绑定事件监听器的元素。在事件委托中，必须用 `e.target` 来判断是哪个子元素触发了事件。
+
+```javascript
+// ❌ 混淆 target 和 currentTarget
+list.addEventListener('click', function(e) {
+  console.log(e.target);        // 实际点击的元素（可能是 li 的子元素）
+  console.log(e.currentTarget); // 绑定事件的元素（始终是 ul）
+});
+
+// 点击 li 内部的 span：
+// e.target = span（实际点击的元素）
+// e.currentTarget = ul（绑定事件的元素）
+
+// ✅ 正确使用事件委托
+list.addEventListener('click', function(e) {
+  // 向上查找最近的 li 元素
+  const li = e.target.closest('li');
+  if (li && list.contains(li)) {
+    console.log(li.textContent);
+  }
+});
+```
+
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 公司前台">
+
+事件委托就像公司前台——你不需要给每个员工都配一个秘书（事件监听器）。所有访客都先到前台（父元素），前台根据访客要找的人（e.target）来分发。这样即使公司新招了员工（动态添加元素），也不需要额外配秘书。
+
+
+</Tip>
+
+### 事件委托的适用场景
+
+| 场景 | 是否适用事件委托 | 原因 |
+|------|----------------|------|
+| **列表项点击** | 适用 | 子元素数量多，可能动态增删 |
+| **表格行操作** | 适用 | 行数可能很多，需要批量处理 |
+| **输入框验证** | 不适用 | 需要精确绑定到特定输入框 |
+| **拖拽操作** | 不适用 | 需要精确绑定到特定元素 |
+
+---
+
+## Q4: 事件对象（Event Object）的核心属性
+
+事件对象包含了事件的所有信息，是事件处理的核心。
+
+```javascript
+element.addEventListener('click', function(e) {
+  // 1. 事件类型
+  console.log(e.type); // 'click'
+
+  // 2. 目标元素
+  console.log(e.target);        // 实际触发事件的元素
+  console.log(e.currentTarget); // 绑定事件监听器的元素
+
+  // 3. 鼠标位置
+  console.log(e.clientX, e.clientY); // 相对于视口
+  console.log(e.pageX, e.pageY);     // 相对于页面（含滚动）
+  console.log(e.offsetX, e.offsetY); // 相对于目标元素
+
+  // 4. 键盘信息（键盘事件）
+  console.log(e.key);     // 按键值（如 'Enter'）
+  console.log(e.code);    // 按键码（如 'KeyA'）
+  console.log(e.altKey);  // Alt 键是否按下
+  console.log(e.ctrlKey); // Ctrl 键是否按下
+  console.log(e.shiftKey);// Shift 键是否按下
+  console.log(e.metaKey); // Meta 键是否按下
+
+  // 5. 阻止默认行为和传播
+  e.preventDefault();  // 阻止浏览器默认行为（如表单提交）
+  e.stopPropagation(); // 阻止事件继续传播
+  e.stopImmediatePropagation(); // 阻止同元素上的其他监听器执行
+});
+```
+
+<Warning title="⚠️ preventDefault vs stopPropagation">
+
+这两个方法经常被混淆，但它们的作用完全不同：
+
+```javascript
+// preventDefault：阻止浏览器默认行为
+link.addEventListener('click', function(e) {
+  e.preventDefault(); // 阻止链接跳转
+  // 事件仍然会继续传播（冒泡到父元素）
+});
+
+// stopPropagation：阻止事件继续传播
+button.addEventListener('click', function(e) {
+  e.stopPropagation(); // 阻止事件冒泡到父元素
+  // 浏览器默认行为仍然会执行
+});
+
+// 两者结合：既阻止默认行为，又阻止传播
+form.addEventListener('submit', function(e) {
+  e.preventDefault();     // 阻止表单提交
+  e.stopPropagation();    // 阻止事件冒泡
+});
+```
+
+
+</Warning>
+
+### 事件对象的常用方法
+
+| 方法 | 作用 | 典型场景 |
+|------|------|---------|
+| `preventDefault()` | 阻止浏览器默认行为 | 阻止链接跳转、表单提交 |
+| `stopPropagation()` | 阻止事件继续传播 | 防止事件冒泡到父元素 |
+| `stopImmediatePropagation()` | 阻止同元素上的其他监听器 | 防止同一元素上的多个监听器执行 |
+
+---
+
+## Q5: 自定义事件（Custom Events）
+
+除了浏览器原生事件，开发者还可以创建和派发自定义事件。
+
+```javascript
+// 1. 创建自定义事件
+const event = new CustomEvent('myEvent', {
+  detail: { message: 'Hello', data: [1, 2, 3] }, // 传递数据
+  bubbles: true,    // 允许冒泡
+  cancelable: true  // 允许取消
+});
+
+// 2. 监听自定义事件
+element.addEventListener('myEvent', function(e) {
+  console.log(e.detail.message); // 'Hello'
+  console.log(e.detail.data);    // [1, 2, 3]
+});
+
+// 3. 派发自定义事件
+element.dispatchEvent(event);
+```
+
+<Warning title="⚠️ 自定义事件的实际应用场景">
+
+自定义事件常用于组件间通信，尤其是在不使用框架的情况下：
+
+```javascript
+// 场景：购物车组件和商品列表组件通信
+
+// 购物车组件：监听添加事件
+class ShoppingCart {
+  constructor() {
+    this.items = [];
+    document.addEventListener('addToCart', (e) => {
+      this.items.push(e.detail.product);
+      this.updateUI();
+    });
+  }
+}
+
+// 商品列表组件：派发添加事件
+class ProductList {
+  addToCart(product) {
+    const event = new CustomEvent('addToCart', {
+      detail: { product },
+      bubbles: true
+    });
+    document.dispatchEvent(event);
+  }
+}
+
+// 好处：两个组件完全解耦，不需要直接引用对方
+```
+
+
+</Warning>
+
+---
+
+## Q6: 事件循环中的事件处理
+
+事件处理和 Event Loop 密切相关——浏览器在 Event Loop 的特定阶段处理事件。
+
+```text
+┌───────────────────────────────────────────────┐
+│           一帧的执行顺序                        │
+│                                                │
+│  1. 执行宏任务（setTimeout 等）                 │
+│  2. 清空微任务队列（Promise 等）                │
+│  3. 执行 rAF 回调                              │
+│  4. 执行事件处理器（用户输入、点击等）           │
+│  5. 浏览器渲染（Layout → Paint → Composite）   │
+└───────────────────────────────────────────────┘
+```
+
+```javascript
+// 事件处理器在渲染前执行
+button.addEventListener('click', () => {
+  // 这里的代码在渲染前执行
+  element.style.transform = 'scale(1.2)';
+  // 浏览器会在本次事件处理完后渲染
+});
+
+// 对比 setTimeout：在下一个宏任务执行
+setTimeout(() => {
+  // 这里的代码在下一个宏任务执行
+  element.style.transform = 'scale(1.2)';
+  // 浏览器会在本次宏任务执行完后渲染
+}, 0);
+```
+
+<Warning title="⚠️ 事件处理器中的同步代码会阻塞渲染">
+
+事件处理器中的同步代码会阻塞渲染——如果事件处理器执行时间过长，页面会卡顿。
+
+```javascript
+// ❌ 事件处理器中的长任务——阻塞渲染
+button.addEventListener('click', () => {
+  // 长任务：耗时 100ms
+  for (let i = 0; i < 1000000; i++) {
+    heavyComputation();
+  }
+  // 这 100ms 内，浏览器无法渲染，页面卡顿
+});
+
+// ✅ 用 requestAnimationFrame 拆分任务
+button.addEventListener('click', () => {
+  requestAnimationFrame(() => {
+    // 在渲染前执行，但可以被拆分成多个 rAF
+    processChunk1();
+    requestAnimationFrame(() => {
+      processChunk2();
+    });
+  });
+});
+```
+
+
+</Warning>
+
+---
+
+## Q7: 事件性能优化
+
+事件处理不当会导致性能问题，以下是常见的优化手段。
+
+### 1. 防抖（Debounce）
+
+```javascript
+// 防抖：事件触发后等待 N 毫秒，如果期间再次触发则重新计时
+function debounce(fn, delay) {
+  let timer = null;
+  return function(...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      fn.apply(this, args);
+    }, delay);
+  };
+}
+
+// 适用场景：搜索框输入、窗口 resize
+const handleSearch = debounce((query) => {
+  fetchSearchResults(query);
+}, 300);
+
+input.addEventListener('input', (e) => {
+  handleSearch(e.target.value);
+});
+```
+
+### 2. 节流（Throttle）
+
+```javascript
+// 节流：N 毫秒内只执行一次
+function throttle(fn, delay) {
+  let lastTime = 0;
+  return function(...args) {
+    const now = Date.now();
+    if (now - lastTime >= delay) {
+      lastTime = now;
+      fn.apply(this, args);
+    }
+  };
+}
+
+// 适用场景：滚动事件、鼠标移动
+const handleScroll = throttle(() => {
+  updateScrollIndicator();
+}, 100);
+
+window.addEventListener('scroll', handleScroll);
+```
+
+<Warning title="⚠️ passive 事件监听器">
+
+对于 `touchstart`、`touchmove`、`scroll` 等高频事件，浏览器会等待事件处理器执行完才能确定是否需要滚动。如果事件处理器耗时过长，页面会卡顿。
+
+```javascript
+// ❌ 默认的事件监听器——浏览器需要等待 preventDefault 判断
+element.addEventListener('touchmove', (e) => {
+  // 浏览器不确定你是否会调用 e.preventDefault()
+  // 所以必须等待这个函数执行完才能滚动
+  heavyComputation();
+});
+
+// ✅ passive: true——告诉浏览器不会调用 preventDefault
+element.addEventListener('touchmove', (e) => {
+  heavyComputation();
+}, { passive: true });
+// 浏览器可以立即开始滚动，不需要等待事件处理器
+```
+
+
+</Warning>
+
+### 3. 事件委托 vs 直接绑定
+
+```javascript
+// ❌ 直接绑定——100 个事件监听器
+for (let i = 0; i < 100; i++) {
+  items[i].addEventListener('click', handleClick);
+}
+
+// ✅ 事件委托——1 个事件监听器
+parent.addEventListener('click', (e) => {
+  const item = e.target.closest('.item');
+  if (item) handleClick.call(item, e);
+});
+```
+
+---
+
+## Q8: 事件捕获的实际应用
+
+事件捕获在实际开发中用得较少，但在某些场景下非常有用。
+
+```javascript
+// 场景：在事件到达目标元素之前拦截
+document.addEventListener('click', (e) => {
+  // 在捕获阶段拦截所有点击事件
+  if (e.target.matches('.disabled')) {
+    e.stopPropagation(); // 阻止事件继续传播
+    e.preventDefault();  // 阻止默认行为
+    return;
+  }
+}, true); // 捕获阶段
+
+// 场景：全局错误捕获
+window.addEventListener('error', (e) => {
+  console.error('捕获到错误:', e.message);
+  reportError(e); // 上报错误
+}, true); // 捕获阶段
+```
+
+<Warning title="⚠️ 捕获阶段的实际用途">
+
+捕获阶段常用于：
+
+1. **全局事件拦截**：在事件到达目标元素之前进行统一处理
+2. **权限控制**：根据用户权限决定是否允许事件继续传播
+3. **错误捕获**：在捕获阶段捕获错误，比冒泡阶段更早
+
+```javascript
+// 权限控制：在捕获阶段检查用户权限
+document.addEventListener('click', (e) => {
+  if (!hasPermission('click', e.target)) {
+    e.stopPropagation();
+    showToast('没有操作权限');
+  }
+}, true);
+```
+
+
+</Warning>
+
+---
+
+## 🔍 底层源码：浏览器是如何实现事件系统的？
+
+<div class="follow-up">
+浏览器的事件系统是怎么实现的？
+</div>
+
+浏览器的事件系统在 Blink 中实现，核心是事件派发器（EventDispatcher）（详见 [Blink 源码：third_party/blink/renderer/core/dom/events/](https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/dom/events/)）：
+
+```cpp
+// EventDispatcher::DispatchEvent 的简化逻辑
+
+void EventDispatcher::DispatchEvent(Node& node, Event& event) {
+  // 1. 捕获阶段：从 window 到目标元素的父级
+  event.SetEventPhase(Event::PhaseType::kCapturingPhase);
+  for (auto& ancestor : Ancestors(node)) {
+    ancestor.FireEventListeners(event);
+    if (event.PropagationStopped()) return;
+  }
+
+  // 2. 目标阶段：目标元素
+  event.SetEventPhase(Event::PhaseType::kAtTarget);
+  node.FireEventListeners(event);
+
+  // 3. 冒泡阶段：从目标元素的父级到 window
+  event.SetEventPhase(Event::PhaseType::kBubblingPhase);
+  for (auto& ancestor : Ancestors(node)) {
+    ancestor.FireEventListeners(event);
+    if (event.PropagationStopped()) return;
+  }
+}
+```
+
+这段代码做了 3 件事：
+1. 在捕获阶段，从 window 向目标元素传播，触发捕获阶段的事件监听器
+2. 在目标阶段，触发目标元素上的事件监听器（不区分捕获/冒泡）
+3. 在冒泡阶段，从目标元素向 window 传播，触发冒泡阶段的事件监听器
+
+<div class="follow-up">
+事件监听器是怎么存储和查找的？
+</div>
+
+Blink 用哈希表存储事件监听器，按事件类型分组：
+
+```cpp
+// EventTarget 的事件监听器存储结构
+
+class EventTarget {
+  // 用哈希表存储事件监听器
+  // key: 事件类型（如 'click'）
+  // value: 监听器列表
+  HashMap<AtomicString, std::unique_ptr<EventListenerVector>> event_listener_map_;
+
+  void AddEventListener(const AtomicString& event_type,
+                        EventListener* listener,
+                        const AddEventListenerOptions& options) {
+    auto& vector = event_listener_map_.insert(event_type, ...).stored_value->value;
+    vector.push_back({listener, options.capture});
+  }
+
+  void FireEventListeners(Event& event) {
+    auto& vector = event_listener_map_.at(event.type());
+    for (auto& entry : vector) {
+      if (event.event_phase() == kCapturingPhase && !entry.capture) continue;
+      if (event.event_phase() == kBubblingPhase && entry.capture) continue;
+      entry.listener->Invoke(event);
+    }
+  }
+};
+```
+
+事件监听器按注册顺序存储，执行时根据当前事件阶段（捕获/冒泡）过滤。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 DOM 事件流，事件委托是怎么回事？"
+
+**及格回答（60-70分）：**
+> "事件流分为捕获和冒泡两个阶段。事件委托就是把子元素的事件绑定到父元素上，利用冒泡机制处理。这样可以减少事件监听器的数量，提高性能。"
+
+面试官评价：**知道规则但不理解细节**。
+
+**满分回答（90-100分）：**
+
+> DOM 事件流分为三个阶段：**捕获阶段**（从 window 到目标元素的父级）、**目标阶段**（目标元素本身）、**冒泡阶段**（从目标元素的父级到 window）。在捕获和冒泡阶段，事件监听器按照注册顺序执行；在目标阶段，不区分捕获和冒泡，按注册顺序执行。<sup>[1]</sup>
+
+> 事件委托的本质是**利用冒泡机制，把子元素的事件处理委托给父元素**。这样做的好处是：1）减少事件监听器数量，降低内存开销；2）动态添加的子元素自动拥有事件处理能力；3）统一管理事件，便于维护。但要注意 `e.target` 和 `e.currentTarget` 的区别——`e.target` 是实际触发事件的元素，`e.currentTarget` 是绑定事件监听器的元素。<sup>[2]</sup>
+
+> 实际项目中，事件委托常用于列表项点击、表格行操作等场景。对于高频事件（如 `scroll`、`touchmove`），需要配合防抖/节流优化。另外，`passive: true` 选项可以告诉浏览器不会调用 `preventDefault`，让浏览器立即开始滚动，提升页面流畅度。<sup>[3]</sup>
+
+> 在 React 中，事件委托是默认行为——React 17 之前把所有事件委托到 `document`，React 17 之后委托到根节点（`#root`）。这就是为什么 React 的合成事件（SyntheticEvent）和原生 DOM 事件的执行顺序有时会让人困惑。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title='事件捕获和冒泡的区别？' icon="layer-group">
+
+    **答题要点：**
+    捕获从外到内，冒泡从内到外；目标阶段不区分。
+
+    **高分回答：**
+    "事件流分为三个阶段：
+
+    1. **捕获阶段**：事件从 window 向目标元素传播，先触发父元素的捕获监听器，再触发子元素的
+    2. **目标阶段**：事件到达目标元素，不区分捕获/冒泡，按注册顺序执行
+    3. **冒泡阶段**：事件从目标元素向 window 传播，先触发父元素的冒泡监听器，再触发祖父元素的
+
+    ```javascript
+    // 捕获 vs 冒泡
+    outer.addEventListener('click', () => console.log('outer capture'), true);
+    outer.addEventListener('click', () => console.log('outer bubble'));
+    inner.addEventListener('click', () => console.log('inner'));
+
+    // 点击 inner：
+    // outer capture → inner → outer bubble
+    ```
+
+    `addEventListener` 的第三个参数：
+    - `true`：在捕获阶段触发
+    - `false`（默认）：在冒泡阶段触发"
+
+  </Accordion>
+
+  <Accordion title='React 的合成事件和原生 DOM 事件的执行顺序？' icon="layer-group">
+
+    **答题要点：**
+    React 17 之前委托到 document，17 之后委托到根节点。
+
+    **高分回答：**
+    "React 的合成事件（SyntheticEvent）是对原生 DOM 事件的封装。执行顺序取决于 React 版本：
+
+    **React 16（委托到 document）：**
+    ```javascript
+    // 原生事件（捕获阶段）→ 原生事件（冒泡阶段）→ React 合成事件
+    document.addEventListener('click', () => console.log('native capture'), true);
+    document.addEventListener('click', () => console.log('native bubble'));
+
+    // React 组件
+    <button onClick={() => console.log('react click')}>点击</button>
+
+    // 输出：native capture → native bubble → react click
+    ```
+
+    **React 17+（委托到根节点 #root）：**
+    ```javascript
+    // 原生事件（捕获阶段）→ React 合成事件 → 原生事件（冒泡阶段）
+    root.addEventListener('click', () => console.log('native capture'), true);
+    root.addEventListener('click', () => console.log('native bubble'));
+
+    // 输出：native capture → react click → native bubble
+    ```
+
+    React 17 之后，合成事件和原生事件的执行顺序更符合直觉。"
+
+  </Accordion>
+
+  <Accordion title='防抖和节流的区别？' icon="stopwatch">
+
+    **答题要点：**
+    防抖是"等待"，节流是"冷却"。
+
+    **高分回答：**
+    "防抖（Debounce）和节流（Throttle）都是限制函数执行频率的方法：
+
+    **防抖：事件触发后等待 N 毫秒，如果期间再次触发则重新计时。**
+    ```javascript
+    function debounce(fn, delay) {
+      let timer = null;
+      return function(...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(this, args), delay);
+      };
+    }
+    // 适用：搜索框输入（用户停止输入 300ms 后才搜索）
+    ```
+
+    **节流：N 毫秒内只执行一次。**
+    ```javascript
+    function throttle(fn, delay) {
+      let lastTime = 0;
+      return function(...args) {
+        const now = Date.now();
+        if (now - lastTime >= delay) {
+          lastTime = now;
+          fn.apply(this, args);
+        }
+      };
+    }
+    // 适用：滚动事件（每 100ms 最多执行一次）
+    ```
+
+    区别：
+    - 防抖：用户停止操作后才执行（延迟执行）
+    - 节流：用户操作期间定期执行（固定频率）"
+
+  </Accordion>
+
+  <Accordion title='passive 事件监听器是什么？' icon="stopwatch">
+
+    **答题要点：**
+    告诉浏览器不会调用 preventDefault，可以立即滚动。
+
+    **高分回答：**
+    "`passive: true` 是 `addEventListener` 的一个选项，用于告诉浏览器：**这个事件监听器不会调用 `e.preventDefault()`**。
+
+    为什么需要这个选项？
+    对于 `touchstart`、`touchmove`、`scroll` 等高频事件，浏览器需要等待事件处理器执行完才能确定是否需要滚动。如果事件处理器耗时过长，页面会卡顿。
+
+    ```javascript
+    // ❌ 默认：浏览器需要等待
+    element.addEventListener('touchmove', (e) => {
+      // 浏览器不确定你是否会调用 e.preventDefault()
+      // 所以必须等待这个函数执行完才能滚动
+      heavyComputation();
+    });
+
+    // ✅ passive: true：浏览器可以立即滚动
+    element.addEventListener('touchmove', (e) => {
+      heavyComputation();
+    }, { passive: true });
+    // 浏览器知道你不会调用 preventDefault，可以立即开始滚动
+    ```
+
+    注意：Chrome 已经默认把 `document` 级别的 `touchstart`、`touchmove` 设为 `passive: true`。"
+
+  </Accordion>
+
+  <Accordion title='事件委托的优缺点？' icon="node">
+
+    **答题要点：**
+    优点是减少监听器数量、支持动态元素；缺点是不支持所有事件。
+
+    **高分回答：**
+    "事件委托的优点：
+
+    1. **减少事件监听器数量**：100 个子元素只需要 1 个事件监听器
+    2. **支持动态元素**：新添加的子元素自动拥有事件处理能力
+    3. **统一管理**：所有事件在一个地方处理，便于维护
+
+    事件委托的缺点：
+
+    1. **不支持所有事件**：`focus`、`blur`、`mouseenter`、`mouseleave` 等事件不冒泡
+    2. **性能问题**：如果父元素层级很深，事件需要传播很多层
+    3. **代码复杂度**：需要判断 `e.target`，代码可能变得复杂
+
+    ```javascript
+    // 不冒泡的事件不能用事件委托
+    // ❌ focus 事件不冒泡
+    parent.addEventListener('focus', (e) => {
+      // 不会触发，因为 focus 不冒泡
+    });
+
+    // ✅ 用 focusin 代替（冒泡版本的 focus）
+    parent.addEventListener('focusin', (e) => {
+      // 会触发
+    });
+    ```"
+
+  </Accordion>
+
+  <Accordion title='如何阻止事件冒泡？' icon="node">
+
+    **答题要点：**
+    stopPropagation 和 stopImmediatePropagation 的区别。
+
+    **高分回答：**
+    "阻止事件传播有两种方法：
+
+    ```javascript
+    // 1. stopPropagation：阻止事件继续传播到其他元素
+    button.addEventListener('click', (e) => {
+      e.stopPropagation(); // 事件不会冒泡到父元素
+      console.log('button clicked');
+    });
+
+    // 2. stopImmediatePropagation：阻止同元素上的其他监听器执行
+    button.addEventListener('click', (e) => {
+      e.stopImmediatePropagation(); // 阻止同元素上的其他监听器
+      console.log('first listener');
+    });
+    button.addEventListener('click', (e) => {
+      console.log('second listener'); // 不会执行
+    });
+    ```
+
+    区别：
+    - `stopPropagation`：阻止事件传播到其他元素，但同元素上的其他监听器仍然执行
+    - `stopImmediatePropagation`：阻止事件传播到其他元素，同时阻止同元素上的其他监听器
+
+    还有 `preventDefault`：阻止浏览器默认行为（如链接跳转），但不影响事件传播。"
+
+  </Accordion>
+
+  <Accordion title='🔥 事件监听器的内存泄漏问题？' icon="skull">
+
+    **答题要点：**
+    不移除事件监听器会导致内存泄漏，尤其是单页应用。
+
+    **高分回答：**
+    "事件监听器如果不手动移除，会导致内存泄漏：
+
+    ```javascript
+    // ❌ 内存泄漏：组件卸载后事件监听器仍然存在
+    class MyComponent {
+      constructor() {
+        this.handleClick = () => console.log('clicked');
+        document.addEventListener('click', this.handleClick);
+      }
+
+      // 如果没有 destroy 方法，事件监听器永远不会被移除
+    }
+
+    // ✅ 正确做法：在组件销毁时移除事件监听器
+    class MyComponent {
+      constructor() {
+        this.handleClick = () => console.log('clicked');
+        document.addEventListener('click', this.handleClick);
+      }
+
+      destroy() {
+        document.removeEventListener('click', this.handleClick);
+      }
+    }
+    ```
+
+    React 中的正确做法：
+    ```javascript
+    useEffect(() => {
+      const handleClick = () => console.log('clicked');
+      document.addEventListener('click', handleClick);
+
+      return () => {
+        document.removeEventListener('click', handleClick); // 清理
+      };
+    }, []);
+    ```
+
+    Vue 中的正确做法：
+    ```javascript
+    onMounted(() => {
+      document.addEventListener('click', handleClick);
+    });
+
+    onUnmounted(() => {
+      document.removeEventListener('click', handleClick);
+    });
+    ```"
+
+  </Accordion>
+
+  <Accordion title='🔥 如何实现一个事件总线（Event Bus）？' icon="skull">
+
+    **答题要点：**
+    用发布-订阅模式实现，支持 on、off、emit。
+
+    **高分回答：**
+    "事件总线的核心是**发布-订阅模式**：
+
+    ```javascript
+    class EventBus {
+      constructor() {
+        this.events = new Map();
+      }
+
+      // 订阅事件
+      on(event, callback) {
+        if (!this.events.has(event)) {
+          this.events.set(event, []);
+        }
+        this.events.get(event).push(callback);
+      }
+
+      // 取消订阅
+      off(event, callback) {
+        if (!this.events.has(event)) return;
+        const callbacks = this.events.get(event);
+        const index = callbacks.indexOf(callback);
+        if (index > -1) {
+          callbacks.splice(index, 1);
+        }
+      }
+
+      // 触发事件
+      emit(event, ...args) {
+        if (!this.events.has(event)) return;
+        this.events.get(event).forEach(callback => {
+          callback(...args);
+        });
+      }
+
+      // 只订阅一次
+      once(event, callback) {
+        const wrapper = (...args) => {
+          callback(...args);
+          this.off(event, wrapper);
+        };
+        this.on(event, wrapper);
+      }
+    }
+
+    // 使用
+    const bus = new EventBus();
+    bus.on('message', (data) => console.log(data));
+    bus.emit('message', 'Hello'); // 输出：Hello
+    ```
+
+    Vue 2 中的 `$on`、`$off`、`$emit` 就是事件总线的实现。Vue 3 移除了这个 API，推荐使用外部库（如 mitt）。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [MDN 事件参考](https://developer.mozilla.org/en-US/docs/Web/Events)：Mozilla 官方对所有 DOM 事件的完整参考。<sup>[1]</sup>
+- 📖 [JavaScript 事件委托详解](https://javascript.info/event-delegation)：Ilya Kantor 对事件委托的深度剖析，包含性能测试数据。<sup>[2]</sup>
+- 🟢 [Chrome 被动事件监听器](https://developer.chrome.com/blog/scrolling-intervention-landing)：Chrome 团队对 passive 事件监听器的官方解释，解决页面卡顿问题。<sup>[3]</sup>
+- 📘 [DOM Level 2 Events 规范](https://www.w3.org/TR/DOM-Level-2-Events/)：W3C 官方规范，定义了事件流的三个阶段。<sup>[4]</sup>

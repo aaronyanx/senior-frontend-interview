@@ -1,0 +1,973 @@
+---
+title: "设计模式"
+---
+
+> **面试官为什么问这个？**
+>
+> 设计模式是软件工程中经过验证的解决方案模板。面试官问这个，本质上是在考察你：**你写代码是在"堆功能"还是在"做工程"？** 如果你只会用 if-else 和 for 循环解决问题，说明你还没有从"写脚本"进化到"写系统"。
+
+---
+
+## Q1: 设计模式的历史？为什么前端也需要它？
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  1994 年     │ → │  2006 年     │ → │  2013 年     │ → │  2020 年+    │
+│  GoF 四人帮  │ │  jQuery 时代  │ │  组件化时代  │ │  前端工程化  │
+│  23 种模式   │ │  工厂/观察者  │ │  策略/装饰器 │ │  全面应用    │
+└──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
+```
+
+<Steps>
+
+  <Step title="1994 年: GoF 经典著作诞生">
+
+    Erich Gamma、Richard Helm、Ralph Johnson、John Vlissides 四人（被称为"四人帮"，GoF）出版了《设计模式：可复用面向对象软件的基础》，总结了 23 种经典设计模式，分为创建型、结构型、行为型三大类。
+
+  </Step>
+  <Step title="前端早期: jQuery 时代的隐性应用">
+
+    jQuery 的 `$.ajax` 本质上是**工厂模式**，`$(document).on()` 是**观察者模式**。前端开发者每天都在用设计模式，只是当时没有人把它们"名字化"。
+
+  </Step>
+  <Step title="组件化时代: 模式的显性化">
+
+    React/Vue 的出现让前端从"操作 DOM"进化到"管理状态"。组件本身就是**组合模式**的体现，Hooks 的引入则让**策略模式**和**装饰器模式**变得无处不在。
+
+  </Step>
+
+</Steps>
+
+**设计模式解决的核心问题：**
+
+```text
+问题：代码重复、耦合度高、难以维护
+
+团队 5 个人写同一个功能 → 5 种写法 → 合并代码时冲突不断 → 改一个 bug 引出三个新 bug
+
+解决：提供一套通用的"解决方案模板"，让团队用同一种语言交流
+
+"这里用策略模式" → 所有人立刻知道代码长什么样、怎么扩展
+```
+
+<Note title="💡 一句话总结">
+
+设计模式不是"高级语法"，而是"高级沟通方式"——它让团队用同一套词汇描述代码结构。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有设计模式">
+
+一家医院没有科室分类。所有病人都挤在一个大厅里，内科、外科、眼科混在一起。医生想找个骨科设备，得翻遍整个大厅。每来一个新医生，都要花一个月搞清楚"东西放在哪里"。
+
+</Card>
+<Card title="✅ 引入设计模式">
+
+有了科室分类后，骨科设备放在骨科，眼科设备放在眼科。新来的医生一入职就知道"骨折去骨科、眼睛疼去眼科"。不是设备变好了，而是**组织方式**变好了。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+面试时不要一上来就背诵 23 种模式的定义。挑 3-5 个你在项目中真正用过的模式，结合具体场景讲清楚"遇到了什么问题、为什么选这个模式、解决了什么"。面试官想听的是你的决策过程，而不是背诵能力。
+
+</Tip>
+
+---
+
+## Q2: 工厂模式 —— 对象创建的标准化
+
+工厂模式的核心思想是：**把对象的创建过程封装起来，调用方不需要知道具体的创建细节。**
+
+```text
+┌───────────────────────────────────────┐
+│           调用方（Client）             │  ← 只说"我要一个按钮"
+└─────────────────┬─────────────────────┘
+                  │ 传入参数
+                  ▼
+┌───────────────────────────────────────┐
+│           工厂（Factory）              │  ← 根据参数决定创建什么
+└─────────────────┬─────────────────────┘
+                  │ 返回实例
+                  ▼
+┌───────────────────────────────────────┐
+│           产品（Product）              │  ← 具体的按钮/弹窗/表单
+└───────────────────────────────────────┘
+```
+
+```javascript
+// ❌ 没有工厂模式——调用方需要知道所有构造细节
+const btn1 = new PrimaryButton({ text: '确定', size: 'large' });
+const btn2 = new DangerButton({ text: '删除', size: 'small' });
+const btn3 = new LinkButton({ text: '更多', href: '/detail' });
+// 每种按钮的构造参数都不一样，调用方要记住所有差异
+
+// ✅ 工厂模式——调用方只需要关心"要什么"
+function createButton(type, props) {
+  const ButtonMap = {
+    primary: PrimaryButton,
+    danger: DangerButton,
+    link: LinkButton,
+  };
+  return new ButtonMap[type](props);
+}
+createButton('primary', { text: '确定', size: 'large' });
+createButton('danger', { text: '删除' });
+```
+
+### 简单工厂 vs 工厂方法 vs 抽象工厂
+
+| 模式 | 核心思想 | 适用场景 |
+|------|---------|---------|
+| **简单工厂** | 一个工厂类根据参数创建不同产品 | 产品种类少且不会新增 |
+| **工厂方法** | 每个产品对应一个工厂子类 | 产品种类会扩展 |
+| **抽象工厂** | 一个工厂创建一族相关产品 | 跨平台组件库 |
+
+```javascript
+// 工厂方法：每个产品有自己的工厂
+class ButtonFactory {
+  create(props) { return new Button(props); }
+}
+class DialogFactory {
+  create(props) { return new Dialog(props); }
+}
+
+// 抽象工厂：一整套组件族
+class AntDesignFactory {
+  createButton() { return new AntButton(); }
+  createInput() { return new AntInput(); }
+  createTable() { return new AntTable(); }
+}
+class MaterialDesignFactory {
+  createButton() { return new MaterialButton(); }
+  createInput() { return new MaterialInput(); }
+  createTable() { return new MaterialTable(); }
+}
+```
+
+### 工厂模式在前端框架中的应用
+
+React 的 `createElement` 就是一个工厂——它根据 `type` 参数创建不同的 VNode：
+
+```javascript
+// React 内部本质上就是工厂模式
+React.createElement('div', { className: 'container' }, 'Hello');
+// type = 'div' → 创建原生 DOM 的 VNode
+// type = MyComponent → 创建组件的 VNode
+// 调用方不需要关心具体怎么创建
+```
+
+<Tip title="🎢 通俗比喻: 餐厅点菜">
+
+没有工厂模式就像你去餐厅，得自己去厨房告诉厨师"先热油、再放蒜、然后炒肉"。有了工厂模式，你只需要在菜单上写"宫保鸡丁"，厨房帮你搞定一切。你不需要知道厨师是谁、用的什么锅、火候多大。
+
+
+</Tip>
+
+---
+
+## Q3: 观察者模式 —— 对象间的通信机制
+
+观察者模式的核心思想是：**当一个对象状态变化时，自动通知所有依赖它的对象。** 它是前端框架响应式系统的基础。
+
+```text
+┌──────────────┐
+│   Subject    │  ← 被观察者（状态持有者）
+│  (数据源)    │
+└──────┬───────┘
+       │ notify()
+       ├──────────────┬──────────────┐
+       ▼              ▼              ▼
+┌────────────┐ ┌────────────┐ ┌────────────┐
+│ Observer 1 │ │ Observer 2 │ │ Observer 3 │
+│ (视图更新) │ │ (日志记录) │ │ (数据同步) │
+└────────────┘ └────────────┘ └────────────┘
+```
+
+```javascript
+// 手动实现一个观察者模式
+class EventEmitter {
+  constructor() {
+    this.events = new Map();
+  }
+  on(event, callback) {
+    if (!this.events.has(event)) {
+      this.events.set(event, []);
+    }
+    this.events.get(event).push(callback);
+    return () => this.off(event, callback); // 返回取消订阅函数
+  }
+  off(event, callback) {
+    const callbacks = this.events.get(event);
+    if (callbacks) {
+      this.events.set(event, callbacks.filter(cb => cb !== callback));
+    }
+  }
+  emit(event, ...args) {
+    const callbacks = this.events.get(event);
+    if (callbacks) {
+      callbacks.forEach(cb => cb(...args));
+    }
+  }
+}
+```
+
+### 观察者模式 vs 发布-订阅模式
+
+很多候选人会混淆这两个概念，但它们有本质区别：
+
+| 对比维度 | 观察者模式 | 发布-订阅模式 |
+|---------|-----------|-------------|
+| **耦合度** | Subject 直接通知 Observer | 通过事件中心解耦 |
+| **通信方式** | Subject → Observer | Publisher → Event Channel → Subscriber |
+| **典型实现** | Vue 2 的 `watch` | Node.js 的 `EventEmitter` |
+
+```javascript
+// 观察者模式：Subject 直接持有 Observer 引用
+class Subject {
+  constructor() { this.observers = []; }
+  add(observer) { this.observers.push(observer); }
+  notify(data) { this.observers.forEach(o => o.update(data)); }
+}
+
+// 发布-订阅模式：通过事件中心解耦
+const emitter = new EventEmitter();
+emitter.on('data-change', (data) => console.log(data));
+emitter.emit('data-change', { name: 'test' });
+// 发布者和订阅者互不知道对方的存在
+```
+
+### Vue 响应式系统中的观察者模式
+
+Vue 的响应式系统是观察者模式的教科书级应用：
+
+```javascript
+// Vue 2 的简化实现
+// Dep = Subject（被观察者）
+// Watcher = Observer（观察者）
+class Dep {
+  constructor() { this.subs = []; }
+  depend() { if (Dep.target) this.subs.push(Dep.target); }
+  notify() { this.subs.forEach(watcher => watcher.update()); }
+}
+
+// 每个响应式属性对应一个 Dep
+// 每个 computed/watch/render 对应一个 Watcher
+// 当属性变化时 → Dep.notify() → 所有 Watcher 更新
+```
+
+<Tip title="🎢 通俗比喻: 微信群通知">
+
+观察者模式就像一个微信群。群主（Subject）发了一条消息，所有群成员（Observer）都会收到通知。发布-订阅模式则更像一个公众号——作者（Publisher）发布文章，读者（Subscriber）通过平台（Event Channel）看到，作者和读者互不知道对方是谁。
+
+
+</Tip>
+
+---
+
+## Q4: 单例模式 —— 全局唯一的实例
+
+单例模式的核心思想是：**保证一个类只有一个实例，并提供一个全局访问点。**
+
+```text
+┌──────────────┐
+│   Client     │  ← 多次请求同一个实例
+└──────┬───────┘
+       │ getInstance()
+       ▼
+┌───────────────────────────────────────┐
+│         Singleton                     │
+│  ┌─────────────────────────────────┐  │
+│  │ instance = null?                │  │
+│  │   ├─ 是 → 创建新实例            │  │
+│  │   └─ 否 → 返回已有实例          │  │
+│  └─────────────────────────────────┘  │
+└───────────────────────────────────────┘
+```
+
+```javascript
+// ❌ 没有单例模式——每次创建新实例
+class Store {
+  constructor() { this.state = {}; }
+}
+const store1 = new Store();
+const store2 = new Store();
+store1.state.user = 'Alice';
+console.log(store2.state.user); // undefined — 数据丢失！
+
+// ✅ 单例模式——全局唯一实例
+class Store {
+  static instance = null;
+  static getInstance() {
+    if (!Store.instance) {
+      Store.instance = new Store();
+    }
+    return Store.instance;
+  }
+  constructor() { this.state = {}; }
+}
+const store1 = Store.getInstance();
+const store2 = Store.getInstance();
+store1.state.user = 'Alice';
+console.log(store2.state.user); // 'Alice' — 同一个实例
+```
+
+### 单例模式在前端的应用场景
+
+| 场景 | 为什么需要单例 |
+|------|-------------|
+| **全局状态管理**（Redux Store） | 整个应用共享一份状态 |
+| **弹窗/抽屉组件** | 同一时间只显示一个 |
+| **数据库连接池** | 避免重复创建连接 |
+| **日志服务** | 统一收集日志 |
+
+```javascript
+// 封装一个通用的单例工厂
+function singleton(Constructor) {
+  let instance;
+  return function (...args) {
+    if (!instance) {
+      instance = new Constructor(...args);
+    }
+    return instance;
+  };
+}
+
+const SingletonStore = singleton(Store);
+const s1 = SingletonStore();
+const s2 = SingletonStore();
+console.log(s1 === s2); // true
+```
+
+<Note title="💡 一句话总结">
+
+单例模式的本质是"控制实例数量"——不是语法特性，而是设计决策。
+
+</Note>
+
+---
+
+## Q5: 策略模式 —— 消灭 if-else 的利器
+
+策略模式的核心思想是：**把算法（策略）封装成独立的函数或对象，让它们可以互相替换。**
+
+```text
+┌──────────────┐
+│   Context    │  ← 调用方，不关心具体策略
+└──────┬───────┘
+       │ 调用 strategy.execute()
+       ▼
+┌───────────────────────────────────────┐
+│         Strategy Map                  │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ │
+│  │ 策略 A  │ │ 策略 B  │ │ 策略 C  │ │
+│  │ 打折    │ │ 满减    │ │ 返现    │ │
+│  └─────────┘ └─────────┘ └─────────┘ │
+└───────────────────────────────────────┘
+```
+
+```javascript
+// ❌ 策略模式之前的代码——大量 if-else
+function calculatePrice(price, type) {
+  if (type === 'discount') {
+    return price * 0.8;
+  } else if (type === 'fullReduce') {
+    return price >= 100 ? price - 20 : price;
+  } else if (type === 'cashback') {
+    return price - price * 0.1;
+  }
+  // 新增策略？继续加 else if...
+}
+
+// ✅ 策略模式——开闭原则
+const strategies = {
+  discount: (price) => price * 0.8,
+  fullReduce: (price) => price >= 100 ? price - 20 : price,
+  cashback: (price) => price - price * 0.1,
+};
+function calculatePrice(price, type) {
+  return strategies[type](price);
+}
+// 新增策略？只需要往 strategies 对象加一行
+```
+
+### 策略模式在表单校验中的应用
+
+```javascript
+// 策略模式做表单校验——经典面试场景
+const validators = {
+  required: (value) => value !== '' || '此项为必填',
+  minLength: (min) => (value) => value.length >= min || `最少 ${min} 个字符`,
+  maxLength: (max) => (value) => value.length <= max || `最多 ${max} 个字符`,
+  email: (value) => /\S+@\S+\.\S+/.test(value) || '邮箱格式不正确',
+};
+
+function validate(value, rules) {
+  for (const rule of rules) {
+    const result = rule(value);
+    if (result !== true) return result;
+  }
+  return true;
+}
+
+validate('', [validators.required]); // '此项为必填'
+validate('ab', [validators.required, validators.minLength(6)]); // '最少 6 个字符'
+```
+
+### 策略模式 vs 状态模式
+
+| 对比维度 | 策略模式 | 状态模式 |
+|---------|---------|---------|
+| **关注点** | 算法的选择和替换 | 状态的流转和行为变化 |
+| **策略/状态切换** | 由调用方主动选择 | 由内部条件自动切换 |
+| **典型场景** | 表单校验、支付方式 | 订单状态机、TCP 连接 |
+
+<Tip title="🎢 通俗比喻: 导航路线">
+
+策略模式就像地图导航——"最快路线""最短路线""避开高速"是三种策略，你（调用方）根据需求选择一种。每种策略内部的算法不同，但对外的接口一致（都是从 A 到 B）。新增"步行优先"策略？加一个新函数就行，不需要修改已有的策略代码。
+
+
+</Tip>
+
+---
+
+## Q6: 装饰器模式 —— 不修改原始代码的扩展
+
+装饰器模式的核心思想是：**在不修改原始对象的情况下，给它添加新功能。** 它是 AOP（面向切面编程）的基础。
+
+```text
+┌──────────────┐
+│  原始对象    │
+└──────┬───────┘
+       │ 装饰
+       ▼
+┌───────────────────────────┐
+│  装饰器 A（添加日志）      │
+│  ┌───────────────────────┐│
+│  │  装饰器 B（添加缓存） ││
+│  │  ┌───────────────────┐││
+│  │  │  原始对象         │││
+│  │  └───────────────────┘││
+│  └───────────────────────┘│
+└───────────────────────────┘
+```
+
+```javascript
+// 给函数添加日志和性能统计
+function withLog(fn) {
+  return function (...args) {
+    console.log(`调用 ${fn.name}，参数:`, args);
+    const result = fn.apply(this, args);
+    console.log(`${fn.name} 返回:`, result);
+    return result;
+  };
+}
+
+function withTimer(fn) {
+  return function (...args) {
+    const start = performance.now();
+    const result = fn.apply(this, args);
+    console.log(`${fn.name} 耗时: ${performance.now() - start}ms`);
+    return result;
+  };
+}
+
+function fetchData(url) { /* ... */ }
+
+// 装饰：不修改 fetchData，但给它添加日志和计时功能
+const enhancedFetch = withTimer(withLog(fetchData));
+enhancedFetch('/api/users');
+// 调用 fetchData，参数: ['/api/users']
+// fetchData 返回: {...}
+// fetchData 耗时: 123ms
+```
+
+### ES 装饰器语法（TC39 Stage 3）
+
+```javascript
+// TypeScript / ES 装饰器语法
+function log(target, key, descriptor) {
+  const original = descriptor.value;
+  descriptor.value = function (...args) {
+    console.log(`调用 ${key}，参数:`, args);
+    return original.apply(this, args);
+  };
+  return descriptor;
+}
+
+class UserService {
+  @log
+  getUser(id) {
+    return fetch(`/api/users/${id}`);
+  }
+}
+```
+
+### 装饰器模式 vs 继承
+
+| 对比维度 | 装饰器模式 | 继承 |
+|---------|-----------|------|
+| **扩展方式** | 运行时动态组合 | 编译时静态确定 |
+| **灵活性** | 高（可任意叠加） | 低（继承链固定） |
+| **耦合度** | 低 | 高（子类依赖父类） |
+| **典型场景** | 中间件、HOC | 类型体系 |
+
+<Warning title="⚠️ 装饰器的叠加顺序">
+
+装饰器的叠加顺序很重要——就像穿衣服，先穿内衣后穿外套。在函数组合中，最内层的装饰器最先执行：
+
+```javascript
+// 叠加顺序：withTimer → withLog → fetchData
+const enhanced = withTimer(withLog(fetchData));
+// 执行时：先计时开始 → 打印日志 → 执行 fetchData → 打印返回值 → 计时结束
+```
+
+
+</Warning>
+
+---
+
+## Q7: 代理模式 —— 控制对象的访问
+
+代理模式的核心思想是：**为一个对象提供代理，通过代理控制对原始对象的访问。** ES6 的 `Proxy` 就是语言层面对代理模式的原生支持。
+
+```text
+┌──────────────┐         ┌──────────────┐         ┌──────────────┐
+│   Client     │ ──────→ │    Proxy     │ ──────→ │   RealObject │
+│              │         │  (拦截/增强) │         │  (真实对象)  │
+└──────────────┘         └──────────────┘         └──────────────┘
+```
+
+```javascript
+// ES6 Proxy 实现代理模式
+const user = { name: 'Alice', age: 25, _password: '123456' };
+
+const userProxy = new Proxy(user, {
+  get(target, key) {
+    if (key.startsWith('_')) {
+      throw new Error(`禁止访问私有属性: ${key}`);
+    }
+    return target[key];
+  },
+  set(target, key, value) {
+    if (key === 'age' && typeof value !== 'number') {
+      throw new Error('age 必须是数字');
+    }
+    target[key] = value;
+    return true;
+  },
+});
+
+userProxy.name;        // 'Alice'
+userProxy._password;   // Error: 禁止访问私有属性: _password
+userProxy.age = 'old'; // Error: age 必须是数字
+```
+
+### Vue 3 响应式中的代理模式
+
+Vue 3 用 `Proxy` 替代了 Vue 2 的 `Object.defineProperty`，这是代理模式的经典应用：
+
+```javascript
+// Vue 3 响应式的简化实现
+function reactive(target) {
+  return new Proxy(target, {
+    get(target, key, receiver) {
+      track(target, key);        // 收集依赖
+      return Reflect.get(target, key, receiver);
+    },
+    set(target, key, value, receiver) {
+      const result = Reflect.set(target, key, value, receiver);
+      trigger(target, key);      // 触发更新
+      return result;
+    },
+  });
+}
+// 对比 Vue 2：Proxy 能监听新增属性，Object.defineProperty 不能
+```
+
+### 代理模式的常见变体
+
+| 变体 | 用途 | 示例 |
+|------|------|------|
+| **保护代理** | 控制访问权限 | 私有属性拦截 |
+| **缓存代理** | 缓存计算结果 | memoize 函数 |
+| **虚拟代理** | 延迟初始化 | 图片懒加载 |
+| **防抖代理** | 频率控制 | 搜索框输入 |
+
+```javascript
+// 缓存代理：避免重复计算
+function memoizeProxy(fn) {
+  const cache = new Map();
+  return new Proxy(fn, {
+    apply(target, thisArg, args) {
+      const key = JSON.stringify(args);
+      if (!cache.has(key)) {
+        cache.set(key, target.apply(thisArg, args));
+      }
+      return cache.get(key);
+    },
+  });
+}
+
+const expensiveCalc = memoizeProxy((n) => {
+  console.log('计算中...');
+  return n * n;
+});
+expensiveCalc(5); // 计算中... → 25
+expensiveCalc(5); // 25（直接从缓存返回，不再计算）
+```
+
+<Tip title="🎢 通俗比喻: 明星经纪人">
+
+代理模式就像明星的经纪人。你想找明星拍广告（访问真实对象），不能直接打电话给明星，必须先联系经纪人（代理）。经纪人会帮你过滤不合理的要求（保护代理）、安排档期（调度）、甚至缓存重复的咨询（缓存代理）。明星只需要专注自己的工作，所有外部事务都由经纪人处理。
+
+
+</Tip>
+
+---
+
+## Q8: 组合模式 —— 树形结构的统一处理
+
+组合模式的核心思想是：**把对象组织成树形结构，让"单个对象"和"组合对象"具有一致的接口。** 调用方不需要关心处理的是叶子节点还是组合节点。
+
+```text
+┌───────────────┐
+│   Component   │  ← 统一接口
+├───────────────┤
+│  execute()    │
+└───────┬───────┘
+        │
+   ┌────┴────┐
+   ▼         ▼
+┌───────┐ ┌───────────┐
+│ Leaf  │ │ Composite │
+│       │ │           │
+│       │ │ children: │
+│       │ │ [Leaf,    │
+│       │ │  Leaf]    │
+└───────┘ └───────────┘
+```
+
+```javascript
+// 组合模式：统一处理菜单树
+class MenuComponent {
+  constructor(name) { this.name = name; }
+  execute() { throw new Error('子类必须实现 execute'); }
+  add() { throw new Error('叶子节点不能添加子节点'); }
+}
+
+class MenuItem extends MenuComponent {
+  execute() { console.log(`执行菜单: ${this.name}`); }
+}
+
+class MenuGroup extends MenuComponent {
+  constructor(name) {
+    super(name);
+    this.children = [];
+  }
+  add(component) { this.children.push(component); }
+  execute() {
+    console.log(`展开菜单组: ${this.name}`);
+    this.children.forEach(child => child.execute());
+  }
+}
+
+// 构建菜单树
+const root = new MenuGroup('根菜单');
+const fileMenu = new MenuGroup('文件');
+fileMenu.add(new MenuItem('新建'));
+fileMenu.add(new MenuItem('打开'));
+fileMenu.add(new MenuItem('保存'));
+root.add(fileMenu);
+root.add(new MenuItem('编辑'));
+
+root.execute();
+// 展开菜单组: 根菜单
+// 展开菜单组: 文件
+// 执行菜单: 新建
+// 执行菜单: 打开
+// 执行菜单: 保存
+// 执行菜单: 编辑
+```
+
+### React 组件树就是组合模式
+
+```javascript
+// React 组件天然就是组合模式
+// <App> 就是 Composite，<Button> 就是 Leaf
+function App() {
+  return (
+    <div>            {/* Composite */}
+      <Header />     {/* Leaf */}
+      <Sidebar />    {/* Composite */}
+      <Content />    {/* Composite */}
+      <Footer />     {/* Leaf */}
+    </div>
+  );
+}
+// React 调用 render() 时，不需要关心是叶子组件还是组合组件
+// 统一调用 render()，递归处理整棵树
+```
+
+---
+
+## 🔍 底层源码：框架是如何应用设计模式的？
+
+<div class="follow-up">
+Redux 内部用了哪些设计模式？
+</div>
+
+Redux 是设计模式的集大成者，它同时运用了多种经典模式：
+
+```javascript
+// 1. 单例模式：全局只有一个 Store
+const store = createStore(rootReducer);
+
+// 2. 观察者模式：subscribe 订阅状态变化
+store.subscribe(() => {
+  console.log('状态变化了:', store.getState());
+});
+
+// 3. 策略模式：不同的 Reducer 处理不同的 Action
+const todoReducer = (state, action) => { /* ... */ };
+const userReducer = (state, action) => { /* ... */ };
+
+// 4. 中间件模式（装饰器的变体）
+const middleware = store => next => action => {
+  console.log('dispatch:', action);
+  const result = next(action);
+  console.log('next state:', store.getState());
+  return result;
+};
+// applyMiddleware 就是装饰器的链式组合
+```
+
+<div class="follow-up">
+Vue 的编译器中用了哪些设计模式？
+</div>
+
+Vue 3 的编译器大量运用了**访问者模式**（Visitor Pattern）来遍历和转换 AST：
+
+```javascript
+// Vue 3 编译器的 AST 遍历
+// transform 节点时，不同类型的节点有不同的处理策略
+const transformMap = {
+  Element: (node, context) => { /* 处理元素节点 */ },
+  Text: (node, context) => { /* 处理文本节点 */ },
+  Interpolation: (node, context) => { /* 处理插值表达式 */ },
+  If: (node, context) => { /* 处理 v-if */ },
+  For: (node, context) => { /* 处理 v-for */ },
+};
+
+// 这就是策略模式 + 访问者模式的结合
+function traverseNode(node, context) {
+  const handler = transformMap[node.type];
+  if (handler) handler(node, context);
+  // 递归遍历子节点
+  node.children?.forEach(child => traverseNode(child, context));
+}
+```
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："你在项目中用过哪些设计模式？"
+
+**及格回答（60-70分）：**
+> "我用过单例模式做全局状态管理，用过观察者模式做事件通知，用过策略模式消除 if-else。"
+
+面试官评价：**背了定义但没有深度**。
+
+**满分回答（90-100分）：**
+
+> 我在项目中最常用的是策略模式和观察者模式。策略模式主要用于表单校验和支付方式选择——把每种校验规则封装成独立的策略函数，通过 Map 映射调用，新增规则只需要加一个函数，不需要修改已有的校验逻辑，符合开闭原则。<sup>[1]</sup>
+
+> 观察者模式我在封装 EventBus 和处理 WebSocket 消息分发时用过。本质上就是发布-订阅的解耦——消息发送方不需要知道有多少订阅者，订阅者也可以随时取消订阅。Vue 的响应式系统底层也是这个模式，Dep 作为 Subject，Watcher 作为 Observer。<sup>[2]</sup>
+
+> 我还会用装饰器模式做函数增强——比如给 API 请求函数统一添加日志、错误处理、loading 状态管理。不修改原始函数，通过组合的方式叠加功能。这在 Express/Koa 的中间件中也很常见，中间件本质上就是装饰器模式的链式应用。<sup>[3]</sup>
+
+> 设计模式对我来说不是"背了 23 种然后找地方用"，而是"遇到问题时，发现这个问题别人已经解决过了，直接用现成的方案模板"。关键是理解每个模式解决的是什么问题，而不是它的类图长什么样。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title='观察者模式和发布-订阅模式有什么区别？' icon="layer-group">
+
+    **答题要点：**
+    核心区别在于是否有"事件中心"这个中介。
+
+    **高分回答：**
+    "观察者模式中，Subject 直接持有 Observer 的引用，状态变化时直接调用 Observer 的 update 方法。发布-订阅模式多了一个事件中心（Event Channel），发布者和订阅者完全解耦，互不知道对方的存在。
+
+    前端最常见的 `EventEmitter`（Node.js）和 `addEventListener`（浏览器 DOM）都是发布-订阅模式，而不是严格的观察者模式。因为它们都有一个中间层（事件中心）来管理注册和触发。Vue 2 的 `watch` 更接近观察者模式——Watcher 直接被 Dep 持有。"
+
+  </Accordion>
+
+  <Accordion title='策略模式和工厂模式经常一起出现，它们的关系是什么？' icon="layer-group">
+
+    **答题要点：**
+    工厂模式负责"创建"，策略模式负责"选择"。
+
+    **高分回答：**
+    "工厂模式解决的是'创建什么对象'的问题，策略模式解决的是'用什么算法'的问题。在实际项目中，它们经常组合使用——工厂决定创建哪个策略，策略执行具体逻辑。
+
+    举个例子：支付模块中，工厂根据用户选择创建'支付宝策略'或'微信策略'，然后策略模式执行各自的支付逻辑。工厂管创建，策略管行为，职责清晰。"
+
+  </Accordion>
+
+  <Accordion title='装饰器模式和代理模式有什么区别？' icon="stopwatch">
+
+    **答题要点：**
+    目的不同：装饰器是"增强功能"，代理是"控制访问"。
+
+    **高分回答：**
+    "从结构上看，装饰器和代理很像——都是包装原始对象。但意图不同：
+    - 装饰器模式：关注**功能增强**，可以叠加多层装饰器，每层添加一个新功能（日志、缓存、重试等）
+    - 代理模式：关注**访问控制**，通常只有一层代理，目的是拦截、过滤或延迟访问
+
+    实际代码中，Koa 的中间件链是装饰器模式（每一层增强请求处理），ES6 的 Proxy 是代理模式（拦截属性访问）。"
+
+  </Accordion>
+
+  <Accordion title='如何用设计模式实现一个中间件系统？' icon="stopwatch">
+
+    **答题要点：**
+    洋葱模型 = 装饰器模式 + 组合模式。
+
+    **高分回答：**
+    "Koa 的中间件系统是装饰器模式的经典实现。核心是 `compose` 函数，它把多个中间件组合成一个洋葱模型：
+
+    ```javascript
+    function compose(middlewares) {
+      return function (ctx) {
+        let index = -1;
+        function dispatch(i) {
+          if (i <= index) return Promise.reject('next() called multiple times');
+          index = i;
+          const fn = middlewares[i];
+          if (!fn) return Promise.resolve();
+          return Promise.resolve(fn(ctx, () => dispatch(i + 1)));
+        }
+        return dispatch(0);
+      };
+    }
+    ```
+
+    每个中间件接收 `ctx`（上下文）和 `next`（下一个中间件），可以在 `next()` 前后添加逻辑。这就是装饰器模式的链式组合——每一层包装上一层，添加新功能。"
+
+  </Accordion>
+
+  <Accordion title='在大型项目中如何选择合适的设计模式？' icon="node">
+
+    **答题要点：**
+    不是"选模式"，而是"识别问题"。
+
+    **高分回答：**
+    "选择设计模式的流程应该是：先识别问题，再匹配模式。
+    1. 如果发现大量 if-else 分支 → 策略模式
+    2. 如果发现对象间一对多的通知需求 → 观察者模式
+    3. 如果发现需要全局唯一实例 → 单例模式
+    4. 如果发现需要不修改原代码就扩展功能 → 装饰器模式
+    5. 如果发现需要控制对象的访问 → 代理模式
+
+    最常见的错误是'为了用模式而用模式'。设计模式是解决特定问题的工具，不是代码风格。如果一个 if-else 只有两个分支且不会扩展，用策略模式反而是过度设计。"
+
+  </Accordion>
+
+  <Accordion title='前端框架中有哪些设计模式的经典应用？' icon="node">
+
+    **答题要点：**
+    结合具体框架源码举例。
+
+    **高分回答：**
+    "前端框架是设计模式的教科书：
+    - **React**: 组合模式（组件树）、策略模式（reconciler 的 diff 策略）、工厂模式（createElement）
+    - **Vue**: 观察者模式（响应式系统 Dep/Watcher）、代理模式（Proxy 实现 reactive）、策略模式（编译器的 transform 策略）
+    - **Redux**: 单例模式（Store）、观察者模式（subscribe）、中间件模式（applyMiddleware = 装饰器链）
+    - **Express/Koa**: 中间件模式（装饰器 + 组合模式的洋葱模型）"
+
+  </Accordion>
+
+  <Accordion title='🔥 设计模式会导致过度设计吗？什么时候不该用？' icon="skull">
+
+    **答题要点：**
+    过度设计比不用设计模式更危险。
+
+    **高分回答：**
+    "会。设计模式最大的风险就是过度设计。我的判断标准是：
+    1. **YAGNI 原则**（You Ain't Gonna Need It）：如果当前只有 2 个分支且确定不会扩展，用 if-else 就够了，不需要策略模式
+    2. **三振原则**：当你第三次写类似的 if-else 时，才考虑重构为策略模式
+    3. **团队认知成本**：如果团队成员不熟悉某个模式，引入它反而增加维护成本
+
+    过度设计的典型症状：
+    - 一个简单的工具函数被包装了 3 层装饰器
+    - 只有一个实现的接口和抽象类
+    - 为了'可扩展性'预留了 10 个扩展点，但 3 年来一个都没用过
+
+    设计模式应该是'被问题逼出来的'，而不是'提前设计进去的'。"
+
+  </Accordion>
+
+  <Accordion title='🔥 如何手写一个支持中间件的洋葱模型？' icon="skull">
+
+    **答题要点：**
+    用递归 + Promise 实现，核心是 next 函数的传递。
+
+    **高分回答：**
+    "洋葱模型的核心是：每个中间件可以决定'是否继续执行下一个'，且每个中间件可以在 next() 前后都有逻辑。
+
+    ```javascript
+    class Onion {
+      constructor() { this.middlewares = []; }
+      use(fn) { this.middlewares.push(fn); }
+      compose() {
+        const middlewares = this.middlewares;
+        return function (ctx) {
+          let index = 0;
+          function next() {
+            if (index >= middlewares.length) return Promise.resolve();
+            const fn = middlewares[index++];
+            return Promise.resolve(fn(ctx, next));
+          }
+          return next();
+        };
+      }
+    }
+
+    const app = new Onion();
+    app.use(async (ctx, next) => {
+      console.log('1. 请求开始');
+      await next();
+      console.log('6. 请求结束');
+    });
+    app.use(async (ctx, next) => {
+      console.log('2. 日志记录');
+      await next();
+      console.log('5. 日志完成');
+    });
+    app.use(async (ctx, next) => {
+      console.log('3. 处理业务');
+      console.log('4. 业务完成');
+    });
+
+    app.compose()({});
+    // 输出：1 → 2 → 3 → 4 → 5 → 6
+    ```
+
+    这个模型的价值在于：每个中间件职责单一（日志、鉴权、缓存、错误处理），通过组合形成完整的请求处理管道。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 📖 [《设计模式：可复用面向对象软件的基础》](https://book.douban.com/subject/1052241/)：GoF 经典原著，23 种设计模式的权威定义。<sup>[1]</sup>
+- 🔗 [Patterns.dev](https://www.patterns.dev/)：现代前端设计模式的最佳实践，结合 React/Vue 实际案例。<sup>[2]</sup>
+- 🟢 [MDN: Proxy](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy)：ES6 Proxy 的官方文档，理解代理模式的语言级支持。<sup>[3]</sup>

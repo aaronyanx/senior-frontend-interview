@@ -1,0 +1,1145 @@
+---
+title: "Error Handling"
+---
+
+> **面试官为什么问这个？**
+>
+> 错误处理是衡量一个开发者是否具备"生产级思维"的核心指标。面试官问这个，本质上是在考察你：**你写的代码在异常情况下会怎样？是优雅降级还是直接白屏？** 如果你答不清楚，说明你只考虑了"正常路径"，而忽略了真实世界中网络波动、用户误操作、服务端异常等无处不在的边界情况。
+
+---
+
+## Q1: 错误处理的历史？为什么要有它？
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  无错误处理  │ → │  返回值约定  │ → │  try/catch   │ → │  Promise +   │
+│  (程序崩溃)  │   │  (C 语言)    │   │  (Java/JS)   │   │  async/await │
+└──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
+       ↑                                                         │
+       └─────────────────────────────────────────────────────────┘
+                 错误处理的演进：从"崩溃"到"优雅恢复"
+```
+
+<Steps>
+
+  <Step title="1960s-70s: 无错误处理的年代">
+
+    早期程序遇到错误直接崩溃。程序员需要手动检查每一个函数的返回值来判断是否出错——这种方式容易遗漏，且代码充斥着 `if (error) return error` 的样板代码。
+
+  </Step>
+  <Step title="1990s: try/catch 异常机制引入">
+
+    Java 和 C++ 引入了结构化异常处理（Structured Exception Handling）：`try/catch/finally`。JavaScript 在 ES3（1999 年）也引入了这套机制。核心思想是：**正常逻辑和错误处理逻辑分离**，用 `throw` 抛出错误，用 `catch` 捕获。
+
+  </Step>
+  <Step title="2015年: Promise 链式错误处理">
+
+    ES6 引入 `Promise`，提供了 `.catch()` 方法处理异步错误。但 Promise 链的错误处理容易遗漏——忘记写 `.catch()` 会导致 `UnhandledPromiseRejection`。
+
+  </Step>
+  <Step title="2017年: async/await 统一错误处理">
+
+    ES2017 引入 `async/await`，让异步代码可以用 `try/catch` 捕获错误，终于统一了同步和异步的错误处理方式。
+
+  </Step>
+
+</Steps>
+
+**错误处理解决的核心问题：**
+
+```text
+问题：错误不可避免，但可以被优雅处理
+
+没有错误处理：网络请求失败 → 整个页面白屏 → 用户只能刷新
+有错误处理：网络请求失败 → catch 捕获 → 显示友好的错误提示 → 用户可以重试
+
+解决：将"错误"从"灾难"变成"可控的分支"
+```
+
+<Note title="💡 一句话总结">
+
+错误处理的本质是：将不可预期的异常从"程序崩溃"变成"可控的分支逻辑"。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有错误处理">
+
+像开车没有刹车——一切顺利时飞驰，但遇到突发情况（红灯、行人）就只能撞上去。代码中一个未捕获的错误就能让整个应用白屏。
+
+</Card>
+<Card title="✅ 有错误处理">
+
+像开车有刹车和安全气囊——正常行驶时没有区别，但遇到突发情况可以安全停车。`try/catch` 是刹车，`finally` 是安全气囊（保证资源一定被释放），全局错误监控是行车记录仪（记录事故现场）。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答错误处理时，先说"为什么要处理"（用户体验、系统稳定性），再说"怎么处理"（try/catch、Promise.catch、全局监控）。面试官想听的是你对"防御性编程"的理解，而不是背诵 API。
+
+</Tip>
+
+---
+
+## Q2: Error 对象详解
+
+JavaScript 的所有错误都是 `Error` 对象或其子类的实例。理解 Error 对象是正确处理错误的基础。
+
+```text
+┌───────────────────────────────────────┐
+│           Error 对象                   │
+│  ┌─────────────────────────────────┐  │
+│  │ message: 错误描述信息           │  │  ← 唯一的标准属性
+│  │ name: 错误类型名称              │  │  ← 'Error'
+│  │ stack: 调用栈信息               │  │  ← 非标准但广泛支持
+│  └─────────────────────────────────┘  │
+└───────────────────────────────────────┘
+```
+
+```javascript
+// Error 对象的基本结构
+const error = new Error('Something went wrong');
+console.log(error.message); // 'Something went wrong'
+console.log(error.name);    // 'Error'
+console.log(error.stack);
+// Error: Something went wrong
+//     at <anonymous>:1:15
+```
+
+### JavaScript 内置的错误类型
+
+| 错误类型 | 说明 | 典型场景 |
+|---------|------|---------|
+| **Error** | 通用错误基类 | `throw new Error('msg')` |
+| **TypeError** | 类型错误 | `null.f()`、`undefined.toString()` |
+| **ReferenceError** | 引用错误 | 访问未声明的变量 |
+| **SyntaxError** | 语法错误 | `JSON.parse('{invalid}')` |
+| **RangeError** | 范围错误 | `new Array(-1)`、递归爆栈 |
+| **URIError** | URI 错误 | `decodeURI('%')` |
+| **EvalError** | eval 错误 | eval 执行异常 |
+
+```javascript
+// 各种内置错误的触发方式
+try { null.f(); } catch (e) { console.log(e instanceof TypeError); }   // true
+try { foo; } catch (e) { console.log(e instanceof ReferenceError); }   // true
+try { JSON.parse('!'); } catch (e) { console.log(e instanceof SyntaxError); } // true
+try { new Array(-1); } catch (e) { console.log(e instanceof RangeError); }    // true
+```
+
+<Warning title="⚠️ 核心机制: Error.captureStackTrace">
+
+`Error.captureStackTrace` 是 V8 提供的非标准 API，可以精确控制 `stack` 属性中显示的调用栈：
+
+```javascript
+function MyError(message) {
+  this.message = message;
+  this.name = 'MyError';
+  // captureStackTrace 会移除 MyError 本身的调用栈帧
+  Error.captureStackTrace(this, MyError);
+}
+MyError.prototype = Object.create(Error.prototype);
+```
+
+</Warning>
+
+### 自定义错误类型
+
+```javascript
+// 继承 Error 创建自定义错误
+class HttpError extends Error {
+  constructor(statusCode, message) {
+    super(message);
+    this.name = 'HttpError';
+    this.statusCode = statusCode;
+  }
+}
+
+class ValidationError extends Error {
+  constructor(field, message) {
+    super(message);
+    this.name = 'ValidationError';
+    this.field = field;
+  }
+}
+
+// 使用：根据错误类型做不同的处理
+async function fetchUser(id) {
+  const res = await fetch(`/api/users/${id}`);
+  if (!res.ok) {
+    throw new HttpError(res.status, `User ${id} not found`);
+  }
+  return res.json();
+}
+
+try {
+  const user = await fetchUser(123);
+} catch (error) {
+  if (error instanceof HttpError && error.statusCode === 404) {
+    showError('用户不存在');
+  } else if (error instanceof HttpError) {
+    showError('服务器错误，请稍后重试');
+  } else {
+    showError('网络异常');
+  }
+}
+```
+
+<Tip title="🎢 通俗比喻: 错误类型就像医院的分诊">
+
+`Error` 就像医院的总挂号处。`TypeError` 是内科、`ReferenceError` 是外科、`SyntaxError` 是耳鼻喉科——每个科室专门处理一类问题。自定义错误（如 `HttpError`）就像医院新开的专科门诊，专门处理特定业务的问题。有了分诊系统（`instanceof` 判断），医生（catch 块）就能快速找到正确的处理方案。
+
+</Tip>
+
+### Error.cause（ES2022）
+
+ES2022 引入了 `Error.cause`，用于在重新抛出错误时保留原始错误信息：
+
+```javascript
+async function fetchUserData(userId) {
+  try {
+    const res = await fetch(`/api/users/${userId}`);
+    return await res.json();
+  } catch (error) {
+    // 用 cause 保留原始错误，同时提供更友好的上下文
+    throw new Error(`Failed to fetch user ${userId}`, { cause: error });
+  }
+}
+
+try {
+  await fetchUserData(123);
+} catch (error) {
+  console.log(error.message);     // 'Failed to fetch user 123'
+  console.log(error.cause);       // 原始的 TypeError / NetworkError
+}
+```
+
+---
+
+## Q3: try/catch/finally 的执行机制
+
+`try/catch/finally` 的执行顺序看似简单，但有一些容易忽略的细节。
+
+```text
+┌──────────────┐
+│  try 块      │  ← 执行正常逻辑
+│  如果抛出错误 │
+└──────┬───────┘
+       │ 有错误
+       ▼
+┌──────────────┐
+│  catch 块    │  ← 捕获并处理错误
+└──────┬───────┘
+       │ 无论是否有错误
+       ▼
+┌──────────────┐
+│  finally 块  │  ← 始终执行（清理资源）
+└──────────────┘
+```
+
+```javascript
+// 基本结构
+try {
+  const data = JSON.parse(userInput);
+  processData(data);
+} catch (error) {
+  console.error('解析失败:', error.message);
+} finally {
+  console.log('无论成功失败都会执行');
+}
+```
+
+<Warning title="⚠️ 核心机制: finally 的执行规则">
+
+`finally` 块**无论是否发生错误都会执行**，甚至在 `try` 或 `catch` 中有 `return` 语句时也会执行：
+
+```javascript
+function test() {
+  try {
+    console.log('try');
+    return 'return from try';
+  } finally {
+    console.log('finally'); // 仍然会执行！
+  }
+}
+test(); // 输出 'try' → 'finally' → 'return from try'
+```
+
+更极端的情况：
+
+```javascript
+function test() {
+  try {
+    return 'try';
+  } catch (e) {
+    return 'catch';
+  } finally {
+    return 'finally'; // ⚠️ 这会覆盖 try/catch 中的 return 值！
+  }
+}
+test(); // 'finally' — try 的 return 被 finally 的 return 覆盖了
+```
+
+</Warning>
+
+### 块级作用域与错误变量
+
+```javascript
+// catch 块中的 error 变量是块级作用域的
+try {
+  throw new Error('test');
+} catch (error) {
+  console.log(error.message); // 'test'
+}
+// console.log(error); // ReferenceError: error is not defined
+
+// ES2019 起，catch 可以省略错误参数
+try {
+  throw new Error('test');
+} catch {
+  console.log('caught without binding');
+}
+```
+
+### try/catch 只能捕获同步错误
+
+```javascript
+// ❌ try/catch 无法捕获异步回调中的错误
+try {
+  setTimeout(() => {
+    throw new Error('async error'); // 不会被外层 catch 捕获
+  }, 100);
+} catch (error) {
+  // 永远不会执行
+  console.log('caught:', error);
+}
+
+// ✅ 必须在异步回调内部 try/catch
+setTimeout(() => {
+  try {
+    throw new Error('async error');
+  } catch (error) {
+    console.log('caught:', error); // 正确捕获
+  }
+}, 100);
+```
+
+---
+
+## Q4: Promise 错误处理
+
+Promise 提供了 `.catch()` 方法来处理异步错误，但错误传播规则和同步代码不同。
+
+```text
+Promise 链中的错误传播：
+
+promise.then(step1)
+       .then(step2)
+       .then(step3)
+       .catch(handleError)
+
+如果 step1 抛出错误 → 跳过 step2、step3 → 直接进入 catch
+如果 step2 抛出错误 → 跳过 step3 → 直接进入 catch
+如果 step3 抛出错误 → 进入 catch
+```
+
+```javascript
+// Promise 链中的错误传播
+fetchUser(1)
+  .then(user => fetchPosts(user.id))   // 如果 fetchUser 失败，跳过这里
+  .then(posts => renderPosts(posts))    // 如果 fetchPosts 失败，跳过这里
+  .catch(error => {
+    // 所有步骤的错误都会在这里被捕获
+    showError(error.message);
+  });
+```
+
+<Warning title="⚠️ 核心机制: UnhandledPromiseRejection">
+
+如果 Promise 链中没有 `.catch()`，错误会变成 `UnhandledPromiseRejection`。在 Node.js 15+ 中，未处理的 Promise rejection 会**直接终止进程**。
+
+```javascript
+// ❌ 没有 .catch() 的 Promise — 错误被吞掉（浏览器）或导致进程崩溃（Node.js）
+fetch('/api/data')
+  .then(res => res.json())
+  .then(data => render(data));
+// 如果 fetch 失败，没有人处理这个错误
+
+// ✅ 始终添加 .catch()
+fetch('/api/data')
+  .then(res => res.json())
+  .then(data => render(data))
+  .catch(error => handleError(error));
+```
+
+</Warning>
+
+### 全局捕获未处理的 Promise 错误
+
+```javascript
+// 浏览器端
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('Unhandled rejection:', event.reason);
+  // 上报到错误监控系统
+  reportError(event.reason);
+  // 阻止默认行为（控制台报错）
+  event.preventDefault();
+});
+
+// Node.js 端
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled rejection:', reason);
+  // 在生产环境中，通常需要优雅退出
+  process.exit(1);
+});
+```
+
+### Promise.allSettled vs Promise.all
+
+```javascript
+// Promise.all：任何一个 rejected 就立即 rejected，其他结果被忽略
+const results = await Promise.all([
+  fetch('/api/a'), // 成功
+  fetch('/api/b'), // 失败 ← 整体立即 rejected
+  fetch('/api/c'), // 成功，但结果被忽略
+]);
+// Uncaught (in promise) TypeError: Failed to fetch
+
+// Promise.allSettled：等待所有 Promise 完成，不管成功还是失败
+const results = await Promise.allSettled([
+  fetch('/api/a'),
+  fetch('/api/b'),
+  fetch('/api/c'),
+]);
+// [
+//   { status: 'fulfilled', value: Response },
+//   { status: 'rejected', reason: TypeError },
+//   { status: 'fulfilled', value: Response }
+// ]
+```
+
+<Tip title="🎢 通俗比喻: Promise.all vs Promise.allSettled">
+
+`Promise.all` 就像考试——一科不及格就留级（整体失败），其他科的成绩作废。`Promise.allSettled` 就像体检——每项检查结果独立记录，某项异常不会影响其他项的结果。在实际项目中，`allSettled` 往往更实用——你通常需要知道每项操作的结果，而不是因为一项失败就放弃所有。
+
+</Tip>
+
+---
+
+## Q5: 异步错误处理（async/await）
+
+`async/await` 让异步代码的错误处理回归到同步的 `try/catch` 模式，大大简化了代码。
+
+```javascript
+// async/await 的 try/catch
+async function loadUserProfile(userId) {
+  try {
+    const user = await fetchUser(userId);
+    const posts = await fetchPosts(user.id);
+    const comments = await fetchComments(posts[0].id);
+    render({ user, posts, comments });
+  } catch (error) {
+    showError(error.message);
+  }
+}
+```
+
+<Warning title="⚠️ 常见陷阱: await 后面忘记 try/catch">
+
+```javascript
+// ❌ 错误：await 后的 Promise rejection 未被捕获
+async function loadData() {
+  const user = await fetchUser(1);    // 如果这里失败...
+  const posts = await fetchPosts(1);  // 这行不会执行
+  // 但如果没有 try/catch，错误会变成 UnhandledPromiseRejection
+}
+
+// ✅ 正确：始终用 try/catch 包裹 await
+async function loadData() {
+  try {
+    const user = await fetchUser(1);
+    const posts = await fetchPosts(1);
+    return { user, posts };
+  } catch (error) {
+    handleError(error);
+  }
+}
+```
+
+</Warning>
+
+### 优雅的错误处理模式
+
+**模式一：错误优先返回值（Go 风格）**
+
+```javascript
+// 不用 try/catch，用返回值表示成功或失败
+async function safeFetch(url) {
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    return [data, null]; // [result, error]
+  } catch (error) {
+    return [null, error];
+  }
+}
+
+// 使用
+const [user, error] = await safeFetch('/api/user/1');
+if (error) {
+  showError(error.message);
+} else {
+  render(user);
+}
+```
+
+**模式二：统一错误处理函数**
+
+```javascript
+// 封装一个统一的异步错误处理函数
+function withErrorHandling(asyncFn) {
+  return async function(...args) {
+    try {
+      return await asyncFn(...args);
+    } catch (error) {
+      reportError(error); // 上报到监控系统
+      throw error;        // 继续抛出让调用者处理
+    }
+  };
+}
+
+// 使用
+const safeFetchUser = withErrorHandling(fetchUser);
+```
+
+**模式三：try/catch/finally 清理资源**
+
+```javascript
+async function processFile(file) {
+  const connection = await db.connect();
+  try {
+    await connection.beginTransaction();
+    const data = await parseFile(file);
+    await connection.insert(data);
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback(); // 出错时回滚
+    throw error;
+  } finally {
+    connection.close(); // 无论成功失败都关闭连接
+  }
+}
+```
+
+---
+
+## Q6: 前端错误监控与上报
+
+生产环境中的错误处理不只是 `try/catch`——你需要一个完整的错误监控体系来捕获、收集和分析线上错误。
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  捕获错误    │ → │  收集上下文  │ → │  上报服务端  │ → │  分析告警    │
+│  (try/catch) │   │  (堆栈/用户) │   │  (Beacon API)│   │  (Sentry等)  │
+└──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
+```
+
+### 捕获全局错误
+
+```javascript
+// 1. 捕获同步错误
+window.onerror = (message, source, lineno, colno, error) => {
+  console.error('Global error:', { message, source, lineno, colno, error });
+  reportError({ type: 'sync', message, source, lineno, colno, stack: error?.stack });
+};
+
+// 2. 捕获资源加载错误（图片、脚本、样式）
+window.addEventListener('error', (event) => {
+  if (event.target.tagName) {
+    // 资源加载错误
+    console.error('Resource error:', event.target.src || event.target.href);
+    reportError({ type: 'resource', url: event.target.src || event.target.href });
+  }
+}, true); // 使用捕获阶段，因为资源错误不会冒泡
+
+// 3. 捕获未处理的 Promise rejection
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('Unhandled rejection:', event.reason);
+  reportError({ type: 'promise', reason: event.reason?.message || event.reason });
+  event.preventDefault();
+});
+```
+
+<Warning title="⚠️ window.onerror 的限制">
+
+`window.onerror` 只能捕获同步错误，不能捕获：
+- Promise rejection（需要用 `unhandledrejection`）
+- 资源加载错误（需要用 `error` 事件的捕获阶段）
+- 跨域脚本的错误（需要设置 CORS 和 `crossorigin` 属性）
+
+```javascript
+// 跨域脚本错误需要设置 crossorigin 属性
+<script src="https://cdn.example.com/lib.js" crossorigin></script>
+// 否则 window.onerror 只能拿到 'Script error.' 而没有详细信息
+```
+
+</Warning>
+
+### 使用 Beacon API 无损上报
+
+```javascript
+// 上报错误到服务端
+function reportError(errorData) {
+  const payload = {
+    ...errorData,
+    url: window.location.href,
+    userAgent: navigator.userAgent,
+    timestamp: Date.now(),
+    userId: getCurrentUserId(),
+  };
+
+  // 使用 Beacon API —— 页面关闭时也能可靠发送
+  // 而 fetch/XMLHttpRequest 可能因页面关闭而被取消
+  if (navigator.sendBeacon) {
+    navigator.sendBeacon('/api/error-report', JSON.stringify(payload));
+  } else {
+    // 降级方案
+    fetch('/api/error-report', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      keepalive: true, // keepalive 确保页面关闭后请求不被取消
+    });
+  }
+}
+```
+
+### Source Map 还原线上错误
+
+线上代码经过压缩和混淆，错误堆栈无法直接定位到源码。Source Map 可以将压缩后的行号映射回源码位置：
+
+```text
+线上报错：
+  TypeError: Cannot read property 'name' of undefined
+    at app.min.js:1:28543
+
+通过 Source Map 还原后：
+  TypeError: Cannot read property 'name' of undefined
+    at UserProfile.render (src/components/UserProfile.tsx:42:15)
+```
+
+<Tip title="💡 最佳实践: 错误监控体系">
+
+一个完整的前端错误监控体系应包含：
+1. **错误捕获**：`window.onerror` + `unhandledrejection` + 资源错误监听
+2. **上下文收集**：错误堆栈、用户行为路径（面包屑）、设备信息、网络状态
+3. **可靠上报**：`navigator.sendBeacon` 或 `keepalive: true` 的 fetch
+4. **Source Map 还原**：在服务端将压缩堆栈还原为源码位置
+5. **告警与分析**：按错误频率、影响用户数排序，优先修复高频错误
+
+</Tip>
+
+### React 中的错误边界
+
+```javascript
+// React 错误边界（Error Boundary）—— 捕获子组件的渲染错误
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    // 上报错误到监控系统
+    reportError({
+      type: 'react',
+      message: error.message,
+      stack: error.stack,
+      componentStack: errorInfo.componentStack,
+    });
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <div className="error-fallback">
+        <h2>出错了</h2>
+        <button onClick={() => this.setState({ hasError: false })}>重试</button>
+      </div>;
+    }
+    return this.props.children;
+  }
+}
+
+// 使用：包裹可能出错的组件
+<ErrorBoundary>
+  <UserProfile userId={123} />
+</ErrorBoundary>
+```
+
+<Warning title="⚠️ 错误边界的限制">
+
+React 错误边界**不能**捕获以下错误：
+- 事件处理函数中的错误（用普通的 `try/catch`）
+- 异步代码（`setTimeout`、`Promise`）
+- 服务端渲染（SSR）的错误
+- 错误边界组件自身的错误
+
+</Warning>
+
+---
+
+## Q7: 经典面试题：如何设计一个前端错误监控系统？
+
+**设计思路：**
+
+```text
+第一步：错误分类
+  - JS 运行时错误（TypeError、ReferenceError 等）
+  - 资源加载错误（图片 404、脚本加载失败）
+  - Promise 未处理的 rejection
+  - 接口请求错误（HTTP 4xx/5xx）
+  - 框架级错误（React 组件渲染错误）
+
+第二步：错误捕获层
+  - window.onerror → 同步错误
+  - unhandledrejection → Promise 错误
+  - error 事件（捕获阶段）→ 资源错误
+  - 框架错误边界 → 组件渲染错误
+  - 请求拦截器 → 接口错误
+
+第三步：上下文收集
+  - 错误堆栈（stack trace）
+  - 用户行为路径（breadcrumb：最近 10 个操作）
+  - 设备信息（浏览器、OS、屏幕尺寸）
+  - 页面信息（URL、referrer）
+  - 用户信息（userId）
+
+第四步：可靠上报
+  - navigator.sendBeacon（页面关闭时不丢失）
+  - 批量上报（减少请求数量）
+  - 采样上报（高流量场景降低服务端压力）
+```
+
+---
+
+## 🔍 底层源码：V8 是如何实现 try/catch 的？
+
+<div class="follow-up">
+V8 的 try/catch 在字节码层面是怎么实现的？
+</div>
+
+V8 编译 JavaScript 时，会为 `try/catch` 生成异常处理器表（Exception Handler Table），详见 [V8 源码：src/interpreter/bytecode-array-builder.cc](https://github.com/v8/v8/blob/main/src/interpreter/bytecode-array-builder.cc)：
+
+```cpp
+// try/catch 编译后的字节码结构（极度简化）：
+//
+// try 块的字节码
+// LdaNamedProperty a0, [0]    // try { ...
+// Star r1
+// CallProperty1 r1, a0
+//
+// 如果执行过程中抛出异常，V8 查找 Handler Table：
+// Handler Table:
+//   [start=0, end=10, handler=20]  // try 块范围 0-10，handler 在偏移 20
+//
+// catch 块的字节码（偏移 20）：
+// Star r0                        // 将异常对象存入 r0
+// LdaNamedProperty r0, [1]      // error.message
+// ... catch 块的其他字节码
+```
+
+这段代码说明：`try/catch` 不是通过"检查返回值"实现的，而是通过**异常处理器表**——当 try 块中任何位置抛出错误时，V8 直接跳转到 catch 块的入口，不需要逐行检查。
+
+<div class="follow-up">
+Promise 的 rejection 是怎么被 unhandledrejection 事件捕获的？
+</div>
+
+V8 在 `Promise::Reject` 时会标记该 Promise 的 rejection 为"unhandled"。在每个微任务队列清空后，V8 检查所有被标记的 Promise——如果到那时仍然没有 `.catch()` 处理，就触发 `unhandledrejection` 事件。详见 [V8 源码：src/objects/promise.cc](https://github.com/v8/v8/blob/main/src/objects/promise.cc)。
+
+---
+
+## 八、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说前端的错误处理策略"
+
+**及格回答（60-70分）：**
+> "用 try/catch 捕获同步错误，用 .catch() 处理 Promise 错误。用 window.onerror 监听全局错误并上报。"
+
+面试官评价：**知道 API 但缺乏系统性设计**。
+
+**满分回答（90-100分）：**
+
+> 前端错误处理分为三个层次：**局部捕获**、**全局兜底**、**监控上报**。局部捕获用 `try/catch` 处理已知可能出错的同步代码，用 `async/await` + `try/catch` 处理异步逻辑，用 React 错误边界捕获组件渲染错误。全局兜底用 `window.onerror` 捕获未预期的同步错误，用 `unhandledrejection` 捕获未处理的 Promise rejection。<sup>[1]</sup>
+
+> 错误上报的关键是**可靠性和上下文**。可靠性通过 `navigator.sendBeacon` 保证页面关闭时不丢失错误数据。上下文包括错误堆栈、用户行为路径（breadcrumb）、设备信息和页面 URL。线上错误堆栈需要通过 Source Map 还原到源码位置，否则压缩后的行号无法定位问题。<sup>[2]</sup>
+
+> 自定义错误类型是大型项目的关键实践。通过继承 `Error` 创建 `HttpError`、`ValidationError` 等业务错误类型，在 catch 块中用 `instanceof` 做分类型处理，比判断错误消息字符串更可靠。ES2022 的 `Error.cause` 可以在重新抛出错误时保留原始错误链，避免信息丢失。
+
+> 实际项目建议：错误监控体系要和 CI/CD 结合——线上错误告警要在几分钟内触达开发团队，高频错误要自动关联到最近的代码变更。错误修复的优先级按"影响用户数 x 错误频率"排序，而不是按错误类型。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title='try/catch 能捕获异步错误吗？' icon="layer-group">
+
+    **答题要点：**
+    明确区分同步和异步场景，给出具体示例。
+
+    **高分回答：**
+    "`try/catch` **只能捕获同步错误**。对于异步代码，需要分场景讨论：
+
+    1. **setTimeout/setInterval 回调**：外层 try/catch **无法捕获**
+    ```javascript
+    try {
+      setTimeout(() => { throw new Error('async'); }, 100);
+    } catch (e) {
+      // 不会执行——setTimeout 的回调在 try/catch 已经结束后才执行
+    }
+    ```
+
+    2. **await 表达式**：外层 try/catch **可以捕获**
+    ```javascript
+    try {
+      await fetch('/api/data'); // 如果 Promise rejected，会被 catch 捕获
+    } catch (e) {
+      // 正确捕获
+    }
+    ```
+
+    3. **Promise.then 回调**：需要 .catch() 或 await
+    ```javascript
+    // ❌ 不能捕获
+    try {
+      Promise.reject(new Error('async'));
+    } catch (e) { /* 不执行 */ }
+
+    // ✅ 用 .catch()
+    Promise.reject(new Error('async')).catch(e => { /* 正确 */ });
+
+    // ✅ 用 await
+    try {
+      await Promise.reject(new Error('async'));
+    } catch (e) { /* 正确 */ }
+    ```
+
+    核心区别：`await` 会把 Promise rejection 转化为同步的 throw，所以外层 try/catch 可以捕获。"
+
+  </Accordion>
+
+  <Accordion title='Error 对象的 stack 属性是怎么生成的？' icon="layer-group">
+
+    **答题要点：**
+    从 V8 引擎的角度解释调用栈捕获。
+
+    **高分回答：**
+    "当 `new Error()` 被调用时，V8 引擎会**同步地捕获当前的调用栈**。具体实现是 V8 遍历当前的所有栈帧（Stack Frame），将每个函数名、文件路径、行号、列号拼接成一个字符串，赋值给 `error.stack` 属性。
+
+    ```javascript
+    function a() { b(); }
+    function b() { c(); }
+    function c() {
+      const err = new Error('test');
+      console.log(err.stack);
+      // Error: test
+      //     at c (file.js:3:17)
+      //     at b (file.js:2:3)
+      //     at a (file.js:1:3)
+    }
+    a();
+    ```
+
+    注意两个细节：
+    1. `stack` 是**非标准属性**，但所有主流引擎（V8、SpiderMonkey、JavaScriptCore）都支持。
+    2. 捕获调用栈有性能开销——如果在热路径中频繁 `new Error()`，会影响性能。V8 使用 `Error.captureStackTrace(obj, constructorOpt)` 可以排除构造函数本身的栈帧。"
+
+  </Accordion>
+
+  <Accordion title='finally 块中的 return 会怎样？' icon="stopwatch">
+
+    **答题要点：**
+    说明 finally 的 return 会覆盖 try/catch 中的 return 值。
+
+    **高分回答：**
+    "`finally` 块中的 `return` 会**覆盖** `try` 或 `catch` 块中的 `return` 值。这是一个容易忽略的陷阱：
+
+    ```javascript
+    function test() {
+      try {
+        return 'from try';
+      } finally {
+        return 'from finally';
+      }
+    }
+    console.log(test()); // 'from finally' — try 的 return 被覆盖了
+
+    function test2() {
+      try {
+        throw new Error('error');
+      } catch (e) {
+        return 'from catch';
+      } finally {
+        return 'from finally';
+      }
+    }
+    console.log(test2()); // 'from finally' — catch 的 return 也被覆盖了
+    ```
+
+    这是因为 `finally` 块的执行优先级最高。即使 try 或 catch 中有 `return`，引擎也会先执行 `finally`，然后才真正返回。如果 `finally` 中也有 `return`，它就成为最终的返回值。
+
+    **最佳实践：永远不要在 `finally` 中写 `return`。** finally 应该只做清理工作（关闭连接、释放资源），不做业务逻辑。"
+
+  </Accordion>
+
+  <Accordion title='如何全局捕获未处理的 Promise rejection？' icon="stopwatch">
+
+    **答题要点：**
+    区分浏览器和 Node.js 环境，说明事件名称和处理方式。
+
+    **高分回答：**
+    "浏览器和 Node.js 使用不同的事件来捕获未处理的 Promise rejection：
+
+    **浏览器端：**
+    ```javascript
+    window.addEventListener('unhandledrejection', (event) => {
+      console.error('Unhandled rejection:', event.reason);
+      // 上报到错误监控
+      reportError({
+        type: 'unhandledrejection',
+        message: event.reason?.message || String(event.reason),
+        stack: event.reason?.stack,
+      });
+      // 阻止默认行为（控制台红色报错）
+      event.preventDefault();
+    });
+    ```
+
+    **Node.js 端：**
+    ```javascript
+    process.on('unhandledRejection', (reason, promise) => {
+      console.error('Unhandled rejection:', reason);
+      // Node.js 15+ 默认会终止进程
+      // 生产环境应该优雅退出
+      process.exit(1);
+    });
+    ```
+
+    **区别：**
+    - 浏览器端：`event.reason` 是 rejection 的值，`event.preventDefault()` 可以阻止控制台报错
+    - Node.js 端：Node.js 15+ 将未处理的 rejection 视为致命错误，默认终止进程
+    - 两个环境都可以用 `rejectionhandled` 事件监听"后来被处理的 rejection"
+
+    **最佳实践：在应用入口处注册全局监听器，所有未预期的 rejection 都应该上报到监控系统。**"
+
+  </Accordion>
+
+  <Accordion title='React 错误边界能捕获事件处理函数中的错误吗？' icon="node">
+
+    **答题要点：**
+    明确说明错误边界的捕获范围和限制。
+
+    **高分回答：**
+    "**不能。** React 错误边界（Error Boundary）只能捕获以下错误：
+    1. 子组件**渲染过程**中的错误
+    2. 生命周期方法中的错误
+    3. 错误边界组件树中**构造函数**的错误
+
+    以下错误**不能**被错误边界捕获：
+    1. **事件处理函数**中的错误（用普通的 `try/catch`）
+    2. **异步代码**（`setTimeout`、`Promise`）
+    3. **服务端渲染**（SSR）的错误
+    4. 错误边界**自身**的错误
+
+    ```javascript
+    // 事件处理中的错误需要自己 try/catch
+    function Button() {
+      const handleClick = () => {
+        try {
+          riskyOperation();
+        } catch (error) {
+          // 这里处理，错误边界不会捕获
+          reportError(error);
+        }
+      };
+      return <button onClick={handleClick}>Click</button>;
+    }
+    ```
+
+    为什么这样设计？因为事件处理函数是**用户行为触发的**，错误应该是可预期的，应该由开发者主动处理。而渲染错误往往是**不可预期的**（如数据格式异常），需要错误边界做兜底。"
+
+  </Accordion>
+
+  <Accordion title='Error.cause 的使用场景和注意事项？' icon="node">
+
+    **答题要点：**
+    对比传统做法和 Error.cause 的优劣。
+
+    **高分回答：**
+    "`Error.cause` 是 ES2022 引入的特性，用于在重新抛出错误时保留原始错误链。传统做法是手动附加原始错误：
+
+    ```javascript
+    // ❌ 传统做法：丢失原始错误
+    async function fetchUser(id) {
+      try {
+        return await fetch(`/api/users/${id}`);
+      } catch (error) {
+        throw new Error('Fetch user failed'); // 原始错误丢失了
+      }
+    }
+
+    // ❌ 传统做法：手动拼接
+    async function fetchUser(id) {
+      try {
+        return await fetch(`/api/users/${id}`);
+      } catch (error) {
+        throw new Error('Fetch user failed: ' + error.message); // 不够优雅
+      }
+    }
+
+    // ✅ Error.cause：保留完整的错误链
+    async function fetchUser(id) {
+      try {
+        return await fetch(`/api/users/${id}`);
+      } catch (error) {
+        throw new Error('Fetch user failed', { cause: error });
+      }
+    }
+    ```
+
+    使用场景：
+    1. 分层架构中，底层错误需要包装为业务错误重新抛出
+    2. 第三方库错误需要添加更友好的上下文信息
+    3. 错误监控系统需要完整的错误链来定位根因
+
+    注意事项：`Error.cause` 在旧浏览器中不支持，需要 polyfill 或使用 TypeScript 的 `error.cause` 类型检查。"
+
+  </Accordion>
+
+  <Accordion title='如何实现一个前端错误监控的面包屑（Breadcrumb）？' icon="skull">
+
+    **答题要点：**
+    说明面包屑的作用和实现方式。
+
+    **高分回答：**
+    "面包屑（Breadcrumb）是错误发生前的用户行为记录——它可以帮助你还原错误发生的上下文，比单纯的错误堆栈有用得多。
+
+    ```javascript
+    class Breadcrumb {
+      constructor(maxSize = 20) {
+        this.queue = [];
+        this.maxSize = maxSize;
+      }
+
+      add(type, data) {
+        this.queue.push({
+          type,        // 'click' | 'navigation' | 'http' | 'console'
+          data,
+          timestamp: Date.now(),
+        });
+        if (this.queue.length > this.maxSize) {
+          this.queue.shift(); // 只保留最近的记录
+        }
+      }
+
+      getAll() {
+        return [...this.queue];
+      }
+    }
+
+    const breadcrumb = new Breadcrumb();
+
+    // 记录用户点击
+    document.addEventListener('click', (e) => {
+      breadcrumb.add('click', {
+        target: e.target.tagName,
+        text: e.target.textContent?.slice(0, 50),
+      });
+    });
+
+    // 记录路由变化
+    window.addEventListener('popstate', () => {
+      breadcrumb.add('navigation', { url: window.location.href });
+    });
+
+    // 记录网络请求
+    const originalFetch = window.fetch;
+    window.fetch = async (...args) => {
+      breadcrumb.add('http', { url: args[0], method: args[1]?.method || 'GET' });
+      return originalFetch(...args);
+    };
+
+    // 错误上报时携带面包屑
+    function reportError(error) {
+      const payload = {
+        message: error.message,
+        stack: error.stack,
+        breadcrumbs: breadcrumb.getAll(), // 还原错误发生前的行为路径
+      };
+      navigator.sendBeacon('/api/error-report', JSON.stringify(payload));
+    }
+    ```
+
+    面包屑的价值在于：当一个 TypeError 发生时，你可以看到用户之前的操作路径——'点击了登录按钮 → 发送了 /api/login 请求 → 切换到了 /dashboard 页面 → TypeError'。这比单纯的错误堆栈有用 10 倍。"
+
+  </Accordion>
+
+  <Accordion title='同步 throw 和异步 reject 的错误捕获有什么区别？' icon="skull">
+
+    **答题要点：**
+    从调用栈的角度解释两者的根本区别。
+
+    **高分回答：**
+    "同步 `throw` 和异步 `Promise.reject` 在错误捕获机制上有根本区别：
+
+    **同步 throw：**
+    ```javascript
+    function syncError() {
+      throw new Error('sync'); // 立即中断当前执行流
+    }
+    try {
+      syncError(); // throw 之后的代码不执行
+      console.log('不会执行');
+    } catch (e) {
+      // 捕获时，调用栈仍然是完整的
+      console.log(e.stack); // 包含 syncError 的调用链
+    }
+    ```
+
+    **异步 reject：**
+    ```javascript
+    function asyncError() {
+      return Promise.reject(new Error('async')); // 不会中断执行流
+    }
+    async function main() {
+      try {
+        await asyncError(); // reject 在这里被转化为 throw
+        console.log('不会执行');
+      } catch (e) {
+        // 捕获时，调用栈是 await 所在位置的栈
+        console.log(e.stack); // 可能丢失原始的调用链
+      }
+    }
+    ```
+
+    核心区别：
+    1. **调用栈完整性**：同步 throw 保留完整的调用链；异步 reject 的栈可能丢失原始调用者
+    2. **执行流**：同步 throw 立即中断；reject 不会中断，需要等到 `.catch()` 或 `await` 才被捕获
+    3. **错误传播**：同步 throw 沿调用栈向上传播；reject 沿 Promise 链传播
+
+    这就是为什么前端错误监控中，异步错误的堆栈信息往往不如同步错误完整。解决方案是使用 `Error.cause` 在每层异步调用中保留原始错误。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🟢 [MDN: Error](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error)：Mozilla 官方对 Error 对象及其子类的权威文档。<sup>[1]</sup>
+- 🔗 [Sentry Frontend Handbook](https://develop.sentry.dev/sdk/overview/)：Sentry 官方的前端错误监控最佳实践，包含错误捕获、面包屑、Source Map 还原的完整方案。<sup>[2]</sup>
+- 📖 [Google Web Fundamentals: Error Handling](https://developers.google.com/web/fundamentals/performance/navigation-and-resource-timings)：Google 对前端错误处理与资源加载监控的深度指南。

@@ -1,0 +1,297 @@
+{
+  "name": "前端 & AI 工程化面试指南",
+  "description": "专为高级前端工程师打造的硬核进阶指南。深挖 V8 引擎底层、React/Vue 源码、复杂微前端架构，并涵盖前沿的 AI 工程化（Agent/MCP）大厂实战经验。",
+  "seo": {
+    "title": "前端 & AI 工程化面试指南 | Senior Frontend Interview Guide",
+    "description": "专为高级前端工程师打造的面试与进阶手册。全面深度解析 V8 底层机制、React Fiber 源码、微前端架构，以及最新的 AI 工程化（LangGraph/Agent/MCP）落地实践。",
+    "keywords": ["高级前端面试", "前端面试宝典", "前端架构", "V8引擎", "React源码", "Vue原理", "微前端", "AI工程化", "Agent", "前端进阶"]
+  },
+  "theme": "mint",
+  "favicon": "/favicon.png",
+  "logo": {
+    "light": "/logo.png",
+    "dark": "/logo.png"
+  },
+  "colors": {
+    "primary": "#0969da",
+    "light": "#ddf4ff",
+    "dark": "#0969da"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "",
+        "href": "https://github.com/aaronyanx/senior-frontend-interview",
+        "icon": "github"
+      }
+    ]
+  },
+  "search": {
+    "prompt": false
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "JavaScript",
+        "groups": [
+          {
+            "group": "异步编程",
+            "pages": [
+              "javascript/event-loop",
+              "javascript/promise",
+              "javascript/async-scheduler",
+              "javascript/network-request",
+              "javascript/cross-tab-communication"
+            ]
+          },
+          {
+            "group": "面向对象与作用域",
+            "pages": [
+              "javascript/this-class",
+              "javascript/prototype",
+              "javascript/closure",
+              "javascript/execution-context"
+            ]
+          },
+          {
+            "group": "语言特性与 V8",
+            "pages": [
+              "javascript/type-system",
+              "javascript/es6",
+              "javascript/modules",
+              "javascript/v8-gc",
+              "javascript/v8-jit",
+              "javascript/v8-array"
+            ]
+          },
+          {
+            "group": "工程实践",
+            "pages": [
+              "javascript/design-patterns",
+              "javascript/functional-programming",
+              "javascript/js-handwrite",
+              "javascript/dom-events",
+              "javascript/regex-engine"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CSS",
+        "groups": [
+          {
+            "group": "基础与布局",
+            "pages": [
+              "css/box-model",
+              "css/bfc",
+              "css/flexbox",
+              "css/grid"
+            ]
+          },
+          {
+            "group": "定位与层叠",
+            "pages": [
+              "css/stacking-context"
+            ]
+          },
+          {
+            "group": "渲染机制与性能",
+            "pages": [
+              "css/selectors",
+              "css/paint-render",
+              "css/animations"
+            ]
+          },
+          {
+            "group": "工程化与响应式",
+            "pages": [
+              "css/css-variables",
+              "css/responsive"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "浏览器",
+        "groups": [
+          {
+            "group": "渲染与性能",
+            "pages": [
+              "browser/browser-render",
+              "browser/performance",
+              "browser/http"
+            ]
+          },
+          {
+            "group": "安全与存储",
+            "pages": [
+              "browser/security",
+              "browser/storage"
+            ]
+          },
+          {
+            "group": "事件与监控",
+            "pages": [
+              "browser/dom-event",
+              "performance/monitoring"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Vue",
+        "groups": [
+          {
+            "group": "核心原理",
+            "pages": [
+              "vue/vue-history",
+              "vue/vue-reactivity",
+              "vue/vue-diff"
+            ]
+          },
+          {
+            "group": "进阶机制",
+            "pages": [
+              "vue/vue-template",
+              "vue/vue-components",
+              "vue/vue-compiler"
+            ]
+          },
+          {
+            "group": "生态与工程",
+            "pages": [
+              "vue/vue-ecosystem",
+              "vue/vue-vs-react"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "React",
+        "groups": [
+          {
+            "group": "核心",
+            "pages": [
+              "react/react-history",
+              "react/react-fiber",
+              "react/react-hooks"
+            ]
+          },
+          {
+            "group": "进阶",
+            "pages": [
+              "react/react-perf",
+              "react/react-advanced"
+            ]
+          },
+          {
+            "group": "框架",
+            "pages": [
+              "nextjs/nextjs"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "工程化",
+        "groups": [
+          {
+            "group": "构建工具",
+            "pages": [
+              "engineering/webpack",
+              "engineering/vite",
+              "engineering/sourcemap"
+            ]
+          },
+          {
+            "group": "包管理与 Monorepo",
+            "pages": [
+              "monorepo/monorepo"
+            ]
+          },
+          {
+            "group": "状态管理",
+            "pages": [
+              "state-management/state-management"
+            ]
+          },
+          {
+            "group": "语言",
+            "pages": [
+              "typescript/typescript"
+            ]
+          },
+          {
+            "group": "工程规范与 CI/CD",
+            "pages": [
+              "engineering/ci-cd"
+            ]
+          },
+          {
+            "group": "容器化",
+            "pages": [
+              "docker/docker"
+            ]
+          },
+          {
+            "group": "边缘计算",
+            "pages": [
+              "engineering/cloudflare-workers"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "跨端开发",
+        "groups": [
+          {
+            "group": "React Native",
+            "pages": [
+              "react-native/react-native"
+            ]
+          },
+          {
+            "group": "小程序框架",
+            "pages": [
+              "taro/taro",
+              "uni-app/uni-app"
+            ]
+          },
+          {
+            "group": "微前端",
+            "pages": [
+              "micro-frontend/micro-frontend"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "AI 工程化",
+        "groups": [
+          {
+            "group": "基础概念",
+            "pages": [
+              "ai/prompt",
+              "ai/mcp-skill"
+            ]
+          },
+          {
+            "group": "RAG 与知识库",
+            "pages": [
+              "ai/rag",
+              "ai/langchain"
+            ]
+          },
+          {
+            "group": "Agent 与多智能体",
+            "pages": [
+              "ai/agent",
+              "ai/multi-agent",
+              "ai/agent-stability"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

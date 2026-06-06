@@ -1,0 +1,367 @@
+---
+title: "安全"
+---
+
+> **面试官为什么问这个？**
+>
+> Web 安全是前端工程师的底线能力。面试官问这个，本质上是在考察你：**你是否理解攻击的本质，而不仅仅是背诵防御手段？** 如果你只能说出"XSS 要转义，CSRF 要加 Token"，说明你对安全的理解停留在"知道规则"而不是"知道为什么这样设计"。
+
+---
+
+## Q1: XSS 是什么？怎么防御？
+
+<Steps>
+
+  <Step title="Web 安全的原罪: 信任用户输入">
+
+早期 Web 应用直接把用户输入拼接到 HTML 中返回。攻击者在输入中嵌入 `<script>` 标签，服务器原样返回，浏览器执行了恶意脚本——这就是 XSS（Cross-Site Scripting）的本质。
+
+  </Step>
+  <Step title="三种 XSS 类型">
+
+存储型：攻击者在评论区输入恶意脚本，存入数据库，所有用户浏览时执行。反射型：攻击者构造含恶意脚本的 URL，服务器把参数拼到 HTML 中返回。DOM 型：前端直接用 `innerHTML` 或 `location.hash` 渲染用户输入，不经过服务器。
+
+  </Step>
+  <Step title="防御核心: 输出转义">
+
+在将用户输入插入 HTML 之前，对特殊字符进行转义：`<` 转为 `&lt;`，`>` 转为 `&gt;`，`"` 转为 `&quot;`。React 的 JSX 和 Vue 的模板默认自动转义，`dangerouslySetInnerHTML` / `v-html` 会绕过转义。
+
+  </Step>
+  <Step title="纵深防御: CSP 和 Trusted Types">
+
+CSP（Content Security Policy）限制页面只能加载指定来源的脚本，即使 XSS 注入成功也无法执行外部恶意脚本。Trusted Types 是 CSP 的补充——要求 `innerHTML` 等 DOM sink 只能接受经过安全检查的类型，不能接受原始字符串。
+
+  </Step>
+  <Step title="关键权衡: 安全性与开发体验">
+
+严格的 CSP 会禁用 `eval` 和内联脚本，影响许多第三方库的使用。`strict-dynamic` + nonce 策略是平衡安全和兼容性的最佳方案——只信任带 nonce 标记的脚本，由 `strict-dynamic` 自动传播信任。
+
+  </Step>
+
+</Steps>
+
+**XSS 防御解决的核心问题：**
+
+```text
+问题：用户输入被当作代码执行
+
+攻击者输入：<script>document.cookie</script>
+服务器原样返回 → 浏览器执行脚本 → 窃取 Cookie
+
+解决：输出转义 + CSP + Trusted Types（三层防御）
+
+输出转义：< → &lt;  浏览器只显示文本，不执行
+CSP：限制脚本来源，即使注入也无法加载外部恶意脚本
+Trusted Types：innerHTML 只接受安全类型，不接受原始字符串
+```
+
+**一句话总结：XSS 的本质是信任了用户输入——防御的核心是输出转义（不让输入变成代码），CSP 是纵深防御（即使转义失败也限制脚本来源）。**
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有输出转义">
+
+就像一个公司让访客自己填写名牌，访客在名牌上写"我是 CEO"然后大摇大摆走进会议室。如果前台不检查（输出转义），所有人都会相信他的身份。
+
+</Card>
+</CardGroup>
+<CardGroup cols={2}>
+
+<Card title="✅ 引入输出转义 + CSP">
+
+输出转义相当于前台检查名牌上的文字，把"我是 CEO"改成"我是 CEO"（纯文本显示）。CSP 相当于会议室门口还有人脸识别——即使混进了大楼，没有权限也进不了会议室。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说 XSS 的本质（信任用户输入），再说三种类型（存储/反射/DOM），然后说防御层次（输出转义 → CSP → Trusted Types）。面试官想听的是你理解攻击的本质，而不是背诵"转义特殊字符"。
+
+</Tip>
+
+---
+
+## Q2: CSRF 是什么？怎么防御？
+
+CSRF（Cross-Site Request Forgery）的本质是**浏览器自动携带 Cookie**——用户访问恶意页面，页面自动发请求到目标站点，浏览器自动带上目标站点的 Cookie，服务器无法区分是用户主动发起还是恶意页面自动发起。
+
+```text
+┌───────────────────────────────────────┐
+│  用户登录 bank.com，浏览器保存 Cookie  │  ← 正常登录
+└─────────────────┬─────────────────────┘
+                  │ 用户访问恶意页面
+                  ▼
+┌───────────────────────────────────────┐
+│  恶意页面：<img src="bank.com/transfer  │  ← 自动发起请求
+│    ?to=hacker&amount=10000">           │
+└─────────────────┬─────────────────────┘
+                  │ 浏览器自动带上 bank.com 的 Cookie
+                  ▼
+┌───────────────────────────────────────┐
+│  bank.com 收到请求，Cookie 有效         │  ← 服务器无法区分
+│  执行转账 → 资金被盗                    │
+└───────────────────────────────────────┘
+```
+
+```javascript
+// 防御方案 1：SameSite Cookie（最有效）
+// Strict：完全不发送跨站 Cookie
+// Lax：GET 请求发送，POST 不发送（Chrome 默认值）
+// None：始终发送（必须配合 Secure）
+Set-Cookie: token=xxx; SameSite=Lax; Secure; HttpOnly
+
+// 防御方案 2：CSRF Token
+// 服务器生成随机 token，前端每次请求带上
+// <input type="hidden" name="_csrf" value="xxx">
+fetch('/api/transfer', {
+  headers: { 'X-CSRF-Token': token }
+});
+
+// 防御方案 3：验证 Origin/Referer
+// 服务器检查请求头中的 Origin 是否在白名单
+```
+
+<Warning title="⚠️ 核心机制: SameSite Cookie 的三种值">
+
+`SameSite` 是防御 CSRF 最有效的手段，Chrome 从 v80 开始默认值改为 `Lax`：
+
+- `Strict`：完全不发送跨站 Cookie。最安全但影响体验——从外部链接点击进入网站时没有登录状态。
+- `Lax`：GET 请求发送，POST 不发送。平衡安全和体验，Chrome 默认值。
+- `None`：始终发送，必须配合 `Secure`。用于跨站场景（如第三方嵌入）。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 快递签收">
+
+CSRF 就像有人冒充你去快递站签收包裹。快递站（服务器）只认签名（Cookie），不核实你是不是本人（无法区分请求来源）。`SameSite=Strict` 相当于快递站规定"只有本人亲自来才能签收"——跨站请求就像别人代签，直接拒绝。CSRF Token 相当于每次签收都要输入一个动态验证码——攻击者不知道验证码，即使冒充你也签不了。
+
+</Tip>
+
+---
+
+## Q3: 除了 XSS 和 CSRF，还有哪些常见的 Web 安全威胁？
+
+### 基础梳理
+
+| 攻击类型 | 原理 | 防御手段 | 危害 |
+|---------|------|---------|------|
+| XSS | 注入恶意脚本 | 输出转义 + CSP | 窃取 Cookie/Token |
+| CSRF | 伪造跨站请求 | SameSite Cookie + Token | 伪造用户操作 |
+| 点击劫持 | 透明 iframe 覆盖诱骗点击 | `X-Frame-Options` + CSP `frame-ancestors` | 诱导用户操作 |
+| 中间人攻击 | 拦截网络通信 | HTTPS + HSTS | 窃取/篡改数据 |
+| 开放重定向 | 利用重定向跳转到恶意网站 | 验证重定向目标白名单 | 钓鱼攻击 |
+
+### 专家视角深度剖析
+
+很多候选人只知道 XSS 和 CSRF，但大厂面试官真正在意的是：**你是否理解安全防御的纵深策略？**
+
+安全防御不是单一手段能解决的，而是需要多层防御（Defense in Depth）：
+
+第一层，输入验证：在数据进入系统时进行严格的格式校验和长度限制。但这不能替代输出转义——你不能信任任何客户端输入。
+
+第二层，输出转义：在将数据插入 HTML/CSS/JS 时进行上下文相关的转义。HTML 上下文转义 `<` 和 `>`，JS 上下文转义引号和反斜杠，URL 上下文编码特殊字符。
+
+第三层，CSP：限制脚本来源、禁止内联脚本和 `eval`，即使 XSS 注入成功也无法执行。
+
+第四层，Cookie 安全：`HttpOnly` 阻止 JS 读取 Cookie、`Secure` 只在 HTTPS 下发送、`SameSite` 防御 CSRF。
+
+```javascript
+// 完整的 Cookie 安全配置
+Set-Cookie: session=xxx;
+  HttpOnly;       // JS 无法读取（防御 XSS 窃取）
+  Secure;         // 只在 HTTPS 下发送（防御中间人）
+  SameSite=Lax;   // 防御 CSRF
+  Path=/;         // 限制作用域
+  Max-Age=3600;   // 过期时间
+```
+
+---
+
+## Q4: CSP 和 Trusted Types 是什么？怎么配置？
+
+**CSP（Content Security Policy）的工作原理：**
+CSP 通过 HTTP 响应头或 `<meta>` 标签声明页面允许加载哪些来源的资源。浏览器在执行脚本、加载样式、发起请求前检查是否符合策略。
+
+**CSP 指令的处理顺序：**
+
+| 指令 | 控制范围 | 示例 |
+|------|---------|------|
+| `script-src` | 脚本来源 | `script-src 'self' 'nonce-xxx'` |
+| `style-src` | 样式来源 | `style-src 'self' 'unsafe-inline'` |
+| `img-src` | 图片来源 | `img-src 'self' https://cdn.example.com` |
+| `connect-src` | fetch/XHR/WebSocket | `connect-src 'self' https://api.example.com` |
+| `default-src` | 以上指令的默认值 | `default-src 'self'` |
+
+<Tip title="最佳实践: ">
+
+CSP Level 3 的最佳策略是 `strict-dynamic` + nonce：只信任带 nonce 标记的脚本，`strict-dynamic` 自动传播信任给脚本动态创建的子脚本。这比白名单更安全（白名单容易被绕过），比 `unsafe-inline` 更严格。
+
+`Content-Security-Policy: script-src 'strict-dynamic' 'nonce-xxx'; base-uri 'self'; object-src 'none'`
+
+</Tip>
+
+---
+
+## 🔍 底层源码：Blink 是如何实现 CSP 的？
+
+<div class="follow-up">
+Blink 的 CSP 检查是怎么实现的？
+</div>
+
+Blink 的 CSP 实现在 `ContentSecurityPolicy` 类中（详见 [Blink 源码：content_security_policy.cc](https://source.chromium.org/chromium/chromium/src/+/main/third_party/blink/renderer/core/frame/csp/content_security_policy.cc)）：
+
+```cpp
+// CSP 的核心检查逻辑
+bool ContentSecurityPolicy::AllowFromSource(
+    CSPDirectiveName directive,
+    const KURL& url,
+    const RedirectStatus& redirect_status) {
+  // 遍历所有 CSP 策略（可能有多条 CSP 头）
+  for (const auto& policy : policies_) {
+    // 检查该策略的对应指令是否允许该来源
+    if (!policy->AllowFromSource(directive, url, redirect_status))
+      return false;  // 任一策略拒绝就拒绝
+  }
+  return true;
+}
+
+// CSP 指令的检查顺序：
+// 1. script-src：检查脚本来源
+// 2. style-src：检查样式来源
+// 3. img-src：检查图片来源
+// 4. connect-src：检查 fetch/XHR/WebSocket 来源
+// 5. default-src：以上指令的默认值
+```
+
+CSP 检查器在脚本执行前调用 `AllowFromSource`，遍历所有 CSP 策略（页面可能有多条 CSP 头），任何一条策略拒绝就阻止执行。这确保了即使一条 CSP 配置有漏洞，其他策略仍然提供保护。
+
+<div class="follow-up">
+Trusted Types 是怎么阻止 DOM XSS 的？
+</div>
+
+详见 [Blink 源码：trusted_types_util.cc](https://source.chromium.org/chromium/chromium/src/+/main/third_party/blink/renderer/core/trustedtypes/trusted_types_util.cc)：
+
+```cpp
+// Trusted Types 在 DOM 操作前检查类型
+// innerHTML 赋值时，如果值不是 TrustedHTML 类型，抛 TypeError
+
+// 使用方式：
+// 1. 创建 Trusted Types 策略
+// const policy = trustedTypes.createPolicy('myPolicy', {
+//   createHTML: (input) => sanitize(input)  // 必须经过清理
+// });
+// 2. 使用策略创建安全类型
+// element.innerHTML = policy.createHTML(userInput);
+// 3. 直接赋值原始字符串会报错
+// element.innerHTML = '<script>alert(1)</script>';  // TypeError!
+```
+
+Trusted Types 通过类型系统在运行时阻止 DOM XSS——所有 DOM sink（如 `innerHTML`、`outerHTML`、`insertAdjacentHTML`）只能接受 `TrustedHTML` 等安全类型，不能接受原始字符串。开发者必须通过创建 Policy 来"清洗"用户输入，Policy 中定义了安全检查逻辑。这把安全检查从"开发者记得转义"变成了"类型系统强制检查"。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 XSS 和 CSRF 的区别和防御"
+
+**及格回答（60-70分）：**
+> "XSS 是注入脚本，CSRF 是伪造请求。XSS 用转义和 CSP 防御，CSRF 用 SameSite Cookie 和 CSRF Token 防御。"
+
+面试官评价：**知道规则但不理解设计**。
+
+**满分回答（90-100分）：**
+
+> XSS 的本质是**信任了用户输入**——服务器或前端把用户输入当作 HTML/JS 执行。三种类型：存储型（存入数据库，所有用户受害）、反射型（URL 参数拼接到页面）、DOM 型（前端直接用 innerHTML 渲染）。防御的核心是输出转义（HTML 上下文转义 `<` 和 `>`，JS 上下文转义引号），React/Vue 默认自动转义，`dangerouslySetInnerHTML` / `v-html` 会绕过转义。<sup>[1]</sup>
+
+> CSRF 的本质是**浏览器自动携带 Cookie**——用户访问恶意页面，页面自动发请求到目标站点，浏览器自动带上目标站点的 Cookie。SameSite Cookie 是最有效的防御——Chrome 默认 `Lax`（GET 发送，POST 不发送），`Strict` 最安全但影响体验（外部链接进入网站时没有登录状态）。CSRF Token 让服务器能区分"用户主动发起"和"恶意页面自动发起"的请求。<sup>[2]</sup>
+
+> CSP（Content Security Policy）是纵深防御的关键——限制脚本来源、禁止内联脚本和 `eval`，即使 XSS 注入成功也无法执行。CSP Level 3 的 `strict-dynamic` + nonce 策略是最佳实践。Trusted Types 是 CSP 的补充——通过类型系统在运行时阻止 DOM XSS，要求 `innerHTML` 等 DOM sink 只能接受安全类型。<sup>[3]</sup>
+
+> 实际项目中，安全防御需要多层策略：输入验证（第一道防线）、输出转义（核心防御）、CSP（纵深防御）、Cookie 安全（HttpOnly + Secure + SameSite）。任何单一手段都不能完全防御所有攻击。
+
+### 大厂高频连环拷问
+
+> 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。
+
+<AccordionGroup>
+
+  <Accordion title="React 的 dangerouslySetInnerHTML 为什么危险?怎么安全使用?" icon="layer-group">
+
+**答题要点：**
+指出它绕过自动转义的机制，以及安全使用的前提条件。
+
+**高分回答：**
+"`dangerouslySetInnerHTML` 会绕过 React 的自动转义，直接把字符串作为 HTML 插入 DOM。如果字符串包含用户输入的 `<script>` 标签或事件处理器（如 `<img onerror=alert(1) />`），就会执行恶意脚本。
+    
+安全使用的前提：必须对用户输入进行严格的 HTML 清理。推荐使用 DOMPurify 库：
+    
+    ```javascript
+    import DOMPurify from 'dompurify';
+    element.innerHTML = DOMPurify.sanitize(userInput);
+```
+    
+DOMPurify 会移除所有危险的标签和属性（`<script>`、`onerror`、`javascript:` URL 等），只保留安全的 HTML。但即使使用了 DOMPurify，也要配合 CSP 做纵深防御——因为清理逻辑可能有漏洞。"
+
+  </Accordion>
+
+  <Accordion title="CSP 能完全阻止 XSS 吗?什么情况下会被绕过?" icon="stopwatch">
+
+**答题要点：**
+结合 CSP 的局限性和绕过场景解释。
+
+**高分回答：**
+"CSP 不能完全阻止 XSS，主要有几个绕过场景：
+    
+1）**`unsafe-inline` 和 `unsafe-eval`**：如果 CSP 配置了这两个关键字，XSS 仍然可以执行内联脚本和 `eval`。很多旧项目为了兼容第三方库不得不开启这些。
+2）**JSONP 端点**：如果白名单中包含支持 JSONP 的域名，攻击者可以通过 JSONP 注入脚本。
+3）**base-uri 攻击**：如果 CSP 没有限制 `base-uri`，攻击者可以通过注入 `<base>` 标签改变相对路径的解析基准。
+4）**CSS 注入**：`style-src` 如果允许 `unsafe-inline`，攻击者可以通过 CSS 泄露数据（CSS exfiltration）。
+    
+最佳实践：用 `strict-dynamic` + nonce 替代白名单，`base-uri 'self'`，`object-src 'none'`。"
+
+  </Accordion>
+
+  <Accordion title="SameSite Cookie 的三种值在实际业务中怎么选择?" icon="node">
+
+**答题要点：**
+必须分场景讨论——不同业务场景需要不同的 SameSite 配置。
+
+**高分回答：**
+"SameSite 的选择取决于业务场景：
+    
+**Strict**：最安全，但影响用户体验。适用场景：银行、支付等高安全要求的系统。缺点：用户从搜索引擎或邮件链接点击进入网站时，没有登录状态，需要重新登录。
+    
+**Lax**：Chrome 默认值，平衡安全和体验。GET 请求发送 Cookie，POST 不发送。适用于大多数 Web 应用。用户从外部链接点击进入网站时有登录状态（GET 请求），但 POST 请求不会自动携带 Cookie（防御 CSRF）。
+    
+**None**：始终发送，必须配合 `Secure`。适用场景：跨站嵌入（如第三方支付 iframe、OAuth 回调）。注意：如果忘了加 `Secure`，Cookie 会被浏览器拒绝。
+    
+实际建议：默认用 `Lax`，只有明确需要跨站场景时才用 `None`。高安全系统用 `Strict`，配合其他手段（如 URL 中带 token）解决体验问题。"
+
+  </Accordion>
+
+  <Accordion title="🔥 点击劫持 (Clickjacking) 是什么?怎么防御?" icon="skull">
+
+**答题要点：**
+对比常见攻击，点出点击劫持的隐蔽性和防御方式。
+
+**高分回答：**
+"点击劫持是攻击者用透明的 `<iframe>` 嵌入目标网站，覆盖在一个诱骗页面上。用户以为点击的是诱骗页面上的按钮（如'领取奖品'），实际上点击的是透明 iframe 中的目标网站按钮（如'确认转账'）。
+    
+防御方式：
+1）**X-Frame-Options**：HTTP 响应头，控制页面是否可以被 iframe 嵌入。`DENY` 完全禁止嵌入，`SAMEORIGIN` 只允许同源嵌入。
+2）**CSP frame-ancestors**：CSP Level 2 引入，比 X-Frame-Options 更灵活。可以指定允许嵌入的来源白名单。
+3）**JavaScript frame-busting**：在页面中检测自己是否被嵌入，如果是就跳出 iframe。但这种方法可以被 `sandbox` 属性绕过。
+    
+最佳实践：同时配置 `X-Frame-Options: SAMEORIGIN` 和 `Content-Security-Policy: frame-ancestors 'self'`。对于不需要被嵌入的页面（如登录页、支付页），用 `DENY` 完全禁止。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [OWASP Top Ten](https://owasp.org/www-project-top-ten/)：Web 应用最关键的十大安全风险，定期更新的安全威胁清单。<sup>[1]</sup>
+- 📖 [MDN: Content Security Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP)：Mozilla 对 CSP 指令的完整参考，含配置示例和最佳实践。<sup>[2]</sup>
+- 🟢 [Trusted Types API 规范](https://w3c.github.io/trusted-types/dist/spec/)：W3C 对 Trusted Types 的权威定义，理解如何通过类型系统阻止 DOM XSS。<sup>[3]</sup>

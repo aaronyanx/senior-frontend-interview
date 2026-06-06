@@ -1,0 +1,1113 @@
+---
+title: "Event Loop"
+---
+
+> **面试官为什么问这个？**
+>
+> Event Loop 是 JavaScript 最核心的运行机制。面试官问这个，本质上是在考察你：**你写的每一行异步代码，到底是什么时候执行的？** 如果你答不清楚，说明你对 JS 的理解停留在"能跑"而不是"知道为什么这么跑"。
+
+---
+
+## Q1: Event Loop 的历史？为什么要有它？
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  同步代码    │ → │  微任务队列  │ → │  浏览器渲染  │ → │  宏任务队列  │
+│  (Call Stack)│   │ (Microtask)  │   │ (Layout/Paint│   │ (Macrotask)  │
+│              │   │              │   │  /Composite) │   │              │
+└──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
+       ↑                                                         │
+       └─────────────────────────────────────────────────────────┘
+                              无限循环
+```
+
+<Steps>
+
+  <Step title="1995年: JS 诞生与单线程宿命">
+
+    Brendan Eich 用 10 天设计了 JavaScript。JS 被设计为**单线程语言**，原因是它的核心场景是操作 DOM——如果两个线程同时修改同一个 DOM 节点（一个删、一个改），会产生竞态问题。
+
+  </Step>
+  <Step title="致命痛点: 同步阻塞">
+
+    单线程带来一个致命问题：**如果一段代码在等网络请求或用户输入，整个页面就卡住了。**
+
+  </Step>
+  <Step title="1996年: Event Loop 机制引入">
+
+    Netscape 2.0 引入了 `setTimeout`，让 JS 可以"延迟执行"代码。但底层怎么实现？浏览器需要一个机制来管理这些"稍后执行"的代码——这就是 Event Loop。
+
+  </Step>
+
+</Steps>
+
+**Event Loop 解决的核心问题：**
+
+```text
+问题：单线程 + 同步执行 = 阻塞
+
+用户点击按钮 → 发网络请求 → 等服务器响应（3秒）→ 页面阻塞 3 秒
+
+解决：把"等"的事情交给浏览器（它不是单线程的），
+     JS 继续执行后面的代码，等结果回来再处理
+
+用户点击按钮 → 发网络请求 → JS 继续执行 → 服务器响应到了 → JS 再处理
+```
+
+<Note title="💡 一句话总结">
+
+Event Loop 让单线程的 JS 可以非阻塞地处理异步任务。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有 Event Loop">
+
+如果开一家餐厅，又当服务员又当厨师（单线程同步）。客人点完单，你跑去后厨炒菜，这时新来的客人只能干瞪眼等着（阻塞）。
+
+</Card>
+<Card title="✅ 引入 Event Loop">
+
+有了 Event Loop 后，相当于雇了厨师（浏览器的 Web API 多线程）。你（主线程）只负责招待客人，把菜单递给厨房后，立刻去接待下一桌。等厨师把菜做好了，按一下响铃（把回调放入任务队列），你听到铃声再去把菜端给客人。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先给宏观框架（30 秒说出 4 个阶段），然后等面试官追问某一步的细节。这展示了你的知识体系和沟通能力。不要一上来就背诵 V8 源码。
+
+
+</Tip>
+
+---
+
+## Q2: 同步代码的执行机制
+
+同步代码在调用栈（Call Stack）中执行。调用栈是一个后进先出（LIFO）的数据结构，每次调用函数就压入一个栈帧，函数返回就弹出。
+
+```text
+┌───────────────────────────────────────┐
+│           Call Stack（调用栈）         │  ← 同步代码在这里执行
+│  ┌─────────────────────────────────┐  │
+│  │ main()                          │  │
+│  │   └─ foo()                      │  │
+│  │       └─ bar()  ← 当前执行      │  │
+│  └─────────────────────────────────┘  │
+└───────────────────────────────────────┘
+```
+
+```javascript
+// 调用栈的执行过程
+function bar() { return 1; }
+function foo() { return bar(); }
+foo(); // main → foo → bar → bar 返回 → foo 返回 → main 返回
+```
+
+<Warning title="⚠️ 核心机制: 调用栈阻塞">
+
+调用栈是单线程的——同一时间只能执行一个函数。如果一个函数执行时间过长（如死循环、大量计算），调用栈就一直被占用，后续的同步代码、微任务、宏任务、渲染都无法执行。
+
+- 这就是为什么 `while(true)` 会导致页面阻塞。
+- 这也是为什么需要异步——把耗时操作交给浏览器后台线程，JS 主线程继续执行。
+
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 排队结账">
+
+调用栈就像超市收银台——只有一个窗口（单线程），每次只能服务一位顾客（执行一个函数）。如果前面的顾客买了整整一车东西（耗时操作），后面的顾客只能干等。Event Loop 的作用就是：把"等快递"这种耗时的事情交给快递员（浏览器后台线程），收银员继续服务下一位顾客。
+
+
+</Tip>
+
+### 执行上下文的类型
+
+执行上下文（Execution Context）有三种类型：
+
+| 类型 | 说明 | 存储位置 |
+|------|------|---------|
+| **全局执行上下文** | 代码首次执行时创建，`this` 指向 `window` | 调用栈底部 |
+| **函数执行上下文** | 每次调用函数时创建，函数执行完销毁 | 调用栈中 |
+| **Eval 执行上下文** | `eval()` 函数内部的代码 | 调用栈中（不推荐使用） |
+
+```javascript
+// 执行上下文的创建过程
+var x = 10;           // 全局执行上下文
+function foo() {      // 函数执行上下文
+  var y = 20;
+  function bar() {    // 函数执行上下文
+    var z = 30;
+    return x + y + z; // 沿作用域链查找 x, y, z
+  }
+  return bar();
+}
+foo(); // 调用栈：main → foo → bar
+```
+
+### 作用域链与闭包
+
+作用域链（Scope Chain）是执行上下文创建时生成的变量对象链。当访问一个变量时，引擎会沿着作用域链从内到外查找。
+
+闭包（Closure）的本质是：函数记住了它被创建时的词法环境。当一个内部函数引用了外部函数的变量，即使外部函数执行完毕，这些变量也不会被垃圾回收——因为内部函数还持有对它们的引用。
+
+```javascript
+// 闭包的本质：函数记住词法环境
+function createCounter() {
+  let count = 0;        // 这个变量被闭包"记住"了
+  return function() {
+    return ++count;     // 每次调用都访问同一个 count
+  };
+}
+const counter = createCounter();
+console.log(counter()); // 1
+console.log(counter()); // 2
+// createCounter 执行完毕，但 count 没有被回收
+```
+
+---
+
+## Q3: 微任务队列的执行机制
+
+调用栈清空后，引擎会彻底清空微任务队列。微任务的优先级高于宏任务——必须把所有微任务执行完，才能进入下一个阶段。
+
+```text
+┌───────────────────────────────────────┐
+│        Microtask Queue（微任务队列）   │  ← Promise.then, queueMicrotask
+│  ┌─────────────────────────────────┐  │
+│  │ 微任务 1 → 微任务 2 → 微任务 3  │  │
+│  └─────────────────────────────────┘  │
+└───────────────────────────────────────┘
+         │
+         ▼  全部清空（包括新产生的）
+    进入渲染阶段或取宏任务
+```
+
+```javascript
+// 微任务的执行顺序
+console.log('1');                    // 同步
+setTimeout(() => console.log('2'), 0); // 宏任务
+Promise.resolve().then(() => console.log('3')); // 微任务
+console.log('4');                    // 同步
+
+// 输出：1 → 4 → 3 → 2
+// 同步代码先执行 → 清空微任务 → 取宏任务
+```
+
+<Warning title="⚠️ 核心机制: 微任务必须彻底清空">
+
+Event Loop 的铁律：**必须把当前的微任务队列彻底清空，才能进入下一个阶段（渲染或下一个宏任务）。**
+
+- 如果微任务中又产生了新的微任务，新产生的也会在本轮清空——不会推迟到下一轮。
+- 这意味着如果微任务无限递归产生新微任务，主线程会永远阻塞在这一步，页面彻底无响应。
+- 宏任务不存在这个问题——每次只取一个宏任务执行，执行完就有机会去渲染和响应用户输入。
+
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 排队坐过山车">
+
+宏任务就像去游乐园排队坐过山车。坐完一次，如果你想再坐，必须乖乖去队尾重新排队。微任务拥有 VVIP 特权——坐完过山车下来，直接走到工作人员面前说"我马上还要再坐一次"。只要微任务队列里还有人（不管是不是中途刚加进来的），工作人员就必须一直服务他们，直到微任务队伍彻底空了，才能去接待大队伍里排队的下一个人（下一个宏任务）。
+
+
+</Tip>
+
+### 微任务的分类
+
+| 微任务类型 | 说明 | 适用环境 |
+|-----------|------|---------|
+| **Promise.then/catch/finally** | Promise 的回调 | 浏览器 + Node.js |
+| **queueMicrotask()** | 显式添加微任务 | 浏览器 + Node.js |
+| **MutationObserver** | DOM 变化监听 | 浏览器 |
+| **process.nextTick** | Node.js 特有 | Node.js |
+
+```javascript
+// 微任务的各种来源
+Promise.resolve().then(() => console.log('promise'));
+queueMicrotask(() => console.log('microtask'));
+
+// MutationObserver（浏览器）
+const observer = new MutationObserver(() => console.log('mutation'));
+observer.observe(document.body, { childList: true });
+document.body.appendChild(document.createElement('div'));
+// 输出：mutation
+```
+
+### process.nextTick vs Promise.then（Node.js）
+
+在 Node.js 中，`process.nextTick` 的优先级**高于** `Promise.then`。原因是 `process.nextTick` 属于 Node.js 自己的底层机制，存放在 `nextTickQueue` 中；而 `Promise.then` 属于 V8 引擎的机制，存放在 `microtaskQueue` 中。
+
+```javascript
+// Node.js 中的优先级
+process.nextTick(() => console.log('nextTick 1'));
+Promise.resolve().then(() => console.log('promise 1'));
+process.nextTick(() => console.log('nextTick 2'));
+
+// 输出：nextTick 1 → nextTick 2 → promise 1
+// process.nextTick 全部执行完，才执行 Promise.then
+```
+
+<Warning title="⚠️ process.nextTick 的滥用风险">
+
+`process.nextTick` 会在当前阶段结束、切换到下一阶段前立即执行。如果在 `process.nextTick` 中不断递归产生新的 `process.nextTick`，会饥饿整个 I/O 轮询——Node.js 永远无法进入下一个阶段，I/O 回调永远无法执行。
+
+```javascript
+// ❌ 饥饿 I/O——Node.js 永远卡在 nextTick 阶段
+function recursiveNextTick() {
+  process.nextTick(recursiveNextTick);
+}
+recursiveNextTick(); // I/O 回调永远不会执行
+
+// ✅ 用 setImmediate 替代——不会饥饿 I/O
+function recursiveImmediate() {
+  setImmediate(recursiveImmediate);
+}
+recursiveImmediate(); // 每次执行完都有机会处理 I/O
+```
+
+
+</Warning>
+
+---
+
+## Q4: 浏览器渲染阶段
+
+微任务清空后，浏览器判断是否需要渲染。如果距离上次渲染超过 16.6ms（60Hz），就会执行渲染。
+
+```text
+微任务清空 → 浏览器判断是否渲染？
+              │
+              ├─ 不需要 → 直接取宏任务
+              │
+              └─ 需要渲染 → rAF → Layout → Paint → Composite → 取宏任务
+```
+
+渲染阶段的执行顺序：
+
+| 阶段 | 做什么 | 代价 |
+|------|--------|------|
+| **requestAnimationFrame** | 在渲染前执行动画回调 | 低 |
+| **Layout（重排）** | 计算每个节点的几何信息 | 高 |
+| **Paint（重绘）** | 生成绘制指令列表 | 中 |
+| **Composite（合成）** | GPU 合成最终画面 | 低 |
+
+<Warning title="⚠️ JS 阻塞渲染">
+
+JS 执行和页面渲染共用同一个主线程。JS 执行时，渲染必须等待。如果一段 JS 代码执行了 3 秒，这 3 秒内浏览器没有机会执行渲染——页面白屏，无法交互。
+
+```javascript
+// ❌ 阻塞渲染 3 秒——页面白屏
+const start = Date.now();
+while (Date.now() - start < 3000) {}
+```
+
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 装修房子">
+
+Layout 就像施工队量房间尺寸、算家具位置（几何计算）。Paint 就像按图纸刷墙、铺地板（绘制指令）。Composite 就像最后的软装——把家具摆好、挂上窗帘（GPU 合成）。如果只是换个窗帘颜色（opacity 变化），不需要重新量房间（重排），直接换就行。
+
+
+</Tip>
+
+### 重排（Reflow）的触发条件
+
+重排需要重新计算节点的几何信息，代价最高。触发条件：
+
+- DOM 增删（插入/删除节点）
+- 元素尺寸变化（`width`、`height`、`padding`、`margin`、`border`）
+- 内容变化（文本增减、图片尺寸变化）
+- 浏览器窗口 resize
+- 读取布局属性（`offsetWidth`、`offsetHeight`、`getComputedStyle`、`getBoundingClientRect`）
+
+```javascript
+// ❌ 强制同步布局：读取 → 修改 → 读取 → 修改（多次重排）
+for (const el of elements) {
+  el.style.width = el.offsetWidth + 10 + 'px'; // 每次循环都重排
+}
+
+// ✅ 批量读取 → 批量修改（一次重排）
+const widths = elements.map(el => el.offsetWidth);
+elements.forEach((el, i) => el.style.width = widths[i] + 10 + 'px');
+```
+
+### 重绘（Repaint）的触发条件
+
+重绘只需要重新生成绘制指令，不影响布局，代价较低。触发条件：
+
+- 颜色变化（`color`、`background-color`、`border-color`）
+- 阴影变化（`box-shadow`、`text-shadow`）
+- 可见性变化（`visibility`、`outline`）
+- 文本装饰变化（`text-decoration`）
+
+### Composite 阶段的优化
+
+合成阶段由 GPU 执行，只需要矩阵变换，不需要重排重绘。触发合成的操作：
+
+- `transform`（位移、缩放、旋转）
+- `opacity`（透明度）
+- `will-change`（提前告知浏览器哪些属性会变化）
+
+```javascript
+// 只触发 Composite，不触发 Layout 和 Paint
+element.style.transform = 'translateX(100px)';
+element.style.opacity = 0.5;
+
+// 触发 Layout + Paint + Composite，性能差
+element.style.left = '100px';
+element.style.width = '200px';
+```
+
+---
+
+## Q5: 宏任务的执行机制
+
+渲染完成后（或跳过渲染），从宏任务队列中取出一个任务执行。每次只取一个——执行完后回到步骤 1，开始下一轮循环。
+
+```text
+┌───────────────────────────────────────┐
+│       Macrotask Queue（宏任务队列）    │  ← setTimeout, setInterval, I/O
+│  ┌─────────────────────────────────┐  │
+│  │ 宏任务 1 → 宏任务 2 → 宏任务 3  │  │
+│  └─────────────────────────────────┘  │
+└───────────────────────────────────────┘
+         │
+         ▼  每次只取一个
+    执行完 → 回到步骤 1（执行同步代码 → 清空微任务 → 渲染 → 取下一个宏任务）
+```
+
+**宏任务和微任务的分类：**
+
+| 类型 | 包含 | 优先级 |
+|------|------|--------|
+| **同步代码** | 所有 JS 语句 | 最高 |
+| **微任务** | Promise.then/catch/finally、queueMicrotask、MutationObserver、process.nextTick（Node.js） | 高 |
+| **宏任务** | setTimeout/setInterval、I/O、UI 渲染、requestAnimationFrame（特殊） | 低 |
+
+<Warning title="⚠️ 微任务 vs 宏任务的本质区别">
+
+微任务在当前宏任务执行完后**立即清空**，宏任务每次只取一个。这意味着：
+
+- 微任务适合：需要在当前操作完成后、渲染前批量处理的逻辑（如 Vue 的 `$nextTick`）
+- 宏任务适合：可以推迟到下一轮循环的逻辑（如 `setTimeout` 做时间切片）
+
+```javascript
+// ❌ 微任务无限递归——页面阻塞
+function loop() {
+  Promise.resolve().then(loop);
+}
+loop(); // 主线程永远阻塞在清空微任务，无法渲染
+
+// ✅ 宏任务递归——页面不阻塞
+function loop() {
+  setTimeout(loop, 0);
+}
+loop(); // 每次执行完一个宏任务，都有机会渲染
+```
+
+
+</Warning>
+
+### 宏任务的分类
+
+| 宏任务类型 | 说明 | 适用环境 |
+|-----------|------|---------|
+| **setTimeout/setInterval** | 定时器回调 | 浏览器 + Node.js |
+| **I/O 回调** | 文件读写、网络请求 | 浏览器 + Node.js |
+| **UI 渲染** | 浏览器渲染 | 浏览器 |
+| **requestAnimationFrame** | 动画回调（特殊） | 浏览器 |
+| **setImmediate** | Node.js 特有 | Node.js |
+| **MessageChannel** | 消息通道 | 浏览器 + Node.js |
+
+### requestAnimationFrame 的执行时机
+
+`requestAnimationFrame`（rAF）严格说不是宏任务也不是微任务——它在浏览器渲染前执行。
+
+```javascript
+// 执行顺序：
+同步代码 → 微任务 → rAF → 浏览器渲染 → 宏任务
+
+// rAF 保证在每一帧渲染前执行
+function animate() {
+  element.style.transform = `translateX(${x}px)`;
+  x += 1;
+  if (x < 300) requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+// 比 setTimeout(fn, 16) 更准确，因为它与显示器刷新率同步
+```
+
+<Warning title="⚠️ rAF vs setTimeout 做动画">
+
+`setTimeout(fn, 16)` 的问题：
+1. 最小延迟 4ms 的限制
+2. 回调执行时间和渲染时机不同步，可能在帧中间执行导致掉帧
+3. 后台标签页中 `setTimeout` 继续执行（浪费资源），rAF 自动暂停（省电）
+
+```javascript
+// ❌ setTimeout 做动画——不准确
+setTimeout(() => {
+  element.style.transform = `translateX(${x}px)`;
+  x += 1;
+  if (x < 300) setTimeout(animate, 16); // 实际延迟 > 16ms
+}, 16);
+
+// ✅ rAF 做动画——与渲染同步
+function animate() {
+  element.style.transform = `translateX(${x}px)`;
+  x += 1;
+  if (x < 300) requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+```
+
+
+</Warning>
+
+---
+
+## Q6: 经典面试题：输出顺序是什么？
+
+```javascript
+console.log('1');
+
+setTimeout(() => console.log('2'), 0);
+
+Promise.resolve().then(() => console.log('3')).then(() => console.log('4'));
+
+new Promise((resolve) => {
+  console.log('5');
+  resolve();
+}).then(() => console.log('6'));
+
+console.log('7');
+```
+
+**逐步分析：**
+
+```text
+第一步：执行同步代码（调用栈）
+  console.log('1')           → 输出 1
+  setTimeout(...)            → 推入宏任务队列
+  Promise.resolve().then(...)| → 推入微任务队列 1
+  new Promise(executor)      → executor 是同步的！
+    console.log('5')         → 输出 5
+    resolve()                → .then 推入微任务队列 2
+  console.log('7')           → 输出 7
+
+第二步：清空微任务队列
+  执行微任务 1：console.log('3') → 输出 3
+    .then 返回新 Promise，推入微任务队列 3
+  执行微任务 2：console.log('6') → 输出 6
+  执行微任务 3：console.log('4') → 输出 4
+
+第三步：执行宏任务
+  执行 setTimeout：console.log('2') → 输出 2
+
+最终输出：1 → 5 → 7 → 3 → 6 → 4 → 2
+```
+
+<Warning title="⚠️ 常见错误: new Promise(executor) 是同步的">
+
+`new Promise(executor)` 里的代码是**同步执行**的，只有 `.then` 回调才是微任务。很多人把 `console.log('5')` 当成微任务，这是最常见的错误。
+
+```javascript
+// ❌ 错误理解：以为 console.log('5') 是微任务
+new Promise((resolve) => {
+  console.log('5'); // 这是同步代码！不是微任务
+  resolve();
+}).then(() => console.log('6')); // 这才是微任务
+```
+
+
+</Warning>
+
+### 进阶题：async/await 与 Event Loop 混战
+
+这是各大厂出场率最高的一道终极输出题：
+
+```javascript
+console.log('script start');
+
+async function async1() {
+  await async2();
+  console.log('async1 end');
+}
+async function async2() {
+  console.log('async2 end');
+}
+async1();
+
+setTimeout(function() {
+  console.log('setTimeout');
+}, 0);
+
+new Promise(resolve => {
+  console.log('Promise');
+  resolve();
+}).then(function() {
+  console.log('promise1');
+}).then(function() {
+  console.log('promise2');
+});
+
+console.log('script end');
+```
+
+<Card title="💡 破题心法: async/await 的本质" icon="wand-magic-sparkles">
+
+面试遇到 async/await 千万别慌，只要牢记这个核心转换公式：
+
+</Card>
+
+### async/await 的本质
+
+`async/await` 是 `Promise.then` 的语法糖。核心转换公式：
+
+```javascript
+// async/await 写法
+async function foo() {
+  console.log('1');
+  await bar();
+  console.log('2'); // 这行变成微任务
+}
+
+// 等价于 Promise.then 写法
+function foo() {
+  console.log('1');
+  bar().then(() => {
+    console.log('2'); // 微任务
+  });
+}
+```
+
+**记住两点：**
+1. `await` 右边的函数**立刻同步执行**
+2. `await` 下面的代码被打包进**隐形的 `Promise.then()`**，变成微任务
+
+### 输出顺序的解题框架
+
+遇到输出顺序题，按以下步骤分析：
+
+```text
+第一步：执行同步代码（调用栈）
+  - 所有 console.log 立刻输出
+  - setTimeout → 推入宏任务队列
+  - Promise.resolve().then() → 推入微任务队列
+  - new Promise(executor) → executor 是同步的！
+  - await 右侧同步执行，下方代码推入微任务队列
+
+第二步：清空微任务队列
+  - 按顺序执行所有微任务
+  - 如果微任务中产生新微任务，继续清空
+
+第三步：执行宏任务
+  - 每次只取一个宏任务执行
+  - 执行完回到第一步
+```
+
+---
+
+## Q7: Node.js 的 Event Loop 和浏览器有什么区别？
+
+Node.js 的 Event Loop 有 **6 个阶段**，按顺序循环执行：
+
+```text
+   ┌───────────────────────────┐
+┌─>│         timers            │  ← setTimeout / setInterval
+│  └─────────────┬─────────────┘
+│  ┌─────────────┴─────────────┐
+│  │     pending callbacks     │  ← 系统级回调（TCP 错误等）
+│  └─────────────┬─────────────┘
+│  ┌─────────────┴─────────────┐
+│  │       idle, prepare       │  ← 内部使用
+│  └─────────────┬─────────────┘
+│  ┌─────────────┴─────────────┐
+│  │          poll             │  ← I/O 操作（文件读写、网络）
+│  └─────────────┬─────────────┘
+│  ┌─────────────┴─────────────┐
+│  │          check            │  ← setImmediate
+│  └─────────────┬─────────────┘
+│  ┌─────────────┴─────────────┐
+│  │      close callbacks      │  ← socket.on('close')
+│  └───────────────────────────┘
+```
+
+**关键区别：**
+
+| 对比维度 | 浏览器 | Node.js |
+|---------|--------|---------|
+| 微任务执行时机 | 每个宏任务后清空 | 每个宏任务后清空（11+ 对齐浏览器） |
+| 微任务优先级 | Promise.then | process.nextTick > Promise.then |
+| 宏任务类型 | setTimeout/setInterval/I/O | 6 个阶段，每种对应不同的宏任务 |
+| 渲染 | 有（16.6ms 一帧） | 无 |
+
+```javascript
+// Node.js 经典题：setImmediate vs setTimeout(0)
+setImmediate(() => console.log('immediate'));
+setTimeout(() => console.log('timeout'), 0);
+// 输出顺序不确定！取决于进入 event loop 的时机
+
+// 但在 I/O 回调中，setImmediate 一定先执行
+const fs = require('fs');
+fs.readFile(__filename, () => {
+  setImmediate(() => console.log('immediate')); // 先
+  setTimeout(() => console.log('timeout'), 0);  // 后
+});
+```
+
+<Warning title="⚠️ process.nextTick 的优先级">
+
+`process.nextTick` 属于 Node.js 自己的底层机制，存放在 `nextTickQueue` 中；而 `Promise.then` 属于 V8 引擎的机制，存放在 `microtaskQueue` 中。在进入每一个阶段之前，Node.js 都会强制优先清空 `nextTickQueue`，然后再把控制权交给 V8 清空 Promise 队列。
+
+```javascript
+// process.nextTick 永远快于 Promise.then
+process.nextTick(() => console.log('nextTick'));
+Promise.resolve().then(() => console.log('promise'));
+
+// 输出：nextTick → promise
+```
+
+
+</Warning>
+
+### 6 个阶段的详细说明
+
+| 阶段 | 说明 | 对应 API |
+|------|------|---------|
+| **timers** | 执行到期的定时器回调 | `setTimeout`、`setInterval` |
+| **pending callbacks** | 执行系统级回调 | TCP 错误等 |
+| **idle, prepare** | 内部使用 | - |
+| **poll** | 执行 I/O 回调，阻塞等待新 I/O 事件 | 文件读写、网络 |
+| **check** | 执行 `setImmediate` 回调 | `setImmediate` |
+| **close callbacks** | 执行 close 事件回调 | `socket.on('close')` |
+
+```text
+   ┌───────────────────────────┐
+┌─>│         timers            │  ← setTimeout / setInterval
+│  └─────────────┬─────────────┘
+│  ┌─────────────┴─────────────┐
+│  │     pending callbacks     │  ← 系统级回调（TCP 错误等）
+│  └─────────────┬─────────────┘
+│  ┌─────────────┴─────────────┐
+│  │       idle, prepare       │  ← 内部使用
+│  └─────────────┬─────────────┘
+│  ┌─────────────┴─────────────┐
+│  │          poll             │  ← I/O 操作（文件读写、网络）
+│  └─────────────┬─────────────┘
+│  ┌─────────────┴─────────────┐
+│  │          check            │  ← setImmediate
+│  └─────────────┬─────────────┘
+│  ┌─────────────┴─────────────┐
+│  │      close callbacks      │  ← socket.on('close')
+│  └───────────────────────────┘
+```
+
+### setImmediate vs setTimeout(0)
+
+```javascript
+// 在全局作用域下：顺序不确定
+setImmediate(() => console.log('immediate'));
+setTimeout(() => console.log('timeout'), 0);
+// 取决于进入 event loop 的时机（>1ms 还是 <1ms）
+
+// 但在 I/O 回调中：setImmediate 一定先执行
+const fs = require('fs');
+fs.readFile(__filename, () => {
+  setImmediate(() => console.log('immediate')); // 先
+  setTimeout(() => console.log('timeout'), 0);  // 后
+});
+// 因为 I/O 回调在 poll 阶段执行，poll 结束后直接进入 check 阶段
+```
+
+<Warning title="⚠️ setTimeout(0) 在 Node.js 中的实际延迟">
+
+在 Node.js 中，`setTimeout(0)` 会被转化为 `setTimeout(1)`。这意味着：
+
+- 如果 Node.js 启动耗时 > 1ms，进入 event loop 时 timer 已到期，在 timers 阶段执行
+- 如果 Node.js 启动耗时 < 1ms，进入 event loop 时 timer 未到期，跳过 timers 阶段
+
+这就是为什么 `setTimeout(0)` 和 `setImmediate` 的顺序不确定。
+
+
+</Warning>
+
+---
+
+## Q8: 为什么 setTimeout(fn, 0) 不是立即执行？
+
+```javascript
+// 浏览器规范规定：setTimeout 的最小延迟是 4ms
+// 当嵌套层级超过 5 层时，delay 强制设为 4ms
+
+setTimeout(() => {
+  setTimeout(() => {
+    setTimeout(() => {
+      setTimeout(() => {
+        setTimeout(() => {
+          // 第 5 层嵌套，delay 被强制设为 4ms
+        }, 0); // 实际延迟 4ms
+      }, 0);
+    }, 0);
+  }, 0);
+}, 0);
+```
+
+**为什么不是 0ms？有两个维度的原因：**
+
+1. **规范限制**：HTML5 标准明确规定，当 `setTimeout` 的嵌套层级超过 5 层时，浏览器必须强制加上最小 4ms 的延迟。在 Chromium 源码中，这个常量被定义为 `kMaxTimerNestingLevel = 5` 和 `kMinimumInterval = 4ms`。
+
+2. **Event Loop 机制**：即使没有嵌套，`setTimeout` 也只是把回调放入宏任务队列。如果当前调用栈很深，或者微任务队列里有海量任务，`setTimeout` 必须排队等待。所以 0ms 只是"最快在 0ms 后进入队列"，而不是"0ms 后执行"。
+
+<Tip title="🎢 通俗比喻: 电影院排队">
+
+`setTimeout(fn, 0)` 就像你去电影院买票，售票员说"你去 3 号厅等"（放入宏任务队列）。但你现在还在 1 号厅看电影（当前宏任务还没执行完），看完电影后还要去洗手间（清空微任务），然后才能去 3 号厅。所以"0ms 后去 3 号厅"不等于"0ms 后就到了 3 号厅"。
+
+
+</Tip>
+
+### 4ms 最小延迟的规范
+
+HTML5 标准明确规定：当 `setTimeout` 的嵌套层级超过 5 层时，浏览器必须强制加上最小 4ms 的延迟。
+
+在 Chromium 源码中，这个常量被定义为：
+- `kMaxTimerNestingLevel = 5`
+- `kMinimumInterval = 4ms`
+
+```javascript
+// 嵌套层级与实际延迟
+setTimeout(() => {
+  setTimeout(() => {
+    setTimeout(() => {
+      setTimeout(() => {
+        setTimeout(() => {
+          // 第 5 层嵌套，delay 被强制设为 4ms
+        }, 0); // 实际延迟 4ms
+      }, 0);
+    }, 0);
+  }, 0);
+}, 0);
+```
+
+### 嵌套层级超过 5 层的限制
+
+为什么规范要设置这个限制？原因是防止恶意代码通过无限嵌套 `setTimeout(fn, 0)` 来占用 CPU 资源。4ms 的延迟虽然很小，但足以让浏览器有机会处理其他任务（如渲染、用户输入）。
+
+```javascript
+// ❌ 无限嵌套 setTimeout——CPU 占用高
+function loop() {
+  setTimeout(loop, 0); // 嵌套层级不断增加，延迟从 0ms → 4ms
+}
+
+// ✅ 用 requestAnimationFrame 做动画——与渲染同步
+function animate() {
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+```
+
+---
+
+## 🔍 底层源码：V8 与 Chromium 是如何实现的？
+
+<div class="follow-up">
+V8 的微任务队列是怎么实现的？
+</div>
+
+V8 内部用环形缓冲区（Ring Buffer）实现微任务队列（详见 [V8 源码：src/execution/microtask-queue.cc#L166](https://github.com/v8/v8/blob/main/src/execution/microtask-queue.cc#L166)）：
+
+```cpp
+class MicrotaskQueue {
+  static const int kRingBufferOffset;
+  static const int kCapacityOffset;
+  static const int kSizeOffset;
+  static const int kStartOffset;
+
+  // 环形缓冲区：enqueue 时 size++，dequeue 时 start++
+  void EnqueueMicrotask(Microtask* microtask);
+  void RunMicrotasks(Isolate* isolate);
+};
+
+// RunMicrotasks 的核心逻辑：
+// while (current_index < size_) {
+//   microtask = buffer_[current_index++];
+//   microtask->Run(isolate);
+// }
+// 循环执行直到所有微任务清空（包括新产生的微任务）
+```
+
+<div class="follow-up">
+浏览器的 Event Loop 在 Blink 中怎么实现？
+</div>
+
+详见 [Blink 源码：third_party/blink/renderer/platform/scheduler/](https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/platform/scheduler/)：
+
+```cpp
+// MessagePumpDefault::Run() 是真正的事件循环
+
+// 5 种任务队列：
+// 1. Input（用户输入，最高优先级）
+// 2. Compositor（合成器，高优先级）
+// 3. Default（普通任务）
+// 4. Timer（定时器）
+// 5. Idle（空闲任务，最低优先级）
+
+// 每一帧（16.67ms）的时间分配：
+// 5ms 给 JS 执行
+// 11ms 给浏览器渲染
+// 如果 JS 超过 5ms，这一帧就不渲染
+```
+
+<div class="follow-up">
+Node.js 的 Event Loop 在 libuv 中怎么实现？
+</div>
+
+Node.js 的 Event Loop 实现在 [`deps/uv/src/unix/core.c#L427`](https://github.com/libuv/libuv/blob/cdc632c68feb3961f84ea109295db38dfa082347/src/unix/core.c#L427) 的 `uv_run` 函数中：
+
+```c
+// uv_run 的简化逻辑
+while (r != 0 && loop->stop_flag == 0) {
+  uv__update_time(loop);           // 更新时间
+  uv__run_timers(loop);            // 1. timers：执行到期的 setTimeout/setInterval
+  ran_pending = uv__run_pending(loop); // 2. pending callbacks：执行已完成的 I/O 回调
+  uv__run_idle(loop);              // 3. idle：内部使用
+  uv__run_prepare(loop);           // 4. prepare：内部使用
+  uv__io_poll(loop, timeout);      // 5. poll：阻塞等待 I/O 事件（核心）
+  uv__run_check(loop);             // 6. check：执行 setImmediate
+  uv__run_closing_handles(loop);   // 7. close callbacks：执行 close 事件
+}
+```
+
+`uv__io_poll` 是核心——它调用 epoll_wait (Linux) / kqueue (macOS) 阻塞等待 I/O 事件。如果有到期的 timer，timeout 设为最近的 timer 时间；否则无限等待。这就是为什么 `setTimeout(fn, 0)` 不是立即执行——它要等当前 poll 阶段结束。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 Event Loop"
+
+**及格回答（60-70分）：**
+> "JS 是单线程的，Event Loop 让异步代码不阻塞。执行完同步代码后清空微任务队列，然后取一个宏任务执行。微任务优先级高于宏任务。"
+
+面试官评价：**知道规则但不理解设计**。
+
+**满分回答（90-100分）：**
+
+> Event Loop 解决的核心问题是**单线程非阻塞**。JS 引擎本身不处理 I/O 等待，而是交由浏览器多线程（网络、定时器等）在后台处理，结果就绪后再通过任务队列通知 JS 线程执行。这是一个无限循环：执行同步代码 → 清空微任务队列 → 判断是否渲染 → 取一个宏任务执行。<sup>[1]</sup>
+
+> 浏览器端由 Blink 的 `MessagePumpDefault` 驱动，管理 5 种优先级队列（Input > Compositor > Default > Timer > Idle）。同步代码执行后，引擎优先清空微任务队列（V8 用环形缓冲区实现），然后根据 16.6ms 帧率判断是否渲染，最后再取一个宏任务。每一帧最多给 JS 5ms，剩下 11ms 给浏览器渲染。<sup>[2]</sup>
+
+> Node.js 端由 libuv 驱动，具有 6 个阶段（timers → pending → idle → poll → check → close）。其最大特色是 `process.nextTick` 拥有比 `Promise.then` 更高的优先级——它会在当前阶段结束、切换到下一阶段前立即被执行，滥用极易饥饿整个 I/O 轮询。<sup>[3]</sup>
+
+> 实际项目中的建议：把长任务拆成小块（用 `setTimeout` 或 `requestAnimationFrame` 做时间切片），避免阻塞渲染。在 Node.js 端，避免在 `process.nextTick` 中做耗时操作，用 `setImmediate` 替代。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title='微任务和宏任务的精确执行时机?' icon="layer-group">
+
+    **答题要点：**
+    不能只答"宏任务先执行，微任务后执行"，必须加上**渲染（Render）**的节点。
+
+    **高分回答：**
+    "在每一轮 Event Loop 中，主线程首先取出一个宏任务执行。该宏任务执行完毕后，会**立即锁定并清空当前所有的微任务队列**（包括在清空过程中新产生的微任务）。
+    微任务队列彻底清空后，浏览器会判断是否需要进行 UI 渲染（通常是 16.6ms 一次）。渲染完成后，再去宏任务队列取下一个宏任务。
+    所以时机是：**宏任务 → 全部微任务 → UI 渲染 → 下一个宏任务**。"
+
+  </Accordion>
+
+  <Accordion title='为什么 setTimeout(fn, 0) 实际并不是 0ms?' icon="stopwatch">
+
+    **答题要点：**
+    结合 HTML5 规范与系统底层解释。
+
+    **高分回答：**
+    "主要有两个维度的原因：
+    1. **规范限制**：HTML5 标准明确规定，当 `setTimeout` 的嵌套层级超过 5 层时，浏览器必须强制加上最小 4ms 的延迟。在 Chromium 源码中，这个常量被定义为 `kMaxTimerNestingLevel = 5` 和 `kMinimumInterval = 4ms`。
+    2. **Event Loop 机制**：即使没有嵌套，`setTimeout` 也只是把回调放入宏任务队列。如果当前执行上下文栈很深，或者微任务队列里有海量任务，`setTimeout` 必须排队等待。所以 0ms 只是'最快在 0ms 后进入队列'，而不是'0ms 后执行'。"
+
+  </Accordion>
+
+  <Accordion title='Node.js 中 setImmediate 和 setTimeout(0) 的顺序?' icon="node">
+
+    **答题要点：**
+    必须分场景讨论！直接给确定答案的都是错的。
+
+    **高分回答：**
+    "分两种情况：
+    **1. 在全局作用域（Main Module）下执行：顺序不确定。**
+    因为 Node.js 的启动耗时可能大于或小于 1ms（`setTimeout(0)` 在底层会被转化为 `setTimeout(1)`）。如果进入 Event Loop 时已经过了 1ms，Timer 阶段就会执行它；如果没到 1ms，就会跳过 Timer 阶段，在 Check 阶段先执行 `setImmediate`。
+
+    **2. 在 I/O 回调（如 fs.readFile）中执行：setImmediate 绝对先执行。**
+    ```javascript
+    const fs = require('fs');
+    fs.readFile(__filename, () => {
+        setTimeout(() => console.log('timeout'), 0);
+        setImmediate(() => console.log('immediate')); // 永远先输出！
+    });
+    ```
+    因为 I/O 回调在 `poll` 阶段执行，`poll` 阶段结束后，紧接着就是 `check` 阶段（执行 `setImmediate`）。而 `setTimeout` 必须等到下一轮循环的 `timer` 阶段。"
+
+  </Accordion>
+
+  <Accordion title='🔥 如果在微任务中不断无限递归产生新的微任务, 会怎样?' icon="skull">
+
+    **答题要点：**
+    对比宏任务递归，点出"阻塞渲染"的致命性。
+
+    **高分回答：**
+    "会导致**主线程彻底阻塞，页面无法点击，甚至连 UI 都无法重绘。**
+    因为 Event Loop 规定：必须把当前的微任务队列**彻底清空**，才能进入下一个阶段（渲染或下一个宏任务）。如果是无限递归产生微任务，这个队列就永远清不空，主线程就永远困在这一步。
+
+    **对比宏任务：**
+    ```javascript
+    // ❌ 微任务递归——页面阻塞
+    function loop() {
+      Promise.resolve().then(loop);
+    }
+
+    // ✅ 宏任务递归——页面不阻塞
+    function loop() {
+      setTimeout(loop, 0);
+    }
+    ```
+    如果用 `setTimeout` 无限递归产生宏任务，页面**不会阻塞**！因为每次执行完一个宏任务，主线程就有机会去执行渲染和响应用户输入。这也是为什么很多计算密集型任务（如大数组遍历）可以利用 `setTimeout` 或 `requestAnimationFrame` 进行'时间切片（Time Slicing）'来避免阻塞。"
+
+  </Accordion>
+
+  <Accordion title='闭包和 Event Loop 有什么关系？' icon="layer-group">
+
+    **答题要点：**
+    闭包让回调函数能访问外部变量，这是 Event Loop 能正常工作的基础。
+
+    **高分回答：**
+    "闭包（Closure）和 Event Loop 的关系是：**闭包让异步回调函数能访问到正确的变量**。
+    ```javascript
+    function fetchData(url) {
+      let data = null; // 这个变量被闭包"记住"了
+      fetch(url).then(response => {
+        data = response.json(); // 回调通过闭包访问 data
+      });
+      return function getData() {
+        return data; // 即使 fetchData 已执行完毕，仍能访问 data
+      };
+    }
+    ```
+    如果没有闭包，异步回调执行时，外部函数的变量已经被垃圾回收，回调就拿不到数据了。所以闭包是 Event Loop 异步编程的基础——它保证了回调函数在'稍后执行'时，仍能访问到正确的上下文。"
+
+  </Accordion>
+
+  <Accordion title='async/await 和 Promise.then 的执行顺序？' icon="stopwatch">
+
+    **答题要点：**
+    async/await 是 Promise.then 的语法糖，await 下方代码变成微任务。
+
+    **高分回答：**
+    "`async/await` 是 `Promise.then` 的语法糖，执行顺序完全一致：
+    ```javascript
+    console.log('1');
+    async function foo() {
+      console.log('2');
+      await Promise.resolve();
+      console.log('3'); // 微任务
+    }
+    foo();
+    console.log('4');
+
+    // 输出：1 → 2 → 4 → 3
+    ```
+    关键点：
+    1. `await` 右边的函数**立刻同步执行**（输出 2）
+    2. `await` 下面的代码被打包进**隐形的 `Promise.then()`**（输出 3 是微任务）
+    3. 所以 `await` 下面的代码一定在当前同步代码之后执行（输出 4 在输出 3 之前）
+
+    如果有多个 `await`，每个 `await` 下面的代码都是独立的微任务，按顺序执行。"
+
+  </Accordion>
+
+  <Accordion title='requestAnimationFrame 是宏任务还是微任务？' icon="node">
+
+    **答题要点：**
+    rAF 既不是宏任务也不是微任务，它在微任务之后、渲染之前执行。
+
+    **高分回答：**
+    "`requestAnimationFrame` 严格说**既不是宏任务也不是微任务**——它是一个独立的阶段，在微任务之后、浏览器渲染之前执行。
+
+    执行顺序：同步代码 → 微任务 → **rAF** → 浏览器渲染 → 宏任务
+
+    从 Blink 源码看，`requestAnimationFrame` 注册的回调在 `BeginMainFrame` 的 `Animate` 步骤中执行。这意味着：
+    1. rAF 回调一定在当前帧的渲染前执行
+    2. rAF 回调中的 DOM 修改会被当前帧渲染
+    3. 如果在 rAF 中修改 `transform`/`opacity`，只需要 Composite，不需要 Layout 和 Paint
+
+    ```javascript
+    // rAF 保证在渲染前执行
+    requestAnimationFrame(() => {
+      element.style.transform = 'translateX(100px)'; // 当前帧渲染
+    });
+    ```"
+
+  </Accordion>
+
+  <Accordion title='🔥 如何实现一个时间切片（Time Slicing）？' icon="skull">
+
+    **答题要点：**
+    用 setTimeout 或 requestAnimationFrame 把长任务拆成小块，每块执行完让出主线程。
+
+    **高分回答：**
+    "时间切片的核心思想是：**把一个长任务拆成多个小任务，每个小任务执行完后让出主线程，让浏览器有机会渲染和响应用户输入。**
+
+    ```javascript
+    // ❌ 长任务——阻塞渲染 3 秒
+    function processLargeArray(array) {
+      for (const item of array) {
+        heavyComputation(item); // 假设每次需要 1ms
+      }
+    }
+
+    // ✅ 时间切片——每处理 100 个让出主线程
+    function processLargeArray(array, chunkSize = 100) {
+      let index = 0;
+      function processChunk() {
+        const end = Math.min(index + chunkSize, array.length);
+        for (; index < end; index++) {
+          heavyComputation(array[index]);
+        }
+        if (index < array.length) {
+          setTimeout(processChunk, 0); // 让出主线程
+        }
+      }
+      processChunk();
+    }
+    ```
+
+    **更优雅的方案：用 `requestIdleCallback`**
+    ```javascript
+    function processLargeArray(array) {
+      let index = 0;
+      function processChunk(deadline) {
+        while (deadline.timeRemaining() > 1 && index < array.length) {
+          heavyComputation(array[index++]);
+        }
+        if (index < array.length) {
+          requestIdleCallback(processChunk);
+        }
+      }
+      requestIdleCallback(processChunk);
+    }
+    ```
+    `requestIdleCallback` 会在浏览器空闲时执行，不会阻塞渲染。但兼容性不如 `setTimeout`。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [浏览器内部机制漫画解析](https://developer.chrome.com/blog/inside-browser-part1/)：Lin Clark 关于 Blink 渲染流程与帧调度的阐述。<sup>[1]</sup>
+- 📖 [Event Loop 圣经](https://jakearchibald.com/2015/tasks-microtasks-queues-and-schedules/)：Jake Archibald Chrome 开发者的神作，深度剖析了微任务"连续执行直到清空"的底层特性。<sup>[2]</sup>
+- 🟢 [Node.js 官方文档](https://nodejs.org/en/docs/guides/event-loop-timers-and-nexttick)：Node.js 官方对 libuv 底层机制的最权威解释，解决 Node.js 异步疑难杂症。<sup>[3]</sup>

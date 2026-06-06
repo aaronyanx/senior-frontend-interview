@@ -1,0 +1,454 @@
+---
+title: "React Hooks"
+---
+
+> **面试官为什么问这个？**
+>
+> Hooks 是 React 16.8 以来最重要的特性，彻底改变了组件的编写范式。面试官问 Hooks，本质上是在考察你是否理解 Hooks 的底层原理（链表机制）、执行时机（Render vs Commit）、以及"什么时候不该用"的工程判断力。如果你只会写 `useState` 和 `useEffect`，说明你对 Hooks 的理解停留在"会用"而不是"懂原理"。
+
+---
+
+## Q1: useState 的原理是什么？为什么能在函数组件中保存状态？
+
+<Steps>
+
+  <Step title="函数组件的'无状态'困境">
+
+函数组件每次渲染都会重新执行整个函数体。按照 JavaScript 的常识，函数内部的局部变量在函数执行完毕后就会被销毁。那 `useState` 返回的值是怎么在多次渲染间保持不变的？
+
+  </Step>
+  <Step title="答案: Fiber 节点上的 memoizedState 链表">
+
+每个函数组件对应一个 Fiber 节点，Fiber 节点有一个 `memoizedState` 属性，存储所有 Hook 的状态。多个 Hook 通过 `next` 指针串联成链表。
+
+  </Step>
+  <Step title="按顺序读取的链表机制">
+
+React 在每次渲染时，按照 Hook 的调用顺序依次从链表中读取对应的节点。首次渲染时创建链表，后续渲染时按顺序遍历读取。
+
+  </Step>
+  <Step title="条件语句的致命陷阱">
+
+由于链表是按顺序读取的，如果在条件语句中使用 Hook，条件变化会导致链表顺序错乱，React 会读到错误的状态值。
+
+  </Step>
+  <Step title="dispatchAction 的批处理">
+
+调用 `setState` 时，React 并不会立即更新状态，而是将更新推入一个环形链表队列，通过 `scheduleUpdateOnFiber` 调度一次渲染，在 Render 阶段批量消费所有更新。
+
+  </Step>
+
+</Steps>
+
+**useState 解决的核心问题：**
+
+```text
+问题：函数组件每次渲染都会重新执行，局部变量无法跨渲染保持
+
+function Counter() {
+  let count = 0;          // 每次渲染都被重置为 0
+  return <button onClick={() => count++}>{count}</button>;
+}
+// 永远显示 0
+
+解决：把状态存在 Fiber 节点的 memoizedState 链表上，跨渲染持久保存
+
+const [count, setCount] = useState(0);
+// count 来自 Fiber.memoizedState，渲染间保持不变
+```
+
+<Note title="💡 一句话总结">
+
+useState 的状态不是存在函数里，而是存在组件对应的 Fiber 节点的 `memoizedState` 链表上。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有 Hooks 的函数组件">
+
+函数组件是"一次性"的，每次渲染都会重新创建所有局部变量。就像一个失忆的收银员，每来一个客人就忘记之前的账目。
+
+</Card>
+<Card title="✅ 有了 useState">
+
+状态被持久保存在 Fiber 节点上，函数组件可以"记住"之前的状态。就像收银员有了账本，每次都能翻到上次的记录继续算。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"函数组件的状态存在哪里"（Fiber 的 memoizedState 链表），再说"为什么不能在条件语句中用"（链表顺序会变）。面试官想听的是你理解底层机制，而不是背诵规则。
+
+</Tip>
+
+---
+
+## Q2: useEffect 和 useLayoutEffect 的执行时机是什么？
+
+两者的本质区别在于它们在 Commit 阶段的执行位置不同。
+
+### Hooks vs Class 生命周期
+
+| Class 生命周期 | Hooks 等价 | 执行时机 |
+|---------------|-----------|---------|
+| componentDidMount | useEffect(fn, []) | Commit 后异步执行 |
+| componentDidUpdate | useEffect(fn, [deps]) | 依赖变化后异步执行 |
+| componentWillUnmount | useEffect 的 return | 下一次 effect 前或卸载时 |
+| getSnapshotBeforeUpdate | 无直接等价 | - |
+| shouldComponentUpdate | React.memo | 渲染前浅比较 |
+| componentDidCatch | 无内置等价 | - |
+
+### 自定义 Hooks 最佳实践
+
+自定义 Hooks 是以 `use` 开头的函数，内部可以调用其他 Hooks。最佳实践包括：单一职责（一个 Hook 解决一个问题）、返回数组而非对象（便于解构重命名）、依赖数组尽量精简、清理函数必须返回。
+
+```javascript
+// 自定义 Hook 最佳实践：单一职责 + 返回数组
+function useFetch(url) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetch(url)
+      .then(res => res.json())
+      .then(data => { if (!cancelled) setData(data); })
+      .catch(err => { if (!cancelled) setError(err); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; }; // 清理函数防止内存泄漏
+  }, [url]);
+
+  return [data, loading, error]; // 返回数组，便于重命名
+}
+```
+
+```text
+┌───────────────────────────────────────────────────────────────┐
+│                     Commit 阶段                                │
+├──────────────┬───────────────────┬────────────────────────────┤
+│  Mutation    │    Layout         │     Passive Effects        │
+│  (DOM 操作)   │ useLayoutEffect  │      useEffect             │
+│              │ (同步执行)         │    (异步执行)               │
+└──────────────┴───────────────────┴────────────────────────────┘
+                ↑                                       ↑
+                │                                       │
+          DOM 已更新                               浏览器可能已绘制
+          浏览器尚未绘制                            用户已看到新 UI
+```
+
+```javascript
+// useEffect：浏览器绘制后异步执行（通过 MessageChannel 调度）
+useEffect(() => {
+  // 此时浏览器可能已经绘制了一帧
+  // 适合：数据获取、订阅、日志上报
+  fetch('/api/data').then(setData);
+}, [deps]);
+
+// useLayoutEffect：DOM 修改后、浏览器绘制前同步执行
+useLayoutEffect(() => {
+  // 此时 DOM 已更新，但浏览器尚未绘制
+  // 适合：测量 DOM 布局、同步修改样式避免闪烁
+  const rect = ref.current.getBoundingClientRect();
+  setPosition({ top: rect.bottom + 8, left: rect.left });
+}, [deps]);
+```
+
+<Warning title="⚠️ useLayoutEffect 会阻塞渲染">
+
+useLayoutEffect 在 Commit 的 Layout 子阶段同步执行，会阻塞浏览器绘制。如果回调中包含耗时操作，会导致页面卡顿。只有在需要"测量 DOM 并同步修改"的场景下才使用它，其他场景一律用 useEffect。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 快递签收 vs 拆包裹">
+
+useEffect 就像快递到了之后放在门口（浏览器绘制完了），你有空了再去拆（异步执行）。如果发现东西不对，你得重新下单再等一轮（闪烁一帧）。useLayoutEffect 就像快递员当面签收（DOM 更新了），你当面拆开验货（同步执行），有问题立刻换货，客户（用户）看到的永远是正确的商品。
+
+</Tip>
+
+---
+
+## Q3: useMemo、useCallback 和 React.memo 分别解决什么问题？
+
+### Hooks 原理：闭包 + 链表
+
+Hooks 的底层原理是两个核心机制的结合：第一，状态存储在 Fiber 节点的 `memoizedState` 链表上，跨渲染持久保存；第二，每次渲染时 Hooks 通过闭包捕获当前的 state 和 props，形成"快照"。这就是为什么 `useEffect` 中的回调能访问到"创建时"的值而不是"最新"的值——因为闭包捕获的是那次渲染的快照。
+
+### 依赖比较的底层实现
+
+所有 Hooks 的依赖比较都通过 `areHookInputsEqual` 函数实现，内部使用 `Object.is` 逐个比较。`Object.is` 和 `===` 的区别在于：`Object.is(NaN, NaN)` 返回 `true`，`Object.is(+0, -0)` 返回 `false`。这意味着 NaN 作为依赖不会触发重新执行，而 +0 和 -0 会。
+
+### 基础梳理
+
+| API | 缓存什么 | 解决什么问题 | 使用场景 |
+|-----|---------|-------------|---------|
+| **React.memo** | 组件的渲染结果 | 跳过 props 未变的 re-render | 包裹纯展示子组件 |
+| **useMemo** | 计算的返回值 | 避免重复执行昂贵计算 | 过滤大数组、深拷贝 |
+| **useCallback** | 函数引用本身 | 保持引用稳定，让 memo 生效 | 传递给 memo 子组件的回调 |
+
+### 专家视角深度剖析
+
+很多候选人只会说"用它们来优化性能"，但大厂面试官真正在意的是：**什么时候不该用？过度优化的代价是什么？**
+
+`React.memo` 需要在每次渲染前遍历比对新旧 props（浅比较），`useMemo` 和 `useCallback` 在首次执行时不仅要计算，还要将结果分配给 Fiber 节点的 `memoizedState` 链表保存。如果计算本身很简单（如字符串拼接），或者组件渲染很快（如纯文本），强加缓存反而是负优化——缓存的开销超过了重新计算的开销。
+
+```javascript
+// ❌ 不该用的场景：简单计算
+const fullName = useMemo(() => firstName + ' ' + lastName, [firstName, lastName]);
+// 不如直接写 const fullName = firstName + ' ' + lastName;
+
+// ❌ 不该用的场景：不传给子组件的函数
+const handleClick = useCallback(() => {
+  console.log('clicked');
+}, []);
+// 如果 handleClick 不传给 memo 子组件，useCallback 没有意义
+
+// ✅ 该用的场景：昂贵计算
+const sorted = useMemo(() => items.sort((a, b) => a.price - b.price), [items]);
+// 10000 条数据排序，只在 items 变化时重新计算
+
+// ✅ 该用的场景：传给 memo 子组件的回调
+const handleClick = useCallback((id) => {
+  dispatch({ type: 'SELECT', id });
+}, [dispatch]);
+// 保持引用稳定，让 MemoizedChild 的 React.memo 生效
+```
+
+<Tip title="最佳实践: ">
+
+React 官方建议"先写正确的代码，再用 Profiler 找到性能瓶颈，最后才优化"。不要在每个组件上都加 `React.memo`，不要在每个函数上都加 `useCallback`。过度优化的代码更难维护，而且缓存本身也有开销。
+
+</Tip>
+
+---
+
+## Q4: useRef 和 useState 的核心区别是什么？
+
+**ref 的修改不触发 re-render，state 的修改会触发 re-render。** 这是两者最根本的区别。
+
+### useRef 的底层实现
+
+`useRef` 在底层就是一个 `{ current: initialValue }` 的普通对象，存储在 Fiber 节点的 `memoizedState` 上。关键区别在于：`useState` 的 setter 会调用 `dispatchAction` 触发调度，而 `useRef` 的 `current` 赞性是直接赋值，不经过调度器。
+
+### 闭包陷阱的根因
+
+闭包陷阱的本质是：Hooks 通过闭包捕获每次渲染的"快照"。如果一个异步回调（如 setTimeout、setInterval）在渲染时创建，它捕获的是那次渲染的 state 值，即使后续 state 已经更新，回调中的值仍然是旧的。解决方案是用 `useRef` 保存最新值，每次渲染同步更新 `ref.current`。
+
+```javascript
+// useRef：修改不触发 re-render
+const countRef = useRef(0);
+countRef.current = 1; // 不触发 re-render
+
+// useState：修改触发 re-render
+const [count, setCount] = useState(0);
+setCount(1); // 触发 re-render
+```
+
+**useRef 的三个经典用途：**
+
+```javascript
+// 1. 访问 DOM 元素
+function Input() {
+  const inputRef = useRef(null);
+  useEffect(() => { inputRef.current.focus(); }, []);
+  return <input ref={inputRef} />;
+}
+
+// 2. 保存不需触发渲染的值（定时器 ID、上一次的值）
+function Timer() {
+  const timerRef = useRef(null);
+  const start = () => { timerRef.current = setInterval(() => {}, 1000); };
+  const stop = () => { clearInterval(timerRef.current); };
+}
+
+// 3. 解决闭包陷阱（保存最新值供异步回调读取）
+function Counter() {
+  const [count, setCount] = useState(0);
+  const countRef = useRef(count);
+  countRef.current = count; // 每次渲染都同步最新值
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      console.log(countRef.current); // ✅ 总是最新值
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []); // 依赖为空，不会因为 count 变化而重建定时器
+}
+```
+
+<Tip title="最佳实践: ">
+
+当你需要一个"跨渲染保持的可变容器"但不需要触发 re-render 时，用 `useRef`。当你需要"值变化时触发 UI 更新"时，用 `useState`。
+
+</Tip>
+
+---
+
+## 🔍 底层源码：Hooks 的链表实现
+
+<div class="follow-up">
+Hooks 在 Fiber 节点上是怎么存储的？
+</div>
+
+在 React 源码中，每个 Hook 是一个链表节点，存储在 Fiber 节点的 `memoizedState` 上。详见 [React 源码 packages/react-reconciler/src/ReactFiberHooks.js](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/ReactFiberHooks.js)。
+
+```javascript
+// Hook 的数据结构
+type Hook = {
+  memoizedState: any,        // 当前值（useState 的值、useEffect 的依赖等）
+  baseState: any,            // 基础状态
+  baseQueue: Update<any> | null, // 基础更新队列
+  queue: UpdateQueue<any> | null, // 更新队列
+  next: Hook | null,         // 指向下一个 Hook（链表）
+};
+
+// Fiber 节点上的 memoizedState 就是 Hook 链表的头节点
+// fiber.memoizedState → Hook1(useState) → Hook2(useEffect) → Hook3(useMemo) → null
+```
+
+这段代码揭示了 Hooks 的核心秘密：Hook 不是存在"函数里"，而是存在 Fiber 节点的 `memoizedState` 链表上。`next` 指针将所有 Hook 串联起来，React 通过 `workInProgressHook` 指针按顺序遍历。
+
+<div class="follow-up">
+useState 的更新队列是怎么实现的？
+</div>
+
+详见 [React 源码 packages/react-reconciler/src/ReactFiberHooks.js 的 dispatchAction 函数](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/ReactFiberHooks.js)：
+
+```javascript
+// dispatch 的实现（简化版）
+function dispatchAction(fiber, queue, action) {
+  // 创建更新对象
+  const update = { action, next: null };
+
+  // 把更新加入环形链表队列
+  const pending = queue.pending;
+  if (pending === null) {
+    update.next = update; // 自己指向自己
+  } else {
+    update.next = pending.next;
+    pending.next = update;
+  }
+  queue.pending = update;
+
+  // 调度一次渲染
+  scheduleUpdateOnFiber(fiber);
+}
+```
+
+这段代码做了 2 件事：第一，用环形链表存储所有待处理的更新（多次 `setState` 会被合并）；第二，通过 `scheduleUpdateOnFiber` 调度一次渲染，在 Render 阶段批量消费所有更新。这就是为什么多次 `setState` 只触发一次渲染。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 React Hooks 的原理"
+
+**及格回答（60-70分）：**
+> "Hooks 的状态存在 Fiber 节点的 memoizedState 上，用链表连接。不能在条件语句中使用是因为顺序会变。"
+
+面试官评价：**知道规则但不理解机制**。
+
+**满分回答（90-100分）：**
+
+> Hooks 的核心机制是链表。每个函数组件对应一个 Fiber 节点，Fiber 节点的 `memoizedState` 属性存储 Hook 链表的头节点。每个 Hook 是一个包含 `memoizedState`（当前值）、`queue`（更新队列）和 `next`（下一个 Hook）的对象。React 在渲染时通过 `workInProgressHook` 指针按顺序遍历链表，这就是 Hooks 必须在函数顶层调用、不能放在条件语句中的根本原因。
+
+> useState 的更新通过 `dispatchAction` 实现。调用 `setState` 时，React 将更新推入一个环形链表队列（`queue.pending`），然后通过 `scheduleUpdateOnFiber` 调度一次渲染。在 Render 阶段，`updateWorkInProgressHook` 从链表中取出对应 Hook，批量消费队列中的所有更新，得到最终状态。多次 `setState` 只触发一次渲染。
+
+> useEffect 和 useLayoutEffect 的区别在 Commit 阶段的执行位置。`useLayoutEffect` 在 Layout 子阶段同步执行（DOM 已更新、浏览器未绘制），`useEffect` 在 Commit 结束后通过 `MessageChannel` 异步调度执行（浏览器可能已绘制一帧）。底层都通过 `areHookInputsEqual`（使用 `Object.is`）比较依赖数组是否变化来决定是否重新执行。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="为什么 Hooks 不能在条件语句或循环中使用?" icon="layer-group">
+
+**答题要点：**
+从链表顺序读取的机制解释。
+
+**高分回答：**
+"因为 Hook 状态存在 Fiber 节点的 `memoizedState` 链表上，React 按调用顺序依次读取。首次渲染时链表是 `[useState(0)] → [useState('')] → [useState([])]`。如果第二次渲染在条件语句中跳过了第二个 Hook，代码执行 `useState(0)` 读到 Hook1 正确，但 `useState([])` 读到的却是 Hook2（应该是 Hook3），状态就错乱了。React 的 ESLint 插件 `eslint-plugin-react-hooks` 会在编译期检查这个规则。"
+
+  </Accordion>
+
+  <Accordion title="useEffect 的依赖数组用 Object.is 而不是 === 是为什么?" icon="stopwatch">
+
+**答题要点：**
+从边界值语义的角度解释。
+
+**高分回答：**
+"`Object.is` 和 `===` 在绝大多数情况下行为一致，但有两个关键差异：`Object.is(NaN, NaN)` 返回 `true`（`===` 返回 `false`），`Object.is(+0, -0)` 返回 `false`（`===` 返回 `true`）。React 选择 `Object.is` 是因为它更符合"值是否变化"的语义——NaN 作为依赖时不应该触发重新执行（NaN === NaN 在数学上是 false 但语义上是相同的），而 +0 和 -0 在某些场景下确实有区别（如 1/x 的结果）。源码中的比较函数是 `areHookInputsEqual`，遍历依赖数组逐个用 `Object.is` 比较。"
+
+  </Accordion>
+
+  <Accordion title="useEffect 的 cleanup 函数什么时候执行?" icon="node">
+
+**答题要点：**
+必须分场景说明：依赖变化时和组件卸载时。
+
+**高分回答：**
+"useEffect 的 cleanup 在两个时机执行：第一，依赖变化时，React 先执行上一次 effect 的 cleanup，再执行新 effect 的 create 函数。此时 DOM 已经更新到最新状态（可以访问新 DOM）。第二，组件卸载时，React 在 Commit 阶段的 Deletion 子阶段执行 cleanup。cleanup 的执行顺序是**从子组件到父组件**（深度优先的逆序），这与 componentDidMount 的执行顺序（父到子）相反。理解这个顺序对于正确管理订阅和定时器至关重要。"
+
+  </Accordion>
+
+  <Accordion title="🔥 如果 useEffect 的依赖数组写错了 (遗漏依赖) , 会怎样?" icon="skull">
+
+**答题要点：**
+从闭包陷阱和实际 bug 两个角度分析。
+
+**高分回答：**
+"最常见的问题是闭包陷阱。例如 `useEffect(() => { setInterval(() => console.log(count), 1000); }, [])`，依赖数组缺少 `count`，导致定时器中的 `count` 永远是初始值 0——因为闭包捕获的是创建时的值，而不是最新值。解决方案有两种：第一，补全依赖数组 `[count]`，每次 count 变化都重建定时器（正确但可能频繁重建）。第二，用 `useRef` 保存最新值，`countRef.current = count` 每次渲染同步更新，定时器中读取 `countRef.current`（推荐，依赖数组保持空）。React 的 ESLint 插件 `exhaustive-deps` 规则会自动检测遗漏的依赖。"
+
+  </Accordion>
+
+  <Accordion title="useReducer 和 useState 怎么选?" icon="layer-group">
+
+**答题要点：**
+从状态复杂度和更新逻辑两个维度分析。
+
+**高分回答：**
+"`useState` 适合独立的、简单的状态值（如 count、isOpen）。`useReducer` 适合状态逻辑复杂、多个状态相互关联、或更新逻辑需要集中管理的场景。选择标准：如果 `setState` 的逻辑只有简单的赋值，用 `useState`；如果更新逻辑需要根据当前状态做分支判断（如 `switch/case`），或者多个 `setState` 总是一起调用，用 `useReducer`。在底层实现上，`useState` 本身就是用 `useReducer` 实现的——`useState` 的 reducer 只有一个 action：直接返回新值。"
+
+  </Accordion>
+
+  <Accordion title="useId 解决了什么问题?" icon="stopwatch">
+
+**答题要点：**
+从 SSR 水合和无障碍访问两个角度解释。
+
+**高分回答：**
+"`useId` 解决了 SSR 场景下 ID 不一致的问题。在 React 18 之前，很多开发者用 `Math.random()` 或自增计数器生成 ID，导致服务端和客户端的 ID 不同，Hydration 时会报错。`useId` 通过 Fiber 树的结构生成确定性的 ID——同一个组件在服务端和客户端永远生成相同的 ID。它还支持 `identifierPrefix` 配置，避免多个 React 应用在同一页面的 ID 冲突。注意：`useId` 不是 `key` 的替代品，它用于 DOM 属性（如 `htmlFor`、`aria-describedby`）。"
+
+  </Accordion>
+
+  <Accordion title="useSyncExternalStore 解决了什么问题?" icon="node">
+
+**答题要点：**
+从并发模式下的 UI 撕裂角度解释。
+
+**高分回答：**
+"`useSyncExternalStore` 是 React 18 引入的 Hook，用于安全地订阅外部数据源（如 Redux、Zustand 的 store）。在并发模式下，如果直接在组件中 `useEffect` 订阅外部 store，可能会出现 UI 撕裂（Tearing）——不同组件读取到同一时刻的不同版本的外部状态。`useSyncExternalStore` 通过 `getSnapshot` 参数确保在并发渲染过程中，所有组件读取到的是同一时刻的快照。它是连接 React 并发模式和外部状态库的桥梁。"
+
+  </Accordion>
+
+  <Accordion title="🔥 useEffect 中的异步操作为什么不能直接写 async?" icon="skull">
+
+**答题要点：**
+从 useEffect 的返回值语义解释。
+
+**高分回答：**
+"`useEffect` 的回调函数需要返回一个清理函数（或 undefined）。`async` 函数的返回值永远是 Promise，而不是清理函数。如果直接写 `useEffect(async () => { ... }, [])`，React 会收到一个 Promise 作为清理函数，无法正确执行清理逻辑。正确做法是在回调内部定义 async 函数并调用：`useEffect(() => { const fn = async () => { ... }; fn(); }, [])`。或者用 IIFE：`useEffect(() => { (async () => { ... })(); }, [])`。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🟢 [React 官方文档：Hooks FAQ](https://react.dev/reference/react/hooks)：官方对 Hooks 规则和最佳实践的权威解释。<sup>[1]</sup>
+- 📖 [React 源码 ReactFiberHooks.js](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/ReactFiberHooks.js)：Hooks 的完整实现，包含 useState、useEffect、useMemo 的底层逻辑。<sup>[2]</sup>
+- 📖 [Dan Abramov: A Complete Guide to useEffect](https://overreacted.io/a-complete-guide-to-useeffect/)：深入理解 useEffect 的心智模型，解决闭包陷阱。<sup>[3]</sup>
+- 📖 [React Conf: Hooks 原理解析](https://www.youtube.com/watch?v=KJP1E-Y-xyo)：React 核心团队讲解 Hooks 的设计动机和底层实现。<sup>[4]</sup>

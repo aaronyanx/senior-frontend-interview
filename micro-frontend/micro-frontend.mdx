@@ -1,0 +1,921 @@
+---
+title: "微前端"
+---
+
+> **面试官为什么问这个？**
+>
+> 微前端是大型企业级前端工程的核心架构方案。面试官问这个，本质上是在考察你：**你能不能把一个巨型前端应用拆解成多个独立开发、独立部署的子应用，并让它们在运行时无缝协作？** 如果你答不清楚，说明你对前端工程化的理解停留在"写页面"而不是"建系统"。
+
+---
+
+## Q1: 微前端的历史？为什么要有它？
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  2016 年     │ → │  2018 年     │ → │  2019 年     │ → │  2020+ 年    │
+│  概念提出    │   │  single-spa  │   │  qiankun     │   │  方案百花齐放│
+│  ThoughtWorks│   │  框架诞生    │   │  蚂蚁落地    │   │  wujie/Micro │
+│              │   │              │   │              │   │  App/Garfish │
+└──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
+```
+
+<Steps>
+
+  <Step title="2016 年: ThoughtWorks 提出微前端概念">
+
+    ThoughtWorks 在 2016 年的技术雷达中首次提出了微前端（Micro-frontend）的概念，核心思想是将微服务的理念引入前端：**一个大型前端应用由多个独立的、可自治的小型前端应用组合而成**。每个子应用可以独立开发、独立测试、独立部署，技术栈互不约束。
+
+  </Step>
+  <Step title="单体前端的致命痛点">
+
+    随着业务膨胀，单体前端应用面临四大痛点：**代码仓库臃肿**（数十万行代码，构建时间长）、**技术栈锁定**（老项目用 jQuery，想用 React 必须重写）、**团队协作困难**（多人改同一个仓库，冲突频繁）、**发布耦合**（一个小功能上线必须整个应用一起发）。
+
+  </Step>
+  <Step title="2018 年: single-spa 框架诞生">
+
+    Joel Denning 创建了 single-spa，这是第一个真正意义上的微前端框架。它提供了应用注册、路由劫持、生命周期管理等基础能力，让多个 SPA 应用可以在同一个页面上运行。但 single-spa 只解决了"怎么组装"，没有解决"怎么隔离"。
+
+  </Step>
+  <Step title="2019 年: qiankun 在蚂蚁金服落地">
+
+    蚂蚁金服的基于 single-spa 二次封装，推出了 qiankun。它补齐了 single-spa 的短板——提供了 JS 沙箱（Proxy Sandbox）、CSS 隔离（Shadow DOM / Scoped）、HTML Entry 等开箱即用的能力，成为国内最主流的微前端方案。
+
+  </Step>
+  <Step title="2020 年至今: 方案百花齐放">
+
+    腾讯推出 wujie（基于 Web Components + iframe 的零侵入方案），京东推出 MicroApp（基于 Web Component 的轻量方案），字节推出 Garfish（高性能、插件化架构）。同时 Webpack 5 的 Module Federation 从构建层面提供了另一种"模块共享"思路。微前端从"框架驱动"走向"多种方案并存"。
+
+  </Step>
+
+</Steps>
+
+**微前端解决的核心问题：**
+
+```text
+问题：单体前端 + 业务膨胀 = 开发地狱
+
+多个团队改同一个仓库 → 冲突不断 → 构建 10 分钟 → 上线要所有人一起发
+
+解决：把巨石拆成独立子应用，各自开发、各自构建、各自部署
+     主应用只负责路由分发和壳容器，子应用负责业务逻辑
+
+团队 A 的应用 ──┐
+团队 B 的应用 ──┼──→ 主应用（壳）──→ 用户看到的完整页面
+团队 C 的应用 ──┘
+```
+
+<Note title="💡 一句话总结">
+
+微前端让多个团队可以独立开发、独立部署各自的前端模块，在运行时组合成一个完整的应用。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有微前端">
+
+一个 50 万行代码的巨型仓库，三个团队共用一套 CI/CD 流水线。团队 A 改了一行 CSS，导致团队 B 的页面样式崩了，构建要 15 分钟，上线要所有团队一起排队。就像三个厨师挤在一个厨房里做不同的菜，互相干扰、互相等待。
+
+</Card>
+<Card title="✅ 引入微前端">
+
+每个团队有自己的"小厨房"（独立仓库），各自做自己的菜（独立开发），做好了端到大厅拼成一桌宴席（主应用组装）。厨师之间互不干扰，菜品独立上桌，一道菜有问题只换那一道。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答微前端问题时，先说"为什么需要"（痛点），再说"怎么实现"（架构），最后说"有什么坑"（挑战）。面试官想听的是你理解拆分的本质——不是为了拆而拆，而是为了解决组织和工程的效率问题。
+
+</Tip>
+
+---
+
+## Q2: 微前端的核心架构
+
+微前端的架构本质是：**主应用负责"壳"和路由，子应用负责业务逻辑，两者通过约定的协议通信和组装**。
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│                    主应用（Main App）                      │
+│  ┌──────────┐  ┌──────────┐  ┌────────────────────────┐ │
+│  │ 路由管理 │  │ 全局状态 │  │ 子应用加载容器          │ │
+│  └──────────┘  └──────────┘  └────────────────────────┘ │
+│       │                           │                      │
+│       ▼                           ▼                      │
+│  /app-a/*  ─────────→  ┌──────────────────┐             │
+│  /app-b/*  ─────────→  │  子应用 A / B / C │             │
+│  /app-c/*  ─────────→  │  （各自独立运行） │             │
+│                         └──────────────────┘             │
+└─────────────────────────────────────────────────────────┘
+```
+
+### HTML Entry 与 JS Entry
+
+微前端加载子应用有两种入口模式：
+
+| 对比维度 | HTML Entry | JS Entry |
+|---------|-----------|---------|
+| **入口文件** | 子应用的 `index.html` | 子应用的 JS Bundle |
+| **资源解析** | 框架自动解析 HTML 提取 JS/CSS | 需要手动配置子应用的 JS/CSS 地址 |
+| **使用成本** | 低，子应用几乎不用改造 | 高，需要子应用暴露生命周期函数 |
+| **灵活性** | 高，支持子应用自由组织 HTML 结构 | 低，强依赖约定的导出格式 |
+| **代表框架** | qiankun | single-spa |
+
+```javascript
+// HTML Entry 的核心原理（qiankun 的做法）
+// 1. fetch 子应用的 index.html
+const html = await fetch('https://app-a.example.com/index.html').then(r => r.text());
+
+// 2. 解析 HTML，提取 <script> 和 <link> 标签
+const { scripts, styles } = importHTML(html);
+
+// 3. 在主应用的容器中渲染子应用的 HTML
+container.innerHTML = html;
+
+// 4. 执行子应用的 JS（在沙箱中）
+scripts.forEach(script => execScript(script));
+```
+
+```javascript
+// JS Entry 的核心原理（single-spa 的做法）
+// 子应用必须导出三个生命周期函数
+export async function bootstrap() {
+  console.log('子应用初始化');
+}
+
+export async function mount(props) {
+  console.log('子应用挂载', props);
+  ReactDOM.render(<App />, props.container);
+}
+
+export async function unmount(props) {
+  console.log('子应用卸载');
+  ReactDOM.unmountComponentAtNode(props.container);
+}
+```
+
+### 沙箱隔离
+
+沙箱（Sandbox）是微前端最核心的机制——确保子应用的 JS 和 CSS 不会互相污染。
+
+```text
+┌─────────────────────────────────────────────┐
+│              主应用全局作用域                  │
+│  window.document = 主应用的 document          │
+│  window.__MAIN_APP__ = true                   │
+│                                               │
+│  ┌─────────────────┐  ┌─────────────────┐    │
+│  │ 子应用 A 沙箱    │  │ 子应用 B 沙箱    │    │
+│  │ (Proxy Sandbox)  │  │ (Proxy Sandbox)  │    │
+│  │                  │  │                  │    │
+│  │ window.xxx = 1   │  │ window.xxx = 2   │    │
+│  │ （互不影响）     │  │ （互不影响）     │    │
+│  └─────────────────┘  └─────────────────┘    │
+└─────────────────────────────────────────────┘
+```
+
+**JS 沙箱的三种实现方式：**
+
+| 沙箱类型 | 实现原理 | 优点 | 缺点 | 代表 |
+|---------|---------|------|------|------|
+| **Snapshot Sandbox** | 加载前快照 `window`，卸载后恢复 | 兼容性好 | 性能差，不支持多实例 | qiankun（IE 降级） |
+| **Proxy Sandbox** | 用 `Proxy` 代理 `window`，读写都映射到fakeWindow | 性能好，支持多实例 | 不支持 IE | qiankun（默认） |
+| **iframe Sandbox** | 用 `<iframe>` 天生隔离全局变量和 DOM | 隔离最彻底 | 通信成本高，性能差 | wujie |
+
+**CSS 隔离的两种方案：**
+
+| 隔离方案 | 实现原理 | 优点 | 缺点 |
+|---------|---------|------|------|
+| **Shadow DOM** | 用 Web Components 的 Shadow DOM 天然隔离样式 | 隔离彻底 | 部分第三方库不兼容 |
+| **Scoped CSS** | 给子应用的选择器加前缀（如 `[data-app-a] .btn`） | 兼容性好 | 需要运行时改写选择器 |
+
+<Warning title="⚠️ 核心机制: 沙箱的本质是拦截全局变量">
+
+子应用在主应用的同一个浏览器上下文中运行，它们共享同一个 `window` 对象。如果不做隔离，子应用 A 设置 `window.name = 'A'` 会直接影响子应用 B。沙箱的本质就是：**为每个子应用创建一个"假的" `window`，子应用读写全局变量时，实际操作的是这个假 window，而不是真实的 window**。
+
+- 子应用在沙箱中修改 `document.title`，只影响自己。
+- 子应用在沙箱中注册的全局事件（如 `window.addEventListener`），卸载时自动清理。
+- 子应用在沙箱中使用的定时器（`setTimeout`），卸载时自动清除。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 出租厨房">
+
+主应用就像一个美食广场，子应用就像各个档口。沙箱（Sandbox）就是给每个档口装了一面透明玻璃墙——每个档口有自己的灶台、调料架、操作台（fakeWindow），档口之间互相看得到但碰不到。档口 A 炒菜的油烟不会飘到档口 B，档口 B 的调料也不会被档口 A 拿走。
+
+</Tip>
+
+### 应用生命周期
+
+每个微前端子应用都有三个核心生命周期：
+
+```text
+bootstrap（初始化）→ mount（挂载）→ unmount（卸载）
+     │                    │               │
+     ▼                    ▼               ▼
+  子应用首次加载时      路由匹配时       路由离开时
+  执行一次              每次进入都执行    每次离开都执行
+```
+
+---
+
+## Q3: 主流微前端框架对比
+
+### 基础梳理
+
+| 框架 | 出品方 | 核心方案 | JS 沙箱 | CSS 隔离 | 子应用改造成本 |
+|------|--------|---------|---------|---------|--------------|
+| **qiankun** | 蚂蚁 | single-spa + HTML Entry | Proxy Sandbox | Shadow DOM / Scoped | 低 |
+| **wujie** | 腾讯 | Web Components + iframe | iframe 天然隔离 | Shadow DOM | 极低（零侵入） |
+| **MicroApp** | 京东 | Web Component | iframe / eval | Shadow DOM | 低 |
+| **Garfish** | 字节 | 自研 Runtime | Proxy Sandbox | Scoped CSS | 中 |
+| **single-spa** | 社区 | 路由劫持 + 生命周期 | 无内置 | 无内置 | 高 |
+| **Module Federation** | Webpack | 构建时模块共享 | 无 | 无 | 中 |
+
+```text
+方案光谱：从"重运行时隔离"到"重构建时共享"
+
+iframe/wujie ← qiankun/Garfish ← Module Federation
+（最彻底隔离）  （运行时沙箱）     （构建时共享）
+
+隔离程度：高 ──────────────────────→ 低
+性能开销：高 ──────────────────────→ 低
+改造成本：低 ──────────────────────→ 高
+```
+
+### 专家视角深度剖析
+
+很多候选人只能背诵上面的表格，但大厂面试官真正在意的是：**不同方案的本质区别是什么？什么场景该选哪个？**
+
+**qiankun** 的核心优势是**生态成熟 + 社区活跃**。它是国内使用最广泛的方案，文档完善，踩坑经验丰富。但它的 Proxy Sandbox 在极端场景下仍有"逃逸"风险（如通过 `document` 直接操作 DOM 绕过沙箱），CSS Scoped 方案在子应用动态插入样式时也可能失效。
+
+**wujie** 的核心创新是**用 iframe 做 JS 隔离，用 Shadow DOM 做 CSS 隔离，再用 Proxy 桥接实现"iframe 内容渲染到主应用"的效果**。它解决了传统 iframe 的痛点（URL 不同步、弹窗逃逸、内存开销），同时保留了 iframe 的隔离彻底性。适合对隔离要求极高的场景。
+
+**Module Federation** 的思路完全不同——它不是运行时隔离，而是**构建时共享**。多个应用在 Webpack 构建阶段就约定好哪些模块是共享的（如 React、Vue），运行时按需加载。优势是性能好（没有沙箱开销），劣势是隔离性弱（共享同一个 React 实例，版本必须一致）。
+
+```javascript
+// Module Federation 配置示例（Webpack 5）
+// 应用 A（提供 React 组件）
+new ModuleFederationPlugin({
+  name: 'appA',
+  filename: 'remoteEntry.js',
+  exposes: {
+    './Button': './src/components/Button',
+  },
+  shared: {
+    react: { singleton: true, requiredVersion: '^18.0.0' },
+    'react-dom': { singleton: true, requiredVersion: '^18.0.0' },
+  },
+})
+
+// 应用 B（消费 React 组件）
+new ModuleFederationPlugin({
+  name: 'appB',
+  remotes: {
+    appA: 'appA@http://localhost:3001/remoteEntry.js',
+  },
+  shared: {
+    react: { singleton: true, requiredVersion: '^18.0.0' },
+    'react-dom': { singleton: true, requiredVersion: '^18.0.0' },
+  },
+})
+
+// 应用 B 中动态加载应用 A 的组件
+const RemoteButton = React.lazy(() => import('appA/Button'));
+```
+
+---
+
+## Q4: qiankun 原理详解
+
+### JS 沙箱实现：Proxy Sandbox
+
+qiankun 的 Proxy Sandbox 是其最核心的技术。它用 ES6 的 `Proxy` 创建一个假的 `window` 对象，子应用读写全局变量时，实际操作的是这个假对象。
+
+```text
+子应用代码执行 window.xxx = 1
+         │
+         ▼
+┌─────────────────────────────────┐
+│        Proxy Sandbox            │
+│                                 │
+│  new Proxy(fakeWindow, {        │
+│    get(target, key) {           │
+│      // 优先从 fakeWindow 取    │
+│      // 没有则从真实 window 取  │
+│    },                           │
+│    set(target, key, value) {    │
+│      // 写入 fakeWindow，       │
+│      // 不影响真实 window       │
+│    }                            │
+│  })                             │
+│                                 │
+│  fakeWindow = { xxx: 1 }        │  ← 子应用的变量存这里
+│  window = { ... }               │  ← 真实 window 不受影响
+└─────────────────────────────────┘
+```
+
+```javascript
+// qiankun Proxy Sandbox 的核心实现（简化版）
+class ProxySandbox {
+  constructor() {
+    const fakeWindow = Object.create(null);
+    const rawWindow = window;
+    const usedProps = new Set(); // 记录子应用修改过的属性
+
+    this.proxy = new Proxy(fakeWindow, {
+      get(target, key) {
+        // 优先从 fakeWindow 取
+        if (key in target) {
+          return target[key];
+        }
+        // fakeWindow 没有则从真实 window 取
+        const value = rawWindow[key];
+        // 如果是函数，需要绑定到真实 window 上执行
+        // （如 alert、fetch 等浏览器 API）
+        if (typeof value === 'function' && !value.__is_bound) {
+          return value.bind(rawWindow);
+        }
+        return value;
+      },
+
+      set(target, key, value) {
+        // 写入 fakeWindow，不影响真实 window
+        target[key] = value;
+        usedProps.add(key);
+        return true;
+      },
+
+      has(target, key) {
+        // 先查 fakeWindow，再查真实 window
+        return key in target || key in rawWindow;
+      },
+    });
+  }
+}
+```
+
+<Warning title="⚠️ Proxy Sandbox 的逃逸场景">
+
+Proxy Sandbox 只能拦截通过 `window.xxx` 的读写。如果子应用通过其他全局对象（如 `document`、`location`、`navigator`）直接操作，沙箱是拦截不到的。
+
+```javascript
+// ❌ 这些操作会"逃逸"沙箱，影响主应用
+document.title = '子应用标题';         // 直接操作 DOM
+location.href = 'https://evil.com';   // 直接操作 location
+const style = document.createElement('style');
+document.head.appendChild(style);      // 往主应用插入样式
+
+// qiankun 的应对策略：对 document 的部分操作做了代理
+// 如 createElement、querySelector 等会绑定到子应用容器
+```
+
+</Warning>
+
+### CSS 隔离实现
+
+qiankun 提供两种 CSS 隔离模式：
+
+**1. Shadow DOM 隔离（严格模式）：**
+
+```text
+主应用 DOM
+├── <div id="root">               ← 主应用内容
+├── <div id="sub-app-container">  ← 子应用容器
+│   └── #shadow-root              ← Shadow DOM 边界
+│       ├── <style>               ← 子应用样式，不会泄漏
+│       │   .btn { color: red; }
+│       └── <div class="btn">    ← 子应用 DOM
+└── <div class="btn">            ← 主应用按钮，不受影响
+```
+
+```javascript
+// Shadow DOM 隔离的原理
+const container = document.getElementById('sub-app-container');
+const shadow = container.attachShadow({ mode: 'open' });
+shadow.innerHTML = `
+  <style>
+    .btn { color: red; }  /* 这个样式只在 shadow 内部生效 */
+  </style>
+  <div class="btn">子应用按钮</div>
+`;
+```
+
+**2. Scoped CSS 隔离（宽松模式）：**
+
+```javascript
+// qiankun 在加载子应用 CSS 时，会给每个选择器加前缀
+// 原始 CSS：
+// .btn { color: red; }
+// .header { background: #fff; }
+
+// 改写后：
+// div[data-name="app-a"] .btn { color: red; }
+// div[data-name="app-a"] .header { background: #fff; }
+
+// 实现原理（简化版）
+function scopeCSS(css, appName) {
+  return css.replace(/([^{]+)\{/g, (match, selector) => {
+    const scoped = selector.split(',').map(s =>
+      `div[data-name="${appName}"] ${s.trim()}`
+    ).join(', ');
+    return `${scoped} {`;
+  });
+}
+```
+
+### 生命周期管理
+
+qiankun 通过 HTML Entry 解析子应用资源后，按照严格的生命周期管理子应用：
+
+```text
+路由变化
+   │
+   ▼
+匹配子应用路由
+   │
+   ▼
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│  bootstrap   │ →   │    mount     │ →   │   unmount    │
+│  （初始化）  │     │  （挂载）    │     │  （卸载）    │
+│              │     │              │     │              │
+│ - 创建沙箱   │     │ - 激活沙箱   │     │ - 重写沙箱   │
+│ - 注入全局变量│     │ - 渲染子应用 │     │ - 清除副作用 │
+│ - 只执行一次 │     │ - 每次进入   │     │ - 每次离开   │
+└──────────────┘     └──────────────┘     └──────────────┘
+```
+
+```javascript
+// qiankun 生命周期钩子的执行流程
+// 主应用注册子应用
+registerMicroApps([
+  {
+    name: 'app-a',
+    entry: '//localhost:8080',   // HTML Entry
+    container: '#sub-container',
+    activeRule: '/app-a',
+  },
+]);
+
+// 子应用导出生命周期（以 React 为例）
+export async function bootstrap() {
+  console.log('app-a bootstrap');
+}
+
+export async function mount(props) {
+  console.log('app-a mount', props);
+  // props 包含主应用注入的通信方法
+  render(props);
+}
+
+export async function unmount(props) {
+  console.log('app-a unmount');
+  const { container } = props;
+  ReactDOM.unmountComponentAtNode(container);
+}
+
+// 可选：qiankun 独有的生命周期
+export async function update(props) {
+  console.log('app-a update', props);
+}
+```
+
+<Tip title="🎢 通俗比喻: 酒店入住">
+
+qiankun 的生命周期管理就像酒店管理系统。`bootstrap` 是酒店开业时的初始化（只做一次：装修房间、配钥匙）。`mount` 是客人入住（每次有新客人都做：开门、开灯、开空调）。`unmount` 是客人退房（每次客人走都做：关灯、关空调、清理房间）。沙箱就是房间的门卡系统——客人只能进自己的房间，不能去别人的房间乱翻。
+
+</Tip>
+
+---
+
+## Q5: 微前端的挑战与解决方案
+
+### 性能问题
+
+微前端引入了额外的运行时开销（沙箱创建、样式隔离、通信桥接），如果处理不当会导致首屏加载慢、运行时卡顿。
+
+```text
+性能瓶颈来源：
+
+1. 子应用加载 ──→ 多次网络请求（HTML + JS + CSS）
+2. 沙箱创建  ──→ Proxy 创建 + 全局变量代理
+3. CSS 隔离  ──→ 样式解析 + 选择器改写
+4. 通信开销  ──→ 跨应用状态同步
+```
+
+**解决方案：**
+
+| 问题 | 解决方案 | 说明 |
+|------|---------|------|
+| 首屏加载慢 | 子应用预加载（prefetch） | 主应用加载完成后，空闲时预加载子应用资源 |
+| 沙箱性能差 | 惰性创建 + 复用沙箱 | 不在启动时创建所有沙箱，按需创建 |
+| CSS 隔离开销 | 构建时预处理 | 在构建阶段就完成选择器改写，而不是运行时 |
+| 重复依赖 | externals + CDN | 公共依赖（React/Vue）抽到 CDN，不打包进子应用 |
+
+```javascript
+// qiankun 预加载配置
+import { prefetchApps } from 'qiankun';
+
+// 主应用启动后，空闲时预加载子应用
+prefetchApps([
+  { name: 'app-a', entry: '//localhost:8080' },
+  { name: 'app-b', entry: '//localhost:8081' },
+]);
+```
+
+### 状态共享
+
+子应用之间如何共享状态是微前端最棘手的问题之一。
+
+```text
+方案光谱：从"简单"到"复杂"
+
+全局变量 ← 自定义事件 ← 状态管理库 ← RxJS / Observable
+（最简单）   （松耦合）    （结构化）    （响应式）
+```
+
+```javascript
+// 方案 1：通过 props 传递（最简单，适合简单场景）
+// 主应用
+registerMicroApps([{
+  name: 'app-a',
+  props: {
+    token: 'xxx',
+    userInfo: { name: '张三' },
+    onGlobalStateChange: (state) => console.log(state),
+  },
+}]);
+
+// 子应用
+export async function mount(props) {
+  console.log(props.token);       // 获取共享数据
+  console.log(props.userInfo);
+  props.onGlobalStateChange((state, prev) => {
+    console.log('状态变化', state, prev);
+  });
+}
+```
+
+```javascript
+// 方案 2：qiankun 内置的 globalState（基于观察者模式）
+import { initGlobalState } from 'qiankun';
+
+// 主应用初始化全局状态
+const actions = initGlobalState({ user: null, token: '' });
+
+actions.onGlobalStateChange((state, prev) => {
+  console.log('主应用监听:', state, prev);
+});
+
+actions.setGlobalState({ user: { name: '张三' } });
+
+// 子应用中也可以监听和修改
+export async function mount(props) {
+  props.onGlobalStateChange((state) => {
+    // 响应全局状态变化
+    setUser(state.user);
+  });
+}
+```
+
+### 通信机制
+
+| 通信方式 | 实现原理 | 适用场景 | 优缺点 |
+|---------|---------|---------|--------|
+| **Props 传递** | 主应用通过 mount 参数传数据 | 简单的父子通信 | 简单直接，但不支持子应用间通信 |
+| **自定义事件** | `CustomEvent` / `EventBus` | 子应用间通信 | 松耦合，但事件多了难维护 |
+| **GlobalState** | qiankun 内置的观察者模式 | 全局状态同步 | 开箱即用，但只适合简单状态 |
+| **URL 参数** | 通过路由 query/hash 传递 | 页面间传参 | 无侵入，但不适合复杂数据 |
+| **Shared Worker** | 多个子应用共享一个 Worker 线程 | 大数据共享 | 高性能，但兼容性差 |
+
+```javascript
+// 自定义事件通信（最灵活的方案）
+// 通信总线
+class EventBus {
+  constructor() {
+    this.events = {};
+  }
+
+  on(event, callback) {
+    if (!this.events[event]) this.events[event] = [];
+    this.events[event].push(callback);
+  }
+
+  emit(event, data) {
+    (this.events[event] || []).forEach(cb => cb(data));
+  }
+
+  off(event, callback) {
+    if (!callback) {
+      delete this.events[event];
+    } else {
+      this.events[event] = (this.events[event] || []).filter(cb => cb !== callback);
+    }
+  }
+}
+
+// 全局共享
+window.__MICRO_FRONTEND_BUS__ = new EventBus();
+
+// 子应用 A 发送消息
+window.__MICRO_FRONTEND_BUS__.emit('user-login', { name: '张三' });
+
+// 子应用 B 接收消息
+window.__MICRO_FRONTEND_BUS__.on('user-login', (user) => {
+  console.log('用户登录了:', user);
+});
+```
+
+<Warning title="⚠️ 通信的反模式: 子应用间强耦合">
+
+最常见的反模式是子应用之间直接互相引用或直接调用对方的方法。这会导致：1）子应用无法独立部署（改了 A 必须同时发 B）；2）无法独立测试（测试 B 必须先启动 A）。
+
+```javascript
+// ❌ 反模式：子应用 A 直接引用子应用 B
+import { getUser } from 'app-b/utils'; // 强耦合！
+
+// ✅ 正确：通过事件总线或共享状态通信
+window.__MICRO_FRONTEND_BUS__.emit('need-user');
+window.__MICRO_FRONTEND_BUS__.on('user-data', (user) => { ... });
+```
+
+</Warning>
+
+---
+
+## Q6: 高频面试题
+
+### 微前端和 Monorepo 的区别？
+
+很多人把微前端和 Monorepo 搞混，其实它们解决的是完全不同的问题。
+
+| 对比维度 | 微前端 | Monorepo |
+|---------|-------|---------|
+| **解决的问题** | 运行时如何组装多个独立应用 | 代码仓库如何组织多个项目 |
+| **关注阶段** | 运行时（浏览器端） | 开发时（构建、依赖管理） |
+| **技术栈** | 可以不同（A 用 React，B 用 Vue） | 通常统一 |
+| **独立部署** | 每个子应用独立部署 | 通常统一构建和部署 |
+| **代表工具** | qiankun、wujie、Module Federation | pnpm workspace、Turborepo、Nx |
+
+```text
+Monorepo 和微前端不是互斥的，而是可以组合的：
+
+Monorepo（开发时）         微前端（运行时）
+┌─────────────────┐       ┌─────────────────┐
+│ packages/       │       │ 主应用          │
+│   app-main/     │ ───→  │   ├── 子应用 A  │
+│   app-a/        │       │   ├── 子应用 B  │
+│   app-b/        │       │   └── 子应用 C  │
+│   shared/       │       └─────────────────┘
+└─────────────────┘
+```
+
+<Tip title="💡 面试技巧">
+
+Monorepo 是"代码怎么管"，微前端是"应用怎么跑"。一个 Monorepo 里的多个包可以组成一个微前端应用，也可以单独发布为 npm 包。两者是不同维度的工程化方案，经常配合使用但本质上不相关。
+
+</Tip>
+
+---
+
+## 🔍 底层源码：qiankun 是如何实现的？
+
+<div class="follow-up">
+qiankun 的 HTML Entry 解析是怎么实现的？
+</div>
+
+qiankun 内部使用 `import-html-entry` 库来解析子应用的 HTML。核心流程是：fetch HTML → 解析 DOM → 提取 `<script>` / `<link>` / `<style>` → 在沙箱中执行 JS。
+
+```javascript
+// import-html-entry 的核心逻辑（极度简化）
+async function importEntry(entry) {
+  // 1. fetch HTML
+  const html = await fetch(entry).then(res => res.text());
+
+  // 2. 解析 DOM
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+
+  // 3. 提取外部脚本 <script src="...">
+  const scripts = [...doc.querySelectorAll('script[src]')]
+    .map(el => new URL(el.getAttribute('src'), entry).href);
+
+  // 4. 提取内联脚本 <script>...</script>
+  const inlineScripts = [...doc.querySelectorAll('script:not([src])')]
+    .map(el => el.textContent);
+
+  // 5. 提取样式 <link rel="stylesheet">
+  const styles = [...doc.querySelectorAll('link[rel="stylesheet"]')]
+    .map(el => new URL(el.getAttribute('href'), entry).href);
+
+  // 6. 返回可执行的脚本和模板 HTML
+  return {
+    template: doc.body.innerHTML,
+    getExternalScripts: () => fetchAll(scripts),
+    getInlineScripts: () => inlineScripts,
+    execScripts: async (sandbox) => {
+      const externalScripts = await fetchAll(scripts);
+      const allScripts = [...externalScripts, ...inlineScripts];
+      // 在沙箱中逐个执行脚本
+      return sandbox.exec(allScripts);
+    },
+  };
+}
+```
+
+<div class="follow-up">
+qiankun 的样式隔离在源码层面是怎么做的？
+</div>
+
+qiankun 在 `src/sandbox/patchers/css.ts` 中实现了 Scoped CSS。核心思路是遍历 CSS 规则的选择器，给每个选择器加上子应用容器的属性选择器前缀。
+
+```javascript
+// qiankun CSS 隔离的核心逻辑（简化版）
+function processRule(rule, appName) {
+  if (rule.selectorText) {
+    // 给每个选择器加前缀
+    // .btn → div[data-name="app-a"] .btn
+    rule.selectorText = rule.selectorText
+      .split(',')
+      .map(selector =>
+        `div[data-name="${appName}"] ${selector.trim()}`
+      )
+      .join(', ');
+  }
+}
+
+// 处理 @media 和 @supports 中的规则
+function processSheet(sheet, appName) {
+  for (const rule of sheet.cssRules) {
+    if (rule instanceof CSSStyleRule) {
+      processRule(rule, appName);
+    } else if (rule instanceof CSSMediaRule) {
+      processSheet(rule, appName);
+    }
+  }
+}
+```
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："你们项目中是怎么做微前端的？遇到了什么问题？"
+
+**及格回答（60-70分）：**
+> "我们用了 qiankun，主应用加载子应用，子应用之间通过 props 传数据。遇到过样式冲突的问题，加了 CSS 隔离就解决了。"
+
+面试官评价：**用过但不理解原理，遇到问题靠搜索引擎解决**。
+
+**满分回答（90-100分）：**
+
+> 我们的技术选型经过了详细的调研。最初考虑过 Module Federation，但我们有 Vue 2、Vue 3、React 三种技术栈，Module Federation 要求共享依赖版本一致，无法满足。最终选择了 qiankun，因为它的 HTML Entry 模式可以让不同技术栈的子应用零改造接入。<sup>[1]</sup>
+
+> 核心架构是：主应用负责全局路由和登录态管理，子应用各自独立仓库、独立 CI/CD。JS 隔离用的是 qiankun 默认的 Proxy Sandbox，CSS 隔离用的是 Shadow DOM 模式。遇到的主要问题是：1）Shadow DOM 内的弹窗（如 antd Modal）会渲染到子应用容器外，脱离 Shadow DOM 边界导致样式丢失；2）子应用之间的全局状态同步。<sup>[2]</sup>
+
+> 第一个问题的解决方案是在子应用的 mount 阶段配置 `getPopupContainer`，让弹窗渲染到 Shadow DOM 内部。第二个问题我们没有用 qiankun 内置的 globalState（太简单），而是用了一个独立的 Zustand store 作为共享状态层，通过 props 注入到每个子应用。<sup>[3]</sup>
+
+### 大厂高频连环拷问
+
+> 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。每个模块 **8 个 Accordion**，覆盖 4 个难度层级。
+
+<AccordionGroup>
+
+  <Accordion title='qiankun 的 JS 沙箱是怎么实现的？' icon="layer-group">
+
+    **答题要点：**
+    不能只答"用 Proxy 代理 window"，要说清楚 Proxy 的 get/set/has 三个陷阱函数分别做什么，以及为什么需要 fakeWindow。
+
+    **高分回答：**
+    "qiankun 的 JS 沙箱基于 ES6 Proxy 实现，核心是创建一个 fakeWindow 对象，用 Proxy 代理它。子应用读写 `window.xxx` 时，实际操作的是 fakeWindow。
+
+    get 陷阱：优先从 fakeWindow 取，没有则从真实 window 取。对函数类型的属性（如 `fetch`、`alert`），需要 `.bind(rawWindow)` 绑定到真实 window，否则函数内部的 `this` 会指向 fakeWindow 导致报错。
+    set 陷阱：只写入 fakeWindow，不写入真实 window，实现隔离。
+    has 陷阱：先查 fakeWindow，再查真实 window，确保 `if ('fetch' in window)` 能正常工作。
+
+    qiankun 还维护了一个 `addedPropsMapInSandbox`，记录子应用新增的属性。卸载子应用时，只需清除这些新增属性，而不是重置整个 window。"
+
+  </Accordion>
+
+  <Accordion title='微前端的 CSS 隔离方案有哪些？各自的优缺点？' icon="layer-group">
+
+    **答题要点：**
+    不能只列方案名称，要说清楚每种方案的原理和实际踩坑。
+
+    **高分回答：**
+    "主流有三种 CSS 隔离方案：
+
+    1. **Shadow DOM 隔离**：利用 Web Components 的 Shadow DOM 天然隔离样式。优点是隔离最彻底，缺点是部分第三方库（如 antd 的 Modal、Drawer）会把 DOM 插入 `document.body`，脱离 Shadow DOM 边界导致样式丢失。解决方案是在组件配置 `getPopupContainer` 指定挂载点。
+
+    2. **Scoped CSS（属性选择器）**：运行时给每个 CSS 选择器加属性前缀，如 `.btn` 变成 `[data-name="app-a"] .btn`。优点是兼容性好，缺点是对动态插入的样式（JS 运行时 `createElement('style')`）需要额外拦截处理。
+
+    3. **CSS Modules / CSS-in-JS**：从构建层面解决，通过哈希类名或内联样式实现天然隔离。优点是无运行时开销，缺点是需要子应用在构建时配置，不适用于存量项目。
+
+    实际项目中，Shadow DOM + Scoped CSS 组合使用效果最好。"
+
+  </Accordion>
+
+  <Accordion title='qiankun 的 HTML Entry 和 single-spa 的 JS Entry 有什么区别？' icon="stopwatch">
+
+    **答题要点：**
+    从子应用改造成本、资源加载方式、灵活性三个维度对比。
+
+    **高分回答：**
+    "HTML Entry（qiankun）以子应用的 `index.html` 为入口，框架自动 fetch HTML、解析 DOM、提取 `<script>` 和 `<link>` 标签，然后在沙箱中执行。子应用几乎不用改造——只要正常暴露生命周期函数即可。
+
+    JS Entry（single-spa）以子应用的 JS Bundle 为入口，需要开发者手动配置子应用的 JS/CSS 地址，且子应用必须导出 `bootstrap`、`mount`、`unmount` 三个生命周期函数。
+
+    核心区别：HTML Entry 对存量项目更友好（已有 `index.html` 的项目直接接入），JS Entry 更灵活但改造成本高。另外 HTML Entry 天然支持子应用内部的路由和资源组织，而 JS Entry 需要子应用自己处理。"
+
+  </Accordion>
+
+  <Accordion title='子应用之间如何通信？哪种方案最好？' icon="stopwatch">
+
+    **答题要点：**
+    没有"最好的方案"，只有"最适合的方案"。分场景讨论。
+
+    **高分回答：**
+    "微前端的通信方案从简到繁有四种：
+
+    1. **Props 传递**：主应用通过 mount 参数传给子应用，适合简单的父子通信。
+    2. **qiankun globalState**：内置的观察者模式，适合全局简单状态（如用户信息、主题）。
+    3. **自定义事件总线**：基于 `CustomEvent` 或自定义 EventBus，适合子应用间松耦合通信。
+    4. **共享状态库**：独立的 Zustand/Redux Store 通过 props 注入，适合复杂的全局状态管理。
+
+    我的建议是：90% 的场景用 Props + 自定义事件就够了。只有当多个子应用需要共享大量实时状态（如购物车、消息通知）时，才需要引入共享状态库。"
+
+  </Accordion>
+
+  <Accordion title='微前端如何处理子应用的路由？' icon="node">
+
+    **答题要点：**
+    必须分场景讨论：主应用和子应用都用 hash 路由、都用 history 路由、混合使用的情况。
+
+    **高分回答：**
+    "路由管理是微前端最容易出问题的地方。核心原则是：**主应用负责全局路由分发，子应用负责内部路由**。
+
+    1. **主应用 history + 子应用 history**：最推荐。主应用用 `activeRule` 匹配子应用前缀（如 `/app-a/*`），子应用设置 `base` 为 `/app-a`。
+    2. **主应用 hash + 子应用任意**：主应用通过 hash 前缀匹配（如 `#/app-a`），子应用可以自由选择。
+    3. **子应用内部跳转**：子应用内部跳转用自己框架的路由，不经过主应用。跨子应用跳转用 `history.pushState` 或主应用提供的导航 API。
+
+    常见坑：子应用刷新后 404。原因是子应用的路由是前端路由，服务端没有对应路径。解决方案是服务端配置 fallback 到 `index.html`，或者主应用在加载子应用时根据 URL 重新匹配。"
+
+  </Accordion>
+
+  <Accordion title='Module Federation 和 qiankun 的本质区别是什么？' icon="node">
+
+    **答题要点：**
+    一个在构建时，一个在运行时。这个区别决定了它们的适用场景完全不同。
+
+    **高分回答：**
+    "Module Federation 和 qiankun 本质上是两个维度的方案：
+
+    **Module Federation** 是构建时方案。多个应用在 Webpack 构建阶段就约定好哪些模块是共享的（如 React、Vue），运行时按需从远程加载。优势是性能好（没有沙箱开销、共享依赖不重复加载），劣势是技术栈必须一致（React 版本必须相同），且没有运行时隔离。
+
+    **qiankun** 是运行时方案。子应用在浏览器中被动态加载和执行，通过 Proxy Sandbox 做 JS 隔离，通过 Shadow DOM 做 CSS 隔离。优势是技术栈无关（Vue、React、Angular 都能接入），劣势是有性能开销。
+
+    简单说：Module Federation 适合同技术栈的微前端，追求性能；qiankun 适合混合技术栈的微前端，追求隔离和灵活性。"
+
+  </Accordion>
+
+  <Accordion title='🔥 微前端的子应用如何独立部署？如何保证版本兼容？' icon="skull">
+
+    **答题要点：**
+    这是实际工程中最难的问题之一。涉及 CI/CD、版本管理、灰度发布。
+
+    **高分回答：**
+    "子应用独立部署的核心挑战是：**主应用如何知道子应用的最新地址？**
+
+    方案 1：**配置中心**。子应用部署后，把最新的 JS/CSS 地址注册到配置中心（如 Nacos、etcd）。主应用启动时从配置中心拉取子应用列表。优点是动态更新，缺点是多了一个依赖。
+
+    方案 2：**entry 配置化**。主应用的 `registerMicroApps` 中，`entry` 从环境变量或配置文件读取，而不是硬编码。子应用部署后更新配置文件即可。
+
+    版本兼容的策略：1）子应用的接口契约（Props、事件名）用 TypeScript 类型约束；2）主应用和子应用约定通信协议的版本号；3）灰度发布时先让 5% 流量切到新版本，观察无异常再全量。"
+
+  </Accordion>
+
+  <Accordion title='🔥 如何评估一个项目是否需要微前端？' icon="skull">
+
+    **答题要点：**
+    微前端不是银弹。必须说清楚什么场景适合、什么场景不适合。
+
+    **高分回答：**
+    "微前端适合的场景：1）多个团队维护同一产品的不同模块；2）需要渐进式迁移技术栈（如从 jQuery 迁移到 React）；3）需要独立部署和发布（如 SaaS 平台的插件系统）。
+
+    微前端不适合的场景：1）团队人数少于 10 人，单体应用完全够用；2）对性能要求极高（如 C 端 H5），微前端的运行时开销不可接受；3）所有模块技术栈一致且强耦合（如一个表单的多个步骤），拆分只会增加复杂度。
+
+    我的判断标准：如果你的团队有 3 个以上独立小组、构建时间超过 5 分钟、每月上线冲突超过 3 次，才值得考虑微前端。否则 Monorepo + 统一构建就够了。"
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [qiankun 官方文档](https://qiankun.umijs.org/zh/guide)：蚂蚁金服出品的微前端框架最权威文档，包含 API 说明和最佳实践。<sup>[1]</sup>
+- 📖 [Micro Frontends in Action](https://www.manning.com/books/micro-frontends-in-action)：Michael Geers 的微前端专著，系统讲解了微前端的架构设计和落地实践。<sup>[2]</sup>
+- 🟢 [single-spa 官方文档](https://single-spa.js.org/)：微前端框架 single-spa 的最权威文档，理解微前端底层原理的必读材料。<sup>[3]</sup>
+- 🔗 [Module Federation 官方文档](https://webpack.js.org/concepts/module-federation/)：Webpack 5 Module Federation 的官方说明，理解构建时微前端方案的核心。<sup>[4]</sup>

@@ -1,0 +1,647 @@
+---
+title: "CSS"
+description: "字节 3-1 面试官视角深度解析"
+---
+
+## 面试官为什么问这个？
+
+CSS 看似简单，但面试官问 CSS 是在考你**浏览器渲染引擎的内部实现**。能答出 Blink/WebKit 源码级别的 CSS 解析、选择器匹配、层叠计算、布局算法，才是真正的高级前端。
+
+---
+
+## Q1: CSS 选择器匹配的原理？为什么建议用 class 而不是标签选择器？
+
+### 浏览器源码级分析
+
+```cpp
+// Blink 渲染引擎中，CSS 选择器匹配的源码
+// third_party/blink/renderer/core/css/resolver/style_resolver.cc
+
+// 浏览器解析 CSS 时，会把选择器编译成内部表示
+// 选择器从右向左匹配！
+// .nav .item a { color: red; }
+// 匹配顺序：先找所有 a → 检查祖先有没有 .item → 检查再上层有没有 .nav
+
+// 为什么从右向左？
+// 从左向右：先找 .nav → 遍历所有后代找 .item → 再遍历找 a（需要多次遍历 DOM 树）
+// 从右向左：先找所有 a → 只需要向上遍历祖先链（每个元素的祖先链是有限的）
+
+// SelectorChecker 的实现
+// third_party/blink/renderer/core/css/selector_checker.cc
+MatchResult SelectorChecker::Match(const SelectorCheckingContext& context) {
+  // 从选择器的最右边开始匹配
+  const CSSSelector* selector = context.selector;
+
+  // 1. 先匹配最右边的选择器（如 a）
+  if (!MatchSimpleSelector(selector, context.element)) {
+    return MatchResult::kFailsLocally;
+  }
+
+  // 2. 向左遍历组合器（空格、>、+、~）
+  while (selector->NextSimpleSelector()) {
+    selector = selector->NextSimpleSelector();
+    CombinatorType combinator = selector->GetCombinatorType();
+
+    switch (combinator) {
+      case CombinatorType::kDescendant:  // 空格
+        // 向上遍历所有祖先
+        for (Element* ancestor = context.element->ParentElement();
+             ancestor; ancestor = ancestor->ParentElement()) {
+          if (MatchSimpleSelector(selector, ancestor)) break;
+        }
+        break;
+
+      case CombinatorType::kChild:  // >
+        // 只检查直接父元素
+        if (!MatchSimpleSelector(selector, context.element->ParentElement())) {
+          return MatchResult::kFailsLocally;
+        }
+        break;
+
+      case CombinatorType::kDirectAdjacent:  // +
+        // 只检查前一个兄弟元素
+        if (!MatchSimpleSelector(selector, context.element->PreviousElementSibling())) {
+          return MatchResult::kFailsLocally;
+        }
+        break;
+    }
+  }
+  return MatchResult::kMatches;
+}
+```
+
+**选择器优先级（Specificity）的计算：**
+
+```cpp
+// Blink 中 specificity 的计算
+// third_party/blink/renderer/core/css/css_selector.cc
+
+unsigned CSSSelector::Specificity() const {
+  // specificity 是一个 4 元组：(style, id, class, element)
+  // 但实际编码为一个 24 位整数
+  // 每个部分占 8 位（最多 255）
+
+  unsigned specificity = 0;
+
+  // 1. 内联样式：bit 24（最高位）
+  // 2. ID 选择器：bit 16-23
+  // 3. class/属性/伪类：bit 8-15
+  // 4. 标签/伪元素：bit 0-7
+
+  for (const CSSSelector* s = this; s; s = s->NextSimpleSelector()) {
+    switch (s->GetMatchType()) {
+      case MatchType::kId:        specificity += 0x10000; break;  // ID
+      case MatchType::kClass:     specificity += 0x100;   break;  // class
+      case MatchType::kPseudoClass: specificity += 0x100; break;  // :hover 等
+      case MatchType::kTag:       specificity += 0x1;     break;  // 标签
+      case MatchType::kPseudoElement: specificity += 0x1; break;  // ::before 等
+    }
+  }
+  return specificity;
+}
+
+// !important 的处理不在 specificity 计算中
+// 而是在 Cascade 阶段单独处理
+// third_party/blink/renderer/core/css/cascade_resolver.cc
+```
+
+**性能影响：**
+
+```css
+/* 选择器匹配性能（从快到慢）： */
+
+/* 最快：ID 选择器（直接 hash 查找） */
+#nav { }
+
+/* 快：class 选择器（hash 查找） */
+.item { }
+
+/* 中：标签选择器（需要遍历） */
+div { }
+
+/* 慢：属性选择器（需要字符串比较） */
+[data-type="user"] { }
+
+/* 最慢：通配符 + 后代组合（需要遍历整棵树） */
+* .item div span { }
+
+/* 最佳实践： */
+/* 1. 避免超过 3 层嵌套 */
+.nav .item a { }      /* ✅ 3 层 */
+.nav ul li a span { } /* ❌ 5 层，匹配慢 */
+
+/* 2. 避免通配符 */
+* { } /* ❌ 匹配所有元素 */
+
+/* 3. 避免标签选择器作为最右边 */
+div p { } /* ❌ 先找所有 p，再检查祖先有没有 div */
+.class p { } /* ✅ 先找所有 p，再检查祖先有没有 .class */
+```
+
+<Tip title="答题要点">
+
+回答选择器匹配时，说出"从右向左匹配"和"选择器编译为内部表示"，说明你理解浏览器源码。加分项：说出 Blink 中 SelectorChecker 和 specificity 的 24 位编码方式。
+
+</Tip>
+
+---
+
+## Q2: BFC 是什么？从渲染引擎角度解释
+
+```cpp
+// BFC（Block Formatting Context）在 Blink 中的实现
+// third_party/blink/renderer/core/layout/block_layout_algorithm.cc
+
+// BFC 是一个独立的布局上下文
+// 在 Blink 中，BFC 对应 LayoutBlockFlow 对象
+// 每个 BFC 有自己的：
+// 1. 浮动元素列表（floating_objects_）
+// 2. margin 折叠规则
+// 3. 清除浮动规则
+
+// 创建 BFC 的条件（Blink 源码中的判断）：
+bool CreatesNewFormattingContext(const ComputedStyle& style) {
+  return style.IsFloating() ||                    // float 不为 none
+         style.HasOutOfFlowPosition() ||          // position 为 absolute/fixed
+         style.IsDisplayInlineBlock() ||           // display: inline-block
+         style.IsDisplayFlowRoot() ||              // display: flow-root（最推荐）
+         style.IsDisplayTable() ||                 // display: table
+         style.IsDisplayFlex() ||                  // display: flex
+         style.IsDisplayGrid() ||                  // display: grid
+         style.Overflow() != EOverflow::kVisible;  // overflow 不为 visible
+}
+```
+
+**BFC 解决的三个问题（源码级解释）：**
+
+```css
+/* 问题 1：margin 重叠 */
+/* Blink 中，同一个 BFC 内的相邻块级元素，margin 会折叠 */
+.box1 { margin-bottom: 20px; }
+.box2 { margin-top: 30px; }
+/* 实际间距 = max(20, 30) = 30px，不是 50px */
+
+/* 原理：Blink 的 margin 折叠算法 */
+// BlockLayoutAlgorithm::CollapseMargins()
+// 如果两个 margin 都是正的，取 max
+// 如果都是负的，取 min（绝对值最大的）
+// 如果一正一负，相加
+
+/* 解决：把其中一个放进新 BFC */
+.parent { display: flow-root; } /* 创建新 BFC */
+
+/* 问题 2：浮动元素高度塌陷 */
+/* 原理：浮动元素脱离了 normal flow，父 BFC 的高度计算不包含它 */
+/* 解决：父元素创建新 BFC，浮动元素被包含在新 BFC 中 */
+.parent { overflow: hidden; } /* 创建新 BFC */
+
+/* 问题 3：浮动元素遮挡 */
+/* 原理：BFC 的区域不会与浮动元素重叠 */
+/* 解决：给兄弟元素创建新 BFC */
+.sibling { overflow: hidden; } /* 创建新 BFC，不会与浮动元素重叠 */
+```
+
+---
+
+## Q3: 重排（Reflow）和重绘（Repaint）的区别？哪些操作触发重排？
+
+### 浏览器渲染流程源码
+
+```cpp
+// Blink 渲染流程的 9 个阶段
+// third_party/blink/renderer/core/frame/frame_lifecycle.cc
+
+enum class LifecycleState {
+  kNoLifecycleUpdates,
+  kInStyleRecalc,        // 1. 样式计算
+  kStyleClean,           // 样式计算完成
+  kInLayout,             // 2. 布局（重排）
+  kLayoutClean,          // 布局完成
+  kInPrePaint,           // 3. 预绘制
+  kInPaint,              // 4. 绘制（重绘）
+  kPaintClean,           // 绘制完成
+  kInCompositing,        // 5. 合成
+};
+
+// 重排（Reflow）= 重新计算布局
+// 触发条件：改变元素的几何属性（宽高、位置、显示/隐藏）
+// 源码：LayoutBlockFlow::Layout() → LayoutBlock::Layout()
+
+// 重绘（Repaint）= 重新绘制像素
+// 触发条件：改变元素的外观属性（颜色、背景、阴影）
+// 源码：PaintLayer::Paint() → GraphicsContext::DrawRect()
+
+// 重排一定触发重绘，重绘不一定触发重排
+```
+
+**哪些操作触发重排（Blink 源码验证）：**
+
+```cpp
+// 触发重排的操作（修改几何属性）
+// 以下属性的修改会导致 LayoutInvalidation：
+
+// 1. 尺寸属性
+width, height, min-width, max-width, min-height, max-height
+padding, margin, border
+
+// 2. 位置属性
+top, right, bottom, left
+position (static → relative → absolute → fixed → sticky)
+display (none ↔ block ↔ inline ↔ flex ↔ grid)
+
+// 3. 内容变化
+添加/删除 DOM 元素
+改变元素的内容（文字、图片尺寸变化）
+改变字体大小
+
+// 4. 特殊属性
+offsetWidth, offsetHeight, offsetTop, offsetLeft
+clientWidth, clientHeight, clientTop, clientLeft
+scrollWidth, scrollHeight, scrollTop, scrollLeft
+getBoundingClientRect()
+getComputedStyle()
+
+// 以上读取属性会强制同步布局（Forced Synchronous Layout）
+// 如果之前有未完成的样式修改，浏览器必须先执行布局再返回值
+```
+
+**优化策略：**
+
+```javascript
+// 坏：多次触发重排
+element.style.width = '100px'; // 触发重排
+element.style.height = '100px'; // 触发重排
+element.style.margin = '10px'; // 触发重排
+
+// 好：批量修改
+element.style.cssText = 'width: 100px; height: 100px; margin: 10px;';
+// 或者用 class
+element.classList.add('new-style');
+
+// 好：读写分离
+// 先读
+const width = element.offsetWidth;
+const height = element.offsetHeight;
+// 再写
+element.style.width = width * 2 + 'px';
+element.style.height = height * 2 + 'px';
+
+// 好：用 transform 代替 top/left（不触发重排）
+// transform 由合成器（Compositor）处理，不触发主线程的布局
+element.style.transform = 'translate(100px, 100px)'; // ✅ 只触发合成
+element.style.left = '100px'; // ❌ 触发重排
+
+// 好：用 will-change 提前告知浏览器
+element.style.willChange = 'transform'; // 浏览器提前创建合成层
+```
+
+<Tip title="答题要点">
+
+说出"Blink 的 LifecycleState 有 9 个阶段"以及"读取 offsetWidth 会强制同步布局（Forced Synchronous Layout）"，说明你看过渲染引擎源码。
+
+</Tip>
+
+---
+
+## Q4: Flex 布局的原理？浏览器怎么计算 Flex 布局？
+
+### Blink 的 Flex 布局实现
+
+```cpp
+// Blink 的 Flex 布局算法
+// third_party/blink/renderer/core/layout/flex_layout_algorithm.cc
+
+// Flex 布局的计算分为 5 步：
+
+// 步骤 1：确定主轴和交叉轴
+// 根据 flex-direction 确定主轴方向
+enum FlexDirection { kRow, kRowReverse, kColumn, kColumnReverse };
+
+// 步骤 2：确定可用空间
+// 容器的可用空间 = 容器尺寸 - padding - border
+// 如果容器尺寸是 auto，可用空间 = 视口尺寸
+
+// 步骤 3：计算 Flex 项目的初始尺寸
+// flex-basis → width/height → content size
+// 如果 flex-basis 是 auto，用 width/height
+// 如果 width/height 也是 auto，用内容的固有尺寸
+
+// 步骤 4：分配剩余空间或处理溢出
+// 如果有剩余空间，按 flex-grow 分配
+// 如果空间不足，按 flex-shrink 收缩
+
+// 步骤 5：对齐
+// justify-content：主轴对齐
+// align-items：交叉轴对齐
+// align-self：单个项目交叉轴对齐
+```
+
+**flex-grow 和 flex-shrink 的计算公式：**
+
+```javascript
+// flex-grow：分配剩余空间
+// 项目的新尺寸 = 基础尺寸 + (剩余空间 × flex-grow / 所有 flex-grow 之和)
+
+// 例子：容器 500px，三个项目各 100px
+// 剩余空间 = 500 - 300 = 200px
+// 项目1 flex-grow: 1 → 100 + 200 × 1/6 = 133px
+// 项目2 flex-grow: 2 → 100 + 200 × 2/6 = 167px
+// 项目3 flex-grow: 3 → 100 + 200 × 3/6 = 200px
+
+// flex-shrink：处理溢出
+// 缩小量 = 溢出空间 × (项目基础尺寸 × flex-shrink) / 所有(基础尺寸 × flex-shrink)之和
+
+// 例子：容器 300px，三个项目各 150px
+// 溢出空间 = 450 - 300 = 150px
+// 项目1 flex-shrink: 1, 基础 150 → 缩小 150 × (150×1)/(150×1+150×2+150×3) = 25px → 125px
+// 项目2 flex-shrink: 2, 基础 150 → 缩小 150 × (150×2)/(150×6) = 50px → 100px
+// 项目3 flex-shrink: 3, 基础 150 → 缩小 150 × (150×3)/(150×6) = 75px → 75px
+```
+
+---
+
+## Q5: Grid 布局的原理？
+
+```cpp
+// Blink 的 Grid 布局算法
+// third_party/blink/renderer/core/layout/grid_layout_algorithm.cc
+
+// Grid 布局的计算分为 4 步：
+
+// 步骤 1：定义网格（显式网格）
+// grid-template-rows / grid-template-columns 定义轨道大小
+// grid-template-areas 定义命名区域
+
+// 步骤 2：放置项目（自动放置）
+// grid-auto-flow: row（默认）→ 按行填充
+// grid-auto-flow: column → 按列填充
+// grid-auto-flow: dense → 尽量填满空洞
+
+// 步骤 3：创建隐式轨道
+// 如果项目放在了显式网格之外，自动创建隐式轨道
+// grid-auto-rows / grid-auto-columns 定义隐式轨道大小
+
+// 步骤 4：对齐
+// justify-items / align-items：单元格内对齐
+// justify-content / align-content：整个网格在容器中的对齐
+// place-items: center = align-items: center + justify-items: center
+```
+
+---
+
+## Q6: CSS 盒模型？box-sizing 的源码实现？
+
+```cpp
+// Blink 中盒模型的实现
+// third_party/blink/renderer/core/layout/box_model.cc
+
+// 标准盒模型（content-box）：
+// width = content 的宽度
+// 总宽度 = width + padding-left + padding-right + border-left + border-right
+
+// IE 盒模型（border-box）：
+// width = content + padding + border
+// 总宽度 = width（已包含 padding 和 border）
+
+// Blink 中的计算：
+LayoutUnit BoxModel::ComputeWidth() const {
+  if (style.BoxSizing() == EBoxSizing::kBorderBox) {
+    // border-box：width 包含 padding 和 border
+    return specified_width - padding_left - padding_right - border_left - border_right;
+  } else {
+    // content-box：width 就是 content 宽度
+    return specified_width;
+  }
+}
+```
+
+---
+
+## Q7: 层叠上下文（Stacking Context）是什么？
+
+```cpp
+// 层叠上下文在 Blink 中的实现
+// third_party/blink/renderer/core/paint/paint_layer.cc
+
+// 层叠上下文决定了元素在 Z 轴上的绘制顺序
+// 每个层叠上下文是一个独立的层叠单元
+
+// 创建层叠上下文的条件：
+bool PaintLayer::StackingContext::CreatesStackingContext() const {
+  return style.HasTransform() ||              // transform 不为 none
+         style.HasWillChangeTransform() ||    // will-change: transform
+         style.Opacity() < 1.0f ||            // opacity < 1
+         style.HasFilter() ||                 // filter 不为 none
+         style.HasBackdropFilter() ||         // backdrop-filter 不为 none
+         style.IsDisplayFlex() ||             // display: flex
+         style.IsDisplayGrid() ||             // display: grid
+         style.HasPosition() ||               // position 不为 static
+         style.IsBlendMode() ||               // mix-blend-mode 不为 normal
+         style.IsIsolation();                 // isolation: isolate
+}
+
+// 层叠顺序（从低到高）：
+// 1. 层叠上下文的背景和边框
+// 2. z-index < 0 的元素
+// 3. 块级元素（position: static）
+// 4. 浮动元素
+// 5. 行内元素
+// 6. z-index: 0 的元素（创建新的层叠上下文）
+// 7. z-index > 0 的元素
+```
+
+```css
+/* 层叠上下文的经典陷阱 */
+.parent {
+  position: relative;
+  z-index: 0;  /* 创建层叠上下文 */
+}
+
+.child {
+  position: absolute;
+  z-index: 9999; /* 看起来很大，但在 parent 的层叠上下文内部 */
+}
+
+.sibling {
+  position: relative;
+  z-index: 1; /* 这个 z-index 在 parent 的层叠上下文之上！ */
+}
+
+/* sibling 会在 child 之上，因为 sibling 在 parent 的层叠上下文之外 */
+```
+
+---
+
+## Q8: CSS 变量（Custom Properties）的实现原理？
+
+```cpp
+// CSS 变量在 Blink 中的实现
+// third_party/blink/renderer/core/css/css_variable_data.cc
+
+// CSS 变量在解析时被存储为 CSSVariableData 对象
+// 包含原始 token 列表，延迟解析
+
+// var() 函数的解析
+// third_party/blink/renderer/core/css/css_variable_resolver.cc
+const CSSValue* CSSVariableResolver::ResolveVariable(
+    const AtomicString& name,
+    const CSSValue* fallback) {
+  // 1. 在当前元素的自定义属性映射中查找
+  const CSSValue* value = element.GetCustomProperty(name);
+
+  // 2. 如果没找到，递归查找父元素
+  if (!value && element.parentElement()) {
+    value = ResolveVariableForParent(element.parentElement(), name);
+  }
+
+  // 3. 如果还是没找到，用 fallback
+  if (!value) {
+    value = fallback;
+  }
+
+  return value;
+}
+
+// CSS 变量的性能特点：
+// 1. 继承：变量从父元素继承（像 color 一样）
+// 2. 动态：修改变量会触发使用该变量的元素重新计算样式
+// 3. 作用域：:root 定义全局变量，组件内定义局部变量
+```
+
+---
+
+## Q9: CSS 动画和 Transition 的实现原理？
+
+```cpp
+// CSS 动画在 Blink 中的实现
+// third_party/blink/renderer/core/animation/
+
+// CSS Animation（@keyframes）
+// 1. 解析 @keyframes 规则，生成 KeyframeEffect
+// 2. 每帧根据时间进度计算插值
+// 3. 应用到元素的 ComputedStyle
+
+// CSS Transition
+// 1. 监听属性变化
+// 2. 如果该属性有 transition 定义，启动动画
+// 3. 每帧插值计算
+
+// 动画的性能分类：
+// 1. 合成器动画（Compositor Animation）：transform、opacity
+//    → 不触发主线程，由 GPU 合成器处理
+//    → 最流畅
+
+// 2. 布局动画（Layout Animation）：width、height、top、left
+//    → 每帧触发重排
+//    → 卡顿风险高
+
+// 3. 绘制动画（Paint Animation）：color、background-color
+//    → 每帧触发重绘
+//    → 中等性能
+
+// 最佳实践：
+.element {
+  /* ✅ 用 transform 代替 top/left */
+  transform: translate(100px, 100px);
+  /* ✅ 用 opacity 代替 visibility */
+  opacity: 0;
+  /* ✅ 用 will-change 提前告知浏览器 */
+  will-change: transform, opacity;
+}
+```
+
+---
+
+## Q10: 响应式设计的原理？媒体查询在浏览器中怎么工作？
+
+```cpp
+// 媒体查询在 Blink 中的实现
+// third_party/blink/renderer/core/css/media_query_evaluator.cc
+
+// 媒体查询在样式计算阶段评估
+// 如果媒体查询不匹配，整个样式表被跳过
+
+// 常用的媒体查询断点
+@media (max-width: 768px) { }   // 手机
+@media (max-width: 1024px) { }  // 平板
+@media (min-width: 1200px) { }  // 桌面
+
+// 响应式设计的三种方案：
+// 1. 媒体查询（最传统）
+// 2. Flexbox/Grid（自适应布局）
+// 3. Container Queries（容器查询，2023 年新增）
+
+// Container Queries 的实现
+// third_party/blink/renderer/core/css/container_query_evaluator.cc
+@container (min-width: 400px) {
+  .card { grid-template-columns: 1fr 1fr; }
+}
+// 根据容器尺寸而不是视口尺寸来应用样式
+// 比媒体查询更灵活
+```
+
+---
+
+## Q11: CSS 性能优化的面试高频题
+
+| 问题 | 答案要点 |
+|------|---------|
+| 为什么用 class 比标签选择器快？ | class 用 hash 查找，标签需要遍历 |
+| 为什么 transform 比 top 快？ | transform 由 GPU 合成器处理，不触发主线程布局 |
+| 什么是 Forced Synchronous Layout？ | 读取 offsetWidth 等属性会强制同步布局 |
+| 什么是 Layout Thrashing？ | 交替读写布局属性，反复触发重排 |
+| 如何减少重排？ | 批量修改、读写分离、用 transform |
+| will-change 有什么用？ | 提前告知浏览器，创建独立合成层 |
+| contain 属性有什么用？ | 限制元素的布局/绘制/样式影响范围 |
+| content-visibility 有什么用？ | 跳过屏幕外元素的渲染，提升首屏性能 |
+
+<Tip title="答题要点">
+
+CSS 面试的核心不是背属性，而是理解浏览器渲染引擎怎么处理 CSS。说出"Blink 的 LifecycleState"、"选择器从右向左匹配"、"Forced Synchronous Layout"，就能证明你的深度。
+
+</Tip>
+
+---
+
+## 十二、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 CSS 选择器匹配的原理"
+
+**及格回答（60-70分）：**
+> "选择器从右向左匹配。class 比标签选择器快。不要用太深的嵌套。"
+
+**满分回答（90-100分）：**
+> "选择器从右向左匹配是 Blink 的 `SelectorChecker` 实现的。从右向左的原因是：每个元素的祖先链是有限的（通常 &lt; 20 层），但后代数量可能是无限的。从右向左只需要向上遍历祖先链，从左向右需要遍历所有后代。
+>
+> 性能差异的关键不是选择器本身，而是**匹配次数**。`div .item` 需要对每个 `.item` 元素检查祖先是否有 `div`——如果页面有 1000 个 `.item`，就检查 1000 次。`.container .item` 只需要检查 `.container` 内部的 `.item`，范围更小。
+>
+> 但现代浏览器的优化已经让选择器性能差异变得很小——Blink 的 `SelectorChecker` 会先检查最不常见的选择器部分（比如 ID），快速过滤掉不匹配的元素。真正影响性能的是**强制同步布局（Forced Synchronous Layout）**——在 JavaScript 中读取 `offsetWidth` 等属性会强制浏览器立即计算布局，打断渲染流水线。"
+
+### 面试官追问链
+
+**第一层**："什么是层叠上下文？z-index 为什么有时候不生效？"
+> 期望回答：层叠上下文是 z-index 的作用范围。每个定位元素（position 非 static）且 z-index 非 auto 会创建新的层叠上下文。子元素的 z-index 只在父层叠上下文内比较，不能跨层叠上下文。
+
+**第二层**："Blink 中层叠上下文是怎么实现的？"
+> 期望回答：Blink 的 `PaintLayer` 对象维护层叠上下文树。每个层叠上下文有独立的 z-order 列表，包含背景、负 z-index、块级、浮动、内联、正 z-index、前景等 7 个层。`PaintLayerCompositor` 负责决定哪些层需要提升为合成层（composited layer）。
+
+**第三层**："will-change: transform 做了什么？"
+> 期望回答：告诉浏览器这个元素可能会变化 transform，浏览器会提前把它提升为独立的合成层（composited layer），后续 transform 变化只影响合成器，不触发主线程的布局和绘制。但滥用会导致过多合成层，消耗 GPU 内存。
+
+---
+
+## 十三、面试官视角：BFC 的追问链
+
+### 问题："什么是 BFC？怎么触发？有什么用？"
+
+**及格回答：**
+> "BFC 是块级格式化上下文。触发条件：overflow 不为 visible、float、position 为 absolute/fixed、display 为 inline-block/flex/grid。用途：清除浮动、防止 margin 重叠。"
+
+**满分回答：**
+> "BFC 在 Blink 中由 `BlockLayoutAlgorithm` 处理。每个 BFC 是一个独立的布局上下文——内部的块级盒子不会影响外部，外部也不影响内部。
+>
+> margin 重叠的原因：在同一个 BFC 中，相邻块级盒子的垂直 margin 会合并（取较大值）。创建新的 BFC 就打破了这个规则——因为 BFC 内部的布局是独立的。
+>
+> 清除浮动的原理：BFC 的高度计算会包含浮动元素。当父元素触发 BFC 时，它的高度会包含浮动的子元素，不会塌陷。
+>
+> 现代布局方案（Flex、Grid）天然创建 BFC，不需要额外的 overflow: hidden hack。这就是为什么 Flex/Grid 布局中不会出现 margin 重叠和浮动塌陷问题。"

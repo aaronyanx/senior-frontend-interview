@@ -1,0 +1,468 @@
+---
+title: "DOM 事件"
+---
+
+> **面试官为什么问这个？**
+>
+> DOM 事件是前端交互的基石。面试官问这个，本质上是在考察你：**事件从触发到执行回调，底层到底经历了什么？** 如果你只能说出"冒泡和捕获"，说明你对事件系统的理解停留在"会用 `addEventListener`"而不是"知道为什么这样设计"。
+
+---
+
+## Q1: 事件冒泡和事件捕获是什么？事件委托是什么？
+
+<Steps>
+
+  <Step title="1995年: Netscape 的捕获模型与 IE 的冒泡模型">
+
+早期浏览器对事件传播有两种截然不同的设计。Netscape 采用捕获模型（从 window 向下传播到目标），IE 采用冒泡模型（从目标向上传播到 window）。两种模型互不兼容，开发者苦不堪言。
+
+  </Step>
+  <Step title="致命痛点: 事件传播的混乱">
+
+如果页面上有嵌套的元素都监听了同一个事件，事件的执行顺序完全取决于浏览器的实现。开发者无法预测哪个监听器先执行，代码行为不可控。
+
+  </Step>
+  <Step title="W3C DOM Level 2 规范统一">
+
+W3C 在 DOM Level 2 规范中统一了两种模型：事件传播分为三个阶段——捕获阶段（从 window 向下）、目标阶段（到达目标元素）、冒泡阶段（从目标向上）。`addEventListener` 的第三个参数控制在哪个阶段执行。
+
+  </Step>
+  <Step title="事件委托: 利用冒泡的工程实践">
+
+事件委托利用冒泡机制，将子元素的事件处理逻辑绑定到父元素上。当子元素触发事件时，事件冒泡到父元素，父元素的监听器通过 `event.target` 判断实际触发的元素。这大幅减少了监听器数量，动态添加的子元素也能自动响应事件。
+
+  </Step>
+  <Step title="passive listener: 性能与功能的权衡">
+
+对于 touch/wheel 事件，浏览器在触发监听器前不知道是否会调用 `preventDefault()`，必须等监听器执行完才能决定是否滚动。`passive: true` 告诉浏览器"我不会阻止默认行为"，浏览器可以放心地在监听器执行前就开始滚动，显著提升滚动流畅度。
+
+  </Step>
+
+</Steps>
+
+**事件系统解决的核心问题：**
+
+```text
+问题：嵌套元素上的同一个事件，执行顺序是什么？
+
+没有统一规范：
+  Netscape：父元素先执行（捕获）
+  IE：子元素先执行（冒泡）
+
+解决：W3C 统一为三个阶段
+
+  捕获阶段：window → document → html → body → ... → 目标元素
+  目标阶段：目标元素上的所有监听器
+  冒泡阶段：目标元素 → ... → body → html → document → window
+```
+
+<Note title="💡 一句话总结">
+
+DOM 事件通过捕获-目标-冒泡三个阶段统一了事件传播，事件委托利用冒泡机制实现了高效的事件管理。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有事件委托">
+
+想象一个 1000 行的表格，每行都有点击事件。你需要给每个 `<td>` 绑定一个监听器——1000 个监听器占内存，动态插入新行还要重新绑定。就像一个公司里每个员工都配一个专属秘书，成本高且管理混乱。
+
+</Card>
+</CardGroup>
+<CardGroup cols={2}>
+
+<Card title="✅ 引入事件委托">
+
+事件委托相当于在表格上只绑一个监听器，通过 `event.target` 判断点击了哪行。1000 行只需要 1 个监听器，动态添加的行也自动生效。就像公司只设一个前台接待，所有来访者都由前台统一登记和分发。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说事件传播的三阶段（捕获→目标→冒泡），再说事件委托的原理（利用冒泡），最后提 `passive: true` 的性能意义。面试官想听的是你理解事件系统的设计哲学，而不是背 API。
+
+</Tip>
+
+---
+
+## Q2: event.preventDefault() 和 event.stopPropagation() 有什么区别？
+
+事件处理中有两个容易混淆的控制方法，本质区别在于它们控制的对象不同：
+
+```text
+┌───────────────────────────────────────┐
+│  event.preventDefault()               │  ← 阻止浏览器的默认行为
+│  例：阻止链接跳转、阻止表单提交        │
+└───────────────────────────────────────┘
+
+┌───────────────────────────────────────┐
+│  event.stopPropagation()              │  ← 阻止事件继续传播
+│  例：阻止冒泡到父元素                  │
+└───────────────────────────────────────┘
+```
+
+```javascript
+// preventDefault：阻止浏览器默认行为，不影响事件传播
+link.addEventListener('click', (e) => {
+  e.preventDefault();  // 链接不会跳转，但事件照样冒泡到父元素
+});
+
+// stopPropagation：阻止事件继续传播，不影响默认行为
+button.addEventListener('click', (e) => {
+  e.stopPropagation();  // 事件不会冒泡到父元素，但按钮的默认行为不受影响
+});
+
+// stopImmediatePropagation：阻止传播 + 阻止同一元素上的其他监听器执行
+button.addEventListener('click', (e) => {
+  e.stopImmediatePropagation();
+  // 同一个 button 上绑定的其他 click 监听器也不会执行了
+});
+
+// 在 HTML 属性中 return false = preventDefault + stopPropagation
+// 但在 addEventListener 回调中 return false 不会阻止冒泡！
+```
+
+<Warning title="⚠️ 常见陷阱: return false 的行为不一致">
+
+在 HTML 属性（如 `onclick="return false"`）中，`return false` 等同于 `preventDefault + stopPropagation`。但在 `addEventListener` 的回调中，`return false` 不会阻止冒泡，也不会阻止默认行为。这是一个经典的坑。
+
+- HTML 属性中 `return false`：阻止默认 + 阻止冒泡
+- `addEventListener` 中 `return false`：什么都不阻止
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 快递站的两种拦截">
+
+`preventDefault()` 就像你去快递站拦住了一个包裹，不让它送到收件人手里（阻止默认行为）。但快递站的流水线还在正常运转，下一个包裹照常处理（事件继续传播）。
+
+`stopPropagation()` 就像你在流水线上按下了暂停键，当前包裹之后的所有包裹都停在原地不再流转（阻止事件冒泡）。但当前这个包裹本身该怎么处理还是怎么处理（默认行为不受影响）。
+
+</Tip>
+
+---
+
+## Q3: 什么是事件循环中的 passive event listener？
+
+### 基础梳理
+
+| 监听器选项 | 含义 | 性能影响 | 典型场景 |
+|-----------|------|---------|---------|
+| `capture: true` | 在捕获阶段执行 | 无 | 拦截子元素事件 |
+| `once: true` | 只执行一次后自动移除 | 减少内存 | 一次性初始化 |
+| `passive: true` | 保证不调用 `preventDefault()` | **显著提升滚动性能** | touch/wheel 事件 |
+| `signal` | 通过 AbortController 移除 | 灵活控制生命周期 | 条件性监听 |
+
+### 专家视角深度剖析
+
+很多候选人只知道 `passive: true` "能提升性能"，但大厂面试官真正在意的是：**为什么 `passive` 能提升性能？它解决了什么浏览器层面的根本问题？**
+
+在 Chrome 的渲染流程中，滚动（scroll）是一个高度优化的操作——它由合成器线程（Compositor Thread）处理，不需要主线程参与。但问题是：当用户在触摸屏上滑动时，浏览器需要先触发 `touchstart`/`touchmove` 监听器，因为监听器可能调用 `event.preventDefault()` 来阻止滚动。如果监听器执行耗时，浏览器必须等它完成才能确定是否滚动——这就导致了滚动卡顿。
+
+`passive: true` 的设计哲学是**信任开发者**：你告诉我你不会阻止默认行为，我就不用等你了，直接开始滚动。Chrome 从 v56 开始，把 document 级别的 `touchstart`/`touchmove`/`wheel` 事件默认设为 `passive: true`，这就是为什么现代浏览器的默认滚动比以前流畅得多。
+
+```javascript
+// 手动设置 passive
+element.addEventListener('touchmove', handler, { passive: true });
+
+// Chrome 的默认行为：document 级别的 touch/wheel 事件默认 passive: true
+// 如果你确实需要阻止滚动，必须显式设置 passive: false
+document.addEventListener('touchmove', (e) => {
+  e.preventDefault(); // 会触发 Chrome 控制台的警告
+}, { passive: false }); // 必须显式声明
+```
+
+---
+
+## Q4: document load 和 DOMContentLoaded 有什么区别？
+
+**DOMContentLoaded 的触发时机：**
+HTML 解析完成、DOM 树构建完成时触发。不等待 CSS、图片、iframe 加载完成。
+
+**load 的触发时机：**
+所有资源（CSS、图片、iframe、字体）加载完成后才触发。
+
+**关键区别：**
+
+| 事件 | 触发时机 | 等待 CSS | 等待图片 | 典型用途 |
+|------|---------|:---:|:---:|---------|
+| `DOMContentLoaded` | DOM 树构建完成 | ❌ | ❌ | 初始化 JS 逻辑 |
+| `load` | 所有资源加载完成 | ✅ | ✅ | 获取图片尺寸、初始化第三方 SDK |
+
+<Tip title="最佳实践: ">
+
+大多数业务代码应该监听 `DOMContentLoaded` 而不是 `load`——你不需要等所有图片加载完才初始化页面逻辑。`load` 适合需要获取图片尺寸或等待 iframe 内容的场景。在 React/Vue 中，框架的初始化代码通常在 `DOMContentLoaded` 时执行。
+
+</Tip>
+
+---
+
+## 🔍 底层源码：Blink 是如何实现事件分发的？
+
+<div class="follow-up">
+Blink 的事件分发是怎么实现的？
+</div>
+
+Blink 的事件分发实现在 `EventDispatcher::DispatchEvent` 中（详见 [Blink 源码：event_dispatcher.cc](https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/dom/events/event_dispatcher.cc)）：
+
+```cpp
+// EventDispatcher::DispatchEvent 的核心逻辑
+void EventDispatcher::DispatchEvent(Node& node, Event& event) {
+  // 1. 构建传播路径：从目标元素向上遍历到 window
+  HeapVector<Member<EventTarget>> propagation_path;
+  for (EventTarget* t = &node; t; t = t->ParentOrShadowHost())
+    propagation_path.push_back(t);
+
+  // 2. 捕获阶段：从 window 向下遍历
+  event.SetEventPhase(Event::PhaseType::kCapturingPhase);
+  for (auto it = propagation_path.rbegin(); it != propagation_path.rend(); ++it)
+    FireEventListeners(*it, event);
+
+  // 3. 目标阶段
+  event.SetEventPhase(Event::PhaseType::kAtTarget);
+  FireEventListeners(node, event);
+
+  // 4. 冒泡阶段：从目标向上遍历
+  event.SetEventPhase(Event::PhaseType::kBubblingPhase);
+  for (auto& target : propagation_path)
+    FireEventListeners(target, event);
+}
+```
+
+这段代码做了 3 件事：首先构建传播路径（从目标元素向上收集所有祖先节点到 window），然后按捕获→目标→冒泡的顺序依次触发监听器。如果 `stopPropagation()` 被调用，`propagation_stopped_` 标志被设置，后续节点跳过。
+
+<div class="follow-up">
+事件监听器的 passive 标志存在哪里？
+</div>
+
+详见 [Blink 源码：registered_event_listener.h](https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/dom/events/registered_event_listener.h)：
+
+```cpp
+// RegisteredEventListener 存储每个监听器的元数据
+class RegisteredEventListener {
+  Member<EventListener> callback_;
+  bool use_capture_;      // 捕获还是冒泡
+  bool passive_;          // 是否 passive
+  bool once_;             // 是否只执行一次
+  AbortSignal* signal_;   // 用于 AbortController 移除
+};
+```
+
+事件监听器存储在 `EventTarget` 的 `EventListenerMap` 中，每个事件类型对应一个 `EventListenerVector`。`passive` 标志在事件分发时被检查——如果监听器是 passive 的，浏览器可以安全地在监听器执行前开始处理默认行为（如滚动）。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说事件冒泡和事件捕获"
+
+**及格回答（60-70分）：**
+> "事件先捕获（从 window 到目标），再冒泡（从目标到 window）。addEventListener 第三个参数控制在哪个阶段执行。事件委托利用冒泡机制。"
+
+面试官评价：**知道规则但不理解设计**。
+
+**满分回答（90-100分）：**
+
+> 事件传播由 W3C DOM Level 2 规范统一为三个阶段：捕获阶段从 window 向下遍历到目标元素，目标阶段触发目标元素上的所有监听器（不区分捕获/冒泡），冒泡阶段从目标向上遍历到 window。<sup>[1]</sup>
+
+> 在 Blink 中，事件分发由 `EventDispatcher::DispatchEvent` 实现。它先构建传播路径（从目标元素向上收集所有祖先节点），然后按阶段依次触发监听器。`stopPropagation()` 设置 `propagation_stopped_` 标志跳过后续节点，`stopImmediatePropagation()` 还会跳过同一元素上的其他监听器。<sup>[2]</sup>
+
+> `passive: true` 的性能意义在于：对于 touch/wheel 事件，浏览器在触发监听器前不知道是否会调用 `preventDefault()`，必须等监听器执行完才能决定是否滚动。`passive: true` 告诉浏览器"我不会阻止默认行为"，浏览器可以放心地在监听器执行前就开始滚动。Chrome 从 v56 开始把 document 级别的 touch/wheel 事件默认设为 passive，这就是现代浏览器默认滚动更流畅的原因。
+
+> 事件委托是利用冒泡机制的工程实践——将子元素的事件处理绑定到父元素，通过 `event.target` 判断实际触发的元素。优点是减少监听器数量、动态元素自动生效；缺点是不支持不冒泡的事件（如 focus/blur，可以用 `focusin`/`focusout` 替代）。React 17+ 把所有事件委托到 root 容器，而不是 document。
+
+### 大厂高频连环拷问
+
+> 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。
+
+<AccordionGroup>
+
+  <Accordion title="e.target 和 e.currentTarget 有什么区别?" icon="layer-group">
+
+**答题要点：**
+指出一个常见盲点：在事件委托中容易混用这两个属性。
+
+**高分回答：**
+"`e.target` 是实际触发事件的元素（用户真正点击的那个），`e.currentTarget` 是绑定事件监听器的元素。在事件委托中，两者通常不同。
+    
+    ```javascript
+    ul.addEventListener('click', (e) => {
+      e.target;        // 可能是 li、span、img（用户实际点击的元素）
+      e.currentTarget; // 始终是 ul（绑定监听器的元素）
+    });
+```
+    
+一个常见错误是在事件委托中用 `e.target.tagName === 'LI'` 判断，但如果 li 内部有嵌套元素（如 `<li><span>text</span></li>`），点击 span 时 `e.target` 是 span 而不是 li。正确做法是用 `e.target.closest('li')` 向上查找最近的匹配元素。"
+
+  </Accordion>
+
+  <Accordion title="React 的合成事件系统和原生事件有什么区别?" icon="stopwatch">
+
+**答题要点：**
+结合 React 的事件委托策略和合成事件的设计初衷解释。
+
+**高分回答：**
+"React 的合成事件（SyntheticEvent）是对原生事件的包装，提供统一的跨浏览器接口。核心区别有三点：
+    
+1）**委托策略**：React 17+ 把所有事件委托到 root 容器（而不是 document），这使得多个 React 应用可以共存于同一页面。React 16 及之前委托到 document。
+2）**事件池化**：React 17 之前，合成事件对象会被复用——事件回调执行完后，事件对象的属性被清空。异步访问属性会得到 null。React 17 移除了事件池化。
+3）**合成事件不等于原生事件**：`e.stopPropagation()` 只阻止 React 内部的事件传播，不阻止原生事件。如果需要同时阻止，要用 `e.nativeEvent.stopImmediatePropagation()`。"
+
+  </Accordion>
+
+  <Accordion title="为什么 focus/blur 不冒泡?怎么实现事件委托?" icon="node">
+
+**答题要点：**
+必须分场景讨论——原生 DOM 和框架中的不同处理方式。
+
+**高分回答：**
+"focus/blur 不冒泡是 W3C 规范的设计——因为焦点事件通常只关心当前获得/失去焦点的元素，不需要传播到父元素。但 `focusin`/`focusout` 会冒泡，可以作为替代。
+    
+在原生 DOM 中实现 focus 事件委托有两种方式：
+1）用 `focusin`/`focusout` 替代（会冒泡）。
+2）在捕获阶段监听 focus：`parent.addEventListener('focus', handler, true)`。
+    
+React 的 `onFocus`/`onBlur` 实际上用的是 `focusin`/`focusout`，所以看起来像是冒泡的。Vue 的事件系统也做了类似的适配。这是一个很好的例子，说明框架在底层做了大量的兼容性处理。"
+
+  </Accordion>
+
+  <Accordion title="第四层: 如何用事件委托实现一个通用的事件处理器?" icon="stopwatch">
+
+**答题要点：**
+结合实际工程场景解释事件委托的实现。
+
+**高分回答：**
+"实现一个通用的事件委托处理器需要考虑：
+**1. 选择器匹配**：使用 `event.target.closest(selector)` 向上查找匹配的元素。
+**2. 动态元素支持**：事件委托天然支持动态添加的元素。
+**3. 性能优化**：避免在每次事件触发时都遍历所有子元素。
+```javascript
+function delegate(parent, selector, handler) {
+  parent.addEventListener('click', (e) => {
+    const target = e.target.closest(selector);
+    if (target && parent.contains(target)) {
+      handler.call(target, e);
+    }
+  });
+}
+// 使用
+delegate(ul, 'li', (e) => {
+  console.log('Clicked:', e.target.textContent);
+});
+```
+**4. 注意事项**：`closest()` 会从当前元素向上查找，直到找到匹配的元素或到达 `parent`。如果 `parent` 本身匹配 `selector`，需要额外检查。"
+
+  </Accordion>
+
+  <Accordion title="第五层: 自定义事件（CustomEvent）有什么应用场景?" icon="node">
+
+**答题要点：**
+必须分场景讨论！CustomEvent 的适用场景。
+
+**高分回答：**
+"CustomEvent 允许开发者创建自定义的事件类型，用于组件间的通信：
+**1. 组件通信**：在 Web Components 中，CustomEvent 用于组件向外部发送通知。
+**2. 插件系统**：插件可以通过监听自定义事件来扩展主程序的功能。
+**3. 状态同步**：在不同的模块之间同步状态变化。
+**4. 调试工具**：在开发过程中，通过自定义事件记录和追踪状态变化。
+```javascript
+// 创建自定义事件
+const event = new CustomEvent('userLogin', {
+  detail: { userId: 123, username: 'Tom' },
+  bubbles: true,
+  cancelable: true
+});
+// 触发事件
+document.dispatchEvent(event);
+// 监听事件
+document.addEventListener('userLogin', (e) => {
+  console.log('User logged in:', e.detail);
+});
+```"
+
+  </Accordion>
+
+  <Accordion title="🔥 如果一个元素同时绑定了捕获和冒泡阶段的监听器, 执行顺序是什么?" icon="skull">
+
+**答题要点：**
+对比常见场景，点出目标阶段的特殊性。
+
+**高分回答：**
+"分两种情况讨论：
+
+**情况 1：事件源就是绑定监听器的元素（目标阶段）**
+捕获和冒泡的监听器按 `addEventListener` 的注册顺序执行，不区分 capture 参数。这是 DOM Level 3 规范的行为（旧浏览器可能先执行捕获再执行冒泡）。
+
+```javascript
+el.addEventListener('click', () => console.log('A'), true);   // 捕获
+el.addEventListener('click', () => console.log('B'), false);  // 冒泡
+// 输出：A → B（按注册顺序，不是因为 capture）
+el.addEventListener('click', () => console.log('C'), false);  // 冒泡
+el.addEventListener('click', () => console.log('D'), true);   // 捕获
+// 输出：C → D（按注册顺序）
+```
+
+**情况 2：事件源是子元素（冒泡阶段）**
+父元素的捕获监听器先于子元素执行，子元素的冒泡监听器先于父元素的冒泡监听器执行。
+
+```javascript
+parent.addEventListener('click', () => console.log('P-capture'), true);
+child.addEventListener('click', () => console.log('C'));
+parent.addEventListener('click', () => console.log('P-bubble'), false);
+// 输出：P-capture → C → P-bubble
+```
+
+"
+
+  </Accordion>
+
+  <Accordion title="🔥 杀手锏追问: 在移动端触摸事件中, touch 和 click 事件的触发顺序是什么?如何解决 300ms 延迟?" icon="skull">
+
+**答题要点：**
+结合移动端的触摸事件机制解释。
+
+**高分回答：**
+"在移动端，触摸事件的触发顺序是：`touchstart` → `touchmove` → `touchend` → `click`。
+**300ms 延迟的原因**：浏览器需要等待 300ms 来判断用户是单击还是双击缩放。
+**解决方案**：
+**1. 禁用缩放**：在 `<meta>` 标签中设置 `viewport` 的 `user-scalable=no`，但影响无障碍访问。
+**2. CSS touch-action**：使用 `touch-action: manipulation` 告诉浏览器不需要检测双击。
+**3. FastClick 库**：在 `touchend` 时立即触发点击事件，不再等待 300ms。
+**4. 现代浏览器**：Chrome 32+ 和 Safari 9.1+ 已经在支持 `viewport` 的页面中自动禁用 300ms 延迟。
+**最佳实践**：使用 `touch-action: manipulation` + 现代浏览器，不再需要 FastClick。"
+
+  </Accordion>
+
+  <Accordion title="🔥 杀手锏追问: 事件监听器的内存泄漏问题如何排查和解决?" icon="skull">
+
+**答题要点：**
+结合 DevTools 的内存分析工具解释。
+
+**高分回答：**
+"事件监听器的内存泄漏是一个常见问题：
+**1. 泄漏原因**：组件销毁时未移除事件监听器，导致监听器持有对已销毁 DOM 节点的引用。
+**2. 排查方法**：使用 Chrome DevTools 的 Memory 面板拍 Heap Snapshot，查找 `Detached` 开头的 DOM 节点，查看 Retainer 链找到未移除的监听器。
+**3. 解决方案**：
+- 在 `useEffect` 的清理函数中移除监听器。
+- 使用 `AbortController` 的 `signal` 参数，在组件销毁时自动移除监听器。
+- 使用事件委托，减少监听器数量。
+```javascript
+useEffect(() => {
+  const controller = new AbortController();
+  element.addEventListener('click', handler, { signal: controller.signal });
+  return () => controller.abort();
+}, []);
+```
+**4. 注意事项**：匿名函数无法被移除，必须使用具名函数或变量引用。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [W3C DOM Level 2 Events 规范](https://www.w3.org/TR/DOM-Level-2-Events/events.html)：事件传播三阶段的权威定义，理解捕获-目标-冒泡的规范基础。<sup>[1]</sup>
+- 📖 [Jake Archibald: 事件循环与任务队列](https://jakearchibald.com/2015/tasks-microtasks-queues-and-schedules/)：深度剖析了事件在浏览器任务队列中的调度机制。<sup>[2]</sup>
+- 🟢 [MDN: Event reference](https://developer.mozilla.org/en-US/docs/Web/Events)：所有 DOM 事件的完整参考，含冒泡/捕获/被动等属性说明。<sup>[3]</sup>

@@ -1,0 +1,1082 @@
+---
+title: "生态与工程"
+---
+
+> **面试官为什么问这个？**
+>
+> Vue 的生态系统是面试中的高频考点。面试官问这个，是在考察你是否理解：Composition API 解决了什么痛点？Vuex 和 Pinia 的核心区别是什么？Vue Router 的导航守卫和路由原理是什么？如果你只会用这些工具，却不知道它们的设计初衷，说明你不理解 Vue 的工程化思想。
+
+---
+
+## Q1: Composition API 解决了什么问题？
+
+<Steps>
+
+  <Step title="Options API 的逻辑碎片化">
+
+  Options API 把组件的逻辑按选项分类：`data` 放数据、`methods` 放方法、`computed` 放计算属性、`watch` 放侦听器。当组件变大时，同一个功能的代码被拆得七零八落--比如"搜索功能'的输入框状态在 `data`、搜索方法在 `methods`、防抖逻辑在 `watch`、结果缓存在 `computed`。
+
+  </Step>
+  <Step title="Mixins 的致命缺陷">
+
+  Vue 2 用 Mixins 复用逻辑，但 Mixins 有三个致命问题：**命名冲突**（两个 Mixins 定义同名属性会互相覆盖）、**来源不明**（组件用了 5 个 Mixin，某个属性来自哪个？）、**隐式依赖**（Mixins 之间可能互相依赖）。
+
+  </Step>
+  <Step title='Composition API 的逻辑聚合'>
+
+  Composition API 让同一个功能的代码可以**物理聚合**在一起。通过 `setup()` 函数和 Composables（组合函数），逻辑复用从"Mixin 的隐式合并"升级为"Composable 的显式调用"--类型安全、来源清晰、无命名冲突。
+
+  </Step>
+  <Step title="Composables 的工程实践">
+
+  一个典型的 Composable（如 `useSearch`）可以将状态定义（`ref`）、计算属性（`computed`）、方法和侦听器（`watch`）全部封装在一个函数中，返回值是一个普通对象--外部通过解构获取 `query`、`results`、`search` 等接口。多个 Composable 可以相互组合（如 `useSearch` 内部调用 `useDebounce`），形成清晰的逻辑层次。
+
+  </Step>
+  <Step title='关键启示：按功能组织比按类型组织更可维护'>
+
+  Composition API 的设计哲学是**关注点分离**--不是把所有 data 放一起、所有 methods 放一起，而是把"搜索功能"的所有相关代码放一起。这种思路在大型项目中尤其重要，因为它让代码的可读性和可维护性随组件复杂度线性增长，而不是指数级恶化。
+
+  </Step>
+
+</Steps>
+
+**Composition API 解决的核心问题：**
+
+```text
+问题：Options API 的逻辑碎片化 + Mixins 的命名冲突
+
+Options API：搜索功能的代码分散在 data/methods/computed/watch 中 → 组件大了难以维护
+Mixins：两个 Mixin 定义同名属性 → 互相覆盖 → 来源不明 → 调试困难
+
+解决：Composition API + Composables
+
+Composable：把搜索功能的所有逻辑（状态、方法、计算、侦听）聚合在一个函数中
+显式调用：const { query, results, search } = useSearch() → 来源清晰
+```
+
+**一句话总结：Composition API 让组件逻辑从"按选项分类"变成"按功能聚合"，解决了 Options API 的碎片化和 Mixins 的命名冲突。**
+
+<CardGroup cols={2}>
+
+<Card title="🚫 Options API + Mixins">
+
+同一个功能的代码分散在 data/methods/computed/watch 中。就像一本菜谱，所有菜的材料、步骤、注意事项混在一起--找"红烧肉的做法'要翻遍整本书。
+
+</Card>
+<Card title="✅ Composition API + Composables">
+
+同一个功能的代码聚合在一个 Composable 函数中。就像每道菜单独一页--"红烧肉'的材料、步骤、注意事项全在一页纸上，一目了然。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时重点说**痛点**（Options API 的碎片化和 Mixins 的缺陷）和**解决方案**（Composables 的逻辑聚合），不要只说"Composition API 更灵活'--面试官想听的是你理解为什么要这样设计。
+
+</Tip>
+
+---
+
+## Q2: Vuex 和 Pinia 有什么区别？
+
+Pinia 是 Vue 3 官方推荐的状态管理库，是 Vuex 的继任者。
+
+```text
+┌───────────────────────────────────────┐
+│        Vuex（Vue 2 时代）              │
+│  state → getters → mutations → actions│
+│  必须通过 mutations 修改 state         │
+│  模块化需要嵌套 module                 │
+└─────────────────┬─────────────────────┘
+                  │ 演进
+                  ▼
+┌───────────────────────────────────────┐
+│        Pinia（Vue 3 时代）             │
+│  state → getters → actions            │
+│  直接在 actions 中修改 state           │
+│  扁平化 store，无嵌套                  │
+└───────────────────────────────────────┘
+```
+
+| 对比维度 | Vuex | Pinia |
+|---------|------|-------|
+| **mutations** | ✅ 必须通过 mutations 修改 state | ❌ 没有 mutations，直接在 actions 中修改 |
+| **模块化** | 嵌套 module（namespaced） | 扁平化 store，无嵌套 |
+| **TypeScript** | 支持一般 | 完美支持 |
+| **体积** | 较大 | 轻量（约 1KB） |
+| **DevTools** | ✅ 支持 | ✅ 支持 |
+| **SSR** | ✅ 支持 | ✅ 支持 |
+| **Vue 版本** | Vue 2/3 | Vue 3 |
+
+<Warning title="⚠️ 为什么 Pinia 移除了 mutations?">
+
+Vuex 的 mutations 存在的初衷是**追踪状态变化**--每次修改 state 都通过 mutation，DevTools 可以记录每次变化。但实践中，mutations 只是样板代码--你总是写 `commit('SET_USER', user)` 这种固定模式，没有额外价值。
+
+Pinia 直接在 actions 中修改 state，DevTools 依然可以追踪变化（通过 Proxy 拦截）。这让代码更简洁，同时不丢失调试能力。
+
+</Warning>
+
+<Tip title='🎢 通俗比喻：审批流程'>
+
+Vuex 和 Pinia 的核心区别是"是否需要 mutations 这个中间层"--Vuex 必须通过 mutations 修改 state（可追踪但繁琐），Pinia 直接在 actions 中修改（简洁且可追踪）。
+就像审批流程。Vuex 就像严格的审批--你要改一个文件（修改 state），必须先填申请单（mutation），再交给领导审批（commit）。Pinia 就像扁平化管理--你直接改文件（在 action 中修改 state），系统自动记录谁改了什么（DevTools 追踪）。流程更简洁，但可追溯性不丢。
+
+</Tip>
+
+---
+
+## Q3: Composition API 和 Options API 到底该选哪个？
+
+很多候选人知道 Composition API "更灵活"，但说不清**在什么场景下 Options API 反而更好**。
+
+### 基础梳理
+
+| 维度 | Options API | Composition API |
+|------|------------|-----------------|
+| **代码组织** | 按选项分类（data/methods/computed） | 按功能聚合（useXxx） |
+| **逻辑复用** | Mixins（有命名冲突） | Composables（显式返回值） |
+| **TypeScript** | 支持一般 | 完美支持 |
+| **学习曲线** | 低（直观） | 中（需要理解 ref/reactive） |
+| **this 关键字** | 依赖 this | 没有 this |
+| **适用场景** | 简单组件、团队新手多 | 复杂组件、逻辑复用多 |
+
+### 专家视角深度剖析
+
+很多候选人觉得 Composition API 一定比 Options API 好，但**Vue 官方明确表示：Options API 不会被废弃**。
+
+Options API 的优势在于**低认知负担**。对于简单组件（一个列表、一个表单），Options API 的 data/methods/computed 分类方式更直观——你不需要思考"这个功能的代码应该怎么组织"，因为 Vue 已经帮你分好了。Composition API 的 `ref`、`reactive`、`computed`、`watch` 需要你理解响应式原理，否则很容易写出 `ref({ count: 0 })` 这种不必要的嵌套。
+
+但当组件复杂度超过一个临界点（大约 3-5 个功能点），Options API 的劣势就暴露了——同一个功能的代码被拆得七零八落，维护成本指数级增长。此时 Composition API 的"按功能聚合"优势就显现出来。
+
+```javascript
+// Options API：搜索功能的代码分散在 4 个选项中
+export default {
+  data() {
+    return { query: '', results: [] }      // 搜索状态
+  },
+  computed: {
+    filteredResults() { ... }               // 搜索结果过滤
+  },
+  methods: {
+    async search() { ... }                  // 搜索方法
+  },
+  watch: {
+    query: { handler: debounce(...) }       // 搜索防抖
+  }
+}
+
+// Composition API：搜索功能聚合在一个函数中
+function useSearch() {
+  const query = ref('')
+  const results = ref([])
+  const filteredResults = computed(() => ...)
+  const search = async () => { ... }
+  watch(query, debounce(...))
+  return { query, results, filteredResults, search }
+}
+```
+
+<Tip title="🎢 通俗比喻: 整理衣柜">
+
+Options API 就像按衣服类型整理——上衣放一格、裤子放一格、袜子放一格。衣柜小的时候很整齐，但当你有 50 件衣服时，找"明天穿的那套"要翻遍好几个格子。Composition API 就像按场合整理——"上班穿的"放一起、"运动穿的"放一起、"约会穿的"放一起。找"明天上班穿的"直接去一个格子就行。但如果只有 5 件衣服，按类型整理反而更简单。
+
+</Tip>
+
+---
+
+## Q4: Vuex 的 mutations 到底有什么用？Pinia 为什么能移除它？
+
+<Steps>
+
+  <Step title="Vuex 的设计初衷: 可追踪的状态变更">
+
+  Vuex 引入 mutations 的目的是让每一次状态变更都有迹可循。每次修改 state 都必须通过 mutation，DevTools 可以记录每次变化的类型和载荷（payload），方便调试和时间旅行（time travel）。
+
+  </Step>
+  <Step title="实践中的问题: 纯粹的样板代码">
+
+  在实际项目中，mutations 只是固定的模式——`commit('SET_USER', user)`、`commit('INCREMENT')`。开发者总是先在 actions 中处理异步逻辑，然后 commit 一个 mutation 来修改 state。这个中间层增加了代码量，但没有提供额外的价值。
+
+  </Step>
+  <Step title="Pinia 的方案: Proxy 拦截替代 mutations">
+
+  Pinia 用 Vue 3 的 `reactive`（Proxy）包装 state。Proxy 可以拦截所有属性的修改，DevTools 通过 Proxy 拦截就能追踪每次状态变更——不需要 mutations 这个中间层。代码更简洁，调试能力不丢。
+
+  </Step>
+  <Step title="关键洞察: mutations 的问题不是设计缺陷, 而是时代局限">
+
+  Vuex 诞生于 Vue 2 时代，那时候 `defineProperty` 只能拦截已有属性，无法追踪新增属性。mutations 是一种"显式声明"的追踪方式——你必须告诉我你要改什么，我才能记录。Vue 3 的 Proxy 让"自动追踪"成为可能，mutations 就变得多余了。
+
+  </Step>
+
+</Steps>
+
+**mutations 的演进：**
+
+```text
+Vue 2 + Vuex（没有 Proxy）：
+  state → actions → commit(mutation) → mutation 修改 state → DevTools 记录 mutation
+
+Vue 3 + Pinia（有 Proxy）：
+  state → actions 直接修改 state → Proxy 拦截 → DevTools 自动记录
+
+对比：Pinia 少了 commit 这一步，但 DevTools 的追踪能力不变
+```
+
+**一句话总结：Vuex 的 mutations 是 Vue 2 时代"显式追踪"的妥协方案，Pinia 借助 Proxy 实现了"自动追踪"，mutations 自然被淘汰。**
+
+<CardGroup cols={2}>
+
+<Card title="🚫 Vuex 的 mutations">
+
+每次修改 state 都要写 `commit('MUTATION_NAME', payload)`。就像公司规定每次报销都必须先填纸质申请单（mutation），再交给财务（commit），即使金额只有 10 块钱。
+
+</Card>
+<Card title="✅ Pinia 的直接修改">
+
+在 action 中直接 `this.user = user`。就像公司升级了电子审批系统——你直接在系统里提交报销（直接修改 state），系统自动记录谁在什么时候改了什么（Proxy 拦截），不需要纸质申请单。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说 mutations 的设计初衷（追踪状态变更），再说实践中的问题（样板代码），最后说 Pinia 的替代方案（Proxy 自动追踪）。面试官想听的是你理解"为什么当初这样设计"和"为什么现在不需要了"，而不是简单地说"Pinia 更简洁"。
+
+</Tip>
+
+---
+
+## Q5: Vue Router 的导航守卫有哪些？
+
+Vue Router 提供了三种级别的导航守卫：
+
+| 级别 | 守卫 | 触发时机 |
+|------|------|---------|
+| **全局** | `beforeEach` / `afterEach` / `beforeResolve` | 每次路由切换 |
+| **路由** | `beforeEnter` | 进入特定路由 |
+| **组件** | `onBeforeRouteUpdate` / `onBeforeRouteLeave` | 组件内部 |
+
+### 专家视角深度剖析
+
+很多候选人知道导航守卫有全局、路由、组件三个级别，但说不清**它们的执行顺序和典型用途**。
+
+导航守卫的核心用途是**权限控制**和**数据预加载**。`beforeEach` 适合做全局的登录检查--每次路由切换前检查 token，未登录就跳转登录页。`beforeEnter` 适合做路由级别的权限--某些路由需要特定角色才能访问。`onBeforeRouteLeave` 适合做页面离开确认--用户填写了表单但未保存，离开前提醒。
+
+**典型的权限校验场景：**
+
+```javascript
+// 全局前置守卫：检查登录状态
+router.beforeEach((to, from) => {
+  const isLoggedIn = !!localStorage.getItem('token');
+
+  if (to.meta.requiresAuth && !isLoggedIn) {
+    return { name: 'login' };  // 未登录，跳转登录页
+  }
+});
+```
+
+**导航守卫的执行顺序：**
+
+```text
+1. 在失活的组件里调用 onBeforeRouteLeave
+2. 调用全局的 beforeEach
+3. 在复用的组件里调用 onBeforeRouteUpdate
+4. 在路由配置里调用 beforeEnter
+5. 解析异步路由组件
+6. 在被激活的组件里调用 onBeforeRouteEnter
+7. 调用全局的 beforeResolve
+8. 导航被确认
+9. 调用全局的 afterEach
+10. 触发 DOM 更新
+```
+
+---
+
+## Q6: Vue Router 的路由模式有哪些？
+
+| 模式 | URL 格式 | 原理 | 适用场景 |
+|------|---------|------|---------|
+| **hash** | `/#/about` | 监听 `hashchange` 事件 | 兼容性要求高 |
+| **history** | `/about` | 监听 `popstate` 事件 + `pushState` API | 需要干净的 URL |
+| **abstract** | 无 URL | 内存中维护路由状态 | SSR、非浏览器环境 |
+
+<Warning title="⚠️ history 模式的坑">
+
+history 模式的 URL 没有 `#`，看起来更干净，但有一个致命问题：**刷新页面时，浏览器会向服务器请求这个 URL**。比如用户访问 `/about`，服务器没有这个路由，会返回 404。
+
+解决方案：
+1. **服务器配置**：所有路由都返回 `index.html`（Nginx 的 `try_files`）
+2. **前端兜底**：在 404 页面重定向到首页
+
+</Warning>
+
+<Tip title='🎢 通俗比喻：两种门牌号'>
+
+路由模式的核心区别是"刷新时浏览器是否向服务器请求"--hash 模式用 `#` 分隔，浏览器忽略 `#` 后面的部分；history 模式用真实 URL，刷新时会请求服务器。
+就像两种门牌号。hash 模式就像公寓的门牌号--`/#/302`，浏览器只认 `#` 前面的地址（大楼地址），`#` 后面的由前端处理。刷新时浏览器不会向服务器请求 `/#/302`。history 模式就像独立别墅的地址--`/302`，看起来更干净，但刷新时浏览器会向服务器请求 `/302`，服务器必须配置好返回 `index.html`。
+
+</Tip>
+
+---
+
+## Q7: Vue Router 的路由匹配是怎么实现的？
+
+<Steps>
+
+  <Step title="路由表的构建">
+
+  Vue Router 在初始化时会把路由配置（`routes` 数组）编译成一个**路由记录树**。每个路由记录包含路径（path）、组件（component）、子路由（children）、守卫（beforeEnter）等信息。
+
+  </Step>
+  <Step title="路径匹配: 从字符串到正则">
+
+  Vue Router 把路由路径（如 `/user/:id`）编译成正则表达式。当 URL 变化时，用正则逐一匹配路由记录，找到匹配的路由。支持参数（`:id`）、通配符（`*`）、可选参数（`:id?`）等语法。
+
+  </Step>
+  <Step title="导航解析流程">
+
+  URL 变化 → 触发导航守卫链 → 匹配路由 → 解析异步组件 → 更新视图。整个流程是异步的，支持在守卫中做异步操作（如检查登录状态）。
+
+  </Step>
+  <Step title="history 模式的实现: pushState + popstate">
+
+  history 模式用 `history.pushState()` 改变 URL（不触发页面刷新），用 `popstate` 事件监听浏览器前进/后退。Vue Router 还拦截了 `<router-link>` 的点击事件，调用 `pushState` 而不是让浏览器默认跳转。
+
+  </Step>
+  <Step title="关键洞察: 路由匹配是线性扫描">
+
+  Vue Router 的路由匹配是线性扫描所有路由记录，按定义顺序匹配第一个符合条件的路由。所以更具体的路由应该放在前面（如 `/user/me` 放在 `/user/:id` 前面），否则会被通配符抢先匹配。
+
+  </Step>
+
+</Steps>
+
+**Vue Router 的核心流程：**
+
+```text
+URL 变化（pushState / popstate / hashchange）
+  ↓
+遍历路由记录树，正则匹配 URL
+  ↓
+找到匹配的路由记录（组件 + 守卫）
+  ↓
+执行导航守卫链（beforeEach → beforeEnter → beforeResolve）
+  ↓
+解析异步组件（懒加载）
+  ↓
+调用 afterEach
+  ↓
+更新 router-view（patch 新组件，卸载旧组件）
+```
+
+**一句话总结：Vue Router 的核心是"把路径编译成正则 + 导航守卫链"，通过拦截 URL 变化来驱动组件切换。**
+
+<CardGroup cols={2}>
+
+<Card title="🚫 传统多页面应用">
+
+每次跳转都是服务器返回新页面，整个页面重新加载。就像你每次换房间都要走出大楼再走进来——所有状态都丢失了。
+
+</Card>
+<Card title="✅ Vue Router 单页面路由">
+
+URL 变化时只更新页面中的组件，不触发整页刷新。就像你在一个大楼里换房间——大楼不变（页面不刷新），只是里面的房间布局变了（组件切换）。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时重点说"路径编译成正则"和"导航守卫链"这两个核心机制。面试官可能会追问"history 模式刷新 404 怎么解决"——服务器配置 `try_files $uri /index.html`。不要上来就背 API，先说原理再举例。
+
+</Tip>
+
+---
+
+## 🔍 底层源码：Pinia 的 store 是怎么实现的？
+
+<div class="follow-up">
+Pinia 的 store 在源码中是怎么实现的？
+</div>
+
+Pinia 的核心是用 `reactive` 包装 store 的 state，用 `computed` 实现 getters，用普通函数实现 actions（详见 [Pinia 源码 packages/pinia/src/store.ts](https://github.com/vuejs/pinia/blob/main/packages/pinia/src/store.ts)）：
+
+```javascript
+// 简化的 store 创建流程
+function createSetupStore(id, setup, options) {
+  // 1. 用 reactive 包装 state
+  const state = reactive({});
+
+  // 2. 执行 setup 函数（或从 options 中提取 state）
+  const setupResult = setup(state);
+
+  // 3. 用 computed 包装 getters
+  const getters = {};
+  for (const key in options.getters) {
+    getters[key] = computed(() => options.getters[key].call(store));
+  }
+
+  // 4. actions 就是普通函数，内部直接修改 state
+  const actions = {};
+  for (const key in options.actions) {
+    actions[key] = options.actions[key].bind(store);
+  }
+
+  // 5. 组合成完整的 store
+  const store = reactive({ ...state, ...getters, ...actions });
+  return store;
+}
+```
+
+这段代码说明了 Pinia 的设计哲学：**没有魔法，就是 Vue 原生的响应式 API**。state 是 `reactive`，getters 是 `computed`，actions 是普通函数。Vuex 需要 mutations 来追踪变化，Pinia 直接用 Proxy 拦截 state 的修改，DevTools 一样可以追踪。
+
+<div class="follow-up">
+Vue Router 的 history 模式在浏览器中是怎么工作的？
+</div>
+
+history 模式利用了浏览器的 `history.pushState` API（详见 [Vue Router 源码 src/history/html5.ts](https://github.com/vuejs/router/blob/main/src/history/html5.ts)）。`pushState` 可以改变浏览器地址栏的 URL，但**不会触发页面刷新**。Vue Router 监听 `popstate` 事件（用户点击浏览器前进/后退按钮时触发），在事件回调中匹配路由并渲染对应的组件。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："Composition API 解决了什么问题？"
+
+**及格回答（60-70分）：**
+> "Composition API 让逻辑复用更方便，可以抽离 composable 函数。比 Mixins 好，不会命名冲突。"
+
+面试官评价：**知道好处但不理解痛点**。
+
+**满分回答（90-100分）：**
+
+> Composition API 解决的核心问题是**Options API 的逻辑碎片化**。在 Options API 中，一个功能的代码被分散在 data、methods、computed、watch 等不同选项中。比如一个"搜索功能"--输入框状态在 `data`、搜索方法在 `methods`、防抖逻辑在 `watch`、结果缓存在 `computed`。当组件有 5 个这样的功能时，你必须在不同选项之间跳来跳去，维护极其困难。<sup>[1]</sup>
+
+> Vue 2 用 Mixins 来复用逻辑，但 Mixins 有三个致命缺陷。**命名冲突**：两个 Mixins 定义同名属性会互相覆盖，Vue 2 在 `mergeOptions`（`src/core/util/options.js`）中按数组顺序合并，后者覆盖前者，没有任何警告。**来源不明**：组件用了 5 个 Mixin，某个属性来自哪个？你必须全局搜索。**隐式依赖**：Mixins 之间可能互相依赖（一个 Mixin 访问了另一个 Mixin 定义的 `this.xxx`），但这种依赖关系完全隐藏在代码中。<sup>[2]</sup>
+
+> Composition API 通过 Composables（组合函数）解决了这些问题。一个 Composable 把同一个功能的所有逻辑聚合在一个函数中，通过显式返回值暴露给组件。`const { query, results, search } = useSearch()` --你一眼就知道 `query` 来自 `useSearch`。TypeScript 也能完美推断类型--`query` 的类型是 `Ref<string>`，`results` 的类型是 `Ref<SearchResult[]>`。在 Vue 3 的 `setup()` 中（`packages/runtime-core/src/apiSetup.ts`），每个 `ref()`、`reactive()`、`computed()` 调用都会在当前组件实例上注册依赖，组件卸载时统一清理。<sup>[3]</sup>
+
+> 实际项目中的建议：**新项目全部用 Composition API + `<script setup>`**。`<script setup>` 是 `setup()` 的语法糖，编译器会自动把顶层变量暴露给模板，不需要手动 `return`。老项目渐进式迁移--先用 Composables 替换 Mixins，再逐步把组件迁移到 `<script setup>`。不要一次性重写所有组件。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="Vuex 的 mutations 到底有什么用?Pinia 为什么移除了?" icon="layer-group">
+
+  **答题要点：** mutations 的初衷是追踪状态变化，但实践中只是样板代码。
+
+  **高分回答：**
+  "Vuex 的 mutations 存在的初衷是追踪状态变化--每次修改 state 都通过 mutation，DevTools 可以记录每次变化。但实践中，mutations 只是样板代码：
+  ```javascript
+    // Vuex：必须通过 mutation 修改 state
+    mutations: {
+      SET_USER(state, user) { state.user = user; }
+    },
+    actions: {
+      async fetchUser({ commit }) {
+        const user = await api.getUser();
+        commit('SET_USER', user);  // 多一步 commit
+      }
+    }
+
+    // Pinia：直接在 actions 中修改 state
+    actions: {
+      async fetchUser() {
+        this.user = await api.getUser();  // 直接修改，更简洁
+      }
+    }
+```
+  Pinia 直接在 actions 中修改 state，DevTools 依然可以追踪变化（通过 Proxy 拦截）。这让代码更简洁，同时不丢失调试能力。"
+
+  </Accordion>
+
+  <Accordion title="Pinia 的 getters 和 computed 有什么区别?" icon="layer-group">
+
+  **答题要点：** Pinia 的 getters 底层就是 computed，但有自动 this 绑定。
+
+  **高分回答：**
+  "Pinia 的 getters 底层实现就是 `computed`（`packages/pinia/src/store.ts` 中的 `createSetupStore`）。但 Pinia 做了一层封装：1）自动绑定 `this` 到当前 store，可以直接访问其他 getters 和 state；2）支持传参——返回一个函数而不是值；3）支持在其他 getters 中引用。
+
+  ```javascript
+  const useStore = defineStore('main', {
+    state: () => ({ items: [] }),
+    getters: {
+      // 自动推断返回类型
+      doubleCount: (state) => state.items.length * 2,
+      // 引用其他 getters（通过 this）
+      tripleCount() { return this.doubleCount * 1.5 },
+      // 传参：返回一个函数
+      getItemById: (state) => (id) => state.items.find(i => i.id === id)
+    }
+  })
+  ```
+  和直接在组件中用 `computed` 的区别是：Pinia 的 getters 是 store 级别的缓存，多个组件共享同一个 store 时，getter 只计算一次。"
+
+  </Accordion>
+
+  <Accordion title="Pinia 的 storeToRefs 是什么?为什么需要它?" icon="layer-group">
+
+  **答题要点：** storeToRefs 把 store 的 state/getters 转为 ref，解构不丢失响应式。
+
+  **高分回答：**
+  "直接解构 Pinia store 会丢失响应式——因为解构是值复制，和 reactive 对象的解构问题一样。
+
+  ```javascript
+  const store = useCounter()
+  // ❌ 丢失响应式
+  const { count } = store  // count 是普通数字
+  // ✅ 保持响应式
+  const { count } = storeToRefs(store)  // count 是 Ref
+  ```
+  `storeToRefs`（`packages/pinia/src/store.ts`）内部遍历 store 的 state 和 getters，把每个属性转为 ref。actions 不需要转换——actions 是普通函数，不涉及响应式。"
+
+  </Accordion>
+
+  <Accordion title="Vue Router 的 hash 和 history 模式有什么区别?" icon="stopwatch">
+
+  **答题要点：** hash 用 hashchange 事件，history 用 pushState + popstate。
+
+  **高分回答：**
+  "hash 模式的 URL 带 `#`（如 `/#/about`），通过监听 `hashchange` 事件实现路由切换，不会触发页面刷新，兼容性好。history 模式的 URL 干净（如 `/about`），通过 `history.pushState` 改变 URL + 监听 `popstate` 事件实现。但 history 模式刷新时浏览器会向服务器请求这个 URL，服务器必须配置返回 `index.html`，否则会 404。
+
+  源码层面（`src/history/html5.ts`），history 模式的 `push` 方法调用 `history.pushState(state, '', url)` 改变 URL，然后调用 `transitionTo` 匹配路由。`popstate` 监听浏览器前进/后退按钮。hash 模式（`src/history/hash.ts`）则监听 `hashchange` 事件，从 `location.hash` 中提取路径。"
+
+  </Accordion>
+
+  <Accordion title="Vue Router 的导航守卫执行顺序?" icon="stopwatch">
+
+  **答题要点：** 三级守卫按顺序执行：组件离开 → 全局 → 路由 → 组件进入。
+
+  **高分回答：**
+  "导航守卫的完整执行顺序：
+  ```text
+  1. 失活组件的 onBeforeRouteLeave
+  2. 全局 beforeEach
+  3. 复用组件的 onBeforeRouteUpdate
+  4. 路由配置的 beforeEnter
+  5. 解析异步路由组件
+  6. 激活组件的 onBeforeRouteEnter
+  7. 全局 beforeResolve
+  8. 导航确认
+  9. 全局 afterEach
+  10. DOM 更新
+  ```
+  关键细节：`onBeforeRouteEnter` 的 `next` 回调中才能访问组件实例（`next(vm => { ... })`），因为此时组件还没有创建。`onBeforeRouteLeave` 常用于表单未保存确认。"
+
+  </Accordion>
+
+  <Accordion title="嵌套路由是怎么渲染的?" icon="node">
+
+  **答题要点：** 子路由渲染在父组件的 `<router-view>` 中，支持多层嵌套。
+
+  **高分回答：**
+  "嵌套路由通过在父组件中放置 `<router-view>` 来渲染子路由。Vue Router 的源码中（`src/routerView.ts`），`<router-view>` 组件会根据当前匹配的路由记录链（matched array），找到对应层级的组件来渲染。
+
+  路由配置：
+  ```javascript
+  const routes = [
+    {
+      path: '/user/:id',
+      component: User,           // 渲染在顶层 <router-view>
+      children: [
+        { path: 'profile', component: Profile },  // 渲染在 User 中的 <router-view>
+        { path: 'posts', component: Posts }
+      ]
+    }
+  ]
+  ```
+  路由匹配时，Vue Router 会构建一个 `matched` 数组，包含从根路由到当前路由的所有记录。每个 `<router-view>` 根据自己的深度（depth）从 `matched` 数组中取出对应的组件来渲染。"
+
+  </Accordion>
+
+  <Accordion title="路由懒加载是怎么实现的?" icon="node">
+
+  **答题要点：** 用动态 import() 实现，打包时自动分割代码。
+
+  **高分回答：**
+  "路由懒加载通过动态 `import()` 实现：
+  ```javascript
+  const routes = [
+    { path: '/about', component: () => import('./views/About.vue') }
+  ]
+  ```
+  `import()` 返回一个 Promise。Vue Router 在匹配到该路由时，会调用这个函数加载组件。加载完成后，Vite/webpack 自动把该组件分割为单独的 chunk 文件。
+
+  Vue Router 内部对懒加载做了优化：如果同一个路由组件被多个路由使用，会缓存 Promise 的结果，避免重复加载。在源码中（`src/utils/resolveComponents.ts`），`resolveComponent` 函数负责处理异步组件的加载和缓存。"
+
+  </Accordion>
+
+  <Accordion title="Composables 和 Mixins 的区别?" icon="node">
+
+  **答题要点：** Composables 显式返回值，Mixins 隐式合并。
+
+  **高分回答：**
+  "Mixins 是隐式合并--把 Mixin 的所有属性混入组件，你不知道某个属性来自哪个 Mixin，容易命名冲突。Composables 是显式调用--`const { count, increment } = useCounter()`，你一眼就知道 `count` 来自 `useCounter`。Composables 还支持 TypeScript 类型推断，Mixins 做不到。
+
+  更深层的区别：Mixins 的生命周期钩子会和组件的钩子合并执行（Vue 2 在 `mergeOptions` 中合并），Composables 的生命周期钩子直接注册到组件实例上（在 `setup()` 中调用 `onMounted` 等）。Composables 之间可以相互组合（`useSearch` 内部调用 `useDebounce`），形成清晰的调用链。Mixins 之间如果有隐式依赖（一个 Mixin 访问了另一个 Mixin 的 `this.xxx`），这种关系完全隐藏在代码中，极难维护。"
+
+  </Accordion>
+
+  <Accordion title="Composition API 有哪些常见的错误用法?" icon="layer-group">
+
+  **答题要点：** ref 嵌套过度、在非 setup 上下文中使用、忘记返回值。
+
+  **高分回答：**
+  "常见的错误用法包括：
+
+  1）**过度嵌套 ref**：`ref({ count: 0 })` 不如 `reactive({ count: 0 })` 直接，原始值才需要 ref。
+  2）**在条件语句中使用 ref**：`if (condition) { const x = ref(0) }`——Vue 的响应式追踪依赖调用顺序，条件语句会导致追踪不稳定。
+  3）**忘记 `.value`**：在 JS 中访问 `count` 而不是 `count.value`，不会触发依赖收集。
+  4）**在异步操作后才创建 ref**：响应式数据必须在 `setup()` 同步执行时创建，异步创建的 ref 不会被 Vue 追踪。
+  5）**解构 reactive 丢失响应式**：`const { count } = reactive({ count: 0 })` 会丢失响应式，应该用 `toRefs`。"
+
+  </Accordion>
+
+  <Accordion title="🔥 Composition API 的 setup() 和 Options API 的 created 谁先执行?" icon="skull">
+
+  **答题要点：** setup() 在 beforeCreate 之前执行，比 created 更早。
+
+  **高分回答：**
+  "`setup()` 在 `beforeCreate` 之前执行，比 `created` 更早。此时组件实例还没有创建，所以 `setup()` 中没有 `this`。这也是为什么 Composition API 用 `ref()`、`reactive()` 来声明状态，而不是用 `data()` 返回对象。Vue 3 的 Options API 中，`created` 钩子依然存在，执行时机不变。"
+
+  </Accordion>
+
+  <Accordion title="Options API 和 Composition API 能混用吗?" icon="layer-group">
+
+  **答题要点：** Vue 3 支持混用，但不推荐，会导致代码风格不一致。
+
+  **高分回答：**
+  "Vue 3 支持在同一个组件中同时使用 Options API 和 Composition API。你可以用 `setup()` 函数（或 `<script setup>`）来使用 Composition API，同时保留 `data`、`methods`、`computed` 等选项。Vue 会把 `setup()` 的返回值和 Options API 的选项合并。
+
+  但官方不推荐混用：1）代码风格不一致，维护困难；2）`setup()` 中没有 `this`，Options API 依赖 `this`，两种访问方式混在一起容易混淆；3）TypeScript 类型推断在混用时效果较差。最佳实践是：新组件全部用 `<script setup>`，老组件逐步迁移。"
+
+  </Accordion>
+
+  <Accordion title="Vuex 和 Pinia 的模块化有什么区别?" icon="stopwatch">
+
+  **答题要点：** Vuex 用嵌套 module，Pinia 用扁平化的独立 store。
+
+  **高分回答：**
+  "Vuex 的模块化是嵌套的——一个大 store 下面嵌套多个 module，通过 `namespaced: true` 避免命名冲突。访问时用 `store.state.user.name` 或 `mapState('user', ['name'])`。嵌套层级深了之后，路径非常长，类型推断也很难做。
+
+  Pinia 的模块化是扁平的——每个 store 是一个独立的实体，有自己的 id、state、getters、actions。访问时直接 `const userStore = useUserStore()`。store 之间可以相互引用：
+  ```javascript
+  const useUserStore = defineStore('user', { ... })
+  const useCartStore = defineStore('cart', {
+    actions: {
+      addItem(item) {
+        const user = useUserStore()  // 在 action 中引用其他 store
+        if (user.isLoggedIn) { ... }
+      }
+    }
+  })
+  ```
+  Pinia 的扁平化设计让每个 store 独立可测试，不需要依赖整个 store 树。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Q8: Vuex 的原理详解
+
+### Vuex 的核心架构
+
+Vuex 的设计借鉴了 Flux/Redux 的单向数据流思想，但针对 Vue 的响应式系统做了优化。
+
+```text
+┌─────────────────────────────────────────────────┐
+│                   Vuex Store                      │
+│                                                   │
+│  ┌─────────┐    ┌──────────┐    ┌──────────────┐ │
+│  │  State   │ ←  │ Mutations │ ←  │   Actions    │ │
+│  │(响应式)  │    │ (同步)    │    │  (可异步)    │ │
+│  └────┬─────┘    └──────────┘    └──────┬───────┘ │
+│       │                                  ↑        │
+│       ▼                                  │        │
+│  ┌─────────┐                    ┌────────┴──────┐ │
+│  │ Getters │                    │   Components  │ │
+│  │(computed)│                    │  commit/dispatch│
+│  └─────────┘                    └───────────────┘ │
+└─────────────────────────────────────────────────┘
+```
+
+### Vuex 的响应式实现
+
+Vuex 的 state 本身就是 Vue 的响应式对象。当组件通过 `this.$store.state` 访问状态时，Vue 的依赖收集机制会自动追踪。当 state 变化时，依赖该状态的组件自动更新。
+
+```javascript
+// Vuex 内部的 store 实现（简化）
+class Store {
+  constructor(options) {
+    // 1. 用 Vue 的响应式系统包装 state
+    this._vm = new Vue({
+      data: {
+        $$state: options.state
+      }
+    })
+
+    // 2. 编译 getters 为 computed
+    this.getters = {}
+    const computed = {}
+    forEachValue(options.getters, (fn, key) => {
+      computed[key] = () => fn(this.state)
+      Object.defineProperty(this.getters, key, {
+        get: () => this._vm[key],
+        enumerable: true
+      })
+    })
+    this._vm = new Vue({
+      data: { $$state: options.state },
+      computed
+    })
+
+    // 3. 注册 mutations
+    this._mutations = Object.create(null)
+    forEachValue(options.mutations, (fn, key) => {
+      this._mutations[key] = (payload) => {
+        fn(this.state, payload)
+      }
+    })
+
+    // 4. 注册 actions
+    this._actions = Object.create(null)
+    forEachValue(options.actions, (fn, key) => {
+      this._actions[key] = (payload) => {
+        fn(this, payload)  // 注入 store 的 commit/dispatch
+      }
+    })
+  }
+
+  get state() {
+    return this._vm._data.$$state
+  }
+
+  commit(type, payload) {
+    this._mutations[type](payload)
+  }
+
+  dispatch(type, payload) {
+    this._actions[type](payload)
+  }
+}
+```
+
+### mutations 的设计初衷
+
+mutations 存在的目的是**可追踪的状态变更**。每次修改 state 都通过 mutation，DevTools 可以记录每次变化的类型和载荷（payload），支持时间旅行调试（time travel debugging）。
+
+```javascript
+// mutations 是同步的纯函数
+mutations: {
+  SET_USER(state, user) {
+    state.user = user  // 直接修改 state
+  },
+  INCREMENT(state) {
+    state.count++
+  }
+}
+
+// actions 处理异步逻辑，然后 commit mutation
+actions: {
+  async fetchUser({ commit }, userId) {
+    const user = await api.getUser(userId)
+    commit('SET_USER', user)  // 异步完成后 commit
+  }
+}
+```
+
+---
+
+## Q9: Pinia 的原理详解
+
+### Pinia 的核心架构
+
+Pinia 是 Vue 3 官方推荐的状态管理库，它的设计哲学是**没有魔法，就是 Vue 原生的响应式 API**。
+
+```text
+┌─────────────────────────────────────────────────┐
+│                   Pinia Store                      │
+│                                                   │
+│  ┌─────────┐    ┌──────────┐    ┌──────────────┐ │
+│  │  State   │    │ Getters  │    │   Actions    │ │
+│  │(reactive)│ ←  │(computed)│    │  (普通函数)   │ │
+│  └────┬─────┘    └──────────┘    └──────┬───────┘ │
+│       │                                  │        │
+│       ▼                                  ▼        │
+│  ┌─────────────────────────────────────────────┐  │
+│  │         Proxy 拦截 → DevTools 自动追踪        │  │
+│  └─────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────┘
+```
+
+### Pinia 的 store 创建流程
+
+```javascript
+// Pinia 的核心实现（简化）
+function createSetupStore(id, setup, options, pinia) {
+  // 1. 用 reactive 包装 state
+  const state = pinia._s.get(id) || reactive({})
+
+  // 2. 执行 setup 函数（或从 options 中提取 state）
+  let store
+  if (typeof setup === 'function') {
+    // Setup Store：用户直接返回 state/getters/actions
+    const setupResult = setup()
+    store = reactive(setupResult)
+  } else {
+    // Options Store：从 options 中提取
+    // state
+    const initialState = options.state ? options.state() : {}
+    Object.assign(state, initialState)
+
+    // getters → computed
+    const getters = {}
+    for (const key in options.getters) {
+      getters[key] = computed(() => {
+        return options.getters[key].call(store, store)
+      })
+    }
+
+    // actions → 普通函数（绑定 this）
+    const actions = {}
+    for (const key in options.actions) {
+      actions[key] = options.actions[key].bind(store)
+    }
+
+    // 组合成完整的 store
+    store = reactive({ ...state, ...getters, ...actions })
+  }
+
+  // 3. 缓存 store
+  pinia._s.set(id, store)
+
+  // 4. 注册到 DevTools
+  registerStoreWithDevtools(pinia, store, id)
+
+  return store
+}
+```
+
+### Pinia 为什么不需要 mutations？
+
+Pinia 用 Vue 3 的 `reactive`（Proxy）包装 state。Proxy 可以拦截所有属性的修改，DevTools 通过 Proxy 拦截就能追踪每次状态变更——不需要 mutations 这个中间层。
+
+```javascript
+// Pinia 的 store
+const useCounterStore = defineStore('counter', {
+  state: () => ({ count: 0 }),
+  actions: {
+    increment() {
+      this.count++  // 直接修改，Proxy 拦截，DevTools 自动记录
+    },
+    async fetchCount() {
+      this.count = await api.getCount()  // 异步也能直接修改
+    }
+  }
+})
+```
+
+---
+
+## Q10: Vuex vs Pinia 技术选型指南
+
+### 核心区别总结
+
+| 维度 | Vuex | Pinia |
+|------|------|-------|
+| **mutations** | ✅ 必须通过 mutations 修改 | ❌ 直接在 actions 中修改 |
+| **模块化** | 嵌套 module（namespaced） | 扁平化独立 store |
+| **TypeScript** | 支持一般 | 完美支持 |
+| **体积** | ~10KB | ~1KB |
+| **Vue 版本** | Vue 2/3 | Vue 3 |
+| **DevTools** | ✅ | ✅ |
+| **SSR** | ✅ | ✅ |
+| **热更新** | 部分支持 | ✅ 完整支持 |
+
+### 选型决策树
+
+```text
+你的项目是什么情况？
+│
+├─ Vue 2 项目 → 用 Vuex（Pinia 不支持 Vue 2）
+│
+├─ Vue 3 新项目 → 用 Pinia（官方推荐）
+│
+├─ Vue 3 老项目已用 Vuex → 可以继续用，不需要迁移
+│
+└─ 需要支持 Vue 2 + Vue 3 → 用 Vuex 4（兼容两个版本）
+```
+
+### 什么时候 Vuex 仍然更好？
+
+1. **团队已熟悉 Vuex**：迁移成本大于收益
+2. **需要严格的变更追踪**：mutations 的显式声明让状态变更有迹可循
+3. **大型团队协作**：mutations 作为"变更契约"，团队成员必须遵守
+
+### 什么时候 Pinia 更好？
+
+1. **新项目**：Pinia 是 Vue 3 的官方推荐
+2. **TypeScript 优先**：Pinia 的类型推断更完善
+3. **简洁优先**：没有 mutations 的样板代码
+4. **模块化需求**：扁平化 store 更易维护
+
+---
+
+## Q11: 简易实现 Vuex
+
+```javascript
+// 简易 Vuex 实现（~50 行核心代码）
+let _Vue = null
+
+class Store {
+  constructor(options = {}) {
+    // 1. 用 Vue 的响应式系统包装 state
+    this._vm = new _Vue({
+      data: {
+        $$state: options.state || {}
+      }
+    })
+
+    // 2. 编译 getters
+    this.getters = Object.create(null)
+    const getters = options.getters || {}
+    Object.keys(getters).forEach(key => {
+      Object.defineProperty(this.getters, key, {
+        get: () => getters[key](this.state)
+      })
+    })
+
+    // 3. 注册 mutations
+    this._mutations = options.mutations || {}
+
+    // 4. 注册 actions
+    this._actions = options.actions || {}
+
+    // 5. 绑定 commit/dispatch 的 this
+    this.commit = this.commit.bind(this)
+    this.dispatch = this.dispatch.bind(this)
+  }
+
+  get state() {
+    return this._vm._data.$$state
+  }
+
+  commit(type, payload) {
+    const mutation = this._mutations[type]
+    if (!mutation) throw new Error(`Mutation ${type} not found`)
+    mutation(this.state, payload)
+  }
+
+  async dispatch(type, payload) {
+    const action = this._actions[type]
+    if (!action) throw new Error(`Action ${type} not found`)
+    await action(this, payload)
+  }
+
+  // Vue.use(Store) 时调用
+  static install(Vue) {
+    _Vue = Vue
+    Vue.mixin({
+      beforeCreate() {
+        if (this.$options.store) {
+          Vue.prototype.$store = this.$options.store
+        }
+      }
+    })
+  }
+}
+```
+
+---
+
+## Q12: 简易实现 Pinia
+
+```javascript
+// 简易 Pinia 实现（~40 行核心代码）
+import { reactive, computed, effectScope } from 'vue'
+
+let activePinia = null
+
+function createPinia() {
+  const pinia = {
+    _s: new Map(),  // store 缓存
+    install(app) {
+      activePinia = pinia
+      app.provide('pinia', pinia)
+    }
+  }
+  return pinia
+}
+
+function defineStore(id, options) {
+  return function useStore() {
+    const pinia = activePinia
+
+    // 检查缓存
+    if (pinia._s.has(id)) {
+      return pinia._s.get(id)
+    }
+
+    // 创建 store
+    const store = reactive({})
+
+    // 1. 初始化 state
+    const state = options.state ? options.state() : {}
+    Object.assign(store, state)
+
+    // 2. 编译 getters 为 computed
+    if (options.getters) {
+      Object.keys(options.getters).forEach(key => {
+        const getter = computed(() => {
+          return options.getters[key].call(store, store)
+        })
+        Object.defineProperty(store, key, {
+          get: () => getter.value
+        })
+      })
+    }
+
+    // 3. 绑定 actions
+    if (options.actions) {
+      Object.keys(options.actions).forEach(key => {
+        store[key] = options.actions[key].bind(store)
+      })
+    }
+
+    // 4. 缓存并返回
+    pinia._s.set(id, store)
+    return store
+  }
+}
+
+// 使用示例
+const useCounter = defineStore('counter', {
+  state: () => ({ count: 0 }),
+  getters: {
+    double: (state) => state.count * 2
+  },
+  actions: {
+    increment() {
+      this.count++
+    }
+  }
+})
+```
+
+<Warning title="⚠️ 简易实现的局限">
+
+以上实现省略了：DevTools 集成、SSR 支持、热更新（HMR）、$reset、$patch、storeToRefs 等功能。生产环境请使用官方 Pinia。
+
+</Warning>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [Vue 3 官方文档 - Composition API FAQ](https://vuejs.org/guide/extras/composition-api-faq.html)：Vue 官方对 Composition API 设计初衷的权威解释。<sup>[1]</sup>
+- 📖 [Pinia 源码 packages/pinia/src/store.ts](https://github.com/vuejs/pinia/blob/main/packages/pinia/src/store.ts)：Pinia store 的核心实现。<sup>[2]</sup>
+- 📖 [Vue Router 源码 src/history/html5.ts](https://github.com/vuejs/router/blob/main/src/history/html5.ts)：history 模式的实现。<sup>[3]</sup>
+- 🟢 [Pinia 官方文档](https://pinia.vuejs.org/)：Pinia 的官方教程，包含从 Vuex 迁移的指南。

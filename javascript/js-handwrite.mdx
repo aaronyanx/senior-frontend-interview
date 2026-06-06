@@ -1,0 +1,877 @@
+---
+title: "手写题"
+---
+
+> **面试官为什么问这个？**
+>
+> 手写题不是考你背代码，是考你**是否理解底层原理**。每道题背后都有一个核心知识点。面试官问这个，本质上是在考察你：**能否从零实现一个 API，理解它的每一个细节，以及处理边界情况的能力。**
+
+---
+
+## Q1: 手写 call / apply / bind
+
+<Steps>
+
+  <Step title="核心知识点: this 绑定">
+
+    call/apply/bind 的本质是**把函数挂在目标对象上执行**，利用"函数作为对象的方法调用时 this 指向该对象"的规则。
+
+  </Step>
+  <Step title="call 的实现">
+
+    把函数作为目标对象的临时方法执行，执行完删除。用 Symbol 避免属性冲突。
+
+  </Step>
+  <Step title="apply 的实现">
+
+    和 call 一样，只是参数是数组。
+
+  </Step>
+  <Step title="bind 的实现">
+
+    返回一个新函数，绑定 this 和部分参数。关键：如果被 new 调用，this 应该指向新实例。
+
+  </Step>
+  <Step title="关键洞察: bind + new 的优先级">
+
+    new 的优先级高于 bind——即使函数已经被 bind 绑定了 this，new 调用时 this 也会被强制指向新实例。
+
+  </Step>
+
+</Steps>
+
+**手写题解决的核心问题：**
+
+```text
+问题：只会调用 API，不理解底层原理
+
+面试不是考你背代码，是考你能否从零实现一个 API，
+理解每一行代码的"为什么"，以及处理边界情况的能力。
+
+解决：手写 = 理解原理 + 边界处理 + 源码对比
+
+每道手写题背后都有一个核心知识点：this 绑定、原型链、
+闭包、事件循环、类型转换……手写一遍比看十遍文档更深刻。
+```
+
+<Tip title="🎢 通俗比喻: 造车 vs 开车">
+
+会调用 API 就像会开车——你知道踩油门车就走，踩刹车车就停。但手写题考的是你能不能造一辆车——发动机怎么工作、变速箱怎么换挡、刹车系统怎么设计。你不需要从炼钢开始，但你得理解每个零件的作用。比如手写 `bind`，你得知道它要绑定 this，返回新函数，还要处理 `new` 的优先级——这些细节，光开车是体会不到的。
+
+
+</Tip>
+
+<CardGroup cols={2}>
+
+<Card title="🔧 核心能力">
+
+手写题考察的六大底层能力：this 绑定（call/apply/bind）、深拷贝（循环引用+特殊对象）、事件处理（防抖/节流）、函数式（柯里化）、设计模式（EventEmitter）、异步编程（async/await 本质）。
+
+</Card>
+<Card title="📐 解题框架">
+
+每道手写题都遵循同一套框架：1）说出核心原理；2）写出基本实现；3）处理边界情况；4）对比原生实现的差异。先写骨架，再补细节，最后加防御性判断。
+
+</Card>
+</CardGroup>
+
+```javascript
+/**
+ * 手写 call：改变函数的 this 指向并立即执行
+ * 核心原理：把函数作为目标对象的临时方法执行，利用"方法调用时 this 指向该对象"的规则
+ * @param {*} ctx - this 指向的目标对象，null/undefined 时指向全局对象
+ * @param  {...any} args - 传给函数的参数列表
+ * @returns {*} 函数的返回值
+ */
+Function.prototype.myCall = function(ctx, ...args) {
+  // 处理 ctx 为 null/undefined 的情况，指向全局对象
+  // Object(ctx) 将基本类型包装为对象（如 1 → Number(1)）
+  ctx = ctx == null ? globalThis : Object(ctx);
+  const fn = Symbol();                   // 用 Symbol 作为临时属性名，避免与已有属性冲突
+  ctx[fn] = this;                        // 把当前函数挂在目标对象上
+  const result = ctx[fn](...args);       // 通过对象方法调用，this 自然指向 ctx
+  delete ctx[fn];                        // 删除临时属性，不污染目标对象
+  return result;                         // 返回函数执行结果
+};
+
+/**
+ * 手写 apply：和 call 一样，只是参数以数组形式传入
+ * @param {*} ctx - this 指向的目标对象
+ * @param {Array} args - 参数数组
+ * @returns {*} 函数的返回值
+ */
+Function.prototype.myApply = function(ctx, args = []) {
+  // 直接复用 myCall，用展开运算符将数组转为参数列表
+  return this.myCall(ctx, ...args);
+};
+
+/**
+ * 手写 bind：返回一个绑定了 this 和部分参数的新函数（不立即执行）
+ * 关键难点：如果返回的函数被 new 调用，this 应该指向新实例而非绑定的 ctx
+ * @param {*} ctx - this 指向的目标对象
+ * @param  {...any} bindArgs - 预设的参数（柯里化）
+ * @returns {Function} 绑定后的新函数
+ */
+Function.prototype.myBind = function(ctx, ...bindArgs) {
+  const fn = this;                       // 保存原始函数引用
+  return function boundFn(...callArgs) {
+    // new.target 检测：如果是通过 new 调用的，this 指向新实例
+    // 这是 ES 规范要求——new 的优先级高于 bind
+    if (new.target) {
+      return new fn(...bindArgs, ...callArgs); // 用原函数构造，忽略绑定的 ctx
+    }
+    // 普通调用：合并预设参数和调用参数，用 call 绑定 this
+    return fn.call(ctx, ...bindArgs, ...callArgs);
+  };
+};
+```
+
+<Note title="💡 一句话总结">
+
+call/apply/bind 的本质是利用"对象方法调用"的 this 规则，bind 额外需要处理 new 的优先级。
+
+</Note>
+
+---
+
+## Q2: 手写深拷贝
+
+### 深拷贝的核心实现
+
+```javascript
+/**
+ * 手写深拷贝：递归复制对象的所有层级，处理循环引用和特殊对象
+ * @param {*} source - 要拷贝的源对象
+ * @param {WeakMap} map - 用于记录已拷贝对象，解决循环引用问题
+ * @returns {*} 深拷贝后的新对象
+ */
+function deepClone(source, map = new WeakMap()) {
+  // 基本类型（null、number、string、boolean、undefined、symbol）直接返回
+  if (source === null || typeof source !== 'object') return source;
+  // 循环引用检测：如果已经拷贝过这个对象，直接返回之前的拷贝结果
+  // 这是防止无限递归的关键——遇到 { a: obj } 这种自引用不会死循环
+  if (map.has(source)) return map.get(source);
+
+  // 处理特殊内置对象——每种都需要独立构造，不能用通用方式拷贝
+  if (source instanceof Date) return new Date(source);       // Date 需要 new 构造
+  if (source instanceof RegExp) return new RegExp(source);   // RegExp 需要 new 构造
+  if (source instanceof Set) {
+    const clone = new Set();
+    map.set(source, clone);                 // 先注册再递归，防止 Set 内部值循环引用
+    source.forEach(v => clone.add(deepClone(v, map))); // 递归拷贝 Set 中的每个值
+    return clone;
+  }
+  if (source instanceof Map) {
+    const clone = new Map();
+    map.set(source, clone);                 // 先注册再递归
+    source.forEach((v, k) => clone.set(deepClone(k, map), deepClone(v, map))); // key 和 value 都要递归
+    return clone;
+  }
+
+  // 处理普通对象和数组
+  // Object.create(Object.getPrototypeOf(source)) 保留原型链，避免拷贝后丢失自定义原型
+  const clone = Array.isArray(source) ? [] : Object.create(Object.getPrototypeOf(source));
+  map.set(source, clone);                   // 先注册再递归——这是处理循环引用的核心：先占位
+
+  // 收集所有属性键（包括 Symbol 属性，Object.keys 不包含 Symbol）
+  const keys = [...Object.keys(source), ...Object.getOwnPropertySymbols(source)];
+  for (const key of keys) {
+    clone[key] = deepClone(source[key], map); // 递归拷贝每个属性值
+  }
+  return clone;
+}
+```
+
+<Warning title="⚠️ 关键细节: 为什么用 WeakMap?">
+
+WeakMap 的 key 是弱引用，当源对象被垃圾回收时，WeakMap 中的引用也会被释放，不会造成内存泄漏。Map 是强引用，会阻止垃圾回收。
+
+
+</Warning>
+
+### 循环引用的处理策略
+
+循环引用是深拷贝最核心的难点。用 WeakMap 记录已拷贝的对象，遇到重复引用直接返回已拷贝的版本。
+
+```javascript
+// 循环引用示例
+const obj = { name: 'Tom' };
+obj.self = obj; // obj.self 指向 obj 自己
+
+// 如果不用 WeakMap，会无限递归导致栈溢出
+// 用 WeakMap 后：第一次拷贝 obj 时记录，第二次遇到 obj 直接返回已拷贝版本
+```
+
+### structuredClone vs 手写深拷贝
+
+浏览器原生提供了 `structuredClone` API，原生支持循环引用，但不支持函数、DOM 节点、Symbol 属性。
+
+```javascript
+// structuredClone 原生支持循环引用
+const obj = { name: 'Tom' };
+obj.self = obj;
+const clone = structuredClone(obj); // ✅ 正常工作
+
+// ❌ structuredClone 不支持函数
+structuredClone({ fn: () => {} }); // DataCloneError
+
+// ❌ structuredClone 不支持 Symbol
+structuredClone({ [Symbol('id')]: 1 }); // Symbol 属性被忽略
+```
+
+---
+
+## Q3: 手写防抖（debounce）和节流（throttle）
+
+### 防抖的核心实现
+
+```javascript
+/**
+ * 手写防抖（debounce）：事件触发后延迟执行，延迟期间再次触发则重新计时
+ * 应用场景：搜索框输入、窗口 resize、表单验证
+ * @param {Function} fn - 要防抖的函数
+ * @param {number} delay - 延迟时间（毫秒）
+ * @param {boolean} immediate - 是否在首次触发时立即执行（leading 模式）
+ * @returns {Function} 防抖后的函数
+ */
+function debounce(fn, delay, immediate = false) {
+  let timer = null;                       // 定时器引用，用于清除和重置
+  return function(...args) {
+    clearTimeout(timer);                  // 每次触发都清除上一次的定时器（重新计时）
+    // immediate 模式：首次触发立即执行，之后等冷静期
+    if (immediate && !timer) fn.apply(this, args);
+    timer = setTimeout(() => {
+      // 非 immediate 模式：冷静期结束后执行
+      // immediate 模式：冷静期结束后重置 timer，允许下次立即执行
+      if (!immediate) fn.apply(this, args);
+      timer = null;                       // 重置 timer，让 immediate 模式下次能立即触发
+    }, delay);
+  };
+}
+
+/**
+ * 手写节流（throttle）：在一段时间内只执行一次，控制函数执行频率
+ * 应用场景：滚动事件、鼠标移动、高频点击
+ * @param {Function} fn - 要节流的函数
+ * @param {number} interval - 节流间隔（毫秒）
+ * @param {Object} options - 配置项：leading（开头执行）、trailing（结尾执行）
+ * @returns {Function} 节流后的函数
+ */
+function throttle(fn, interval, options = { leading: true, trailing: true }) {
+  let lastTime = 0;                       // 上次执行的时间戳
+  let timer = null;                       // trailing 模式的定时器引用
+  return function(...args) {
+    const now = Date.now();
+    // 如果 leading=false 且是首次调用（lastTime=0），将 lastTime 设为当前时间
+    // 这样首次调用不会立即执行，而是等到 interval 后才执行
+    if (!options.leading && !lastTime) lastTime = now;
+    const remaining = interval - (now - lastTime); // 距离下次可执行的剩余时间
+    if (remaining <= 0) {
+      // 时间到了，可以执行
+      if (timer) { clearTimeout(timer); timer = null; } // 清除 trailing 定时器（避免重复执行）
+      lastTime = now;                     // 更新上次执行时间
+      fn.apply(this, args);               // 执行函数
+    } else if (!timer && options.trailing) {
+      // 时间没到，但开启了 trailing 模式：设置定时器在剩余时间后执行
+      timer = setTimeout(() => {
+        lastTime = options.leading ? Date.now() : 0; // leading 时更新时间戳，否则重置为 0
+        timer = null;                     // 清除定时器引用
+        fn.apply(this, args);             // 执行函数
+      }, remaining);
+    }
+  };
+}
+```
+
+### leading 和 trailing 的区别
+
+防抖和节流都支持 `leading`（首次立即执行）和 `trailing`（最后一次延迟执行）选项。
+
+```javascript
+// 防抖的 immediate 参数 = leading 模式
+// immediate=true: 首次触发立即执行，之后等冷静期
+// immediate=false: 等冷静期结束后执行（默认）
+
+// 节流的 leading + trailing 组合
+// leading=true, trailing=true: 首尾各执行一次（默认）
+// leading=true, trailing=false: 只在开头执行一次
+// leading=false, trailing=true: 只在结尾执行一次
+```
+
+### 防抖和节流的实际应用场景
+
+```javascript
+// ✅ 防抖适合：搜索框输入、窗口 resize、表单验证
+const search = debounce(fetchResults, 300);
+searchInput.addEventListener('input', (e) => search(e.target.value));
+
+// ✅ 节流适合：滚动事件、鼠标移动、高频点击
+const onScroll = throttle(updateProgress, 100);
+window.addEventListener('scroll', onScroll);
+
+// lodash 的 throttle 实际上是 debounce 的封装
+// throttle(fn, wait) ≈ debounce(fn, wait, { maxWait: wait })
+```
+
+---
+
+## Q4: 手写柯里化（curry）
+
+### 柯里化的核心实现
+
+```javascript
+/**
+ * 手写柯里化（curry）：将多参数函数转为可逐个传参的链式调用
+ * 核心原理：如果参数数量够了就执行，不够就返回新函数继续接收参数
+ * @param {Function} fn - 要柯里化的原函数
+ * @returns {Function} 柯里化后的函数
+ */
+function curry(fn) {
+  return function curried(...args) {
+    // 参数数量达到原函数的形参数数时，直接执行
+    // fn.length 是原函数定义时的形参个数
+    if (args.length >= fn.length) {
+      return fn.apply(this, args);
+    }
+    // 参数不够：返回新函数，继续接收参数，并将已收集的参数合并
+    return function(...moreArgs) {
+      return curried.apply(this, [...args, ...moreArgs]);
+    };
+  };
+}
+
+const add = (a, b, c) => a + b + c;
+const curriedAdd = curry(add);            // 柯里化
+curriedAdd(1)(2)(3);                      // 6：每次传一个参数
+curriedAdd(1, 2)(3);                      // 6：前两个一起传
+curriedAdd(1)(2, 3);                      // 6：后两个一起传
+```
+
+### 柯里化的实际应用
+
+```javascript
+// 日志函数：固定 logger 和 level，只变化 message
+const log = curry((logger, level, message) => {
+  logger[level](`[${new Date().toISOString()}] ${message}`);
+});
+const appLog = log(console);    // 固定 logger
+const error = appLog('error');  // 固定 level
+error('服务器连接失败');         // 只传 message
+
+// 事件绑定：固定 handler，变化 event 和 target
+const bindEvent = curry((handler, event, target) => {
+  target.addEventListener(event, handler);
+});
+```
+
+### 柯里化与偏函数（Partial Application）的区别
+
+柯里化是将多参数函数转为一系列单参数函数，偏函数是固定部分参数。两者常被混淆。
+
+```javascript
+/**
+ * 柯里化 vs 偏函数的区别
+ * 柯里化：每次只接收一个参数，返回新函数直到参数够
+ * 偏函数：一次可以固定多个参数，返回接收剩余参数的函数
+ */
+
+// 柯里化：每次只接收一个参数
+curry(add)(1)(2)(3);
+
+// 偏函数：一次可以固定多个参数
+function partial(fn, ...presetArgs) {
+  return (...laterArgs) => fn(...presetArgs, ...laterArgs);
+}
+const add1 = partial(add, 1);
+add1(2, 3); // 6
+```
+
+---
+
+## Q5: 手写 EventEmitter
+
+### EventEmitter 的核心实现
+
+```javascript
+/**
+ * 手写 EventEmitter：发布订阅模式的核心实现
+ * 核心原理：维护一个事件名 → 回调数组的映射，on 注册、off 移除、emit 触发
+ */
+class EventEmitter {
+  constructor() {
+    // 用 Map 存储事件映射：key 是事件名，value 是回调函数数组
+    this.events = new Map();
+  }
+
+  /**
+   * 注册事件监听器
+   * @param {string} event - 事件名
+   * @param {Function} callback - 回调函数
+   * @returns {this} 支持链式调用
+   */
+  on(event, callback) {
+    if (!this.events.has(event)) this.events.set(event, []); // 首次注册，初始化数组
+    this.events.get(event).push(callback);                   // 将回调加入监听列表
+    return this;                                              // 返回 this 支持链式调用
+  }
+
+  /**
+   * 移除事件监听器
+   * @param {string} event - 事件名
+   * @param {Function} callback - 要移除的回调函数（可选，不传则移除该事件的所有回调）
+   * @returns {this}
+   */
+  off(event, callback) {
+    if (!this.events.has(event)) return this;                 // 事件不存在，直接返回
+    if (!callback) { this.events.delete(event); }            // 不传回调，删除整个事件
+    else {
+      // 过滤掉匹配的回调（包括原始回调和 once 包装的 wrapper）
+      // cb._original 是 once 方法中 wrapper 指向的原始回调
+      const callbacks = this.events.get(event).filter(
+        cb => cb !== callback && cb._original !== callback
+      );
+      this.events.set(event, callbacks);
+    }
+    return this;
+  }
+
+  /**
+   * 触发事件：执行该事件名下注册的所有回调
+   * @param {string} event - 事件名
+   * @param  {...any} args - 传给回调的参数
+   * @returns {this}
+   */
+  emit(event, ...args) {
+    if (!this.events.has(event)) return this;                 // 事件不存在，直接返回
+    this.events.get(event).forEach(cb => cb.apply(this, args)); // 依次执行所有回调
+    return this;
+  }
+
+  /**
+   * 注册一次性监听器：触发一次后自动移除
+   * 实现原理：用 wrapper 函数包装原始回调，wrapper 执行后调用 off 移除自己
+   * @param {string} event - 事件名
+   * @param {Function} callback - 回调函数
+   * @returns {this}
+   */
+  once(event, callback) {
+    // 创建包装函数：执行原始回调后，立即从事件列表中移除自己
+    const wrapper = (...args) => {
+      callback.apply(this, args);         // 先执行原始回调
+      this.off(event, wrapper);           // 再移除 wrapper 自身（只执行一次的关键）
+    };
+    wrapper._original = callback;         // 保存原始回调的引用，用于 off 时识别
+    this.on(event, wrapper);              // 注册 wrapper 而非原始回调
+    return this;
+  }
+}
+```
+
+### once 的实现细节
+
+`once` 方法的关键是包装一个 wrapper 函数，wrapper 内部在执行原始回调后立即解绑自己。`_original` 属性用于 `off` 方法识别原始回调。
+
+```javascript
+// once 的执行流程
+emitter.once('click', handler);
+// 1. 创建 wrapper，wrapper._original = handler
+// 2. wrapper 通过 on 注册
+// 3. emit('click') 时执行 wrapper → wrapper 执行 handler → wrapper 调用 off 解绑自己
+// 4. 第二次 emit('click') 时，wrapper 已被移除，handler 不再执行
+```
+
+### 发布订阅 vs 观察者模式
+
+EventEmitter 是发布订阅模式的实现，和观察者模式有本质区别。
+
+```javascript
+// 观察者模式：Subject 直接通知 Observer
+// Subject 维护一个 Observer 列表，状态变化时直接调用 observer.update()
+
+// 发布订阅模式：通过 EventEmitter（调度中心）解耦
+// Publisher 和 Subscriber 互不知道对方的存在
+// EventEmitter 负责事件的注册和触发
+
+// Node.js 的 EventEmitter 就是发布订阅模式
+const emitter = new EventEmitter();
+emitter.on('data', processData);  // Subscriber 注册
+emitter.emit('data', payload);    // Publisher 发布
+```
+
+---
+
+## Q6: 手写 async/await 的本质
+
+### Generator + 自动执行器的核心实现
+
+```javascript
+/**
+ * async/await 的本质：Generator + 自动执行器的语法糖
+ * Generator 负责暂停和恢复，自动执行器负责用 Promise 链驱动 Generator
+ */
+
+// Generator 函数：用 yield 暂停执行，等待外部传入值后恢复
+function* fetchData() {
+  const user = yield fetch('/api/user');  // 暂停，等待 fetch('/api/user') 的结果
+  const orders = yield fetch(`/api/orders/${user.id}`); // 暂停，等待上一步的结果
+  return orders;                          // 最终返回值
+}
+
+/**
+ * 自动执行器：递归驱动 Generator 执行
+ * 核心逻辑：执行 gen.next() → 拿到 yield 后面的 Promise → resolve 后再执行 gen.next(value)
+ * 这就是 async/await 在 V8 内部的实现原理
+ * @param {GeneratorFunction} generator - Generator 构造函数
+ * @returns {Promise} 最终结果
+ */
+function run(generator) {
+  const gen = generator();                // 创建 Generator 实例
+  function step(value) {
+    const result = gen.next(value);       // 将上一步的值传入，恢复 Generator 执行
+    if (result.done) return result.value; // Generator 执行完毕，返回最终值
+    // result.value 是 yield 后面的 Promise
+    // 等 Promise resolve 后，将结果传入下一步 step
+    return result.value.then(val => step(val));
+  }
+  return step();                          // 启动执行（首次不传值）
+}
+
+run(fetchData); // 等价于 async function fetchData() { ... }
+```
+
+### Generator 的暂停与恢复机制
+
+Generator 被 V8 编译为状态机。每次 `yield` 暂停时，V8 保存当前的执行状态（局部变量、程序计数器）到 Generator 对象的 context 中。`next()` 恢复时，从 context 中恢复状态继续执行。
+
+```javascript
+/**
+ * async/await 的本质转换
+ * await 右边的表达式立刻同步执行
+ * await 下面的代码被打包进隐形的 Promise.then()，变成微任务
+ */
+async function foo() {
+  console.log('1');                       // 同步执行
+  await bar();                            // bar() 立刻同步执行
+  console.log('2');                       // 这行被打包进微任务，不在当前同步栈中执行
+}
+
+// 等价的 Promise 写法——证明 await 下面的代码是微任务
+function foo() {
+  console.log('1');                       // 同步执行
+  bar().then(() => {
+    console.log('2');                     // 微任务：在当前同步代码全部执行完后才运行
+  });
+}
+```
+
+### 错误处理：try/catch 与 Generator.throw
+
+```javascript
+/**
+ * Generator 的错误处理：通过 gen.throw() 将错误注入 Generator 内部
+ * 这就是 async/await 中 await 的错误能被 try/catch 捕获的原因
+ */
+function* gen() {
+  try {
+    const data = yield fetch('/api');     // 如果 fetch 失败，错误会通过 throw 注入到这里
+  } catch (err) {
+    console.error('请求失败:', err);       // 捕获注入的错误
+  }
+}
+
+/**
+ * 支持错误处理的自动执行器
+ * 关键：.catch(err => gen.throw(err)) 将 Promise 的 rejection 注入 Generator
+ * 这样 Generator 内部的 try/catch 就能捕获异步错误
+ * @param {GeneratorFunction} generator - Generator 构造函数
+ * @returns {Promise}
+ */
+function run(generator) {
+  const gen = generator();
+  function step(value) {
+    let result;
+    try {
+      result = gen.next(value);           // 恢复 Generator 执行
+    } catch (err) {
+      return Promise.reject(err);         // Generator 内部同步抛错，直接 reject
+    }
+    if (result.done) return Promise.resolve(result.value); // 执行完毕，返回结果
+    // 继续驱动：Promise resolve 后传入下一步，rejection 通过 throw 注入 Generator
+    return Promise.resolve(result.value)
+      .then(val => step(val))             // 成功：将值传入 gen.next()
+      .catch(err => gen.throw(err));      // 失败：将错误注入 Generator，触发内部的 catch
+  }
+  return step();
+}
+```
+
+---
+
+## 🔍 底层源码：V8 的 bind 实现
+
+<div class="follow-up">
+V8 的 bind 实现和手写版本有什么区别？
+</div>
+
+V8 的 `Function.prototype.bind` 实现（`src/builtins/function-bind.tq`）比手写版本复杂得多。它创建一个 `BoundFunction` 对象，内部有三个关键字段（详见 [V8 源码：src/builtins/function-bind.tq](https://github.com/v8/v8/blob/main/src/builtins/function-bind.tq)）：
+
+- `[[BoundTargetFunction]]`：原始函数
+- `[[BoundThis]]`：绑定的 this
+- `[[BoundArguments]]`：预设的参数
+
+当 BoundFunction 被 `new` 调用时，V8 的 `[[Construct]]` 内部方法会检查 `new.target`，如果有就用 `[[BoundTargetFunction]]` 的构造逻辑，`[[BoundThis]]` 被忽略。这就是为什么 `new (fn.bind(ctx))()` 中 this 指向新实例而不是 ctx。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："手写一个 Promise / 防抖节流 / 深拷贝"
+
+**及格回答（60-70分）：**
+> "能写出正确的实现，通过基本的测试用例。"
+
+面试官评价：**能跑但不理解设计**。
+
+**满分回答（90-100分）：**
+
+> 手写题的本质不是背代码，而是考察你**对底层原理的理解深度**。每道手写题背后都有一个核心知识点：call/apply/bind 考察 this 绑定机制和 `new` 的优先级（`new` 能覆盖 `bind`，因为底层 `[[Construct]]` 初始化新对象后会强制覆盖 `this` 上下文）；Promise 考察状态机模型（pending → fulfilled/rejected，状态只能改变一次）和异步调度（then 回调强制用 `queueMicrotask` 异步执行，防 Zalgo 现象）；深拷贝考察递归引用处理（用 WeakMap 检测循环引用，弱引用不阻止 GC 避免内存泄漏）。<sup>[1]</sup>
+
+> 手写 Promise 的关键不是背代码，而是理解四件事：**状态机**（pending → fulfilled/rejected，状态只能改变一次）、**回调队列**（pending 状态时把 then 的回调存起来，状态改变后批量执行）、**异步调度**（then 的回调必须用 `queueMicrotask` 异步执行）、**thenable 展平**（`resolvePromise` 递归处理嵌套的 Promise 和 thenable 对象，必须检测循环引用 `if (promise2 === x)` 否则会无限递归）。手写 bind 的关键是要兼容 `new` 调用——检查 `new.target`，有则用原函数构造，忽略绑定的 context。<sup>[2]</sup>
+
+> 手写题和原生实现的差距：V8 的 `Function.prototype.bind` 创建一个 `BoundFunction` 对象，内部有 `[[BoundTargetFunction]]`、`[[BoundThis]]`、`[[BoundArguments]]` 三个关键字段。当 BoundFunction 被 `new` 调用时，V8 的 `[[Construct]]` 内部方法会检查 `new.target`，如果有就用 `[[BoundTargetFunction]]` 的构造逻辑，`[[BoundThis]]` 被忽略。手写版本通常用 `instanceof` 检测，不如 V8 的 `new.target` 精确。structuredClone 和手写深拷贝的区别：structuredClone 不支持函数、DOM、Symbol，但原生支持循环引用。<sup>[3]</sup>
+
+> 实际项目中的建议：不要在面试中直接默写完整代码——先说清楚设计思路和核心难点，再逐步写出关键代码。面试官想听的是你的思考过程，而不是背诵结果。防抖和节流的区别：防抖是"等你安静下来再执行"，节流是"每隔一段时间执行一次"。lodash 的 `throttle` 实际上就是 `debounce` 的封装：`throttle(fn, wait)` 等价于 `debounce(fn, wait, { maxWait: wait })`。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title='手写 Promise 的核心难点是什么?' icon="layer-group">
+
+    **答题要点：**
+    说出状态机、回调队列、异步调度、thenable 展平四个核心。
+
+    **高分回答：**
+    "手写 Promise 的关键不是背代码，而是理解四件事：
+    1. **状态机**：pending → fulfilled/rejected，状态只能改变一次（不可逆）
+    2. **回调队列**：pending 状态时把 then 的回调存起来，状态改变后批量执行
+    3. **异步调度**：then 的回调必须用 `queueMicrotask` 异步执行，防 Zalgo 现象
+    4. **thenable 展平**：`resolvePromise` 递归处理嵌套的 Promise 和 thenable 对象"
+
+  </Accordion>
+
+  <Accordion title='防抖和节流的区别?lodash 的 throttle 是怎么实现的?' icon="stopwatch">
+
+    **答题要点：**
+    从行为差异和实现原理两个维度对比。
+
+    **高分回答：**
+    "防抖是'等你安静下来再执行'——事件触发后延迟执行，延迟期间再次触发则重新计时。节流是'每隔一段时间执行一次'——在一段时间内只执行一次，不管触发了多少次。
+
+    lodash 的 `throttle` 实际上就是 `debounce` 的封装：`throttle(fn, wait)` 等价于 `debounce(fn, wait, { maxWait: wait })`。lodash 的 debounce 支持 `maxWait` 参数，保证函数在一定时间内一定会执行一次。"
+
+  </Accordion>
+
+  <Accordion title='深拷贝如何处理原型链?' icon="stopwatch">
+
+    **答题要点：**
+    说出 Object.create(Object.getPrototypeOf(source)) 的作用。
+
+    **高分回答：**
+    "深拷贝时用 `Object.create(Object.getPrototypeOf(source))` 创建对象，这样克隆出来的对象保留了原对象的原型链。如果用 `{}` 或 `[]` 创建，克隆出来的对象的原型是 `Object.prototype` 或 `Array.prototype`，丢失了原对象可能自定义的原型。"
+
+  </Accordion>
+
+  <Accordion title='🔥 手写 Object.create 的实现?' icon="skull">
+
+    **答题要点：**
+    说出空函数 + 原型赋值的核心思路。
+
+    **高分回答：**
+  ```javascript
+    /**
+     * 手写 Object.create：创建一个以指定对象为原型的新对象
+     * 核心原理：空函数 + 原型赋值 + new 调用
+     * @param {Object|null} proto - 新对象的原型
+     * @param {Object} propertiesObject - 可选，属性描述符对象
+     * @returns {Object} 新创建的对象
+     */
+    function myCreate(proto, propertiesObject) {
+      // 校验 proto 必须是对象或 null（Object.create(null) 创建无原型对象）
+      if (typeof proto !== 'object' && typeof proto !== 'function') {
+        throw new TypeError('Object prototype may only be an Object or null');
+      }
+      function F() {}                     // 创建空构造函数
+      F.prototype = proto;                // 将空函数的原型指向目标对象
+      const obj = new F();                // new F() 创建的对象，其 __proto__ 指向 proto
+      if (propertiesObject) Object.defineProperties(obj, propertiesObject); // 定义属性
+      return obj;
+    }
+  ```
+    "核心思路：创建一个空函数 F，把 F.prototype 指向 proto，然后 new F() 就得到了一个原型指向 proto 的对象。`Object.create(null)` 创建的对象没有原型链，常用于创建纯净的 map 对象。"
+
+  </Accordion>
+
+  <Accordion title='如何实现一个支持取消的防抖函数?' icon="layer-group">
+
+    **答题要点：**
+    在返回的函数上挂载 cancel 方法，清除定时器。
+
+    **高分回答：**
+    "支持取消的防抖函数需要在返回的函数上挂载 `cancel` 方法：
+    ```javascript
+    /**
+     * 支持取消的防抖函数：在返回的函数上挂载 cancel 方法
+     * 应用场景：用户切换页面时取消未完成的搜索请求，避免竞态条件
+     * @param {Function} fn - 要防抖的函数
+     * @param {number} delay - 延迟时间
+     * @returns {Function} 带 cancel 方法的防抖函数
+     */
+    function debounce(fn, delay) {
+      let timer = null;
+      const debounced = function(...args) {
+        clearTimeout(timer);              // 清除上一次定时器（防抖核心）
+        timer = setTimeout(() => fn.apply(this, args), delay);
+      };
+      // 挂载 cancel 方法：手动取消待执行的防抖
+      debounced.cancel = function() {
+        clearTimeout(timer);              // 清除定时器
+        timer = null;                     // 重置引用
+      };
+      return debounced;
+    }
+    ```
+    实际场景：搜索框输入时，用户切换页面后需要取消未完成的搜索请求，避免竞态条件。"
+
+  </Accordion>
+
+  <Accordion title='手写 instanceof 的实现?' icon="node">
+
+    **答题要点：**
+    沿着原型链查找，直到找到 Constructor.prototype 或到达 null。
+
+    **高分回答：**
+    "instanceof 的本质是检查构造函数的 prototype 是否在对象的原型链上：
+    ```javascript
+    /**
+     * 手写 instanceof：检查 Constructor.prototype 是否在 obj 的原型链上
+     * 核心原理：沿着 __proto__ 链逐层向上查找，直到找到或到达 null
+     * @param {*} obj - 要检查的对象
+     * @param {Function} Constructor - 构造函数
+     * @returns {boolean}
+     */
+    function myInstanceof(obj, Constructor) {
+      let proto = Object.getPrototypeOf(obj); // 获取对象的原型
+      while (proto !== null) {                 // 沿原型链向上查找，直到 null（终点）
+        if (proto === Constructor.prototype) return true; // 找到匹配的 prototype
+        proto = Object.getPrototypeOf(proto);  // 继续向上一层
+      }
+      return false;                            // 遍历完原型链都没找到，返回 false
+    }
+    ```
+    注意边界情况：
+    1. `null instanceof Object` 应该返回 `false`
+    2. 基本类型直接返回 `false`（`1 instanceof Number` 是 `false`）
+    3. 跨 iframe 时 `instanceof` 可能失效，用 `Array.isArray()` 更可靠"
+
+  </Accordion>
+
+  <Accordion title='🔥 如何实现一个 Promise.all?' icon="skull">
+
+    **答题要点：**
+    用计数器跟踪完成数量，全部完成才 resolve，有一个失败就 reject。
+
+    **高分回答：**
+    "Promise.all 的核心是计数器 + 结果数组：
+    ```javascript
+    /**
+     * 手写 Promise.all：所有 Promise 都成功才 resolve，有一个失败就立即 reject（fail-fast）
+     * 核心原理：计数器 + 结果数组（用索引保证顺序）
+     * @param {Array} promises - Promise 数组
+     * @returns {Promise<Array>} 按原始顺序排列的结果数组
+     */
+    function promiseAll(promises) {
+      return new Promise((resolve, reject) => {
+        const results = [];               // 结果数组，用索引 i 保证顺序
+        let count = 0;                    // 已完成的 Promise 计数
+        const len = promises.length;
+        if (len === 0) return resolve(results); // 空数组直接 resolve（规范行为）
+
+        promises.forEach((p, i) => {
+          // Promise.resolve(p) 包装非 Promise 值，兼容普通值传入
+          Promise.resolve(p).then(val => {
+            results[i] = val;             // 用索引存入结果，保证顺序与输入一致
+            if (++count === len) resolve(results); // 全部完成时 resolve
+          }, reject);                     // 任一失败立即 reject（fail-fast）
+        });
+      });
+    }
+    ```
+    关键细节：
+    1. 用 `Promise.resolve(p)` 包装，兼容非 Promise 值
+    2. 用 `results[i] = val` 保证结果顺序与输入一致
+    3. 有一个 reject 就立即 reject（fail-fast）
+    4. 空数组直接 resolve([])"
+
+  </Accordion>
+
+  <Accordion title='手写一个 LRU 缓存?' icon="node">
+
+    **答题要点：**
+    用 Map 的有序性实现 O(1) 的 get/put。
+
+    **高分回答：**
+    "LRU（Least Recently Used）缓存的核心是：访问时把元素移到最前面，容量满时删除最久未使用的（最后面的）。
+    ```javascript
+    /**
+     * 手写 LRU 缓存（Least Recently Used）
+     * 核心原理：利用 Map 的插入顺序特性，访问时移到末尾，容量满时删除头部
+     * get/put 时间复杂度 O(1)
+     */
+    class LRUCache {
+      /**
+       * @param {number} capacity - 缓存容量
+       */
+      constructor(capacity) {
+        this.capacity = capacity;          // 最大容量
+        this.cache = new Map();            // Map 的迭代顺序就是插入顺序
+      }
+      /**
+       * 获取缓存值：命中后需要移到最前面（标记为最近使用）
+       * @param {*} key
+       * @returns {*} 缓存值，不存在返回 -1
+       */
+      get(key) {
+        if (!this.cache.has(key)) return -1; // 未命中
+        const val = this.cache.get(key);
+        this.cache.delete(key);            // 先删除
+        this.cache.set(key, val);          // 再重新插入——移到 Map 末尾（最近使用）
+        return val;
+      }
+      /**
+       * 写入缓存：如果已存在则更新，容量满时淘汰最久未使用的
+       * @param {*} key
+       * @param {*} value
+       */
+      put(key, value) {
+        if (this.cache.has(key)) this.cache.delete(key); // 已存在则先删除（更新位置）
+        this.cache.set(key, value);        // 插入到 Map 末尾
+        if (this.cache.size > this.capacity) {
+          // Map 迭代器的第一个就是最久未使用的（最早插入且未被访问过）
+          this.cache.delete(this.cache.keys().next().value);
+        }
+      }
+    }
+    ```
+    为什么用 Map？因为 Map 的迭代顺序是插入顺序，`keys().next().value` 就是最久未使用的元素。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [ECMAScript 规范：Promise Objects](https://tc39.es/ecma262/#sec-promise-objects)：*Promise A+ 规范的权威定义。* <sup>[1]</sup>
+- 📖 [V8 Blog: Fast async/await](https://v8.dev/blog/fast-async)：*V8 团队对 async/await 底层优化的官方博文。* <sup>[2]</sup>
+- 🟢 [BFE.dev JavaScript Quizzes](https://bigfrontend.dev/quiz)：*顶尖的前端刷题网站，有上百道手写题和输出题。* <sup>[3]</sup>

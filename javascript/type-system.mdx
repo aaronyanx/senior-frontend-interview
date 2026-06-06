@@ -1,0 +1,427 @@
+---
+title: "类型系统"
+---
+
+> **面试官为什么问这个？**
+>
+> 类型判断是 JavaScript 最容易出 bug 的地方之一。面试官问这个，本质上是在考察你：**是否理解 JS 类型系统的特殊性——特别是 `typeof null === 'object'` 这种历史坑，以及隐式类型转换的底层规则。** 如果你答不清楚，说明你对 JS 的理解停留在"能跑"而不是"知道为什么这么跑"。
+
+---
+
+## Q1: typeof 能判断哪些类型？有什么坑？
+
+<Steps>
+
+  <Step title="1995年: JS 的类型标签设计">
+
+    JavaScript 的值在底层以 32 位存储，前 3 位表示类型标签：`000` 对象、`1` 整数、`010` 浮点数、`100` 字符串、`110` 布尔值。
+
+  </Step>
+  <Step title="致命痛点: typeof null === 'object'">
+
+    `null` 的机器码全为零（空指针），前三位恰好是 `000`，所以被误判为对象。修复会破坏现有代码，所以一直保留。
+
+  </Step>
+  <Step title="typeof 的七个返回值">
+
+    `"number"`、`"string"`、`"boolean"`、`"undefined"`、`"symbol"`、`"bigint"`、`"function"`。注意：没有 `"null"`、`"array"`、`"date"`、`"regexp"`。
+
+  </Step>
+  <Step title="核心机制: V8 的 Typeof 实现">
+
+    V8 的 `Typeof` 操作检查值的类型标签，对于 HeapObject 检查 Map 中的 `instance_type` 字段。null 的 Map 是 `null_map`，但它的 `instance_type` 被错误地设置为 `JS_OBJECT_TYPE`。
+
+  </Step>
+  <Step title="关键洞察: 用 Object.prototype.toString.call() 替代 typeof">
+
+    它调用对象的 `[[Class]]` 内部方法，每个内置类型都有唯一的 `[[Class]]` 值，不受原型链影响。
+
+  </Step>
+
+</Steps>
+
+**类型系统解决的核心问题：**
+
+```text
+问题：typeof 有致命缺陷，隐式转换反直觉
+
+typeof null === "object"（历史 Bug）
+typeof [] === "object"（无法区分数组和对象）
+[] == ![] 结果为 true（隐式转换多层嵌套，极其脆弱）
+
+解决：Object.prototype.toString.call() + 全程用 ===
+
+toString.call() 通过内部 [[Class]] 精确判断所有类型。
+用 === 避免 ToPrimitive 隐式转换的坑。
+```
+
+<Tip title="🎢 通俗比喻: 快递分拣员">
+
+`typeof` 就像一个粗心的快递分拣员——大部分包裹（基本类型）都能正确分类，但遇到 `null` 时它会贴错标签（"object"），遇到数组和正则时只会说"都是包裹"（"object"）。而 `Object.prototype.toString.call()` 是一个精确的 X 光扫描仪，能看穿每个包裹的内部结构，准确告诉你这是"Array"还是"Null"还是"RegExp"。至于 `==`，它就像一个太好说话的收银员——`0`、`''`、`false` 它都当一样的来收，导致各种反直觉的结果。
+
+
+</Tip>
+
+**typeof 的完整结果：**
+
+```javascript
+typeof 1           // "number"
+typeof NaN         // "number"（NaN 是 Not a Number 但类型是 number）
+typeof 'str'       // "string"
+typeof true        // "boolean"
+typeof undefined   // "undefined"
+typeof Symbol()    // "symbol"
+typeof 1n          // "bigint"
+typeof function(){} // "function"
+
+typeof null        // "object" ← 经典 bug
+typeof []          // "object" ← 无法区分数组和对象
+typeof {}          // "object"
+typeof /abc/       // "object" ← 正则也是 object
+typeof new Date()  // "object"
+```
+
+<Note title="💡 一句话总结">
+
+typeof 只能准确判断基本类型（除了 null），判断引用类型请用 Object.prototype.toString.call()。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 typeof 的坑">
+
+```javascript
+typeof null        // "object"（历史 bug）
+typeof []          // "object"（无法区分数组）
+typeof NaN         // "number"（Not a Number 但类型是 number）
+```
+用 typeof 判断类型，你会踩无数坑。
+
+</Card>
+<Card title="✅ Object.prototype.toString.call()">
+
+```javascript
+Object.prototype.toString.call(null)       // "[object Null]"
+Object.prototype.toString.call([])         // "[object Array]"
+Object.prototype.toString.call(NaN)        // "[object Number]"
+```
+准确判断所有类型，不受原型链影响。
+
+</Card>
+</CardGroup>
+
+---
+
+## Q2: 怎么可靠地判断所有类型？
+
+```javascript
+// 最可靠的方式：Object.prototype.toString.call()
+function getType(value) {
+  return Object.prototype.toString.call(value).slice(8, -1).toLowerCase();
+}
+getType(1);      // "number"
+getType(null);   // "null"
+getType([]);     // "array"
+getType({});     // "object"
+getType(/abc/);  // "regexp"
+```
+
+### instanceof 的原理和局限
+
+`instanceof` 检查构造函数的 `prototype` 是否在对象的原型链上。它不能判断基本类型，跨 iframe 也会失效。
+
+```javascript
+// instanceof 检查构造函数的 prototype 是否在对象的原型链上
+[] instanceof Array    // true
+[] instanceof Object   // true（Array.prototype 继承自 Object.prototype）
+
+// 局限 1：不能判断基本类型
+1 instanceof Number    // false
+
+// 局限 2：跨 iframe 会失效
+// iframe 里的 Array 和主页面的 Array 不是同一个构造函数
+```
+
+### Symbol.toStringTag 自定义类型
+
+ES6 引入 `Symbol.toStringTag`，允许自定义类覆盖 `Object.prototype.toString.call()` 的返回值：
+
+```javascript
+class MyType {
+  get [Symbol.toStringTag]() { return 'MyType'; }
+}
+Object.prototype.toString.call(new MyType()); // "[object MyType]"
+```
+
+### Array.isArray 的特殊性
+
+`Array.isArray` 是 ES5.1 引入的专门方法，能跨 iframe 判断数组，不依赖原型链：
+
+```javascript
+Array.isArray([]);        // true
+Array.isArray(new Array()); // true
+// 跨 iframe 也能正确判断
+Array.isArray(iframe.contentWindow.Array()); // true
+```
+
+---
+
+## Q3: 类型转换有什么规则？== 的隐式转换？
+
+```javascript
+// == 的转换规则：
+// 1. 类型相同 → 直接比较
+// 2. null == undefined → true
+// 3. String vs Number → String 转 Number
+// 4. Boolean vs 其他 → Boolean 转 Number（true→1, false→0）
+// 5. Object vs 基本类型 → 调用 valueOf() 或 toString()
+
+// 经典面试题
+[] == false    // true  → [] → '' → 0, false → 0
+![] == false   // true  → ![] → false, false == false
+[] == ![]      // true  → [] → '' → 0, ![] → false → 0
+0 == ''        // true（'' 转成 0）
+'' == '0'      // false（类型相同，直接比较值）
+```
+
+### + 运算符的多义性
+
+`+` 运算符同时用于数字加法和字符串拼接，规则是：如果任一操作数是字符串，执行字符串拼接（`ToString`）。`-` 运算符只做数字运算（`ToNumber`）。
+
+```javascript
+1 + '1'    // '11'（字符串拼接）
+1 - '1'    // 0（数字运算，'1' 转为 1）
+1 + true   // 2（true 转为 1）
+'1' + true // '1true'（字符串拼接）
+```
+
+### Symbol.toPrimitive 自定义转换
+
+ES6 引入 `Symbol.toPrimitive`，允许对象自定义类型转换行为，优先级高于 `valueOf` 和 `toString`：
+
+```javascript
+const obj = {
+  [Symbol.toPrimitive](hint) {
+    if (hint === 'number') return 42;
+    if (hint === 'string') return 'hello';
+    return 'default';
+  }
+};
++obj;      // 42（hint = 'number'）
+`${obj}`;  // 'hello'（hint = 'string'）
+obj + '';   // 'default'（hint = 'default'）
+```
+
+<Warning title="⚠️ 核心机制: ToPrimitive 抽象操作">
+
+隐式类型转换的本质是规范中的 `ToPrimitive` 抽象操作。当对象需要被转换为原始值时：
+1. 先调用 `[Symbol.toPrimitive](hint)`
+2. 没有的话，根据 hint 调用 `valueOf()` 或 `toString()`
+3. `hint === 'number'` → `valueOf()` → `toString()`
+4. `hint === 'string'` → `toString()` → `valueOf()`
+5. `hint === 'default'` → `valueOf()` → `toString()`
+
+
+</Warning>
+
+```javascript
+// Object.is() 和 === 的区别
+Object.is(NaN, NaN)      // true（=== 是 false）
+Object.is(+0, -0)        // false（=== 是 true）
+```
+
+<Tip title="最佳实践: ">
+
+实际开发中我只用 `===`，避免隐式转换带来的 bug。ESLint 的 `eqeqeq` 规则可以强制使用 `===`。
+
+
+</Tip>
+
+---
+
+## 🔍 底层源码：V8 中值的内存布局
+
+<div class="follow-up">
+V8 中值的内存布局是什么样的？
+</div>
+
+V8 底层将值分为寄存器级存储的 **SMI（小整数）** 和堆分配的 **HeapObject**（详见 [V8 源码：src/objects/objects.h](https://github.com/v8/v8/blob/main/src/objects/objects.h)）：
+
+- **SMI**：直接存储在 32/64 位的 tagged pointer 中，最低位是 0（表示 SMI）
+- **HeapObject**：指针指向堆上的对象，最低位是 1，对象的第一个字段是 Map
+- **Oddball**：特殊的 HeapObject，包括 `undefined`、`null`、`true`、`false`——它们有预分配的全局单例
+
+`typeof` 的实现：V8 的 `Typeof` 操作检查值的类型标签，对于 HeapObject 检查 Map 中的 `instance_type` 字段。null 的 Map 是 `null_map`，但它的 `instance_type` 被错误地设置为 `JS_OBJECT_TYPE`——这就是 bug 的根源。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 JavaScript 的类型系统"
+
+**及格回答（60-70分）：**
+> "JS 有 7 种基本类型和 Object。typeof 有坑，null 返回 object。用 Object.prototype.toString.call() 可以准确判断类型。== 会隐式转换，建议用 ===。"
+
+面试官评价：**知道规则但不理解底层**。
+
+**满分回答（90-100分）：**
+
+> "V8 底层将值分为寄存器级存储的 **SMI（小整数）** 和堆分配的 **HeapObject**（首字段为描述形状的 Map）。`typeof null === 'object'` 源于早期 JS 机器码前三位为类型标签的设计（对象为 `000`，`null` 全零恰好吻合）。因修复成本过高被作为规范永久保留。<sup>[1]</sup>"
+
+> "隐式类型转换的本质是规范中的 `ToPrimitive` 抽象操作。它会根据 `hint` 调用对象的 `valueOf` 或 `toString`。`+` 运算符对字符串有特殊处理——如果任一操作数是字符串，执行字符串拼接（`ToString`）。`-` 运算符只做数字运算，先把字符串转为数字（`ToNumber`）。所以 `1 + '1'` 是 `'11'`，`1 - '1'` 是 `0`。<sup>[2]</sup>"
+
+> "实战中可通过实现对象的 `Symbol.toPrimitive` 来实现最高优先级的自定义类型转换。`Object.is()` 比 `===` 更严格：`Object.is(NaN, NaN)` 返回 `true`，`Object.is(+0, -0)` 返回 `false`。<sup>[3]</sup>"
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title='typeof 和 instanceof 各自的局限是什么?' icon="layer-group">
+
+    **答题要点：**
+    从适用范围和跨环境两个维度分析。
+
+    **高分回答：**
+    "`typeof` 的局限：不能区分 null 和 object（历史 bug）、不能区分数组和对象和正则和日期（都返回 'object'）、NaN 返回 'number'。`instanceof` 的局限：不能判断基本类型（`1 instanceof Number` 返回 false）、跨 iframe 失效（不同 iframe 的 Array 构造函数不同）。最可靠的方案是 `Object.prototype.toString.call()`。"
+
+  </Accordion>
+
+  <Accordion title='Object.prototype.toString.call() 为什么能准确判断类型?' icon="stopwatch">
+
+    **答题要点：**
+    说出内部方法和 Symbol.toStringTag 的关系。
+
+    **高分回答：**
+    "它调用对象的 `[[Class]]` 内部方法（ES5）或 `Symbol.toStringTag`（ES6+）。每个内置类型都有唯一的 `[[Class]]` 值，不受原型链影响。自定义类可以通过 `Symbol.toStringTag` 自定义返回值。例如 `class MyArray { get [Symbol.toStringTag]() { return 'MyArray'; } }`。"
+
+  </Accordion>
+
+  <Accordion title='[] == ![] 为什么是 true?' icon="node">
+
+    **答题要点：**
+    逐步推导完整的类型转换链。
+
+    **高分回答：**
+    "完整推导链路：`![]` 先执行，`[]` 是 truthy，所以 `![]` 是 `false`。然后 `[] == false`，触发布尔转数字 `[] == 0`。再触发对象转原始值 `'' == 0`。最后字符串转数字 `0 == 0`，结果为 `true`。这类考题暴露了 `==` 的危险本质——它是一个隐式的多层类型转换规则引擎，极其脆弱且反直觉。"
+
+  </Accordion>
+
+  <Accordion title="1 + '1' 和 1 - '1' 的结果为什么不同?" icon="skull">
+
+    **答题要点：**
+    说出 + 运算符的多义性。
+
+    **高分回答：**
+    "`+` 运算符对字符串有特殊处理——如果任一操作数是字符串，执行字符串拼接（`ToString`）。所以 `1 + '1'` 是 `'11'`。`-` 运算符只做数字运算，先把字符串转为数字（`ToNumber`）。所以 `1 - '1'` 是 `0`。这不是类型转换规则的 bug，而是 `+` 运算符的多义性——它同时用于数字加法和字符串拼接。"
+
+  </Accordion>
+
+  <Accordion title='基本类型和引用类型在内存中如何存储?' icon="layer-group">
+
+    **答题要点：**
+    栈内存 vs 堆内存的区别。
+
+    **高分回答：**
+    "基本类型（number、string、boolean、null、undefined、symbol、bigint）存储在**栈内存**中，变量直接持有值。引用类型（object、array、function）存储在**堆内存**中，变量持有的是指向堆的引用地址。
+    ```javascript
+    let a = 1;
+    let b = a;   // 复制值
+    b = 2;
+    console.log(a); // 1（不受影响）
+    
+    let obj1 = { x: 1 };
+    let obj2 = obj1; // 复制引用
+    obj2.x = 2;
+    console.log(obj1.x); // 2（共享同一个堆对象）
+    ```
+    这也是为什么函数参数传递对象时是'按引用传递的效果'——本质是按值传递引用地址。"
+
+  </Accordion>
+
+  <Accordion title='null 和 undefined 的区别是什么？为什么 null == undefined?' icon="node">
+
+    **答题要点：**
+    从语义和规范两个层面解释。
+
+    **高分回答：**
+    "语义上：`undefined` 表示变量已声明但未赋值，是引擎自动赋的值；`null` 表示变量被显式赋值为空，是开发者主动设置的。规范上：`null == undefined` 是规范明确规定为 `true` 的，这是唯一一条不需要类型转换的 `==` 规则。
+    ```javascript
+    typeof undefined; // 'undefined'
+    typeof null;      // 'object'（历史 bug）
+    
+    // 实践建议
+    let obj = null;        // 显式表示'没有对象'
+    let value = undefined; // 引擎自动赋值
+    ```
+
+  </Accordion>
+
+  <Accordion title='🔥 实现一个深度类型判断函数，支持所有内置类型' icon="skull">
+
+    **答题要点：**
+    结合 toString 和 typeof 实现完整的类型判断。
+
+    **高分回答：**
+    ```javascript
+    function getType(value) {
+      if (value === null) return 'null';
+      if (value === undefined) return 'undefined';
+      const type = typeof value;
+      if (type !== 'object' && type !== 'function') return type;
+      // 引用类型用 toString 判断
+      return Object.prototype.toString.call(value)
+        .slice(8, -1).toLowerCase();
+    }
+    
+    getType(1);           // 'number'
+    getType(null);        // 'null'
+    getType([]);          // 'array'
+    getType(new Date());  // 'date'
+    getType(/abc/);       // 'regexp'
+    getType(new Map());   // 'map'
+    getType(new Set());   // 'set'
+    getType(Promise.resolve()); // 'promise'
+    ```
+    核心思路：先用 typeof 处理基本类型（快），再用 toString 处理引用类型（准）。"
+
+  </Accordion>
+
+  <Accordion title='🔥 手写一个类型安全的 JSON.parse，怎么处理边界情况?' icon="stopwatch">
+
+    **答题要点：**
+    错误处理和类型还原。
+
+    **高分回答：**
+    ```javascript
+    function safeParse(str) {
+      try {
+        const result = JSON.parse(str);
+        // JSON.parse 会丢失 undefined、Function、Symbol、Date 等
+        if (result === null && str.trim() !== 'null') {
+          throw new Error('Invalid JSON');
+        }
+        return result;
+      } catch (e) {
+        throw new SyntaxError(`JSON parse failed: ${e.message}`);
+      }
+    }
+    
+    // JSON.parse 的常见坑：
+    JSON.parse('null');        // null
+    JSON.parse('undefined');   // SyntaxError
+    JSON.parse('"2024-01-01"'); // 字符串，不是 Date
+    JSON.parse('{"a": undefined}'); // SyntaxError
+    ```
+    注意：`JSON.parse` 不支持 `undefined`、`Function`、`Symbol` 等值。需要日期等特殊类型时，应配合自定义的 `reviver` 函数处理。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [ECMAScript 规范：ToPrimitive](https://tc39.es/ecma262/#sec-toprimitive)：*官方规范中对类型转换的完整定义。* <sup>[1]</sup>
+- 📖 [V8 源码：objects.h](https://github.com/v8/v8/blob/main/src/objects/objects.h)：*V8 中值的内存布局和类型标签的定义。* <sup>[2]</sup>
+- 🟢 [MDN Web Docs: typeof](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Operators/typeof)：*MDN 对 typeof 操作符的完整文档。* <sup>[3]</sup>

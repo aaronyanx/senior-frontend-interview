@@ -1,0 +1,1654 @@
+---
+title: "MCP 与 Skill"
+---
+
+> **面试官为什么问这个？**
+>
+> MCP 和 Skill 是 AI 工程化的核心概念。面试官问这个，本质上是在考察你：**是否理解 AI 工具链的标准化架构，以及能不能在实际项目中设计和实现 Skill。** 如果你答不清楚，说明你对 AI 工具的使用停留在"调 API"而不是"设计系统"。
+
+---
+
+## Q1: MCP 和 Skill 有什么区别？它们怎么协作？
+
+<Steps>
+
+  <Step title="2023年: AI 工具链的碎片化">
+
+各家 AI 产品的工具调用方式各不相同——OpenAI 的 Function Calling、Anthropic 的 Tool Use、Google 的 Function Declaration。开发者为每个平台写一套适配代码，维护成本极高。
+
+  </Step>
+  <Step title="致命痛点: 没有统一的工具协议">
+
+如果你开发了一个"读文件"工具，想让 Claude、GPT、Gemini 都能用，你需要为每个平台写不同的接口。工具越多，适配成本越高。
+
+  </Step>
+  <Step title="2024年: MCP 标准化协议诞生">
+
+Anthropic 提出了 MCP（Model Context Protocol），定义了 AI 模型和外部工具之间的**标准化通信协议**。一个 MCP Server 可以被所有支持 MCP 的 AI 产品调用。
+
+  </Step>
+  <Step title="核心机制: 三种能力的标准化">
+
+MCP 定义了三种能力：Tool（可调用的函数）、Resource（可访问的数据）、Prompt（预定义的提示词模板）。通信方式有两种：stdio（本地）和 SSE（远程）。
+
+  </Step>
+  <Step title="Skill 的引入: 从工具到工作流">
+
+MCP 解决了"怎么调用工具"，但没有解决"怎么组织工具调用的流程"。Skill 用 Markdown 格式定义了 AI Agent 完成某类任务的步骤和规范——它是 MCP 之上的工作流层。
+
+  </Step>
+
+</Steps>
+
+**MCP 和 Skill 解决的核心问题：**
+
+```text
+问题：AI 工具链碎片化 + 工作流无标准化
+
+没有 MCP：每个 AI 平台一套工具接口，开发者重复适配
+没有 Skill：AI 不知道按什么步骤完成复杂任务，行为不可控
+
+解决：MCP 统一工具协议，Skill 标准化工作流
+
+MCP：AI Agent ←→ MCP Server（stdio/SSE）←→ 外部工具
+Skill：SKILL.md 定义触发条件 + 执行步骤 + 输出格式 + 负面约束
+```
+
+<Note title="💡 一句话总结">
+
+MCP 是管道（定义怎么通信），Skill 是内容（定义做什么）。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有 MCP 和 Skill">
+
+你让 AI "分析这个项目"，它随意读了几个文件就开始编造分析结果。你让它用某个工具，它不知道怎么调用。每次结果格式都不一样，无法自动化处理。
+
+</Card>
+<Card title="✅ 引入 MCP 和 Skill">
+
+你写了一个 `frontend-analyzer` Skill，定义了明确的步骤：扫描文件树 → 检测技术栈 → 分析模块依赖 → 生成报告。AI 按步骤执行，通过 MCP 调用 filesystem 工具读文件、grep 工具搜索代码，输出格式一致的 JSON 报告。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么"（工具链碎片化 + 工作流无标准），再说"怎么解决"（MCP 统一协议 + Skill 标准化流程）。面试官想听的是你理解 AI 工程化的架构设计，而不是背 API 文档。
+
+</Tip>
+
+---
+
+## Q2: MCP 的核心概念有哪些？
+
+MCP 的本质是**AI 模型和外部工具之间的标准化通信协议**，核心逻辑只有 3 步：
+
+```text
+┌───────────────────────────────────────┐
+│        AI Agent（调用方）               │  ← Claude / GPT / Gemini
+└─────────────────┬─────────────────────┘
+                  │ MCP 协议（JSON-RPC over stdio/SSE）
+                  ▼
+┌───────────────────────────────────────┐
+│        MCP Server（服务方）             │  ← 独立进程，暴露 Tool/Resource/Prompt
+└─────────────────┬─────────────────────┘
+                  │
+                  ▼
+┌───────────────────────────────────────┐
+│        外部工具（文件系统、数据库、API）   │  ← 实际执行操作
+└───────────────────────────────────────┘
+```
+
+```javascript
+// MCP 定义了三种能力：
+
+// 1. Tool（工具）：AI 可以调用的函数
+{
+  name: "read_file",
+  description: "读取文件内容",
+  inputSchema: {
+    type: "object",
+    properties: {
+      path: { type: "string", description: "文件路径" }
+    }
+  }
+}
+
+// 2. Resource（资源）：AI 可以访问的数据
+{
+  uri: "file:///path/to/file",
+  name: "项目配置文件",
+  mimeType: "application/json"
+}
+
+// 3. Prompt（提示词）：预定义的提示词模板
+{
+  name: "code_review",
+  description: "代码审查提示词",
+  arguments: [
+    { name: "code", description: "要审查的代码" }
+  ]
+}
+```
+
+<Warning title="⚠️ 核心机制: MCP 的通信方式">
+
+MCP 支持两种通信方式：
+
+- **stdio**：通过标准输入输出通信，适合本地工具。AI Agent 启动 MCP Server 子进程，通过 stdin/stdout 传递 JSON-RPC 2.0 消息。
+- **SSE（Server-Sent Events）**：通过 HTTP 通信，适合远程服务。AI Agent 用 HTTP POST 发送请求，SSE 接收响应。
+
+stdio 的延迟更低（进程间通信），但只能访问本地资源。SSE 可以访问远程服务，但有网络延迟。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: USB 接口协议">
+
+MCP 就像 USB 接口协议。USB 定义了设备怎么和电脑通信（电压、数据格式、握手协议），但不关心你插的是鼠标、键盘还是 U 盘。同样，MCP 定义了 AI 怎么和工具通信（JSON-RPC、stdio/SSE），但不关心你接的是文件系统、数据库还是搜索引擎。有了 USB，你不用为每个设备单独配驱动；有了 MCP，你不用为每个 AI 平台单独写适配代码。
+
+</Tip>
+
+### MCP 协议的 JSON-RPC 2.0 规范
+
+MCP 底层使用 JSON-RPC 2.0 协议进行通信。所有请求和响应都遵循统一的消息格式：
+
+```javascript
+// 请求格式（AI Agent → MCP Server）
+{
+  jsonrpc: "2.0",
+  id: 1,
+  method: "tools/call",
+  params: {
+    name: "read_file",
+    arguments: { path: "/src/index.ts" }
+  }
+}
+
+// 响应格式（MCP Server → AI Agent）
+{
+  jsonrpc: "2.0",
+  id: 1,
+  result: {
+    content: [{ type: "text", text: "文件内容..." }]
+  }
+}
+
+// 错误格式
+{
+  jsonrpc: "2.0",
+  id: 1,
+  error: {
+    code: -32600,
+    message: "Invalid request",
+    data: { details: "缺少 path 参数" }
+  }
+}
+```
+
+### MCP Server 的生命周期管理
+
+MCP Server 不是简单的函数集合，它有完整的生命周期：初始化（发送 `initialize` 请求，协商协议版本和能力）→ 能力发现（AI Agent 查询 Server 支持哪些 Tool/Resource/Prompt）→ 工具调用（AI Agent 发送 `tools/call` 请求）→ 关闭（发送 `shutdown` 请求，清理资源）。
+
+```javascript
+// MCP Server 的生命周期
+// 1. initialize：协商协议版本
+// Agent → Server: { method: "initialize", params: { protocolVersion: "2024-11-05" } }
+// Server → Agent: { result: { capabilities: { tools: {}, resources: {} } } }
+
+// 2. tools/list：发现可用工具
+// Agent → Server: { method: "tools/list" }
+// Server → Agent: { result: { tools: [{ name: "read_file", ... }] } }
+
+// 3. tools/call：调用工具
+// Agent → Server: { method: "tools/call", params: { name: "read_file", arguments: { path: "..." } } }
+
+// 4. shutdown：关闭连接
+// Agent → Server: { method: "shutdown" }
+```
+
+---
+
+## Q3: Skill 怎么写？有哪些关键要素？
+
+### 基础梳理
+
+| 要素 | 说明 | 示例 |
+|------|------|------|
+| **触发条件** | 什么时候使用这个 Skill | "当用户要求分析前端项目时使用" |
+| **执行步骤** | AI 按什么顺序执行 | "1. 扫描文件树 2. 检测技术栈 3. 分析模块" |
+| **输出格式** | 结果的结构化格式 | JSON / Markdown / 表格 |
+| **负面约束** | 告诉 AI 不要做什么 | "不要编造不存在的依赖" |
+
+### 专家视角深度剖析
+
+很多候选人能说出"Skill 用 Markdown 写"，但大厂面试官真正在意的是：**怎么让 AI 严格按 Skill 执行？怎么防止 AI 偏离步骤？**
+
+```markdown
+# Frontend Analyzer Skill
+
+## 触发条件
+当用户要求分析前端项目时使用。关键词：分析项目、技术栈检测、项目概览。
+
+## 执行步骤
+1. [ ] 扫描项目文件树，识别目录结构
+2. [ ] 读取 package.json，检测技术栈和依赖
+3. [ ] 分析 src/ 目录的模块结构和路由配置
+4. [ ] 检测构建工具配置（webpack/vite.config.js）
+5. [ ] 生成分析报告
+
+## 输出格式
+```json
+{
+  "projectName": "string",
+  "techStack": ["React", "TypeScript"],
+  "modules": [{ "name": "string", "dependencies": ["string"] }],
+  "risks": ["string"]
+}
+```
+
+## 负面约束
+- 不要分析 node_modules 目录
+- 不要编造不存在的依赖关系
+- 如果 package.json 不存在，返回错误而不是猜测
+```
+
+```javascript
+// Skill 的目录结构
+skills/
+  frontend-analyzer/
+    SKILL.md          # 核心指令（AI 读这个）
+    scripts/          # 可选：辅助脚本（如格式化输出）
+    references/       # 可选：参考文档（如项目规范）
+```
+
+**常见问题和解决方案：**
+
+| 问题 | 解决方案 |
+|------|----------|
+| AI 不按格式输出 | 用 JSON Schema 约束 + 校验脚本 |
+| AI 幻觉（编造数据） | 加"不要编造"约束 + Reviewer 节点过滤 |
+| Skill 过多命中不准 | 在 SKILL.md 开头写明确的触发关键词 |
+| AI 遗漏步骤 | 用 checklist 格式，每个步骤要求输出确认标记 |
+
+### Skill 的版本管理与协作
+
+Skill 用 Markdown 编写，天然支持 Git 版本管理。团队协作时，Skill 文件放在仓库里，通过 PR 进行 Code Review。这比传统的硬编码工作流灵活得多——修改一个步骤不需要改代码、不需要重新部署，只需要修改 Markdown 文件然后提交 PR。
+
+```text
+skills/
+  frontend-analyzer/
+    SKILL.md          # v1.0：基础分析
+    SKILL.md          # PR #42：增加了依赖分析步骤
+    SKILL.md          # PR #58：修复了幻觉问题，加了负面约束
+```
+
+### Skill 与传统自动化脚本的区别
+
+传统自动化脚本（如 CI/CD Pipeline）是确定性的——输入 A 一定输出 B。Skill 是非确定性的——AI 可能在不同上下文中给出不同输出。Skill 的价值在于它利用了 AI 的推理能力来处理模糊输入，而不是像脚本一样处理确定性流程。
+
+| 维度 | 传统脚本 | Skill |
+|------|---------|-------|
+| **执行方式** | 确定性（if-else） | 非确定性（AI 推理） |
+| **输入处理** | 精确匹配 | 语义理解 |
+| **错误处理** | 预定义的异常分支 | AI 自主决策（可加约束） |
+| **维护成本** | 改代码、改测试 | 改 Markdown、提交 PR |
+| **适用场景** | 确定性流程（构建、部署） | 模糊性任务（分析、审查） |
+
+---
+
+## Q4: MCP 和 Skill 和 agent.md 分别是什么？各自适合什么场景？
+
+<Steps>
+
+  <Step title="AI 工具链的三层抽象">
+
+    AI 工程化有三层抽象：底层是通信协议（MCP），定义 AI 怎么和外部工具交互；中层是工作流指令（Skill），定义 AI 按什么步骤完成任务；顶层是 Agent 配置（agent.md），定义 Agent 的身份、能力和行为边界。
+
+  </Step>
+  <Step title="致命痛点: 职责不清导致混乱">
+
+    很多团队把工具定义、工作流、Agent 配置混在一起写。结果是：换一个项目就要重写所有配置，工具和流程无法复用，Agent 的行为边界不明确。
+
+  </Step>
+  <Step title="三层分离的设计哲学">
+
+    MCP 只管"怎么调用工具"（协议层），Skill 只管"按什么步骤做"（流程层），agent.md 只管"我是谁、我能做什么"（身份层）。三层各司其职，独立复用。
+
+  </Step>
+  <Step title="场景匹配: 选择合适的抽象层级">
+
+    个人开发者直接用 MCP + Skill 就够了。团队协作需要 agent.md 来统一 Agent 的行为规范。企业级部署需要三层都配齐，加上权限控制和审计日志。
+
+  </Step>
+
+</Steps>
+
+**MCP / Skill / agent.md 三层架构：**
+
+```text
+问题：AI 工具链的工具定义、工作流、Agent 配置混在一起
+
+混在一起：换项目重写、无法复用、行为边界不清晰
+
+解决：三层分离，各司其职
+
+┌───────────────────────────────────────┐
+│        agent.md（身份层）              │  ← 定义 Agent 是谁、能做什么
+├───────────────────────────────────────┤
+│        Skill（流程层）                 │  ← 定义按什么步骤完成任务
+├───────────────────────────────────────┤
+│        MCP（协议层）                   │  ← 定义怎么调用外部工具
+└───────────────────────────────────────┘
+```
+
+<Note title="💡 一句话总结">
+
+MCP 是管道（协议），Skill 是流程（步骤），agent.md 是身份（边界）——三层分离才能独立复用。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 混在一起">
+
+你把工具定义、执行步骤、Agent 身份全写在一个文件里。换个项目要重新写，工具和流程无法复用，Agent 的能力边界模糊。
+
+</Card>
+<Card title="✅ 三层分离">
+
+MCP Server 定义工具（可被多个项目复用），Skill 定义流程（可被多个 Agent 共享），agent.md 定义身份（每个 Agent 独立配置）。三层独立演进，互不影响。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么"（职责不清导致混乱），再说"怎么解决"（三层分离）。面试官想听的是你理解 AI 工程化的架构分层，而不是背概念定义。
+
+</Tip>
+
+---
+
+## Q5: MCP 适合什么场景？Skill 适合什么场景？
+
+### 基础梳理
+
+| 场景 | 推荐方案 | 原因 |
+|------|---------|------|
+| **个人开发者** | MCP + Skill | 简单直接，不需要 agent.md |
+| **小团队协作** | MCP + Skill + agent.md | agent.md 统一团队的 Agent 行为规范 |
+| **企业级部署** | MCP + Skill + agent.md + 权限控制 | 需要审计日志、权限管理、多租户隔离 |
+| **跨平台复用** | MCP（必须） | MCP 是跨模型通用的协议标准 |
+| **标准化流程** | Skill（必须） | Skill 用 Markdown 定义，版本可控，可 Code Review |
+
+### 专家视角深度剖析
+
+很多候选人能说出 MCP 和 Skill 的定义，但大厂面试官真正在意的是：**什么时候用 MCP 就够了？什么时候必须加 Skill？什么时候需要 agent.md？**
+
+```javascript
+// 场景 1：只需要 MCP（个人工具）
+// 你写了一个 MCP Server 提供文件读写工具
+// AI 直接调用工具，不需要预定义流程
+// 适合：个人开发、快速原型
+
+// 场景 2：需要 MCP + Skill（标准化流程）
+// 你定义了一个 Code Review Skill
+// AI 按 Skill 的步骤执行：扫描 → 分析 → 生成报告
+// 通过 MCP 调用 filesystem、grep 等工具
+// 适合：团队协作、CI/CD 集成
+
+// 场景 3：需要三层都配齐（企业级）
+// agent.md 定义：你是代码审查 Agent，只能读文件不能写
+// Skill 定义：审查流程的 5 个步骤
+// MCP 定义：文件系统、Git、Jira 等工具接口
+// 适合：企业级部署、多 Agent 系统
+```
+
+---
+
+## Q6: MCP 的 Tool、Resource、Prompt 三要素详解
+
+<Steps>
+
+  <Step title="Tool: AI 可以调用的函数">
+
+    Tool 是 MCP 最核心的能力。它定义了一个函数的名称、描述、输入参数（JSON Schema）。AI 根据 schema 决定传什么参数，schema 写得越精确，AI 的调用准确率越高。
+
+  </Step>
+  <Step title="Resource: AI 可以访问的数据">
+
+    Resource 定义了 AI 可以读取的数据源（文件、数据库、API）。与 Tool 的区别：Tool 是"执行操作"（读写文件、调用 API），Resource 是"提供数据"（让 AI 知道有哪些数据可用）。
+
+  </Step>
+  <Step title="Prompt: 预定义的提示词模板">
+
+    Prompt 定义了预置的提示词模板，可以带参数。它的价值是把复杂的 prompt 工程封装成可复用的模板，降低使用门槛。
+
+  </Step>
+  <Step title="三者的协作关系">
+
+    AI 通过 Resource 了解有哪些数据可用，通过 Tool 执行操作，通过 Prompt 获取预置的提示词模板。三者配合，构成完整的 AI 工具链。
+
+  </Step>
+
+</Steps>
+
+**MCP 三要素解决的核心问题：**
+
+```text
+问题：AI 不知道有什么工具可用、不知道有什么数据可读、不知道怎么组织 prompt
+
+解决：Tool 定义可调用的函数，Resource 定义可访问的数据，Prompt 定义可复用的模板
+
+AI Agent: "你有什么工具？" → MCP Server: "我有 read_file、write_file、search..."
+AI Agent: "你有什么数据？" → MCP Server: "我有项目配置、日志文件..."
+AI Agent: "给我一个代码审查的 prompt" → MCP Server: "这是 code_review 模板"
+```
+
+```javascript
+// Tool：AI 可以调用的函数
+{
+  name: "search_code",
+  description: "在项目中搜索代码",
+  inputSchema: {
+    type: "object",
+    properties: {
+      query: { type: "string", description: "搜索关键词" },
+      path: { type: "string", description: "搜索路径，默认 src/" }
+    },
+    required: ["query"]
+  }
+}
+
+// Resource：AI 可以访问的数据
+{
+  uri: "file:///project/package.json",
+  name: "项目配置文件",
+  description: "包含项目依赖和脚本配置",
+  mimeType: "application/json"
+}
+
+// Prompt：预定义的提示词模板
+{
+  name: "code_review",
+  description: "代码审查提示词模板",
+  arguments: [
+    { name: "code", description: "要审查的代码", required: true },
+    { name: "focus", description: "审查重点：性能/安全/可读性", required: false }
+  ]
+}
+```
+
+<Warning title="⚠️ 核心机制: Tool 和 Resource 的本质区别">
+
+Tool 和 Resource 容易混淆，核心区别是：
+
+- **Tool 是动词**：执行操作（读文件、写数据库、调用 API），有副作用
+- **Resource 是名词**：提供数据（文件内容、数据库记录），只读无副作用
+- **Prompt 是模板**：预置的提示词，降低使用门槛
+
+Tool 的 inputSchema 写得越精确，AI 的调用准确率越高。Resource 的 description 写得越清楚，AI 越知道什么时候该用它。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 餐厅的菜单、食材和菜谱">
+
+MCP 的三要素就像餐厅的运营体系。Tool 是厨房的设备（烤箱、炒锅、蒸箱）——你可以用它们做各种菜。Resource 是食材库（冰箱里的肉、蔬菜、调料）——你可以取用这些食材。Prompt 是标准菜谱（宫保鸡丁的做法）——按步骤来就能做出一道菜。有了这三样东西，新厨师（AI）也能按菜谱（Prompt），用设备（Tool），取食材（Resource），做出合格的菜品。
+
+</Tip>
+
+### Tool 的 inputSchema 设计最佳实践
+
+Tool 的 `inputSchema` 直接决定 AI 的调用准确率。设计原则：用 `zod` 或 JSON Schema 定义严格的类型约束，每个参数写清 `description`，必填参数标 `required`，提供合理的 `default` 值。
+
+```javascript
+// ❌ 差的 schema：description 模糊，没有类型约束
+{
+  name: "search",
+  description: "搜索",
+  inputSchema: {
+    type: "object",
+    properties: {
+      q: { type: "string" }
+    }
+  }
+}
+
+// ✅ 好的 schema：description 精确，类型严格，有默认值
+{
+  name: "search_code",
+  description: "在项目源代码中搜索指定关键词，返回匹配的文件和行号",
+  inputSchema: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "搜索关键词，支持正则表达式。示例：'useState|useEffect'"
+      },
+      path: {
+        type: "string",
+        description: "搜索路径，默认为 src/ 目录",
+        default: "src/"
+      },
+      maxResults: {
+        type: "number",
+        description: "最大返回结果数，默认 20",
+        default: 20
+      }
+    },
+    required: ["query"]
+  }
+}
+```
+
+### Resource 与 Tool 的选择决策
+
+什么时候用 Resource、什么时候用 Tool？核心判断标准：**是否需要 AI 主动触发**。Resource 是"数据就在那里，AI 按需读取"，Tool 是"AI 发起一个操作，产生副作用"。
+
+```text
+Resource 适用场景：
+├── 项目配置文件（package.json、tsconfig.json）
+├── 数据库 schema 定义
+├── API 文档
+└── 日志文件（只读）
+
+Tool 适用场景：
+├── 读写文件（read_file、write_file）
+├── 执行命令（run_command）
+├── 调用外部 API（send_email、create_ticket）
+└── 修改数据库（update_record）
+```
+
+---
+
+## Q7: MCP 的 Tool 和 Function Calling 有什么区别？
+
+**Function Calling 是模型级 API，MCP 是协议级标准。**（此题已在 Q4 涵盖三要素，此处聚焦与 Function Calling 的对比）
+
+```javascript
+// Function Calling（OpenAI/Anthropic 的模型级 API）：
+// - 模型在推理时决定调用哪个函数
+// - 函数的 schema 在每次 API 调用时传入
+// - 与特定模型绑定（OpenAI 的格式 ≠ Anthropic 的格式）
+
+// MCP（协议级标准）：
+// - 定义了工具的 schema、通信方式、生命周期管理
+// - 支持动态发现工具（AI 可以问 MCP Server "你有什么工具"）
+// - 支持资源访问（不只是函数调用，还能读数据）
+// - 支持提示词模板（预定义的复杂工作流）
+// - 跨模型、跨平台通用
+
+// MCP 可以看作是 Function Calling 的标准化和扩展
+```
+
+**关键区别：**
+
+| 维度 | Function Calling | MCP |
+|------|-----------------|-----|
+| **层级** | 模型 API 级 | 协议标准级 |
+| **绑定** | 与特定模型绑定 | 跨模型通用 |
+| **发现** | 静态（调用时传入 schema） | 动态（运行时发现工具） |
+| **能力** | 只有函数调用 | Tool + Resource + Prompt |
+| **通信** | HTTP API | stdio / SSE |
+
+<Tip title="最佳实践: ">
+
+在实际项目中，MCP Server 通常用 TypeScript/Python 编写。TypeScript 推荐用 `@modelcontextprotocol/sdk`，Python 推荐用 `mcp` 包。关键是把工具的 `inputSchema` 写清楚——AI 根据 schema 决定传什么参数，schema 写得越精确，AI 的调用准确率越高。
+
+</Tip>
+
+### MCP 的生态系统与社区
+
+MCP 生态正在快速增长。主流 AI 产品（Claude Desktop、Cursor、Windsurf）都已原生支持 MCP。社区贡献了大量 MCP Server：文件系统、Git、数据库、搜索引擎、Jira、Slack 等。这意味着你不需要从零开发——大部分常用工具已经有现成的 MCP Server 可以直接使用。
+
+```javascript
+// 常见的社区 MCP Server
+// 1. @modelcontextprotocol/server-filesystem：文件系统操作
+// 2. @modelcontextprotocol/server-git：Git 操作
+// 3. @modelcontextprotocol/server-postgres：PostgreSQL 查询
+// 4. @anthropic/mcp-server-brave-search：Brave 搜索
+// 5. @anthropic/mcp-server-slack：Slack 消息
+
+// 使用方式：在 AI 产品的配置文件中声明
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]
+    }
+  }
+}
+```
+
+### Function Calling 的演变路径
+
+Function Calling 经历了三代演进：第一代是 OpenAI 2023 年 6 月推出的 Function Calling（与模型绑定，格式不通用）；第二代是各家跟进的 Tool Use（Anthropic）/ Function Declaration（Google），格式各异；第三代是 MCP（2024 年底），统一了协议标准，支持动态发现、资源访问、提示词模板。MCP 是 Function Calling 的标准化和超集。
+
+---
+
+## Q8: 如何从零写一个 MCP Server？
+
+### MCP Server 架构设计
+
+一个生产级 MCP Server 的架构分为四层：传输层（Transport）、协议层（Protocol）、能力层（Capabilities）、业务层（Business Logic）。
+
+```text
+┌───────────────────────────────────────┐
+│        AI Agent（调用方）               │
+└─────────────────┬─────────────────────┘
+                  │ JSON-RPC 2.0
+                  ▼
+┌───────────────────────────────────────┐
+│        Transport Layer                │  ← stdio / SSE / WebSocket
+│        （传输层）                      │
+├───────────────────────────────────────┤
+│        Protocol Layer                 │  ← initialize → capabilities → call → shutdown
+│        （协议层）                      │
+├───────────────────────────────────────┤
+│        Capabilities Layer             │  ← Tool / Resource / Prompt 注册与发现
+│        （能力层）                      │
+├───────────────────────────────────────┤
+│        Business Logic                 │  ← 你的具体业务：读文件、查数据库、调 API
+│        （业务层）                      │
+└───────────────────────────────────────┘
+```
+
+设计原则：传输层和协议层由 SDK 处理（你不需要自己写），你只需要关注**能力层**（注册 Tool/Resource/Prompt）和**业务层**（实现具体逻辑）。
+
+### Tool 定义规范（inputSchema / outputSchema）
+
+Tool 是 MCP Server 最核心的能力单元。每个 Tool 需要定义：`name`（唯一标识）、`description`（AI 用来判断何时调用）、`inputSchema`（JSON Schema，定义输入参数）、以及可选的 `outputSchema`（定义输出结构）。
+
+```typescript
+// Tool 定义的完整规范
+import { z } from 'zod';
+
+// ✅ 最佳实践：用 zod 定义 schema，SDK 自动转为 JSON Schema
+server.tool(
+  'search_code',           // name: 唯一标识，用 snake_case
+  '在项目源代码中搜索指定关键词，返回匹配的文件和行号',  // description: AI 用来判断何时调用
+  {
+    // inputSchema: zod schema，AI 根据这个决定传什么参数
+    query: z.string().describe('搜索关键词，支持正则表达式。示例："useState|useEffect"'),
+    path: z.string().default('src/').describe('搜索路径，默认为 src/ 目录'),
+    maxResults: z.number().default(20).describe('最大返回结果数，默认 20'),
+  },
+  async ({ query, path, maxResults }) => {
+    // 业务逻辑：执行搜索
+    const results = await doSearch(query, path, maxResults);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(results) }],
+    };
+  }
+);
+```
+
+**inputSchema 设计三原则：**
+
+| 原则 | 说明 | 示例 |
+|------|------|------|
+| **description 精确** | AI 根据 description 判断传什么值 | `'搜索关键词，支持正则表达式'` 而不是 `'关键词'` |
+| **类型严格** | 用 `z.string()` / `z.number()` 而不是 `z.any()` | 防止 AI 传错类型 |
+| **default 合理** | 非必填参数给默认值，降低 AI 调用门槛 | `z.string().default('src/')` |
+
+### Resource 定义规范
+
+Resource 定义了 AI 可以读取的数据源。与 Tool 的区别：Tool 是"执行操作"（有副作用），Resource 是"提供数据"（只读）。
+
+```typescript
+// Resource 定义：静态资源（文件、配置）
+server.resource(
+  'project-config',                    // name
+  'file:///project/package.json',      // uri: 资源的唯一标识
+  { mimeType: 'application/json' },    // metadata
+  async () => {
+    const content = await fs.readFile('package.json', 'utf-8');
+    return { contents: [{ uri: 'file:///project/package.json', text: content }] };
+  }
+);
+
+// Resource 定义：动态资源（带模板参数）
+server.resource(
+  'log-file',
+  new ResourceTemplate('file:///logs/{date}', { list: undefined }),
+  { mimeType: 'text/plain' },
+  async (uri, { date }) => {
+    const content = await fs.readFile(`/logs/${date}.log`, 'utf-8');
+    return { contents: [{ uri: uri.href, text: content }] };
+  }
+);
+```
+
+**Resource 与 Tool 的选择决策：**
+
+```text
+Resource 适用（只读、无副作用）：
+├── 项目配置文件（package.json、tsconfig.json）
+├── 数据库 schema 定义
+├── API 文档
+└── 日志文件
+
+Tool 适用（有副作用、需要 AI 主动触发）：
+├── 读写文件（read_file、write_file）
+├── 执行命令（run_command）
+├── 调用外部 API（send_email、create_ticket）
+└── 修改数据库（update_record）
+```
+
+### Prompt 模板定义
+
+Prompt 定义了预置的提示词模板，可以带参数。它的价值是把复杂的 prompt 工程封装成可复用的模板。
+
+```typescript
+// Prompt 模板定义
+server.prompt(
+  'code-review',                         // name
+  '代码审查提示词模板',                    // description
+  { code: z.string(), focus: z.string().optional() },  // arguments
+  ({ code, focus }) => ({
+    messages: [
+      {
+        role: 'user',
+        content: {
+          type: 'text',
+          text: `请审查以下代码${focus ? `，重点关注${focus}` : ''}：\n\n\`\`\`\n${code}\n\`\`\``,
+        },
+      },
+    ],
+  })
+);
+```
+
+<Note title="💡 一句话总结">
+
+Tool 是动词（执行操作），Resource 是名词（提供数据），Prompt 是模板（预置提示词）。80% 的 MCP Server 只暴露 Tool，Resource 次之，Prompt 最少用。
+
+</Note>
+
+### TypeScript SDK 完整实现示例
+
+以下是一个完整的 MCP Server 实现，包含 Tool、Resource、Prompt 三种能力：
+
+```typescript
+// my-mcp-server/src/index.ts
+import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { z } from 'zod';
+import fs from 'fs/promises';
+
+// 1. 创建 Server 实例
+const server = new McpServer({
+  name: 'my-frontend-tools',
+  version: '1.0.0',
+});
+
+// 2. 注册 Tool：读取文件
+server.tool(
+  'read_file',
+  '读取指定路径的文件内容',
+  { path: z.string().describe('文件的绝对路径') },
+  async ({ path }) => {
+    try {
+      const content = await fs.readFile(path, 'utf-8');
+      return { content: [{ type: 'text', text: content }] };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `错误：无法读取文件 ${path}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// 3. 注册 Tool：搜索代码
+server.tool(
+  'search_code',
+  '在项目中搜索代码关键词',
+  {
+    query: z.string().describe('搜索关键词'),
+    path: z.string().default('src/').describe('搜索路径'),
+  },
+  async ({ query, path }) => {
+    // 实际项目中调用 ripgrep 或 grep
+    const results = await searchFiles(query, path);
+    return { content: [{ type: 'text', text: JSON.stringify(results, null, 2) }] };
+  }
+);
+
+// 4. 注册 Resource：项目配置
+server.resource(
+  'project-config',
+  'file:///project/package.json',
+  { mimeType: 'application/json' },
+  async () => ({
+    contents: [{
+      uri: 'file:///project/package.json',
+      text: await fs.readFile('package.json', 'utf-8'),
+    }],
+  })
+);
+
+// 5. 注册 Prompt：代码审查模板
+server.prompt(
+  'code-review',
+  '代码审查提示词模板',
+  { code: z.string(), focus: z.string().optional() },
+  ({ code, focus }) => ({
+    messages: [{
+      role: 'user',
+      content: {
+        type: 'text',
+        text: `请审查以下代码${focus ? `，重点关注${focus}` : ''}：\n\n\`\`\`\n${code}\n\`\`\``,
+      },
+    }],
+  })
+);
+
+// 6. 启动 stdio 传输
+const transport = new StdioServerTransport();
+await server.connect(transport);
+```
+
+配置文件（在 AI 产品中声明这个 MCP Server）：
+
+```json
+{
+  "mcpServers": {
+    "my-frontend-tools": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "env": {
+        "PROJECT_ROOT": "/path/to/project"
+      }
+    }
+  }
+}
+```
+
+<Tip title="💡 面试技巧">
+
+面试时说"我写过 MCP Server"比"我用过 MCP"高出一个层级。关键是说清楚三层设计：传输层（stdio/SSE 由 SDK 处理）、能力层（注册 Tool/Resource/Prompt）、业务层（具体逻辑）。面试官想听的是你理解架构分层，而不是背 API。
+
+</Tip>
+
+---
+
+## Q9: 如何写一个高质量的 Skill？
+
+### Skill 文件结构（SKILL.md 规范）
+
+Skill 的核心是一个 `SKILL.md` 文件，用 Markdown 格式定义 AI Agent 完成某类任务的完整指令。目录结构如下：
+
+```text
+skills/
+  frontend-analyzer/
+    SKILL.md          # 核心指令（AI 读这个）
+    scripts/          # 可选：辅助脚本（如格式化输出、校验脚本）
+    references/       # 可选：参考文档（如项目规范、编码标准）
+    templates/        # 可选：输出模板（如报告模板、代码模板）
+```
+
+**SKILL.md 的标准结构：**
+
+```markdown
+# Frontend Analyzer Skill
+
+## 触发条件
+当用户要求分析前端项目时使用。关键词：分析项目、技术栈检测、项目概览。
+不要在用户问普通编程问题时使用。
+
+## 执行步骤
+1. [ ] 扫描项目文件树，识别目录结构
+2. [ ] 读取 package.json，检测技术栈和依赖
+3. [ ] 分析 src/ 目录的模块结构和路由配置
+4. [ ] 检测构建工具配置（webpack/vite.config.js）
+5. [ ] 生成分析报告
+
+## 输出格式
+```json
+{
+  "projectName": "string",
+  "techStack": ["string"],
+  "modules": [{ "name": "string", "dependencies": ["string"] }],
+  "risks": ["string"]
+}
+```
+
+## 负面约束
+- 不要分析 node_modules 目录
+- 不要编造不存在的依赖关系
+- 如果 package.json 不存在，返回错误而不是猜测
+- 不要修改任何文件（只读分析）
+```
+
+### 触发条件设计
+
+触发条件决定 AI 什么时候使用这个 Skill。设计原则：**语义匹配而非精确匹配**，AI 会理解用户意图，不会被表面措辞迷惑。
+
+```markdown
+## 触发条件
+
+### 主触发（必须满足）
+当用户要求分析前端项目、检测技术栈、生成项目概览时使用。
+
+### 关键词参考
+分析项目、技术栈检测、项目概览、项目结构、依赖分析
+
+### 互斥规则
+如果用户要求的是"代码审查"（code-review），不要使用此 Skill。
+如果用户要求的是"性能优化"（performance），不要使用此 Skill。
+
+### 负面排除
+不要在用户问普通编程问题时使用。
+不要在用户只是提到"项目"但不是要求分析时使用。
+```
+
+### 工具集定义
+
+Skill 需要声明它依赖哪些 MCP 工具。这有两个价值：一是 AI 知道可以用哪些工具；二是系统可以提前检查工具是否可用。
+
+```markdown
+## 依赖工具
+
+### MCP Server
+- `filesystem`：文件系统操作（read_file、list_directory）
+- `git`：Git 操作（git_log、git_diff）
+- `search`：代码搜索（search_code）
+
+### 工具用途映射
+| 步骤 | 使用的工具 | 说明 |
+|------|-----------|------|
+| 扫描文件树 | `filesystem.list_directory` | 递归列出目录结构 |
+| 读取配置 | `filesystem.read_file` | 读取 package.json 等配置文件 |
+| 搜索代码 | `search.search_code` | 搜索特定模式的代码 |
+| 分析 Git 历史 | `git.git_log` | 查看最近的提交记录 |
+```
+
+### 指令流设计
+
+指令流是 Skill 的核心——定义 AI 按什么顺序执行、每步做什么、怎么处理异常。
+
+```markdown
+## 指令流
+
+### Step 1: 扫描项目结构
+调用 `filesystem.list_directory` 扫描项目根目录。
+记录目录结构，识别 src/、public/、config/ 等关键目录。
+如果目录为空或不存在，报告错误并终止。
+
+### Step 2: 检测技术栈
+调用 `filesystem.read_file` 读取 package.json。
+解析 dependencies 和 devDependencies，识别框架（React/Vue/Angular）、
+构建工具（webpack/vite）、TypeScript 版本等。
+如果 package.json 不存在，报告"非 Node.js 项目"并跳过此步骤。
+
+### Step 3: 分析模块结构
+调用 `filesystem.list_directory` 分析 src/ 目录。
+识别路由配置、状态管理、组件目录等模块。
+调用 `search.search_code` 搜索 import 语句，分析模块依赖关系。
+
+### Step 4: 生成报告
+将分析结果按输出格式组装为 JSON。
+对每个 risk 项，附上具体的文件路径和行号作为证据。
+输出最终报告。
+```
+
+### Skill 与 MCP 的协作模式
+
+Skill 和 MCP 的关系是**流程层 + 协议层**的协作。Skill 定义"做什么"，MCP 定义"怎么调用"。
+
+```text
+┌──────────────────────────────────────────────────────┐
+│                    SKILL.md                           │
+│  定义：触发条件 + 执行步骤 + 输出格式 + 负面约束       │
+├──────────────────────────────────────────────────────┤
+│  Step 1: 扫描文件树                                   │
+│    → 调用 MCP Tool: filesystem.list_directory         │
+│  Step 2: 读取配置                                     │
+│    → 调用 MCP Tool: filesystem.read_file              │
+│  Step 3: 搜索代码                                     │
+│    → 调用 MCP Tool: search.search_code                │
+│  Step 4: 生成报告                                     │
+│    → 纯 AI 推理（不调用 MCP）                         │
+└──────────────────────────────────────────────────────┘
+```
+
+**协作模式的三种类型：**
+
+| 模式 | 说明 | 示例 |
+|------|------|------|
+| **Skill 驱动 MCP** | Skill 的每个步骤调用 MCP 工具 | 分析项目 → 读文件 → 搜索代码 |
+| **MCP 独立运行** | MCP 工具不依赖 Skill，AI 直接调用 | 用户说"读一下这个文件" |
+| **Skill 编排多个 MCP** | Skill 协调多个 MCP Server 的工具 | 分析项目 → filesystem + git + search |
+
+<Note title="💡 一句话总结">
+
+Skill 是剧本（定义流程），MCP 是演员（执行操作）。一个 Skill 可以调用多个 MCP 工具，一个 MCP 工具可以被多个 Skill 复用。
+
+</Note>
+
+---
+
+## Q10: MCP vs Function Calling 深度对比——为什么需要 MCP？
+
+<Steps>
+
+  <Step title="Function Calling 的局限性">
+
+Function Calling 是模型级 API——模型在推理时决定调用哪个函数，函数的 schema 在每次 API 调用时传入。它的核心问题是：**与特定模型绑定**。OpenAI 的 Function Calling 格式和 Anthropic 的 Tool Use 格式不同，开发者需要为每个平台写适配代码。
+
+  </Step>
+  <Step title="MCP 的标准化突破">
+
+MCP 是协议级标准——定义了工具的 schema、通信方式、生命周期管理。一个 MCP Server 可以被所有支持 MCP 的 AI 产品调用（Claude、Cursor、Windsurf 等），开发者只需要写一次适配代码。
+
+  </Step>
+  <Step title="动态发现 vs 静态定义">
+
+Function Calling 是静态的——调用时传入 schema，运行时不能发现新工具。MCP 支持动态发现——AI 可以问 MCP Server "你有什么工具"，运行时发现新能力。这在企业级场景中至关重要：工具集可能随时变化（新增 API、下线旧服务）。
+
+  </Step>
+  <Step title="能力扩展：不只是函数调用">
+
+MCP 不只是 Function Calling 的标准化，它还扩展了两种能力：Resource（数据访问）和 Prompt（提示词模板）。这是 Function Calling 做不到的——Function Calling 只能调用函数，不能声明"有哪些数据可读"或"有哪些预置模板可用"。
+
+  </Step>
+
+</Steps>
+
+**MCP vs Function Calling 核心对比：**
+
+| 维度 | Function Calling | MCP |
+|------|-----------------|-----|
+| **层级** | 模型 API 级 | 协议标准级 |
+| **绑定** | 与特定模型绑定 | 跨模型通用 |
+| **发现** | 静态（调用时传入 schema） | 动态（运行时发现工具） |
+| **能力** | 只有函数调用 | Tool + Resource + Prompt |
+| **通信** | HTTP API（每次请求） | stdio / SSE（持久连接） |
+| **生命周期** | 无状态（每次调用独立） | 有状态（initialize → call → shutdown） |
+| **错误处理** | 模型自行处理 | 结构化错误（错误码 + 描述 + 建议） |
+
+```text
+Function Calling 的演变路径：
+
+第一代（2023.06）：OpenAI Function Calling
+  → 与模型绑定，格式不通用
+
+第二代（2023-2024）：各家跟进
+  → Anthropic Tool Use、Google Function Declaration
+  → 格式各异，开发者重复适配
+
+第三代（2024 底）：MCP
+  → 统一协议标准
+  → 动态发现 + 资源访问 + 提示词模板
+  → 跨模型、跨平台通用
+```
+
+<Note title="💡 一句话总结">
+
+Function Calling 是"每个模型自己的方言"，MCP 是"所有模型的普通话"。MCP 是 Function Calling 的标准化和超集。
+
+</Note>
+
+---
+
+## Q11: 企业级 MCP/Skill 设计——生产环境的四大挑战
+
+### 权限收敛（Permission Convergence）
+
+企业级场景下，MCP Server 不能暴露所有工具给 AI。必须遵循**最小权限原则**——只暴露 AI 需要的工具，每个工具只允许必要的操作。
+
+```typescript
+// ❌ 危险：暴露了删除操作
+server.tool('delete_file', '删除文件', { path: z.string() }, async ({ path }) => {
+  await fs.unlink(path);  // AI 可以删除任何文件！
+});
+
+// ✅ 安全：权限收敛
+server.tool('read_file', '读取文件', { path: z.string() }, async ({ path }) => {
+  // 白名单校验：只允许读取 src/ 目录
+  if (!path.startsWith('/project/src/')) {
+    return { content: [{ type: 'text', text: '权限不足：只能读取 src/ 目录' }], isError: true };
+  }
+  const content = await fs.readFile(path, 'utf-8');
+  return { content: [{ type: 'text', text: content }] };
+});
+```
+
+**权限收敛的三层设计：**
+
+| 层级 | 说明 | 示例 |
+|------|------|------|
+| **Server 级** | 哪些 Tool 暴露给 AI | 只暴露 read_file，不暴露 delete_file |
+| **Tool 级** | 每个 Tool 允许什么操作 | read_file 只允许读 src/ 目录 |
+| **参数级** | 每个参数的取值范围 | path 必须是白名单路径，不能是 /etc/passwd |
+
+### 审计日志（Audit Logging）
+
+生产环境必须记录所有 MCP Tool 调用，方便事后追溯和安全审计。
+
+```typescript
+// 审计日志中间件
+server.tool(
+  'read_file',
+  '读取文件',
+  { path: z.string() },
+  async ({ path }) => {
+    const startTime = Date.now();
+    const callId = crypto.randomUUID();
+
+    // 记录请求
+    auditLog.info({
+      callId,
+      tool: 'read_file',
+      arguments: { path },
+      timestamp: new Date().toISOString(),
+      userId: getCurrentUserId(),  // 从上下文获取
+    });
+
+    try {
+      const content = await fs.readFile(path, 'utf-8');
+
+      // 记录成功响应
+      auditLog.info({
+        callId,
+        status: 'success',
+        duration: Date.now() - startTime,
+        responseSize: content.length,
+      });
+
+      return { content: [{ type: 'text', text: content }] };
+    } catch (error) {
+      // 记录失败响应
+      auditLog.error({
+        callId,
+        status: 'error',
+        duration: Date.now() - startTime,
+        error: error.message,
+      });
+
+      return {
+        content: [{ type: 'text', text: `错误：${error.message}` }],
+        isError: true,
+      };
+    }
+  }
+);
+```
+
+**审计日志必须记录的字段：**
+
+| 字段 | 说明 | 用途 |
+|------|------|------|
+| `callId` | 唯一调用标识 | 关联请求和响应 |
+| `tool` | 工具名称 | 追踪哪个工具被调用 |
+| `arguments` | 调用参数 | 审计 AI 传了什么参数 |
+| `userId` | 调用者身份 | 多租户隔离 |
+| `timestamp` | 调用时间 | 时序分析 |
+| `duration` | 耗时 | 性能监控 |
+| `status` | 成功/失败 | 错误率统计 |
+
+### 容错降级（Fallback）
+
+MCP Server 可能不可用（网络故障、服务宕机、超时）。企业级设计必须有降级策略。
+
+```typescript
+// 容错降级策略
+async function callMCPToolWithFallback(toolName: string, args: any) {
+  const maxRetries = 3;
+  const timeout = 5000;  // 5 秒超时
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // 带超时的调用
+      const result = await Promise.race([
+        mcpClient.callTool(toolName, args),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('MCP 调用超时')), timeout)
+        ),
+      ]);
+      return result;
+    } catch (error) {
+      if (attempt === maxRetries) {
+        // 最后一次尝试失败，执行降级
+        return fallbackStrategy(toolName, args, error);
+      }
+      // 指数退避重试
+      await sleep(Math.pow(2, attempt) * 1000);
+    }
+  }
+}
+
+// 降级策略
+function fallbackStrategy(toolName: string, args: any, error: Error) {
+  switch (toolName) {
+    case 'search_code':
+      // 降级：返回缓存的上次搜索结果
+      return { content: [{ type: 'text', text: getCachedResults(args.query) }] };
+    case 'read_file':
+      // 降级：返回"服务不可用"提示，让 AI 用其他方式获取信息
+      return {
+        content: [{ type: 'text', text: '文件服务暂时不可用，请稍后重试' }],
+        isError: true,
+      };
+    default:
+      throw error;
+  }
+}
+```
+
+**降级策略的三个层级：**
+
+| 层级 | 策略 | 适用场景 |
+|------|------|---------|
+| **重试** | 指数退避重试 3 次 | 临时网络故障、瞬时超时 |
+| **缓存降级** | 返回上次成功的结果 | 搜索、查询类工具 |
+| **优雅失败** | 返回明确的错误信息 | 写操作、不可降级的操作 |
+
+### 确定性边界（Determinism Boundary）
+
+AI 是非确定性的——同样的输入可能产生不同的输出。企业级设计需要在关键环节引入确定性约束。
+
+```text
+AI 的非确定性 vs 企业的确定性需求：
+
+AI 天然非确定性：
+├── 同样的 prompt 可能产生不同的输出
+├── AI 可能遗漏步骤
+├── AI 可能编造数据（幻觉）
+└── AI 可能违反约束
+
+企业需要确定性：
+├── 输出格式必须一致（JSON Schema 校验）
+├── 关键步骤不能遗漏（checklist 校验）
+├── 数据必须真实（来源可追溯）
+└── 操作必须可审计（审计日志）
+```
+
+**确定性边界的四种手段：**
+
+| 手段 | 说明 | 实现方式 |
+|------|------|---------|
+| **Schema 校验** | AI 的输出必须符合 JSON Schema | `zod.parse(aiOutput)` |
+| **Checklist 校验** | 每个步骤必须输出确认标记 | `if (!result.step1Done) retry()` |
+| **来源可追溯** | AI 引用的数据必须有来源 | `source: "file:///path/to/file:line10"` |
+| **Human-in-the-loop** | 关键操作需要人工确认 | `confirm("确认删除？")` |
+
+```typescript
+// 确定性边界的实现：输出 Schema 校验
+const AnalysisResultSchema = z.object({
+  projectName: z.string(),
+  techStack: z.array(z.string()),
+  modules: z.array(z.object({
+    name: z.string(),
+    dependencies: z.array(z.string()),
+  })),
+  risks: z.array(z.string()),
+});
+
+// AI 输出后强制校验
+function validateAIOutput(rawOutput: string) {
+  try {
+    const parsed = JSON.parse(rawOutput);
+    return AnalysisResultSchema.parse(parsed);  // 校验通过
+  } catch (error) {
+    // 校验失败：要求 AI 重新生成
+    throw new Error(`AI 输出格式不符合 Schema：${error.message}`);
+  }
+}
+```
+
+<Note title="💡 一句话总结">
+
+企业级 MCP/Skill 的四大支柱：权限收敛（最小权限）、审计日志（全链路可追溯）、容错降级（重试 + 缓存 + 优雅失败）、确定性边界（Schema 校验 + 来源可追溯）。
+
+</Note>
+
+<Warning title="⚠️ 核心机制: 企业级 vs 玩具级的关键区别">
+
+玩具级 MCP Server：直接暴露所有工具，没有权限控制，没有日志，出错就崩。
+企业级 MCP Server：最小权限 + 审计日志 + 容错降级 + 确定性校验。
+
+面试时区分这两者，是展示你对 AI 工程化深度理解的关键。Anthropic MCP 核心团队在设计协议时就考虑了这些企业级需求，这也是 MCP 比 Function Calling 更适合生产环境的原因。
+
+</Warning>
+
+---
+
+## 🔍 底层源码：MCP Server 的实现
+
+<div class="follow-up">
+MCP Server 是怎么处理 AI 的工具调用请求的？
+</div>
+
+MCP Server 的核心是一个 JSON-RPC 2.0 请求处理器（详见 [MCP SDK 源码：src/server/index.ts](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/src/server/index.ts)）：
+
+```javascript
+// MCP Server 的核心逻辑（简化）
+import { McpServer } from '@modelcontextprotocol/sdk/server';
+
+const server = new McpServer({ name: 'my-tools', version: '1.0.0' });
+
+// 注册工具
+server.tool('read_file', { path: z.string() }, async ({ path }) => {
+  const content = await fs.readFile(path, 'utf-8');
+  return { content: [{ type: 'text', text: content }] };
+});
+
+// 启动 stdio 传输
+const transport = new StdioServerTransport();
+await server.connect(transport);
+```
+
+当 AI Agent 发送 `tools/call` 请求时，MCP Server 根据 `name` 查找注册的工具，校验 `arguments` 是否符合 `inputSchema`，执行工具函数，返回结果。
+
+<div class="follow-up">
+Skill 的触发匹配是怎么实现的？
+</div>
+
+Skill 的触发匹配通常是 AI Agent 的内置逻辑，而不是 MCP 的一部分。以 Claude Code 为例，它读取所有 SKILL.md 文件的前几行（触发条件），在用户输入时做语义匹配（详见 [Claude Code 文档：Custom Slash Commands](https://docs.anthropic.com/en/docs/claude-code)）：
+
+```javascript
+// Skill 触发匹配的逻辑（简化）：
+// 1. 启动时扫描 skills/ 目录，读取所有 SKILL.md 的触发条件
+// 2. 用户输入时，AI 做语义匹配（不是关键词精确匹配）
+// 3. 匹配到的 Skill 被注入到 System Prompt 中
+// 4. AI 按 Skill 定义的步骤执行
+
+// 语义匹配的优势：
+// 用户说"帮我看看这个项目"也能触发 "frontend-analyzer" Skill
+// 不需要用户精确说"分析前端项目"
+```
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 MCP 和 Skill 的区别"
+
+**及格回答（60-70分）：**
+> "MCP 是通信协议，Skill 是指令集。MCP 定义工具接口，Skill 定义执行步骤。"
+
+面试官评价：**知道概念但不理解架构**。
+
+**满分回答（90-100分）：**
+
+> "MCP（Model Context Protocol）是 AI 模型和外部工具之间的**标准化通信协议**。它定义了三种能力：Tool（可调用的函数）、Resource（可访问的数据）、Prompt（预定义的提示词模板）。MCP Server 是独立进程，通过 JSON-RPC over stdio/SSE 与 AI Agent 通信。一个 MCP Server 可以被所有支持 MCP 的 AI 产品调用。<sup>[1]</sup>"
+
+> "Skill 是 AI Agent 完成某类任务的**指令集**。它用 Markdown 格式编写，包含触发条件、执行步骤、输出格式、负面约束。AI Agent 读取 Skill 后按步骤执行，过程中通过 MCP 调用外部工具。Skill 的关键设计：明确的触发条件（避免误触发）、清晰的步骤（AI 不会遗漏）、负面约束（防止幻觉）、输出格式校验（保证一致性）。<sup>[2]</sup>"
+
+> "两者的关系：MCP 是管道（定义怎么通信），Skill 是内容（定义做什么）。一个 Skill 可以调用多个 MCP 工具，一个 MCP 工具可以被多个 Skill 使用。MCP 和 Function Calling 的区别：Function Calling 是模型级 API（与特定模型绑定），MCP 是协议级标准（跨模型、跨平台通用，支持动态发现工具）。<sup>[3]</sup>"
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="MCP 的通信方式有哪些?各自的适用场景?" icon="layer-group">
+
+**答题要点：**
+说出 stdio 和 SSE 两种方式的区别和适用场景。
+
+**高分回答：**
+"MCP 支持两种通信方式：
+    
+1. **stdio（标准输入输出）**：AI Agent 启动 MCP Server 子进程，通过 stdin/stdout 传递 JSON-RPC 2.0 消息。延迟极低（进程间通信），适合本地工具（如文件系统、本地数据库、Git 操作）。缺点是只能访问本地资源。
+    
+2. **SSE（Server-Sent Events）**：通过 HTTP 通信，AI Agent 用 POST 发送请求，SSE 接收流式响应。适合远程服务（如云端 API、远程数据库）。缺点是有网络延迟，且需要处理连接断开的重试逻辑。
+    
+选择标准：本地工具用 stdio（快、简单），远程服务用 SSE（跨网络、可扩展）。"
+
+  </Accordion>
+
+  <Accordion title="Skill 的触发条件怎么设计才能避免误触发?" icon="stopwatch">
+
+**答题要点：**
+说出触发条件设计的关键原则。
+
+**高分回答：**
+"触发条件设计有三个关键原则：
+    
+1. **语义匹配而非精确匹配**：AI 会理解用户意图，不会被表面措辞迷惑。所以触发条件应该描述意图（'当用户要求分析前端项目时'），而不是列举关键词。
+    
+2. **互斥规则**：如果多个 Skill 可能触发，需要定义优先级或互斥条件。例如 'frontend-analyzer' 和 'code-reviewer' 可能同时匹配'分析代码'，需要在触发条件中明确区分。
+    
+3. **负面排除**：在触发条件中写明什么情况下不要触发（'不要在用户问普通问题时使用'）。AI 会根据负面排除过滤掉不合适的场景。"
+
+  </Accordion>
+
+  <Accordion title="MCP 的 Tool 和 Function Calling 有什么区别?" icon="node">
+
+**答题要点：**
+从层级、绑定、能力三个维度对比。
+
+**高分回答：**
+"Function Calling 是模型级 API——模型在推理时决定调用哪个函数，函数的 schema 在每次 API 调用时传入，与特定模型绑定（OpenAI 的格式和 Anthropic 的格式不同）。
+
+MCP 是协议级标准——定义了工具的 schema、通信方式、生命周期管理。核心区别：
+1. **动态发现**：MCP 支持运行时发现工具（AI 可以问 MCP Server '你有什么工具'），Function Calling 是静态的（调用时传入 schema）
+2. **能力扩展**：MCP 不只有函数调用，还支持 Resource（数据访问）和 Prompt（提示词模板）
+3. **跨平台**：MCP 跨模型、跨平台通用，一个 MCP Server 可以被 Claude、GPT、Gemini 同时调用
+    
+MCP 可以看作是 Function Calling 的标准化和扩展。"
+
+  </Accordion>
+
+  <Accordion title="MCP 和 Skill 和 agent.md 该怎么选?" icon="layer-group">
+
+**答题要点：**
+根据团队规模和项目复杂度选择合适的抽象层级。
+
+**高分回答：**
+"选择取决于三个维度：项目复杂度、团队规模、复用需求。
+
+个人开发者只需要 MCP + Skill。MCP 定义工具接口，Skill 定义执行流程，够用了。小团队协作需要加 agent.md——它定义了 Agent 的身份、能力边界和行为约束，确保团队成员的 Agent 行为一致。企业级部署需要三层都配齐，加上权限控制（agent.md 中定义能做什么不能做什么）、审计日志（记录所有工具调用）、多租户隔离。
+
+核心原则：MCP 是必须的（没有它 AI 无法调用工具），Skill 在需要标准化流程时引入，agent.md 在需要统一 Agent 行为时引入。不要过度设计——简单场景不需要三层都配齐。"
+
+  </Accordion>
+
+  <Accordion title="MCP 的 Tool、Resource、Prompt 三要素分别在什么场景下使用?" icon="stopwatch">
+
+**答题要点：**
+区分三者的本质——Tool 是动词，Resource 是名词，Prompt 是模板。
+
+**高分回答：**
+"三者的使用场景区分：
+
+1. **Tool**：需要 AI 执行操作时使用。典型场景：读写文件（read_file、write_file）、调用外部 API（search_web、send_email）、修改数据（update_database）。Tool 有副作用，需要谨慎设计权限。
+
+2. **Resource**：需要 AI 了解有哪些数据可用时使用。典型场景：项目配置文件（package.json）、日志文件、数据库 schema。Resource 是只读的，没有副作用。它的价值是让 AI 知道'有什么数据可以参考'，而不是'执行什么操作'。
+
+3. **Prompt**：需要预置复杂的提示词模板时使用。典型场景：代码审查模板、文档生成模板、数据分析模板。Prompt 降低了使用门槛——用户不需要自己写复杂的 prompt，直接调用模板就行。
+
+实际项目中，Tool 最常用（80% 的 MCP Server 只暴露 Tool），Resource 次之，Prompt 最少用。"
+
+  </Accordion>
+
+  <Accordion title="怎么设计一个高质量的 MCP Server?" icon="skull">
+
+**答题要点：**
+从 schema 设计、错误处理、安全性三个维度回答。
+
+**高分回答：**
+"设计高质量的 MCP Server 有三个关键：
+
+1. **精确的 inputSchema**：AI 根据 schema 决定传什么参数，schema 写得越精确，AI 的调用准确率越高。用 `zod` 库定义 schema，支持类型校验和默认值。
+
+2. **完善的错误处理**：工具执行失败时，返回结构化的错误信息（错误码 + 错误描述 + 建议操作），而不是抛出异常。AI 可以根据错误信息决定重试还是降级。
+
+3. **权限控制**：不要暴露危险操作（如删除文件、执行命令）给 AI。如果必须暴露，需要加确认机制（如 human-in-the-loop）。MCP Server 应该遵循最小权限原则——只暴露 AI 需要的工具。
+
+4. **性能优化**：对于耗时操作（如搜索代码），支持分页返回结果，避免一次性返回大量数据导致 AI 的上下文窗口溢出。"
+
+  </Accordion>
+
+  <Accordion title="MCP Server 的安全性怎么保障?" icon="node">
+
+**答题要点：**
+从输入验证、权限隔离、审计日志三个维度回答。
+
+**高分回答：**
+"MCP Server 的安全性有三个关键：
+
+1. **输入验证**：所有 Tool 的 `arguments` 必须经过 schema 校验。防止注入攻击——不要把 AI 传入的参数直接拼接成 shell 命令或 SQL 查询。用参数化查询、白名单路径等安全手段。
+
+2. **权限隔离**：遵循最小权限原则。文件系统 MCP Server 只暴露指定目录，数据库 MCP Server 只允许 SELECT 查询（除非明确需要写入）。stdio 模式下，MCP Server 是子进程，天然有进程隔离。
+
+3. **审计日志**：记录所有 Tool 调用（谁调用的、什么时间、传了什么参数、返回了什么结果）。生产环境必须开启审计日志，方便事后追溯和安全审计。"
+
+  </Accordion>
+
+  <Accordion title="🔥 MCP 在生产环境部署有哪些挑战?" icon="skull">
+
+**答题要点：**
+从性能、安全、可观测性三个维度回答生产环境的挑战。
+
+**高分回答：**
+"生产环境部署 MCP Server 有三个核心挑战：
+
+1. **性能瓶颈**：MCP Server 是独立进程，每次 AI 调用都有进程间通信开销（stdio）或网络开销（SSE）。高并发场景下，需要考虑连接池、请求队列、超时控制。SSE 模式需要处理连接断开的自动重连。
+
+2. **安全隔离**：多个用户共享同一个 MCP Server 时，需要多租户隔离。每个用户的 Tool 调用应该有独立的权限和数据隔离。不能让用户 A 通过 MCP Server 访问用户 B 的数据。
+
+3. **可观测性**：MCP Server 的运行状态需要监控——Tool 调用的成功率、延迟分布、错误率。LangSmith 可以追踪 MCP 的 Tool 调用链路，方便定位问题。
+
+解决方案：SSE 模式用 WebSocket 长连接替代短轮询，减少握手开销；用 Redis 做请求队列和缓存；用 OpenTelemetry 做分布式追踪。"
+
+  </Accordion>
+
+  <Accordion title="如何从零写一个生产级 MCP Server?" icon="layer-group">
+
+**答题要点：**
+从架构分层、Tool 定义、错误处理三个维度回答。
+
+**高分回答：**
+"写一个生产级 MCP Server 需要理解四层架构：传输层（stdio/SSE，由 SDK 处理）、协议层（JSON-RPC 2.0 生命周期，由 SDK 处理）、能力层（注册 Tool/Resource/Prompt）、业务层（具体逻辑）。
+
+Tool 定义是核心。inputSchema 用 zod 定义，description 要精确（AI 根据 description 判断何时调用），类型要严格（防止 AI 传错类型），非必填参数给默认值。错误处理要返回结构化信息（错误码 + 描述 + 建议操作），不要抛异常。
+
+企业级还需要三层权限收敛（Server 级暴露哪些 Tool、Tool 级允许什么操作、参数级取值范围）、审计日志（记录所有调用的 callId/arguments/userId/timestamp）、容错降级（重试 + 缓存降级 + 优雅失败）。"
+
+  </Accordion>
+
+  <Accordion title="Skill 的指令流怎么设计才能防止 AI 偏离步骤?" icon="stopwatch">
+
+**答题要点：**
+从 checklist 格式、负面约束、输出校验三个维度回答。
+
+**高分回答：**
+"防止 AI 偏离步骤有三个关键手段：
+
+1. **Checklist 格式**：每个步骤用 `1. [ ]` 格式，要求 AI 输出确认标记（`[x]`）。如果某个步骤没有输出确认标记，说明 AI 遗漏了，可以重试。
+
+2. **负面约束**：在 SKILL.md 中明确写'不要做什么'。例如'不要分析 node_modules'、'不要编造不存在的依赖'。AI 会把负面约束当作硬性规则。
+
+3. **输出 Schema 校验**：用 JSON Schema（zod）校验 AI 的输出。如果输出不符合 Schema，要求 AI 重新生成。这保证了输出格式的一致性。
+
+此外，指令流的每一步都要写清楚'调用什么工具'和'传什么参数'，不要让 AI 自己决定用什么工具——越明确，AI 越不会偏离。"
+
+  </Accordion>
+
+  <Accordion title="MCP 和 Skill 怎么协作？一个 Skill 可以调用多个 MCP Server 吗?" icon="node">
+
+**答题要点：**
+理解 Skill 是流程层、MCP 是协议层的分层关系。
+
+**高分回答：**
+"Skill 和 MCP 是流程层 + 协议层的协作。Skill 定义'做什么'（触发条件 + 执行步骤 + 输出格式），MCP 定义'怎么调用'（Tool 的 schema + 通信方式 + 生命周期）。
+
+一个 Skill 可以调用多个 MCP Server 的工具。例如一个'前端项目分析' Skill 可能同时调用 filesystem MCP Server（读文件）、git MCP Server（查提交历史）、search MCP Server（搜索代码）。Skill 的每一步写清楚'调用哪个 MCP Server 的哪个 Tool'，AI 按步骤执行。
+
+反过来，一个 MCP Server 的工具也可以被多个 Skill 复用。例如 filesystem MCP Server 的 read_file 工具可以被'前端分析'、'代码审查'、'文档生成'等多个 Skill 使用。这就是分层的价值——MCP 和 Skill 独立演进，互不影响。"
+
+  </Accordion>
+
+  <Accordion title="企业级 MCP Server 的权限收敛怎么做?" icon="skull">
+
+**答题要点：**
+从 Server 级、Tool 级、参数级三层权限设计回答。
+
+**高分回答：**
+"企业级 MCP Server 的权限收敛有三层：
+
+1. **Server 级**：控制哪些 Tool 暴露给 AI。例如文件系统 MCP Server 只暴露 read_file 和 list_directory，不暴露 delete_file 和 write_file。在配置文件中声明暴露的工具列表。
+
+2. **Tool 级**：控制每个 Tool 允许什么操作。例如 read_file 只允许读取 src/ 目录，不允许读取 /etc/passwd。在 Tool 实现中用白名单校验路径。
+
+3. **参数级**：控制每个参数的取值范围。例如 maxResults 最大 100，不能传 10000 导致性能问题。用 zod schema 定义参数约束。
+
+核心原则：最小权限。AI 只能访问它需要的工具，每个工具只能执行必要的操作。如果 AI 需要写文件，用 human-in-the-loop 确认机制——AI 发出写请求，人工确认后才执行。"
+
+  </Accordion>
+
+  <Accordion title="MCP Server 的容错降级策略有哪些?" icon="stopwatch">
+
+**答题要点：**
+从重试、缓存降级、优雅失败三个层级回答。
+
+**高分回答：**
+"MCP Server 的容错降级有三个层级：
+
+1. **重试**：临时故障（网络抖动、瞬时超时）用指数退避重试。最多重试 3 次，间隔 2s → 4s → 8s。注意：写操作不能盲目重试，要先确认上次操作是否成功。
+
+2. **缓存降级**：搜索、查询类工具可以返回上次成功的结果。例如 search_code 超时时，返回缓存的上次搜索结果，并标注'数据可能不是最新的'。
+
+3. **优雅失败**：写操作、不可降级的操作，在所有重试失败后返回明确的错误信息，而不是崩溃。错误信息要包含：发生了什么、为什么失败、建议用户怎么做。
+
+关键设计：超时控制。每个 MCP Tool 调用都要设超时（通常 5-10 秒），超时后立即降级，不要让 AI 无限等待。"
+
+  </Accordion>
+
+  <Accordion title="MCP Server 的审计日志需要记录哪些信息?" icon="node">
+
+**答题要点：**
+从请求、响应、性能三个维度回答审计日志的字段设计。
+
+**高分回答：**
+"MCP Server 的审计日志需要记录三个维度的信息：
+
+1. **请求维度**：callId（唯一标识）、tool（工具名称）、arguments（调用参数）、userId（调用者身份）、timestamp（调用时间）。
+
+2. **响应维度**：status（成功/失败）、responseSize（响应大小）、error（错误信息，如果失败）。
+
+3. **性能维度**：duration（耗时，毫秒）。
+
+审计日志的价值：安全审计（谁在什么时候调了什么工具）、性能监控（哪个工具最慢、错误率最高）、问题排查（出问题时回溯调用链路）。
+
+实现方式：在 Tool 实现中加中间件，记录请求和响应。日志存储用 ELK（Elasticsearch + Logstash + Kibana）或 Loki + Grafana。生产环境必须开启，不能关闭。"
+
+  </Accordion>
+
+  <Accordion title="MCP 的确定性边界怎么设计？怎么防止 AI 幻觉?" icon="skull">
+
+**答题要点：**
+从 Schema 校验、来源追溯、Human-in-the-loop 三个手段回答。
+
+**高分回答：**
+"AI 是非确定性的——同样的输入可能产生不同的输出，还可能编造数据（幻觉）。企业级设计需要在关键环节引入确定性约束：
+
+1. **Schema 校验**：AI 的输出必须符合预定义的 JSON Schema。用 zod 校验，不符合就要求重新生成。这保证了输出格式的一致性。
+
+2. **来源可追溯**：AI 引用的数据必须有来源。例如分析报告中的每个'风险'项，必须附上具体的文件路径和行号。没有来源的数据不允许输出。
+
+3. **Human-in-the-loop**：关键操作（删除文件、修改数据库、发送邮件）需要人工确认。AI 发出操作请求，系统弹出确认框，人工确认后才执行。
+
+4. **Checklist 校验**：每个步骤必须输出确认标记。如果 AI 遗漏了某个步骤，系统检测到后要求重试。
+
+核心思想：AI 负责推理和生成，系统负责校验和执行。把 AI 的非确定性限制在可控范围内。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [MCP 官方规范](https://spec.modelcontextprotocol.io/)：*MCP 协议的权威定义，包含 Tool、Resource、Prompt 的完整规范。* <sup>[1]</sup>
+- 📖 [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)：*MCP 的 TypeScript 实现，包含 Server 和 Client 的完整代码。本文 Q8 的 SDK 示例基于此库。* <sup>[2]</sup>
+- 🟢 [Claude Code Custom Slash Commands](https://docs.anthropic.com/en/docs/claude-code)：*Claude Code 的 Skill 系统文档，理解触发条件和执行流程。* <sup>[3]</sup>
+- 📖 [Anthropic: Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)：*Anthropic 官方对 Agent 架构设计的最佳实践指南，涵盖 MCP、Skill、agent.md 的分层设计。* <sup>[4]</sup>
+- 🔗 [MCP Server 开发指南](https://modelcontextprotocol.io/docs/concepts/servers)：*官方 MCP Server 开发文档，包含 Tool/Resource/Prompt 的注册规范和生命周期管理。* <sup>[5]</sup>
+- 📖 [Anthropic MCP 核心团队](https://www.anthropic.com/)：*制定大模型与外部系统交互标准 Model Context Protocol 的核心力量，推动了企业级 MCP 生态的发展。* <sup>[6]</sup>

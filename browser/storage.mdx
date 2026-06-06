@@ -1,0 +1,420 @@
+---
+title: "存储"
+---
+
+> **面试官为什么问这个？**
+>
+> 前端存储是客户端数据管理的基石。面试官问这个，本质上是在考察你：**你是否能根据数据特征选择合适的存储方案？** 如果你只能说出"Cookie 4KB，LocalStorage 5MB"，说明你对存储的理解停留在"背参数"而不是"理解设计权衡和适用场景"。
+
+---
+
+## Q1: Cookie / LocalStorage / SessionStorage / IndexedDB 有什么区别？
+
+<Steps>
+
+  <Step title="1994年: Cookie 的诞生">
+
+Netscape 引入 Cookie 解决 HTTP 无状态的问题——服务器需要一种机制来识别用户。Cookie 的核心设计是**每次 HTTP 请求自动携带**，让服务器能通过 Cookie 识别用户身份。
+
+  </Step>
+  <Step title="致命痛点: Cookie 的局限">
+
+Cookie 只有 4KB，每次请求都增加带宽，且有 CSRF 风险。对于大量客户端数据（如离线缓存、用户偏好设置），Cookie 力不从心。
+
+  </Step>
+  <Step title="HTML5 的存储革命: Web Storage">
+
+HTML5 引入了 LocalStorage（永久存储，5MB）和 SessionStorage（标签页隔离，5MB），同步 API，使用简单。但它们只能存字符串，无法存储结构化数据，且同步读写会阻塞主线程。
+
+  </Step>
+  <Step title="IndexedDB: 大规模结构化数据">
+
+IndexedDB 是浏览器内置的 NoSQL 数据库，支持事务、索引、游标，存储容量无限制。异步 API 不阻塞主线程，适合大量结构化数据。但 API 复杂，通常用 `idb` 或 `localForage` 封装。
+
+  </Step>
+  <Step title="关键权衡: 数据量, 生命周期, 服务端同步">
+
+选择存储方案要看三个维度：数据量决定容量需求，生命周期决定持久化策略，是否需要和服务端同步决定用 Cookie 还是客户端存储。
+
+  </Step>
+
+</Steps>
+
+**前端存储解决的核心问题：**
+
+```text
+问题：HTTP 无状态，客户端数据怎么持久化？
+
+没有客户端存储：
+  用户登录 → 关闭浏览器 → 再打开 → 不认识了
+
+解决：按需求选择存储方案
+
+  Cookie：每次请求自动携带 → 身份认证
+  LocalStorage：永久存储 → 用户偏好、缓存
+  SessionStorage：标签页隔离 → 表单暂存
+  IndexedDB：大量结构化数据 → 离线应用、大文件缓存
+```
+
+**一句话总结：选择存储方案的核心是匹配数据特征——小量认证数据用 Cookie，中量键值数据用 Web Storage，大量结构化数据用 IndexedDB。**
+
+<CardGroup cols={2}>
+
+<Card title="🚫 不区分存储方案">
+
+就像一个仓库里所有东西都堆在门口的纸箱里（Cookie）。纸箱只有 4KB 空间，每次发货都要把纸箱里的东西一起寄出去（每次请求自动携带），仓库里堆了几 TB 的数据根本放不下。
+
+</Card>
+</CardGroup>
+<CardGroup cols={2}>
+
+<Card title="✅ 按需求选择存储方案">
+
+就像一个现代化仓库有了分区管理：门口放快递单（Cookie，小但自动随货发送），货架放常用物品（LocalStorage，中等容量随时取用），档案室放大量文件（IndexedDB，容量大但需要按流程存取）。每个区域的大小、访问方式、生命周期都不同，各司其职。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先按"数据量→生命周期→是否需要服务端同步"三个维度分析，再给出具体方案。面试官想听的是你的选型思路，而不是罗列 API 参数。
+
+</Tip>
+
+---
+
+## Q2: Cookie 的核心机制是什么？
+
+Cookie 的本质是**服务器通过 HTTP 响应头写入、浏览器通过 HTTP 请求头携带的键值对**。核心机制只有 3 步：
+
+```text
+┌───────────────────────────────────────┐
+│  1. 服务器设置 Cookie                  │  ← Set-Cookie 响应头
+└─────────────────┬─────────────────────┘
+                  │ 浏览器保存
+                  ▼
+┌───────────────────────────────────────┐
+│  2. 浏览器存储 Cookie                  │  ← 按域名、路径、过期时间存储
+└─────────────────┬─────────────────────┘
+                  │ 下次请求时
+                  ▼
+┌───────────────────────────────────────┐
+│  3. 浏览器自动携带 Cookie              │  ← Cookie 请求头
+└───────────────────────────────────────┘
+```
+
+```javascript
+// 服务端设置 Cookie
+Set-Cookie: session=abc123;
+  Max-Age=3600;      // 1 小时后过期
+  Path=/;            // 该域名下所有路径可用
+  SameSite=Lax;      // 防御 CSRF
+  Secure;            // 只在 HTTPS 下发送
+  HttpOnly;          // JS 无法读取（防御 XSS 窃取）
+
+// 前端读写 Cookie（有限制）
+document.cookie = "name=Tom; max-age=3600; path=/";
+console.log(document.cookie); // "name=Tom; other=xxx"
+
+// 前端无法设置 HttpOnly 和 Secure 属性
+// 前端无法设置 SameSite 属性
+```
+
+<Warning title="⚠️ 核心机制: Cookie 的安全属性">
+
+Cookie 的安全属性是防御 XSS 和 CSRF 的关键：
+
+- `HttpOnly`：JS 无法通过 `document.cookie` 读取，防御 XSS 窃取 Token。
+- `Secure`：只在 HTTPS 连接下发送，防御中间人攻击。
+- `SameSite`：控制跨站请求时是否发送 Cookie，防御 CSRF。Chrome 默认 `Lax`。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 快递面单">
+
+Cookie 就像快递包裹上的面单。服务器（发件人）在包裹上贴好面单（`Set-Cookie`），浏览器（快递公司）记住面单信息，之后每次给这个收件人送包裹都自动贴上相同的面单（自动携带 Cookie）。
+
+`HttpOnly` 相当于面单上贴了"仅限内部使用"标签——快递员（JS）看不到面单内容。`SameSite=Strict` 相当于"只接受本人签收"——别人代签（跨站请求）直接拒绝。
+
+</Tip>
+
+---
+
+## Q3: LocalStorage 和 IndexedDB 有什么区别？
+
+### 基础梳理
+
+| 特性 | LocalStorage | IndexedDB |
+|------|-------------|-----------|
+| 容量 | 5-10MB | 无限制（受磁盘配额限制） |
+| API | 同步（阻塞主线程） | 异步（不阻塞） |
+| 数据类型 | 只能存字符串 | 结构化数据（对象、数组、二进制） |
+| 索引 | 无 | 支持多字段索引 |
+| 事务 | 无 | 支持事务（自动提交） |
+| 适用场景 | 小量键值数据（用户偏好、配置） | 大量结构化数据（离线缓存、大文件） |
+
+### 专家视角深度剖析
+
+很多候选人能说出 LocalStorage 和 IndexedDB 的区别，但大厂面试官真正在意的是：**在什么场景下必须用 IndexedDB？LocalStorage 的同步 API 会带来什么问题？**
+
+LocalStorage 是同步 API——读写操作会阻塞主线程。对于小量数据（几 KB），阻塞时间可以忽略。但如果存储了 1MB 以上的数据，读写操作可能导致明显的卡顿。Chrome 的 LocalStorage 底层用 LevelDB 实现，按 origin（协议+域名+端口）隔离。
+
+IndexedDB 是异步 API——所有操作都在 Web Worker 中执行，不阻塞主线程。它支持事务（自动提交）、索引（多字段查询）、游标（遍历大数据集），适合大量结构化数据。但 IndexedDB 的 API 非常复杂，通常用 `idb`（Jake Archibald 的封装库）或 `localForage`（提供类似 LocalStorage 的简单 API）。
+
+```javascript
+// IndexedDB 的基本操作
+const request = indexedDB.open('myDB', 1);
+
+request.onupgradeneeded = (e) => {
+  const db = e.target.result;
+  // 创建对象存储（类似表）
+  const store = db.createObjectStore('users', { keyPath: 'id' });
+  // 创建索引
+  store.createIndex('email', 'email', { unique: true });
+};
+
+request.onsuccess = (e) => {
+  const db = e.target.result;
+  const tx = db.transaction('users', 'readwrite');
+  const store = tx.objectStore('users');
+  
+  // 写入数据
+  store.put({ id: 1, name: 'Tom', email: 'tom@example.com' });
+  
+  // 读取数据
+  const getReq = store.get(1);
+  getReq.onsuccess = () => console.log(getReq.result);
+};
+
+// 用 idb 库简化 API
+import { openDB } from 'idb';
+const db = await openDB('myDB', 1, {
+  upgrade(db) {
+    db.createObjectStore('users', { keyPath: 'id' });
+  },
+});
+await db.put('users', { id: 1, name: 'Tom' });
+const user = await db.get('users', 1);
+```
+
+---
+
+## Q4: SessionStorage 有什么特殊行为？
+
+**SessionStorage 的核心特点：标签页隔离。**
+
+同一个 URL 在不同标签页有独立的 SessionStorage——这和 Cookie/LocalStorage 不同，它们在同一域名下共享。
+
+**关键行为：**
+
+| 场景 | SessionStorage 的行为 |
+|------|---------------------|
+| 新标签页打开同一 URL | 独立的 SessionStorage（数据不共享） |
+| `window.open` 打开新窗口 | **复制**当前 SessionStorage（不是共享） |
+| `Ctrl+T` 打开新标签页 | 独立的 SessionStorage |
+| 刷新页面（F5） | **保留** SessionStorage |
+| 关闭标签页再打开 | **清除** SessionStorage |
+
+<Tip title="最佳实践: ">
+
+SessionStorage 适合存储临时性的页面状态——表单暂存、多步表单的中间状态、当前页的筛选条件。不要用它存储需要跨标签页共享的数据（用 LocalStorage），也不要存储需要持久化的数据（用 LocalStorage 或 IndexedDB）。
+
+注意：`window.open` 打开的新窗口会**复制**（不是共享）当前的 SessionStorage。复制后两个窗口的 SessionStorage 是独立的，互不影响。
+
+</Tip>
+
+---
+
+## 🔍 底层源码：Chromium 是如何实现存储的？
+
+<div class="follow-up">
+Chromium 的存储架构是怎么分层的？
+</div>
+
+Chromium 的存储架构统一由 `StoragePartition` 管理（详见 [Chromium 源码：storage_partition_impl.cc](https://source.chromium.org/chromium/chromium/src/+/main/content/browser/storage_partition_impl.cc)）：
+
+```cpp
+// Chromium 的存储后端架构：
+// StoragePartitionImpl 管理所有存储后端
+
+// LocalStorage：底层用 LevelDB，按 origin 隔离
+// 每个 origin 一个独立的 LevelDB 数据库
+// 读写操作在渲染进程的主线程执行（同步 API）
+
+// IndexedDB：底层也用 LevelDB，支持事务和索引
+// 读写操作在独立的线程执行（异步 API）
+// 支持 Blob 和二进制数据
+
+// Cache Storage：Service Worker 使用
+// 独立于浏览器缓存，由 Cache API 控制
+```
+
+存储后端统一由 `StoragePartitionImpl` 管理。LocalStorage 和 IndexedDB 底层都用 LevelDB（Google 的键值存储引擎），但使用方式不同：LocalStorage 是同步 API，在渲染进程主线程执行；IndexedDB 是异步 API，在独立线程执行，不阻塞主线程。
+
+<div class="follow-up">
+LocalStorage 的存储配额是怎么管理的？
+</div>
+
+详见 [Chromium 源码：quota_settings.cc](https://source.chromium.org/chromium/chromium/src/+/main/content/browser/quota/quota_settings.cc)：
+
+```cpp
+// 存储配额管理：
+// - LocalStorage：每个 origin 约 5MB
+// - IndexedDB：默认为磁盘可用空间的 50%
+// - Cache Storage：默认为磁盘可用空间的 50%
+// - 总配额：磁盘可用空间的 60%
+
+// 查询已用空间和配额：
+// navigator.storage.estimate().then(estimate => {
+//   console.log('已用:', estimate.usage);
+//   console.log('配额:', estimate.quota);
+// });
+
+// 存满时的行为：
+// LocalStorage.setItem() 抛 QuotaExceededError
+// IndexedDB 事务抛 QuotaExceededError
+// 可以用 StorageManager.persist() 请求持久化存储
+```
+
+存储配额由 Chromium 的 Quota 系统统一管理。LocalStorage 的 5MB 限制是每个 origin 独立的。IndexedDB 和 Cache Storage 共享配额池（默认磁盘空间的 50%）。当配额不足时，`setItem` 和事务操作会抛出 `QuotaExceededError`。可以用 `navigator.storage.estimate()` 查询已用空间和总配额，用 `navigator.storage.persist()` 请求持久化存储（不被浏览器自动清理）。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说前端存储方案的区别"
+
+**及格回答（60-70分）：**
+> "Cookie 4KB，每次请求自动携带。LocalStorage 5MB，永久存储。SessionStorage 关闭标签页就没了。IndexedDB 无限制，异步 API。"
+
+面试官评价：**背了参数但不理解选型逻辑**。
+
+**满分回答（90-100分）：**
+
+> 选择存储方案要看三个维度：**数据量**、**生命周期**、**是否需要和服务端同步**。Cookie 的核心价值是自动携带——每次 HTTP 请求都会带上，适合身份认证。但 Cookie 只有 4KB，每次请求增加带宽，且有 CSRF 风险。现代方案用 JWT + Authorization Header 替代 Cookie 做认证。<sup>[1]</sup>
+
+> LocalStorage 是同步 API——读写操作会阻塞主线程。对于小量数据（几 KB）没问题，但存储 1MB 以上数据时读写可能导致卡顿。SessionStorage 的特点是标签页隔离——同一 URL 在不同标签页有独立的 SessionStorage，适合表单暂存。`window.open` 打开的新窗口会复制（不是共享）SessionStorage。<sup>[2]</sup>
+
+> IndexedDB 是异步 API，适合大量结构化数据。支持事务（自动提交）、索引（多字段查询）、游标（遍历大数据集）。但 API 复杂，通常用 `idb` 或 `localForage` 封装。IndexedDB 的事务有一个坑：所有请求完成后自动提交，不能像 SQL 那样手动 begin/commit。如果在事务外执行异步操作（如 await），事务可能已经提交了。<sup>[3]</sup>
+
+> Chromium 中 LocalStorage 和 IndexedDB 底层都用 LevelDB，但 LocalStorage 是同步 API 在主线程执行，IndexedDB 是异步 API 在独立线程执行。存储配额由 Quota 系统统一管理，LocalStorage 每个 origin 约 5MB，IndexedDB 和 Cache Storage 共享磁盘空间的 50%。配额不足时 `setItem` 会抛 `QuotaExceededError`。
+
+### 大厂高频连环拷问
+
+> 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。
+
+<AccordionGroup>
+
+  <Accordion title="Cookie 的 SameSite 属性有什么用?三种值怎么选?" icon="layer-group">
+
+**答题要点：**
+结合 CSRF 防御和业务场景解释三种值的选择逻辑。
+
+**高分回答：**
+"SameSite 控制 Cookie 在跨站请求时是否发送，是防御 CSRF 的最有效手段。
+    
+`Strict`：完全不发送跨站 Cookie。最安全但影响体验——用户从搜索引擎或邮件链接点击进入网站时没有登录状态。适用于银行、支付等高安全系统。
+    
+`Lax`：GET 请求发送，POST 不发送。Chrome 从 v80 开始默认值。用户从外部链接点击进入网站时有登录状态（GET 请求），但 POST 请求不会自动携带 Cookie（防御 CSRF）。适用于大多数 Web 应用。
+    
+`None`：始终发送，必须配合 `Secure`。用于跨站场景（如第三方支付 iframe、OAuth 回调）。如果忘了加 `Secure`，Cookie 会被浏览器拒绝。
+    
+实际建议：默认用 `Lax`，只有明确需要跨站场景时才用 `None`。"
+
+  </Accordion>
+
+  <Accordion title="LocalStorage 存满了会怎样?怎么处理?" icon="stopwatch">
+
+**答题要点：**
+结合具体错误场景和解决方案解释。
+
+**高分回答：**
+"LocalStorage 存满时，`setItem` 会抛出 `QuotaExceededError`。不同浏览器限制不同——通常是 5MB-10MB，按 origin 隔离。
+    
+处理方式：
+1）**预防**：用 `navigator.storage.estimate()` 查询已用空间和配额，在接近上限时主动清理。
+2）**捕获异常**：try-catch 包裹 `setItem`，在捕获到 `QuotaExceededError` 时清理过期数据。
+3）**降级方案**：数据量大时迁移到 IndexedDB——它的默认配额是磁盘空间的 50%。
+    
+    ```javascript
+    function safeSetItem(key, value) {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch (e) {
+        if (e.name === 'QuotaExceededError') {
+          // 清理过期数据或迁移到 IndexedDB
+          clearExpiredData();
+          localStorage.setItem(key, JSON.stringify(value));
+        }
+      }
+    }
+```
+    
+注意：Safari 的无痕模式下 LocalStorage 配额为 0，任何写入都会报错。"
+
+  </Accordion>
+
+  <Accordion title="IndexedDB 的事务有什么特点?为什么容易踩坑?" icon="node">
+
+**答题要点：**
+指出自动提交机制和异步操作的冲突。
+
+**高分回答：**
+"IndexedDB 的事务有两个核心特点：
+    
+1）**自动提交**：当所有请求完成后、没有新的请求时，事务自动提交。不能像 SQL 那样手动 begin/commit/rollback。这是为了简化 API，但也是最容易踩坑的地方。
+    
+2）**异步操作的坑**：如果在事务中使用 `await`，事务可能在 await 期间自动提交。
+    
+    ```javascript
+    // 错误：事务在 await 期间自动提交
+    const tx = db.transaction('users', 'readwrite');
+    const store = tx.objectStore('users');
+    await store.put({ id: 1, name: 'Tom' });
+    // 此时事务可能已经提交了！
+    await store.put({ id: 2, name: 'Jerry' }); // 报错：事务已结束
+    
+    // 正确：把所有操作放在同一个 async 函数中
+    async function addUsers() {
+      const tx = db.transaction('users', 'readwrite');
+      const store = tx.objectStore('users');
+      store.put({ id: 1, name: 'Tom' });
+      store.put({ id: 2, name: 'Jerry' });
+      await tx.complete; // 等待事务完成
+    }
+```
+    
+事务失败时自动回滚。可以通过 `tx.abort()` 手动回滚。"
+
+  </Accordion>
+
+  <Accordion title="🔥 Service Worker 的 Cache Storage 和浏览器 HTTP 缓存有什么区别?" icon="skull">
+
+**答题要点：**
+对比两种缓存机制的控制权和适用场景。
+
+**高分回答：**
+"Service Worker 的 Cache Storage 和浏览器 HTTP 缓存是两套独立的系统：
+    
+**HTTP 缓存**：由浏览器自动管理，遵循 `Cache-Control`、`ETag` 等响应头。开发者只能通过 HTTP 头控制缓存策略，无法用 JS 精细控制。适用于静态资源的自动缓存。
+    
+**Cache Storage**：由 Service Worker 通过 Cache API 完全控制。开发者可以精确决定缓存什么、什么时候缓存、什么时候清除。适用于离线应用（PWA）和自定义缓存策略。
+    
+关键区别：
+1）控制权：HTTP 缓存由浏览器自动管理，Cache Storage 由 JS 完全控制。
+2）生命周期：HTTP 缓存随浏览器清理，Cache Storage 可以持久化。
+3）作用域：HTTP 缓存在网络层拦截，Cache Storage 在 Service Worker 中拦截。
+4）配合使用：Service Worker 可以先查 Cache Storage，未命中再走网络请求（自动触发 HTTP 缓存）。
+    
+典型的 PWA 缓存策略：Service Worker 在 `install` 事件中预缓存关键资源，在 `fetch` 事件中拦截请求，优先返回缓存内容（Cache-First），或者先返回缓存再更新（Stale-While-Revalidate）。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [MDN: Web Storage API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Storage_API)：Mozilla 对 LocalStorage 和 SessionStorage 的权威参考，含 API 说明和使用限制。<sup>[1]</sup>
+- 📖 [Jake Archibald: IndexedDB 详解](https://web.dev/indexeddb/)：深度剖析了 IndexedDB 的事务机制、异步模型和常见陷阱。<sup>[2]</sup>
+- 🟢 [Chromium 存储架构文档](https://chromium.googlesource.com/chromium/src/+/main/content/browser/storage_partition_impl.h)：Chromium 对存储后端架构的最权威说明，含配额管理和数据隔离机制。<sup>[3]</sup>

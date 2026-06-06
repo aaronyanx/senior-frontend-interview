@@ -1,0 +1,89 @@
+---
+title: "前端 & AI 工程化面试指南"
+description: "逐题解析高频面试题"
+---
+
+## 内容导航
+
+<CardGroup cols={2}>
+
+  <Card title="JavaScript" icon="js" color="#F7DF1E" href="/javascript/event-loop">
+
+    异步机制、原型链、闭包、ES6 新特性
+
+  </Card>
+  <Card title="CSS & 浏览器" icon="css3-alt" color="#1572B6" href="/css/box-model">
+
+    布局系统、渲染流水线、性能优化
+
+  </Card>
+  <Card title="Vue" icon="vuejs" color="#41B883" href="/vue/vue-reactivity">
+
+    响应式原理、Diff 算法、编译器
+
+  </Card>
+  <Card title="React" icon="react" color="#61DAFB" href="/react/react-history">
+
+    Fiber 架构、Hooks 原理、并发模式
+
+  </Card>
+  <Card title="工程化" icon="gears" color="#FF8C00" href="/engineering/webpack">
+
+    构建工具、TypeScript、CI/CD
+
+  </Card>
+  <Card title="AI 工程化" icon="robot" color="#8A2BE2" href="/ai/langchain">
+
+    Agent 架构、MCP 协议、RAG
+
+  </Card>
+  <Card title="TypeScript" icon="code" color="#3178C6" href="/typescript/typescript">
+
+    类型系统、泛型、类型体操
+
+  </Card>
+  <Card title="性能与监控" icon="chart-line" color="#E34F26" href="/engineering/sourcemap">
+
+    渲染机制、性能指标、异常监控
+
+  </Card>
+</CardGroup>
+
+## 特色
+
+- 源码级分析：不背八股，讲清楚底层为什么这么设计
+- 踩坑总结：来自实际面试和项目里踩过的坑
+- 追问链：模拟真实面试的递进追问，从基础到深入
+
+<div className="flex flex-col md:flex-row justify-center items-center md:items-end mt-12 md:mt-24 pb-8 space-y-6 md:space-y-0">
+  
+  {/* Left Card */}
+  <div className="relative z-10 hover:z-50 group transform transition-transform md:rotate-[6deg] md:translate-y-[15px] md:translate-x-[50px]">
+    <a href="/ai/langchain" className="block transition-all duration-500 ease-out group-hover:-translate-y-12 group-hover:scale-110 group-hover:-rotate-6 group-hover:shadow-[0_40px_80px_-15px_rgba(0,0,0,0.3)] w-[90vw] max-w-[320px] md:w-[220px]" style={{ textDecoration: 'none', color: 'inherit', height: '260px', background: '#f0fdf4', padding: '1.5rem', borderRadius: '16px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)', border: '1px solid #bbf7d0' }}>
+      <div style={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#166534', letterSpacing: '0.05em', marginBottom: '1rem', textTransform: 'uppercase' }}>AI 工程化</div>
+      <div style={{ fontSize: '1.35rem', fontWeight: '800', marginBottom: '0.75rem', color: '#14532d', lineHeight: '1.2' }}>Agent 长期记忆与权限控制</div>
+      <div style={{ fontSize: '0.8rem', color: '#166534', opacity: 0.85 }}>Memory 怎么存、权限怎么收敛、沙箱怎么跑。</div>
+    </a>
+  </div>
+
+  {/* Middle Card */}
+  <div className="relative z-20 hover:z-50 group transform transition-transform md:-rotate-[5deg] md:-translate-y-[10px] md:translate-x-0">
+    <a href="/engineering/webpack" className="block transition-all duration-500 ease-out group-hover:-translate-y-12 group-hover:scale-110 group-hover:rotate-6 group-hover:shadow-[0_40px_80px_-15px_rgba(0,0,0,0.3)] w-[90vw] max-w-[320px] md:w-[260px]" style={{ textDecoration: 'none', color: 'inherit', height: '300px', background: '#ffffff', padding: '1.75rem', borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #e2e8f0' }}>
+      <div style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#f59e0b', letterSpacing: '0.05em', marginBottom: '1rem', textTransform: 'uppercase' }}>工程化</div>
+      <div style={{ fontSize: '1.6rem', fontWeight: '900', marginBottom: '0.75rem', color: '#0f172a', lineHeight: '1.15' }}>构建工具与性能优化</div>
+      <div style={{ fontSize: '0.85rem', color: '#475569' }}>Webpack/Vite 底层原理，Canvas 离屏渲染怎么用。</div>
+    </a>
+  </div>
+
+  {/* Right Card */}
+  <div className="relative z-10 hover:z-50 group transform transition-transform md:rotate-[12deg] md:translate-y-[20px] md:-translate-x-[50px]">
+    <a href="/react/react-history" className="block transition-all duration-500 ease-out group-hover:-translate-y-12 group-hover:scale-110 group-hover:-rotate-12 group-hover:shadow-[0_40px_80px_-15px_rgba(0,0,0,0.3)] w-[90vw] max-w-[320px] md:w-[220px]" style={{ textDecoration: 'none', color: 'inherit', height: '260px', background: '#f8fafc', padding: '1.5rem', borderRadius: '16px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)', border: '1px solid #cbd5e1' }}>
+      <div style={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#475569', letterSpacing: '0.05em', marginBottom: '1rem', textTransform: 'uppercase' }}>React</div>
+      <div style={{ fontSize: '1.35rem', fontWeight: '800', marginBottom: '0.75rem', color: '#0f172a', lineHeight: '1.2' }}>Fiber 架构与 Hooks 原理</div>
+      <div style={{ fontSize: '0.8rem', color: '#475569', opacity: 0.85 }}>时间分片怎么切、Hooks 为什么不能写在条件里。</div>
+    </a>
+  </div>
+
+</div>
+
+

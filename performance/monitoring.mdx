@@ -1,0 +1,1341 @@
+---
+title: "前端监控与性能观测"
+---
+
+> **面试官为什么问这个？**
+>
+> 前端监控是保障线上产品质量的生命线。面试官问这个，本质上是在考察你：**你的代码上线后出了问题，你怎么发现？怎么定位？怎么复现？** 如果答不清楚，说明你只关注开发阶段，对线上运行时的可观测性没有体系化认知。
+
+---
+
+## Q1: 前端监控的历史？为什么要有它？
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  window.     │ → │  自研 SDK    │ → │  Sentry /   │ → │  全链路     │
+│  onerror     │   │  埋点平台    │   │  商业 APM   │   │  可观测性   │
+│  (蛮荒时代)  │   │ (手动上报)   │   │ (自动化采集) │   │ (Trace/Logs) │
+└──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
+```
+
+<Steps>
+
+  <Step title="蛮荒时代: window.onerror">
+
+    最早的前端监控非常原始——开发者在页面中挂一个 `window.onerror` 全局错误监听，把错误信息通过 `new Image()` 发到后端。这种方式只能捕获同步的 JS 运行时错误，无法处理 Promise 异常、资源加载失败，更没有 Source Map 还原能力。
+
+  </Step>
+  <Step title="埋点时代: 自研 SDK 与手动上报">
+
+    随着业务复杂度提升，团队开始自研埋点 SDK，通过在代码中手动调用 `tracker.send()` 上报用户行为（PV、UV、点击事件）。这个阶段的核心痛点是**埋点覆盖率低**——漏埋、错埋是常态，而且 SDK 本身可能影响页面性能。
+
+  </Step>
+  <Step title="自动化时代: Sentry 与商业 APM">
+
+    Sentry 的出现改变了游戏规则。它通过全局错误捕获 + Source Map 还原 + Session Replay，让开发者能在线上精准还原用户崩溃现场。同期，Fundebug、阿里 ARMS 等商业 APM 产品也提供了开箱即用的错误监控、性能监控和行为分析能力。
+
+  </Step>
+  <Step title="全链路时代: 可观测性三支柱">
+
+    现代前端监控已经演进为可观测性（Observability）体系，包含三大支柱：**Logs**（日志）、**Metrics**（指标）、**Traces**（链路追踪）。前端通过 `Performance API` 采集 Core Web Vitals（FCP、LCP、CLS、INP），结合 OpenTelemetry 标准打通前后端链路追踪。
+
+  </Step>
+
+</Steps>
+
+**前端监控解决的核心问题：**
+
+```text
+问题：用户反馈"页面白屏了"，但你无法复现
+
+没有监控：用户报 Bug → 开发者猜测 → 无法复现 → 修不了
+有监控：  用户报 Bug → Sentry 告警 → Source Map 还原 → 精准定位代码行 → 快速修复
+```
+
+<Note title="💡 一句话总结">
+
+前端监控让你从"被动等用户投诉"变成"主动发现问题并精准定位"。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有前端监控">
+
+线上出了 JS 错误，开发者完全不知道。直到用户投诉客服，客服转给产品经理，产品经理再转给开发——这时候可能已经过去好几天，影响了上万个用户。
+
+</Card>
+<Card title="✅ 引入前端监控">
+
+JS 错误发生的瞬间，Sentry 就推送告警到钉钉群。开发者点开告警链接，Source Map 还原出错误代码行，Session Replay 回放用户操作路径，5 分钟内定位问题并修复。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么需要监控"（线上问题不可复现的痛点），再说"监控的演进历史"（从 window.onerror 到 Sentry 到全链路可观测性）。面试官想听的是你对线上质量保障的体系化思考，而不是背诵 API。
+
+</Tip>
+
+---
+
+## Q2: MutationObserver 详解
+
+MutationObserver 的本质是**异步观察 DOM 树的变化**，当 DOM 节点被增删改时触发回调。它替代了已废弃的 Mutation Events（`DOMNodeInserted` 等）。
+
+```text
+┌───────────────────────────────────────┐
+│     MutationObserver 实例              │  ← 创建观察器
+└─────────────────┬─────────────────────┘
+                  │ observe(target, config)
+                  ▼
+┌───────────────────────────────────────┐
+│     DOM 发生变化（增删改属性/文本）      │
+│     → 浏览器记录变化记录               │
+│     → 微任务队列清空后批量触发回调      │
+└───────────────────────────────────────┘
+```
+
+```javascript
+// 创建 MutationObserver
+const observer = new MutationObserver((mutations) => {
+  mutations.forEach(mutation => {
+    if (mutation.type === 'childList') {
+      console.log('子节点变化', mutation.addedNodes, mutation.removedNodes);
+    }
+    if (mutation.type === 'attributes') {
+      console.log('属性变化', mutation.attributeName, mutation.oldValue);
+    }
+  });
+});
+
+// 开始观察
+observer.observe(document.body, {
+  childList: true,      // 观察子节点增删
+  subtree: true,        // 观察所有后代节点
+  attributes: true,     // 观察属性变化
+  attributeOldValue: true, // 记录属性旧值
+  characterData: true   // 观察文本内容变化
+});
+```
+
+<Warning title="⚠️ 核心机制: 微任务批量触发">
+
+MutationObserver 的回调是**微任务**——浏览器不会在每次 DOM 变化后立即触发回调，而是将所有变化记录（MutationRecord）批量传递给回调。这意味着：
+
+- 一次同步代码中对 DOM 做了 100 次修改，回调只触发一次，传入 100 条 MutationRecord。
+- 回调执行时机在当前宏任务结束后的微任务阶段。
+- 这与 Vue 的 `nextTick` 机制有密切关系。
+
+</Warning>
+
+### MutationObserver 与 Vue 响应式系统的关系
+
+Vue 2 的 `nextTick` 内部优先使用 `microtask`（`Promise.then`），在不支持的降级方案中使用 `MutationObserver` 作为微任务的 polyfill。Vue 3 统一使用 `Promise.then`。
+
+```javascript
+// Vue 2 的 nextTick 降级策略（简化版）
+const callbacks = [];
+let pending = false;
+
+function nextTick(cb) {
+  callbacks.push(cb);
+  if (!pending) {
+    pending = true;
+    // 优先级：Promise > MutationObserver > setImmediate > setTimeout
+    if (typeof Promise !== 'undefined') {
+      Promise.resolve().then(flushCallbacks);
+    } else if (typeof MutationObserver !== 'undefined') {
+      const observer = new MutationObserver(flushCallbacks);
+      const textNode = document.createTextNode('1');
+      observer.observe(textNode, { characterData: true });
+      textNode.data = '2'; // 触发 MutationObserver 微任务
+    } else {
+      setTimeout(flushCallbacks, 0);
+    }
+  }
+}
+```
+
+### 性能优化
+
+MutationObserver 本身性能很好，但回调中的处理逻辑如果不当，可能引发性能问题：
+
+```javascript
+// ❌ 在 MutationObserver 回调中做重 DOM 操作——可能触发无限循环
+const observer = new MutationObserver((mutations) => {
+  // 如果回调中又修改了 DOM，会再次触发回调
+  document.body.appendChild(document.createElement('div'));
+});
+observer.observe(document.body, { childList: true, subtree: true });
+
+// ✅ 回调中先断开观察，处理完再重新观察
+const observer = new MutationObserver((mutations) => {
+  observer.disconnect(); // 暂停观察
+  // 安全地操作 DOM
+  processMutations(mutations);
+  observer.observe(document.body, config); // 重新观察
+});
+```
+
+---
+
+## Q3: rrweb 详解
+
+rrweb（record and replay the web）是一个开源的 Web 录制与回放库，核心能力是**将用户在页面上的所有操作（DOM 变化、鼠标移动、输入、滚动）录制下来，然后在另一个环境中精确回放**。
+
+```text
+录制端（用户浏览器）                          回放端（开发者/客服）
+┌──────────────────────┐                  ┌──────────────────────┐
+│  1. 全量 DOM 快照    │                  │  1. 重建初始 DOM      │
+│     (Snapshot)       │   ── 事件流 ──>  │  2. 按时间戳重放事件  │
+│  2. 增量快照         │   (JSON 数组)    │  3. 还原用户操作现场  │
+│     (Incremental     │                  │                      │
+│      Snapshot)       │                  │                      │
+└──────────────────────┘                  └──────────────────────┘
+```
+
+<Steps>
+
+  <Step title="全量快照（Snapshot）">
+
+    录制开始时，rrweb 递归遍历整个 DOM 树，将每个节点序列化为 JSON 格式。这个快照包含了完整的页面状态：节点类型、属性、文本内容、CSS 样式、Canvas 内容等。
+
+  </Step>
+  <Step title="增量快照（Incremental Snapshot）">
+
+    快照之后，rrweb 通过 `MutationObserver` 监听 DOM 变化，通过各类事件监听器捕获用户交互（鼠标移动、滚动、输入、Resize 等）。每个变化都被记录为一个带时间戳的事件。
+
+  </Step>
+  <Step title="事件流序列化">
+
+    所有事件按时间顺序组成一个 JSON 数组（事件流），上传到后端存储。每个事件包含：时间戳、事件类型（Mutation/MouseMove/Input/Scroll 等）、具体数据。
+
+  </Step>
+  <Step title="回放重建">
+
+    回放端加载事件流，先用全量快照重建初始 DOM，然后按时间戳依次执行增量事件，精确还原用户的操作过程。回放端还会模拟鼠标指针移动、输入框打字动画等视觉效果。
+
+  </Step>
+
+</Steps>
+
+### rrweb 与 Sentry Replay 的关系
+
+Sentry 的 Session Replay 功能底层就是基于 rrweb 实现的。Sentry 在 rrweb 的基础上做了以下增强：
+
+- **压缩与采样**：对事件流进行 gzip 压缩，支持按采样率上报，降低带宽消耗。
+- **隐私保护**：默认对输入框内容做脱敏处理（masking），支持自定义隐私规则。
+- **性能优化**：对高频事件（如 mousemove）做节流，减少事件流体积。
+- **关联错误上下文**：将录屏数据与 Sentry 错误事件关联，点击错误即可回放崩溃前的用户操作。
+
+### 使用场景
+
+| 场景 | 说明 |
+|------|------|
+| **Bug 复现** | 用户报 Bug 后，回放录屏精准还原操作路径，不再靠"你点了什么"的沟通 |
+| **用户行为分析** | 回放用户操作流程，发现交互设计中的体验问题 |
+| **客服辅助** | 客服通过回放用户录屏，快速理解问题并提供解决方案 |
+| **安全审计** | 记录敏感操作（如支付、删除），用于事后审计 |
+
+```javascript
+// rrweb 基本使用
+import rrweb from 'rrweb';
+
+// 开始录制
+let events = [];
+const stopRecording = rrweb.record({
+  emit(event) {
+    events.push(event); // 收集事件
+  },
+  maskAllInputs: true,  // 脱敏所有输入内容
+  recordCanvas: true,   // 录制 Canvas 内容
+  sampling: {
+    mousemove: 50,      // 鼠标移动每 50ms 采样一次
+    scroll: 50,         // 滚动每 50ms 采样一次
+  }
+});
+
+// 回放
+import rrweb from 'rrweb';
+const replayer = new rrweb.Replayer(events, {
+  root: document.getElementById('replay-container'),
+  speed: 1,    // 1 倍速
+  UNSAFE_replayCanvas: true,
+});
+replayer.play();
+```
+
+### rrweb 序列化原理详解
+
+rrweb 全量快照的核心是将 DOM 树递归序列化为一棵 JSON 树。每个节点被映射为一个 `SerializedNode` 对象，包含 `type`、`tagName`、`attributes`、`childNodes` 等字段。
+
+```text
+DOM 树                                    JSON 序列化树
+┌─────────┐                               { type: 0, childNodes: [
+│ <html>  │                                 { type: 2, tagName: "head", ... },
+│  ├ <head>│   ── serializeNodeWithId() ──>  { type: 2, tagName: "body", childNodes: [
+│  └ <body>│                                  { type: 3, textContent: "hello" },
+│     "hello│                                  { type: 2, tagName: "img", attributes: { src: "..." } }
+└─────────┘                                 ]}
+                                           ]}
+```
+
+**节点类型映射表：**
+
+| DOM nodeType | rrweb type | 含义 | 处理方式 |
+|---|---|---|---|
+| `Node.ELEMENT_NODE` (1) | `2` (Element) | HTML 元素 | 序列化 tagName、attributes、CSS 样式 |
+| `Node.TEXT_NODE` (3) | `3` (Text) | 文本节点 | 序列化 textContent |
+| `Node.CDATA_SECTION_NODE` (4) | `4` (CDATA) | CDATA 段 | 直接序列化文本 |
+| `Node.COMMENT_NODE` (8) | `5` (Comment) | 注释节点 | 序列化 comment 内容 |
+| `Node.DOCUMENT_NODE` (9) | `0` (Document) | Document 根 | 递归序列化子节点 |
+| `Node.DOCUMENT_TYPE_NODE` (10) | `1` (DocumentType) | DOCTYPE | 序列化 name、publicId、systemId |
+| `Node.DOCUMENT_FRAGMENT_NODE` (11) | `6` (Fragment) | Shadow DOM / Template | 递归序列化子节点 |
+
+**属性过滤规则：** rrweb 在序列化属性时会过滤掉事件处理器（`onclick`、`onerror` 等），因为这些是函数引用，无法序列化为 JSON。对于 `src`、`href` 等资源 URL，rrweb 会将其转为绝对路径。对于 `<link rel="stylesheet">`，rrweb 会直接序列化计算后的 CSS 规则（`getComputedStyle`），确保回放时样式一致。
+
+```javascript
+// rrweb 序列化核心逻辑（极度简化版）
+function serializeNode(node, doc) {
+  switch (node.nodeType) {
+    case Node.ELEMENT_NODE:
+      return {
+        type: NodeType.Element,
+        tagName: node.tagName.toLowerCase(),
+        attributes: serializeAttributes(node),
+        childNodes: Array.from(node.childNodes).map(
+          child => serializeNode(child, doc)
+        ),
+        id: generateNodeId(node), // 每个节点分配唯一 ID
+      };
+    case Node.TEXT_NODE:
+      return {
+        type: NodeType.Text,
+        textContent: node.textContent || '',
+        id: generateNodeId(node),
+      };
+    case Node.DOCUMENT_TYPE_NODE:
+      return {
+        type: NodeType.DocumentType,
+        name: node.name,
+        publicId: node.publicId,
+        systemId: node.systemId,
+        id: generateNodeId(node),
+      };
+  }
+}
+
+// 属性序列化：过滤事件处理器，转绝对路径
+function serializeAttributes(node) {
+  const attrs = {};
+  for (const attr of node.attributes) {
+    if (attr.name.startsWith('on')) continue; // 过滤事件处理器
+    let value = attr.value;
+    if (attr.name === 'src' || attr.name === 'href') {
+      value = new URL(value, document.baseURI).href; // 转绝对路径
+    }
+    attrs[attr.name] = value;
+  }
+  return attrs;
+}
+```
+
+### 增量快照的事件类型
+
+rrweb 的增量快照覆盖了 14 种事件类型，每种事件都有独立的数据结构：
+
+| 事件类型 | 触发机制 | 采集方式 | 数据内容 |
+|---|---|---|---|
+| **Mutation** | DOM 增删改 | `MutationObserver` | addedNodes、removedNodes、attributes、characterData |
+| **MouseMove** | 鼠标移动 | `mousemove` 事件 | 坐标序列 `[[x, y, timestamp], ...]`（压缩后） |
+| **MouseInteraction** | 鼠标点击/按下/抬起 | `mousedown/up/click` 等 | 坐标、按钮、事件类型 |
+| **Scroll** | 页面/元素滚动 | `scroll` 事件 | scrollTop、scrollLeft、目标节点 ID |
+| **Input** | 输入框内容变化 | `input` 事件 | value、isChecked（checkbox） |
+| **Resize** | 窗口尺寸变化 | `resize` 事件 | width、height |
+| **TouchMove** | 触摸移动 | `touchmove` 事件 | 触摸点坐标序列 |
+| **MediaInteraction** | 播放/暂停/音量变化 | `play/pause/volumechange` | mediaId、playbackState、volume |
+| **StyleSheetRule** | CSS 规则动态增删 | 监听 `CSSStyleSheet` | addedRules、removedRules |
+| **CanvasMutation** | Canvas 绘制操作 | 拦截 Canvas2D 上下文 | 方法名、参数序列 |
+| **Font** | 字体加载完成 | `FontFaceSet` | 字体名称、来源、格式 |
+| **Log** | console 日志 | 拦截 `console` 方法 | 日志级别、参数 |
+| **Drag** | 拖拽操作 | `drag/dragend` 事件 | 坐标 |
+| **Selection** | 文本选择变化 | `selectionchange` | 选区范围 |
+
+```javascript
+// MouseMove 的压缩策略：Douglas-Peucker 算法简化轨迹
+// 原始事件：每 50ms 一个点 → 可能每秒 20 个坐标
+// 压缩后：只保留关键拐点，减少 60%-80% 的数据量
+// rrweb 使用 rrweb-snapshot 中的 logEntries 函数做序列化时压缩
+
+// 事件数据结构示例
+const mouseMoveEvent = {
+  type: 3,             // IncrementalSource.MouseMove
+  timestamp: 1699000000000,
+  data: {
+    positions: [
+      { x: 100, y: 200, id: 5, timeOffset: 0 },
+      { x: 120, y: 210, id: 5, timeOffset: 50 },
+      { x: 150, y: 220, id: 5, timeOffset: 100 },
+    ]
+  }
+};
+```
+
+### rrweb 的性能优化
+
+rrweb 在生产环境中面临的核心挑战是**事件流体积**和**录制性能开销**。以下是它采用的优化策略：
+
+**采样策略：**
+
+```javascript
+rrweb.record({
+  sampling: {
+    mousemove: 50,        // 每 50ms 采样一次鼠标位置（默认）
+    mousemoveCallback: 50, // 也可以自定义采样回调
+    scroll: 50,            // 滚动事件采样
+    input: 'last',         // 输入事件：只保留最后一次（连续输入时）
+    media: 800,            // 媒体状态采样间隔
+  },
+  // 高频事件合并：将 50ms 内的多个 MouseMove 合并为一个事件
+  // 减少 emit 次数，降低序列化开销
+});
+```
+
+**压缩算法：**
+
+rrweb 本身不做 gzip 压缩（由传输层负责），但在数据结构层面做了极致压缩：
+
+| 优化手段 | 说明 |
+|---|---|
+| **坐标增量编码** | MouseMove 不存绝对坐标，存与上一帧的偏移量 `[dx, dy]` |
+| **节点 ID 引用** | 事件中用数字 ID 引用节点，不重复序列化节点信息 |
+| **时间偏移** | 事件流中每个事件用相对时间偏移（`timeOffset`），而非绝对时间戳 |
+| **属性 diff** | Mutation 事件只记录变化的属性，而非全量属性快照 |
+| **mousemove 合并** | 一个事件中包含多个坐标点（positions 数组），减少事件数量 |
+
+**事件流体积控制（生产级方案）：**
+
+```javascript
+// 实际生产中的事件流压缩流水线
+import { pack, unpack } from 'rrweb';
+
+// 打包：将事件流压缩（内部使用增量编码 + 结构共享）
+const packedEvents = pack(events);
+// packedEvents 体积约为原始 JSON 的 30%-50%
+
+// 解包：回放前解压
+const originalEvents = unpack(packedEvents);
+
+// 结合 gzip 二次压缩：packedEvents + gzip ≈ 原始体积的 10%-20%
+// 一个 10 分钟的录屏，原始事件流约 5-20MB，压缩后约 0.5-2MB
+```
+
+### rrweb 的隐私保护
+
+Session Replay 涉及用户隐私数据，rrweb 提供了多层隐私保护机制：
+
+```javascript
+rrweb.record({
+  // 1. 全局脱敏：所有 input/textarea 的值替换为 * 号
+  maskAllInputs: true,
+
+  // 2. 自定义脱敏：只对特定元素脱敏
+  maskInputOptions: {
+    password: true,        // 密码框始终脱敏
+    email: true,           // 邮箱脱敏
+    tel: true,             // 电话脱敏
+    text: false,           // 普通文本不脱敏
+    textarea: false,       // 多行文本不脱敏
+  },
+
+  // 3. 文本脱敏：对元素的文本内容做替换
+  maskTextFn: (text, element) => {
+    // 自定义脱敏规则：如对手机号中间 4 位打码
+    return text.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2');
+  },
+
+  // 4. 属性脱敏：对元素属性值做替换
+  maskInputFn: (text, element) => {
+    return text.replace(/./g, '*');
+  },
+
+  // 5. slimDOMOptions：裁剪不需要录制的 DOM 内容
+  slimDOMOptions: {
+    script: true,          // 不录制 <script> 标签
+    comment: true,         // 不录制注释节点
+    headFavicon: true,     // 不录制 <link rel="icon">
+    headWhitespace: true,  // 不录制 <head> 中的空白文本
+    // 重要：减少事件流体积的同时也避免敏感信息泄露
+  },
+
+  // 6. blockClass：完全屏蔽特定元素（不录制、不显示）
+  // CSS 选择器方式屏蔽
+  blockSelector: '[data-private]',  // 带 data-private 属性的元素完全不录制
+
+  // 7. 忽略特定 class 的元素
+  ignoreClass: 'rr-ignore', // 带此 class 的元素不录制
+});
+```
+
+<Warning title="⚠️ 隐私合规的红线">
+
+在欧盟 GDPR 和中国《个人信息保护法》框架下，Session Replay 必须：
+
+1. **告知用户**：在隐私政策中明确说明会进行录屏回放。
+2. **获得同意**：用户必须主动同意（opt-in），不能默认开启。
+3. **数据脱敏**：对 PII（个人可识别信息）必须脱敏后才能存储。
+4. **数据生命周期**：录屏数据必须有明确的保留期限，过期自动删除。
+
+Sentry 的做法是默认开启 `maskAllInputs: true` 和 `blockSelector`，开发者需要显式关闭脱敏才能录制明文内容。
+
+</Warning>
+
+### rrweb 2.0 新特性
+
+rrweb 2.0 在 1.x 的基础上做了重大升级，解决了之前无法录制 Shadow DOM、Canvas 和 iframe 的痛点：
+
+| 新特性 | 说明 |
+|---|---|
+| **Shadow DOM 录制** | 递归遍历 `shadowRoot`，将 Shadow DOM 内部的节点序列化为 Fragment 类型节点 |
+| **Canvas 录制** | 拦截 Canvas2D/WebGL 上下文的方法调用，将绘制指令序列化为事件流 |
+| **iframe 录制** | 自动检测同源 iframe，递归启动子录制器 |
+| **adoptedStyleSheets** | 支持录制通过 `CSSStyleSheet` 构造函数创建的样式表 |
+| **Web Component 录制** | 支持自定义元素的 `connectedCallback` 生命周期还原 |
+
+```javascript
+// rrweb 2.0 Shadow DOM 录制
+// 序列化时遇到 Shadow Host 节点，递归进入 shadowRoot
+function serializeShadowHost(node) {
+  return {
+    type: NodeType.Element,
+    tagName: node.tagName.toLowerCase(),
+    attributes: serializeAttributes(node),
+    isShadowHost: true,
+    childNodes: [
+      // shadowRoot 作为子节点（type = 6, Fragment）
+      serializeNode(node.shadowRoot)
+    ]
+  };
+}
+
+// rrweb 2.0 Canvas 录制
+rrweb.record({
+  recordCanvas: true,
+  // WebGL 录制需要额外配置
+  collectFonts: true,     // 录制加载的字体
+  inlineImages: true,     // 将图片转为 base64 内联
+});
+```
+
+### 如何自己实现一个简易版 rrweb
+
+理解 rrweb 核心原理的最好方式是亲手实现一个最小版本。以下是 100 行代码的简化实现：
+
+```javascript
+// mini-rrweb：最简化的录屏回放实现
+class MiniRecorder {
+  constructor() {
+    this.events = [];
+    this.startTime = Date.now();
+    this.nodeMap = new Map(); // nodeId → DOM Node
+    this.nextId = 1;
+  }
+
+  // 1. 全量快照：递归序列化 DOM 树
+  snapshot(node) {
+    const id = this.nextId++;
+    this.nodeMap.set(id, node);
+    node.__rr_id = id; // 在 DOM 节点上挂 ID
+
+    const record = { id, type: node.nodeType };
+
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      record.tagName = node.tagName.toLowerCase();
+      record.attributes = {};
+      for (const attr of node.attributes) {
+        if (!attr.name.startsWith('on')) {
+          record.attributes[attr.name] = attr.value;
+        }
+      }
+    } else if (node.nodeType === Node.TEXT_NODE) {
+      record.textContent = node.textContent;
+    }
+
+    record.childNodes = [];
+    for (const child of node.childNodes) {
+      record.childNodes.push(this.snapshot(child));
+    }
+    if (node.shadowRoot) {
+      record.isShadowHost = true;
+      record.childNodes.push(this.snapshot(node.shadowRoot));
+    }
+
+    return record;
+  }
+
+  // 2. 开始录制：全量快照 + 增量监听
+  start() {
+    // 全量快照
+    const fullSnapshot = this.snapshot(document.documentElement);
+    this.emit({ type: 'full-snapshot', data: fullSnapshot, timestamp: 0 });
+
+    // MutationObserver：监听 DOM 变化
+    const mutationObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === 'childList') {
+          this.emit({
+            type: 'mutation',
+            data: {
+              parentId: mutation.target.__rr_id,
+              addedNodes: Array.from(mutation.addedNodes).map(n => this.serializeAdded(n)),
+              removedNodes: Array.from(mutation.removedNodes).map(n => n.__rr_id),
+            }
+          });
+        }
+      }
+    });
+    mutationObserver.observe(document.body, {
+      childList: true, subtree: true, attributes: true, characterData: true,
+    });
+
+    // 鼠标移动（节流 50ms）
+    let lastMouseTime = 0;
+    document.addEventListener('mousemove', (e) => {
+      const now = Date.now();
+      if (now - lastMouseTime < 50) return;
+      lastMouseTime = now;
+      this.emit({ type: 'mousemove', data: { x: e.clientX, y: e.clientY } });
+    });
+
+    // 滚动（节流 50ms）
+    let lastScrollTime = 0;
+    document.addEventListener('scroll', (e) => {
+      const now = Date.now();
+      if (now - lastScrollTime < 50) return;
+      lastScrollTime = now;
+      this.emit({ type: 'scroll', data: { x: window.scrollX, y: window.scrollY } });
+    });
+
+    // 输入
+    document.addEventListener('input', (e) => {
+      this.emit({
+        type: 'input',
+        data: { id: e.target.__rr_id, value: e.target.value }
+      });
+    });
+  }
+
+  emit(event) {
+    event.timestamp = Date.now() - this.startTime;
+    this.events.push(event);
+  }
+
+  serializeAdded(node) {
+    // 新增节点的序列化（简化版）
+    return this.snapshot(node);
+  }
+
+  getEvents() {
+    return this.events;
+  }
+}
+
+// 使用
+const recorder = new MiniRecorder();
+recorder.start();
+// 用户操作一段时间后...
+const events = recorder.getEvents();
+console.log(JSON.stringify(events)); // 可以传输到后端存储
+```
+
+<Note title="💡 一句话总结">
+
+rrweb 的核心是"全量快照 + 增量事件流"：Snapshot 序列化整个 DOM 树为 JSON，增量快照通过 MutationObserver + 事件监听捕获所有变化，两者结合实现精确的录屏回放。隐私保护（maskAllInputs）和性能优化（采样 + 压缩）是生产环境的两大关键。
+
+</Note>
+
+---
+
+## Q4: 前端监控系统搭建思路
+
+一个完整的前端监控系统包含两大核心模块：**错误监控**和**行为监控**，外加数据上报策略、SDK 设计和后台架构。
+
+```text
+┌─────────────────────────────────────────────────────┐
+│                   前端监控系统                        │
+├────────────────┬────────────────┬───────────────────┤
+│   错误监控     │   行为监控     │   基础设施         │
+│   (Errors)     │   (Behaviors)  │   (Infra)         │
+├────────────────┼────────────────┼───────────────────┤
+│ JS Error       │ 点击事件       │ 数据上报策略       │
+│ Promise Error  │ 曝光埋点       │ 监控 SDK 设计      │
+│ Resource Error │ 路由变化       │ Source Map 还原    │
+│ HTTP Error     │ 页面停留时长   │ 监控后台设计       │
+├────────────────┴────────────────┴───────────────────┤
+│                 数据上报层                            │
+│  sendBeacon / Image(1x1) / fetch keepalive          │
+└─────────────────────────────────────────────────────┘
+```
+
+### 错误监控
+
+```javascript
+// 1. JS 运行时错误捕获
+window.addEventListener('error', (event) => {
+  report({
+    type: 'js-error',
+    message: event.message,
+    filename: event.filename,
+    lineno: event.lineno,
+    colno: event.colno,
+    stack: event.error?.stack,
+  });
+}, true); // true 表示捕获阶段，可同时捕获资源加载错误
+
+// 2. Promise 未捕获异常
+window.addEventListener('unhandledrejection', (event) => {
+  report({
+    type: 'promise-error',
+    reason: event.reason?.message || String(event.reason),
+    stack: event.reason?.stack,
+  });
+});
+
+// 3. 资源加载错误（通过 error 事件 + 捕获阶段）
+window.addEventListener('error', (event) => {
+  if (event.target && (event.target.src || event.target.href)) {
+    report({
+      type: 'resource-error',
+      tagName: event.target.tagName,
+      url: event.target.src || event.target.href,
+    });
+  }
+}, true);
+
+// 4. HTTP 请求错误（拦截 fetch / XMLHttpRequest）
+const originalFetch = window.fetch;
+window.fetch = async (...args) => {
+  const start = Date.now();
+  try {
+    const response = await originalFetch(...args);
+    if (!response.ok) {
+      report({
+        type: 'http-error',
+        url: args[0],
+        status: response.status,
+        duration: Date.now() - start,
+      });
+    }
+    return response;
+  } catch (err) {
+    report({ type: 'http-error', url: args[0], error: err.message });
+    throw err;
+  }
+};
+```
+
+### 行为监控
+
+```javascript
+// 点击事件上报（事件委托 + 自动化埋点）
+document.addEventListener('click', (e) => {
+  const target = e.target.closest('[data-track]');
+  if (target) {
+    report({
+      type: 'click',
+      trackId: target.dataset.track,
+      page: location.pathname,
+      timestamp: Date.now(),
+    });
+  }
+});
+
+// 路由变化监听（SPA 应用）
+// 监听 pushState / replaceState
+const originalPushState = history.pushState;
+history.pushState = function (...args) {
+  originalPushState.apply(this, args);
+  report({ type: 'route-change', from: currentPath, to: args[2] });
+  currentPath = args[2];
+};
+
+// 监听 popstate（浏览器前进/后退）
+window.addEventListener('popstate', () => {
+  report({ type: 'route-change', to: location.pathname });
+});
+```
+
+### 数据上报策略
+
+| 策略 | 说明 | 适用场景 |
+|------|------|---------|
+| **sendBeacon** | 浏览器保证在页面关闭前发送，不阻塞卸载 | 页面关闭时上报（首选） |
+| **fetch keepalive** | `fetch` 的 `keepalive` 选项，类似 sendBeacon | sendBeacon 不支持的场景 |
+| **Image(1x1)** | `new Image().src = url`，兼容性最好 | 简单数据上报 |
+| **批量上报** | 攒够 N 条或每隔 T 秒批量发送 | 高频事件（鼠标移动、滚动） |
+
+```javascript
+// sendBeacon 上报（页面关闭时的最佳方案）
+window.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    const data = JSON.stringify({
+      type: 'page-exit',
+      stayDuration: Date.now() - pageLoadTime,
+      cls: clsValue,
+    });
+    navigator.sendBeacon('/api/report', data);
+  }
+});
+
+// 批量上报（攒够 10 条或 5 秒发一次）
+class BatchReporter {
+  constructor(batchSize = 10, interval = 5000) {
+    this.queue = [];
+    this.batchSize = batchSize;
+    this.timer = setInterval(() => this.flush(), interval);
+  }
+  push(item) {
+    this.queue.push(item);
+    if (this.queue.length >= this.batchSize) this.flush();
+  }
+  flush() {
+    if (this.queue.length === 0) return;
+    const batch = this.queue.splice(0);
+    navigator.sendBeacon('/api/report', JSON.stringify(batch));
+  }
+}
+```
+
+### 监控 SDK 设计
+
+一个生产级的前端监控 SDK 需要解决 3 个核心问题：**采集什么**（自动 vs 手动）、**怎么上报**（批量 + 重试 + 离线）、**怎么控制开销**（采样 + 去重）。
+
+```javascript
+// 生产级监控 SDK 架构
+class MonitorSDK {
+  constructor(config) {
+    this.config = {
+      appId: config.appId,
+      dsn: config.dsn,                    // 数据上报地址
+      sampleRate: config.sampleRate || 1,  // 采样率（0-1），1 = 100%
+      beforeSend: config.beforeSend,       // 上报前的钩子（可过滤/脱敏）
+      maxRetry: config.maxRetry || 3,      // 失败重试次数
+      batchSize: config.batchSize || 10,   // 批量上报阈值
+      flushInterval: config.flushInterval || 5000, // 定时上报间隔
+      offlineCache: config.offlineCache !== false, // 离线缓存
+    };
+    this.queue = [];
+    this.retryQueue = [];
+
+    // 自动采集
+    if (config.autoCapture !== false) {
+      this.initErrorCapture();
+      this.initPerfCapture();
+      this.initBehaviorCapture();
+    }
+
+    // 定时批量上报
+    this.timer = setInterval(() => this.flush(), this.config.flushInterval);
+
+    // 页面关闭时上报
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        this.flush(true); // useBeacon = true
+      }
+    });
+  }
+
+  // 自动采集：错误监控
+  initErrorCapture() {
+    window.addEventListener('error', (event) => {
+      this.report({
+        type: 'js-error',
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        stack: event.error?.stack,
+      });
+    }, true);
+
+    window.addEventListener('unhandledrejection', (event) => {
+      this.report({
+        type: 'promise-error',
+        reason: event.reason?.message || String(event.reason),
+        stack: event.reason?.stack,
+      });
+    });
+  }
+
+  // 自动采集：性能监控
+  initPerfCapture() {
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        this.report({ type: 'perf', name: entry.name, value: entry.startTime });
+      }
+    });
+    observer.observe({ type: 'paint', buffered: true });
+    observer.observe({ type: 'largest-contentful-paint', buffered: true });
+  }
+
+  // 自动采集：行为监控
+  initBehaviorCapture() {
+    // 路由变化
+    const originalPushState = history.pushState;
+    history.pushState = (...args) => {
+      originalPushState.apply(history, args);
+      this.report({ type: 'route-change', to: args[2] });
+    };
+  }
+
+  // 手动上报
+  report(data) {
+    // 采样：根据 sampleRate 决定是否上报
+    if (Math.random() > this.config.sampleRate) return;
+
+    // beforeSend 钩子：可过滤敏感数据或补充上下文
+    const processed = this.config.beforeSend
+      ? this.config.beforeSend(data)
+      : data;
+    if (processed === null) return; // 返回 null 表示不上报
+
+    // 补充公共字段
+    const enriched = {
+      ...processed,
+      appId: this.config.appId,
+      timestamp: Date.now(),
+      url: location.href,
+      userAgent: navigator.userAgent,
+      userId: this.config.userId,
+    };
+
+    this.queue.push(enriched);
+    if (this.queue.length >= this.config.batchSize) {
+      this.flush();
+    }
+  }
+
+  // 批量上报
+  flush(useBeacon = false) {
+    if (this.queue.length === 0) return;
+    const batch = this.queue.splice(0);
+    const body = JSON.stringify(batch);
+
+    if (useBeacon && navigator.sendBeacon) {
+      navigator.sendBeacon(this.config.dsn, body);
+    } else {
+      this.sendWithRetry(this.config.dsn, body);
+    }
+  }
+
+  // 失败重试
+  async sendWithRetry(url, body, retryCount = 0) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        body,
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+      });
+      if (!response.ok && retryCount < this.config.maxRetry) {
+        // 指数退避重试
+        setTimeout(() => this.sendWithRetry(url, body, retryCount + 1),
+          Math.pow(2, retryCount) * 1000);
+      }
+    } catch (err) {
+      if (retryCount < this.config.maxRetry) {
+        setTimeout(() => this.sendWithRetry(url, body, retryCount + 1),
+          Math.pow(2, retryCount) * 1000);
+      } else {
+        // 重试全部失败，存入离线缓存
+        this.cacheOffline(body);
+      }
+    }
+  }
+
+  // 离线缓存：存入 localStorage，下次打开页面时重发
+  cacheOffline(body) {
+    if (!this.config.offlineCache) return;
+    try {
+      const cached = JSON.parse(localStorage.getItem('__monitor_cache') || '[]');
+      cached.push(...JSON.parse(body));
+      localStorage.setItem('__monitor_cache', JSON.stringify(cached.slice(-100))); // 最多缓存 100 条
+    } catch (e) { /* localStorage 满了就丢弃 */ }
+  }
+
+  // 页面加载时重发离线缓存
+  static replayOfflineCache(dsn) {
+    try {
+      const cached = JSON.parse(localStorage.getItem('__monitor_cache') || '[]');
+      if (cached.length > 0) {
+        navigator.sendBeacon(dsn, JSON.stringify(cached));
+        localStorage.removeItem('__monitor_cache');
+      }
+    } catch (e) { /* ignore */ }
+  }
+}
+
+// 使用
+const monitor = new MonitorSDK({
+  appId: 'my-app',
+  dsn: '/api/report',
+  sampleRate: 0.5,       // 50% 采样
+  beforeSend(data) {
+    if (data.type === 'js-error' && data.message.includes('Script error')) {
+      return null; // 过滤跨域脚本错误
+    }
+    return data;
+  },
+  offlineCache: true,
+});
+
+// 手动上报业务事件
+monitor.report({ type: 'custom', event: 'purchase', amount: 99 });
+```
+
+### Source Map 还原
+
+线上代码经过压缩后，错误堆栈指向的是压缩文件（`app.min.js:1:23456`），无法直接定位源码。Source Map 还原是将压缩代码的错误位置映射回源码位置的关键能力。
+
+```text
+线上错误堆栈（压缩后）：
+  at e.render (https://cdn.example.com/app.min.js:1:23456)
+  at t.handleClick (https://cdn.example.com/app.min.js:1:34567)
+
+还原后（源码位置）：
+  at UserCard.render (src/components/UserCard.tsx:42:15)
+  at Button.handleClick (src/components/Button.tsx:28:8)
+```
+
+**还原原理：** Source Map 文件（`.map`）包含一个 VLQ 编码的映射表，记录了压缩文件中每个字符位置对应的源文件、源行号、源列号。还原工具读取这个映射表，将压缩位置翻译为源码位置。
+
+**两种还原方式：**
+
+| 方式 | 说明 | 适用场景 |
+|---|---|---|
+| **服务端还原** | 后端收到错误堆栈后，读取 Source Map 文件做映射 | 推荐：Source Map 不暴露给前端 |
+| **前端还原** | 浏览器通过 `//# sourceMappingURL` 加载 .map 文件 | 开发调试用，生产环境不要暴露 .map |
+
+```javascript
+// 服务端 Source Map 还原（Node.js）
+const { SourceMapConsumer } = require('source-map');
+const fs = require('fs');
+
+async function restoreStack(minifiedStack, mapFilePath) {
+  const rawSourceMap = JSON.parse(fs.readFileSync(mapFilePath, 'utf-8'));
+  const consumer = await new SourceMapConsumer(rawSourceMap);
+
+  const lines = minifiedStack.split('\n');
+  const restored = lines.map(line => {
+    // 解析 "at functionName (file:line:col)" 格式
+    const match = line.match(/at .+ \((.+):(\d+):(\d+)\)/);
+    if (!match) return line;
+
+    const [, file, lineNum, colNum] = match;
+    const pos = consumer.originalPositionFor({
+      line: parseInt(lineNum),
+      column: parseInt(colNum),
+    });
+
+    if (pos.source) {
+      return `at ${pos.name || 'anonymous'} (${pos.source}:${pos.line}:${pos.column})`;
+    }
+    return line;
+  });
+
+  consumer.destroy();
+  return restored.join('\n');
+}
+
+// Sentry 的做法：Source Map 上传到 Sentry 服务端
+// 1. 构建时上传 .map 文件到 Sentry
+// npx sentry-upload-sourcemaps --org my-org --project my-project ./dist
+// 2. Sentry 收到错误时自动还原堆栈
+// 3. 开发者在 Sentry 后台看到的就是源码位置
+```
+
+### 监控后台设计
+
+一个完整的监控后台需要 4 个核心模块：
+
+```text
+┌──────────────────────────────────────────────────────────┐
+│                    监控后台架构                            │
+├────────────────┬────────────────┬────────────────────────┤
+│  错误聚合      │  性能趋势      │  告警规则              │
+│  Error Grouping│  Perf Trends   │  Alert Rules           │
+├────────────────┼────────────────┼────────────────────────┤
+│ 堆栈指纹去重   │ FCP/LCP/CLS    │ 阈值告警               │
+│ 影响用户数     │ 趋势图         │ 环比告警               │
+│ 版本对比       │ P50/P95/P99    │ 智能告警               │
+│ Source Map 还原│ 页面维度聚合   │ 告警渠道(钉钉/飞书)    │
+├────────────────┴────────────────┴────────────────────────┤
+│                    数据存储层                              │
+│  Elasticsearch（错误日志） + ClickHouse（性能指标）       │
+│  + Redis（实时聚合） + Kafka（消息队列）                  │
+└──────────────────────────────────────────────────────────┘
+```
+
+**错误聚合的核心算法：** 将相同根因的错误归为一组，避免开发者面对成千上万条重复错误。
+
+```javascript
+// 错误指纹生成：基于堆栈的前 3 帧 + 错误类型
+function generateFingerprint(error) {
+  const stackLines = error.stack.split('\n').slice(0, 3);
+  const normalized = stackLines
+    .map(line => line.replace(/:\d+:\d+/g, '')) // 去掉行号列号
+    .join('\n');
+  return hash(error.type + '\n' + normalized);
+}
+
+// Sentry 的错误聚合策略：
+// 1. 堆栈指纹：取堆栈前 N 帧的文件名 + 函数名生成哈希
+// 2. 错误类型：TypeError / ReferenceError / RangeError 等
+// 3. 消息模板：去掉变化的数字和字符串，保留模板
+//    "Cannot read property 'name' of undefined" → "Cannot read property '*' of *"
+```
+
+**告警规则示例：**
+
+```javascript
+// 告警规则配置
+const alertRules = [
+  {
+    name: 'JS 错误率突增',
+    metric: 'js_error_rate',
+    condition: 'increase',     // 环比上升
+    threshold: 50,             // 上升超过 50%
+    window: '5m',              // 5 分钟窗口
+    channels: ['dingtalk', 'feishu'],
+  },
+  {
+    name: 'LCP 超过 4 秒',
+    metric: 'lcp_p95',
+    condition: 'gt',           // 大于
+    threshold: 4000,           // 4000ms
+    window: '15m',
+    channels: ['dingtalk'],
+  },
+  {
+    name: 'CLS 超过 0.25',
+    metric: 'cls_p95',
+    condition: 'gt',
+    threshold: 0.25,
+    window: '30m',
+    channels: ['feishu'],
+  },
+];
+```
+
+<Note title="💡 一句话总结">
+
+前端监控 SDK = 采样策略（控制开销） + 批量上报（减少请求） + 失败重试（数据不丢） + 离线缓存（兜底方案），Source Map 还原是精准定位线上 Bug 的关键能力。
+
+</Note>
+
+---
+
+## Q5: 高频面试题
+
+<AccordionGroup>
+
+  <Accordion title="MutationObserver 和 Vue 的 nextTick 有什么关系？" icon="layer-group">
+
+    **答题要点：**
+    从 Vue 2 的 nextTick 降级策略切入，说明 MutationObserver 作为微任务 polyfill 的角色。
+
+    **高分回答：**
+    "Vue 2 的 `nextTick` 需要在当前 DOM 更新完成后执行回调，本质上是利用微任务的特性。Vue 2 内部有一个优先级链：`Promise.then` > `MutationObserver` > `setImmediate` > `setTimeout`。
+
+    MutationObserver 的回调是微任务，所以在不支持 `Promise` 的旧浏览器中，Vue 2 用它作为微任务的 polyfill。具体做法是创建一个文本节点，通过修改文本节点的 `data` 属性来触发 MutationObserver 回调。
+
+    Vue 3 统一使用 `Promise.then`，不再需要 MutationObserver 降级。但理解这个关系很重要——它说明了 MutationObserver 在浏览器任务模型中的位置：**它是微任务的一种来源**。"
+
+  </Accordion>
+
+  <Accordion title="rrweb 是怎么实现录制的？" icon="layer-group">
+
+    **答题要点：**
+    必须讲清楚 Snapshot + Incremental Snapshot 两阶段，以及底层依赖的浏览器 API。
+
+    **高分回答：**
+    "rrweb 的录制分为两个阶段：
+
+    **第一阶段：全量快照（Snapshot）。** 录制开始时，rrweb 递归遍历整个 DOM 树，将每个节点序列化为 JSON。序列化内容包括节点类型、属性、文本内容、计算样式、Canvas 内容等。这相当于给页面拍了一张'照片'。
+
+    **第二阶段：增量快照（Incremental Snapshot）。** 快照之后，rrweb 通过 `MutationObserver` 监听所有 DOM 变化（增删节点、属性修改、文本变化），通过事件监听器捕获用户交互（鼠标移动、滚动、输入、Resize）。每个变化都记录为一个带时间戳的事件。
+
+    所有事件按时间顺序组成一个 JSON 数组上传到后端。回放时先用全量快照重建初始 DOM，再按时间戳依次执行增量事件，精确还原用户操作。Sentry 的 Session Replay 就是基于 rrweb 实现的。"
+
+  </Accordion>
+
+  <Accordion title="怎么搭建一个前端监控系统？" icon="stopwatch">
+
+    **答题要点：**
+    从错误监控、行为监控、数据上报、SDK 设计四个维度给出完整方案。
+
+    **高分回答：**
+    "搭建前端监控系统需要覆盖四个层面：
+
+    **1. 错误监控：** `window.onerror` 捕获 JS 运行时错误，`unhandledrejection` 捕获 Promise 未处理异常，`error` 事件（捕获阶段）捕获资源加载失败，`fetch/XMLHttpRequest` 拦截捕获 HTTP 错误。
+
+    **2. 行为监控：** 事件委托自动采集点击事件，监听 `pushState/replaceState/popstate` 捕获路由变化，记录页面停留时长。
+
+    **3. 数据上报：** 首选 `navigator.sendBeacon()`（页面关闭时不丢数据），高频事件做批量上报（攒够 N 条或每隔 T 秒），降级方案用 `Image(1x1)` 或 `fetch keepalive`。
+
+    **4. SDK 设计：** 采样率控制（sampleRate）、beforeSend 钩子过滤敏感数据、失败重试 + 离线缓存兜底。
+
+    ```javascript
+    // 最简化的 SDK 入口
+    class Monitor {
+      constructor(config) {
+        this.initErrorMonitor();
+        this.initBehaviorMonitor(config.tracks);
+      }
+      report(data) {
+        navigator.sendBeacon('/api/report', JSON.stringify(data));
+      }
+    }
+    ```
+
+  </Accordion>
+
+  <Accordion title="sendBeacon 和 fetch keepalive 的区别？" icon="stopwatch">
+
+    **答题要点：**
+    从浏览器保证机制、兼容性、请求大小限制三个维度对比。
+
+    **高分回答：**
+    "`sendBeacon` 和 `fetch keepalive` 都能在页面关闭后完成请求发送，但有重要区别：
+
+    1. **浏览器保证级别不同。** `sendBeacon` 是浏览器专门为'页面卸载时数据上报'设计的 API，浏览器会优先保证它发送成功。`fetch keepalive` 是 `fetch` 的一个选项，保证级别不如 sendBeacon。
+
+    2. **请求大小限制。** `sendBeacon` 限制请求体大小为 64KB。`fetch keepalive` 限制为 64KB（Chrome）。
+
+    3. **请求方法。** `sendBeacon` 只支持 POST。`fetch keepalive` 支持所有方法。
+
+    实际项目中的推荐策略：优先用 `sendBeacon`，降级用 `fetch keepalive`，再降级用 `Image(1x1)`。
+
+    ```javascript
+    function report(data) {
+      const body = JSON.stringify(data);
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/report', body);
+      } else if (window.fetch) {
+        fetch('/api/report', { method: 'POST', body, keepalive: true });
+      } else {
+        new Image().src = '/api/report?d=' + encodeURIComponent(body);
+      }
+    }
+    ```
+
+  </Accordion>
+
+  <Accordion title="Source Map 还原的原理是什么？" icon="node">
+
+    **答题要点：**
+    说明 VLQ 编码映射表的工作原理，以及服务端还原 vs 前端还原的区别。
+
+    **高分回答：**
+    "线上代码经过压缩后，错误堆栈指向的是压缩文件（`app.min.js:1:23456`），无法直接定位源码。Source Map 文件（`.map`）包含一个 VLQ 编码的映射表，记录了压缩文件中每个字符位置对应的源文件、源行号、源列号。
+
+    还原工具读取这个映射表，将压缩位置翻译为源码位置。比如 `app.min.js:1:23456` 还原为 `src/components/UserCard.tsx:42:15`。
+
+    **两种还原方式：**
+    - **服务端还原（推荐）：** 后端收到错误堆栈后，读取 Source Map 文件做映射。Source Map 不暴露给前端，安全性高。Sentry 就是这个方案——构建时上传 `.map` 文件到 Sentry 服务端，收到错误时自动还原。
+    - **前端还原：** 浏览器通过 `//# sourceMappingURL` 加载 .map 文件。仅用于开发调试，生产环境不要暴露 `.map` 文件，否则源码泄露。"
+
+  </Accordion>
+
+  <Accordion title="前端监控的采样策略怎么做？" icon="stopwatch">
+
+    **答题要点：**
+    说明采样的必要性（控制开销和成本），以及不同场景的采样率设计。
+
+    **高分回答：**
+    "全量上报会导致：1）网络带宽浪费，2）后端存储成本暴增，3）SDK 本身影响页面性能。所以必须做采样。
+
+    **采样率设计原则：**
+    - **错误监控：** 100% 上报，不采样。线上 Bug 不能遗漏。
+    - **性能监控：** 10%-30% 采样。性能数据是统计指标，不需要每条都上报。
+    - **行为监控：** 1%-10% 采样。点击、曝光等行为数据量巨大，低采样率即可反映趋势。
+
+    **实现方式：** 在 SDK 的 `report` 方法中，用 `Math.random()` 与 `sampleRate` 比较决定是否上报。还可以根据页面错误率动态调整采样率——错误率突增时自动提高性能监控采样率，方便关联分析。
+
+    ```javascript
+    report(data) {
+      // 错误事件 100% 上报，其他按采样率
+      const rate = data.type === 'error' ? 1 : this.config.sampleRate;
+      if (Math.random() > rate) return;
+      // ...上报逻辑
+    }
+    ```
+
+  </Accordion>
+
+  <Accordion title="监控 SDK 的 beforeSend 钩子有什么用？" icon="layer-group">
+
+    **答题要点：**
+    说明 beforeSend 在数据脱敏、过滤噪音、补充上下文三个场景的作用。
+
+    **高分回答：**
+    "`beforeSend` 是监控 SDK 在数据上报前的最后一个拦截点，有三个核心用途：
+
+    **1. 过滤噪音：** 过滤掉无价值的错误。比如跨域脚本的 `Script error.` 没有堆栈信息，对排查问题毫无帮助，可以直接返回 `null` 过滤掉。
+
+    **2. 数据脱敏：** 在上报前对敏感信息做脱敏。比如 URL 中的用户 ID、token 等参数，可以替换为 `***` 后再上报。
+
+    **3. 补充上下文：** 给错误数据附加业务上下文。比如当前登录用户 ID、页面版本号、灰度分组等，方便后续在监控后台按维度筛选和聚合。
+
+    ```javascript
+    new MonitorSDK({
+      beforeSend(data) {
+        // 过滤跨域脚本错误
+        if (data.type === 'js-error' && data.message === 'Script error.') return null;
+        // 脱敏 URL 中的 token
+        if (data.url) data.url = data.url.replace(/token=[^&]*/, 'token=***');
+        // 补充业务上下文
+        data.userId = getCurrentUserId();
+        return data;
+      }
+    });
+    ```
+
+  </Accordion>
+
+  <Accordion title="Sentry 的 Session Replay 和 rrweb 是什么关系？" icon="skull">
+
+    **答题要点：**
+    说明 Sentry 基于 rrweb 的增强，以及生产环境中的关键优化。
+
+    **高分回答：**
+    "Sentry 的 Session Replay 底层就是基于 rrweb 实现的，但在此基础上做了大量生产级增强：
+
+    **1. 压缩与采样：** 对事件流进行 gzip 压缩，支持按采样率上报（比如只录制 10% 用户的 Session），降低带宽消耗。
+
+    **2. 隐私保护：** 默认开启 `maskAllInputs: true`，对输入框内容做脱敏处理。支持自定义隐私规则。
+
+    **3. 性能优化：** 对高频事件（如 mousemove）做节流，减少事件流体积。一个 10 分钟的录屏，压缩后约 0.5-2MB。
+
+    **4. 关联错误上下文：** 这是 Sentry 最大的优势——将录屏数据与错误事件关联。用户报 Bug 后，开发者在 Sentry 后台点击错误，直接回放崩溃前的用户操作路径，精准还原 Bug 现场。
+
+    简单来说：rrweb 提供了录制回放的基础能力，Sentry 在此基础上解决了隐私、性能、存储和错误关联等生产环境问题。"
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 📖 [rrweb 官方文档](https://rrweb.io/docs/guide)：rrweb 的核心原理（Snapshot + Incremental Snapshot）与使用指南。<sup>[1]</sup>
+- 📖 [Sentry Session Replay](https://docs.sentry.io/product/session-replay/)：Sentry 如何基于 rrweb 实现 Session Replay，以及隐私保护策略。<sup>[2]</sup>
+- 🔗 [rrweb 序列化原理 - rrweb-snapshot 源码](https://github.com/rrweb-io/rrweb/blob/master/packages/rrweb-snapshot/src/snapshot.ts)：rrweb 的 DOM 序列化核心源码，理解节点类型映射和属性过滤。<sup>[3]</sup>
+- 📖 [Source Map 规范 v3](https://sourcemaps.info/spec.html)：Source Map 文件格式规范，理解 VLQ 编码和映射表结构。<sup>[4]</sup>
+- 🔗 [MDN - MutationObserver](https://developer.mozilla.org/en-US/docs/Web/API/MutationObserver)：MDN 对 MutationObserver 的权威 API 文档与使用指南。<sup>[5]</sup>
+- 📖 [Sentry 官方文档](https://docs.sentry.io/)：Sentry 错误监控平台的完整文档，包含 Source Map 上传、告警配置等。<sup>[6]</sup>
+- 🟢 [web.dev - Session Replay 隐私最佳实践](https://web.dev/articles/)：Google 对 Session Replay 类工具的隐私保护建议。<sup>[7]</sup>
+- 🔗 [MDN - sendBeacon](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/sendBeacon)：sendBeacon API 的官方文档，理解页面关闭时数据上报的最佳方案。<sup>[8]</sup>

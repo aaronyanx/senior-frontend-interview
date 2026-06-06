@@ -1,0 +1,1293 @@
+---
+title: "CI/CD 与工程规范"
+---
+
+> **面试官为什么问这个？**
+>
+> 面试官问 CI/CD 和工程规范，是在考察你是否具备**团队协作的工程素养**。如果你只会写代码，却不知道怎么用 Git 规范、怎么配置 CI/CD 流水线、怎么保证代码质量，说明你还没有从"个人开发者"成长为"团队工程师"。
+
+---
+
+## Q1: Git 提交规范有哪些？
+
+<Steps>
+
+  <Step title="没有规范的灾难">
+
+  每个人的 commit message 都不一样--"fix bug'、"update"、"改了一下"、"123"。三个月后没人知道这个提交改了什么、为什么改。当需要回滚某个功能或者排查线上问题时，面对一堆毫无意义的提交记录，工程师将彻底迷失方向。
+
+  </Step>
+  <Step title="Conventional Commits 规范">
+
+  Angular 团队提出的提交规范：`<type>(<scope>): <subject>`。type 限定为 feat/fix/docs/style/refactor/test/chore 等，scope 可选，subject 用祈使句。这套规范的核心价值在于让 commit message 具备机器可解析的结构化语义。
+
+  </Step>
+  <Step title='自动生成 CHANGELOG'>
+
+  当提交信息遵循 Conventional Commits 规范后，工具（如 standard-version 或 semantic-release）可以自动从 commit 历史中提取 feat 和 fix 类型的提交，生成结构化的 CHANGELOG 文档，并根据语义化版本规则自动决定版本号的升级策略。
+
+  </Step>
+  <Step title="工具链自动化校验">
+
+  用 commitlint + husky + lint-staged 在 git commit 时自动校验提交信息格式，不合规的提交直接被 Git Hook 拒绝。lint-staged 还会对暂存区的文件运行 ESLint/Prettier，确保代码风格和质量在提交前就达标。
+
+  </Step>
+  <Step title='CI/CD 流水线的集成'>
+
+  在 CI/CD 流水线中，可以利用 Conventional Commits 的语义信息自动触发不同的部署流程：feat 类型的提交触发功能分支的预览环境部署，fix 类型触发 hotfix 流程，chore 类型则跳过部署只运行测试。
+
+  </Step>
+
+</Steps>
+
+**Git 提交规范解决的核心问题：**
+
+```text
+问题：团队协作中 commit message 混乱，无法追溯变更历史
+
+"fix bug" → 不知道修了什么 bug
+"update" → 不知道更新了什么
+"123" → 完全无意义
+
+解决：Conventional Commits 规范 + 工具链自动校验
+
+"fix(auth): 修复登录接口 token 过期未刷新的问题"
+"feat(user): 新增用户头像上传功能"
+"refactor(api): 重构请求拦截器，统一错误处理"
+```
+
+<Note title="💡 一句话总结">
+
+Git 提交规范让 commit message 从"自言自语"变成"团队可追溯的变更日志"。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有提交规范">
+
+每个人的 commit message 都不一样--"fix bug'、"update"、"改了一下"。三个月后没人知道这个提交改了什么。就像一本没有目录的书，你永远找不到想看的章节。
+
+</Card>
+<Card title="✅ Conventional Commits">
+
+统一格式 `<type>(<scope>): <subject>`，自动生成 CHANGELOG，支持语义化版本发布。就像一本有清晰目录的书，每章每节都有明确的标题。
+
+</Card>
+</CardGroup>
+
+<Tip title='💡 面试技巧'>
+
+回答时重点说**为什么需要规范**（团队协作的可追溯性）和**怎么落地**（commitlint + husky 工具链），不要只背规范格式。
+
+</Tip>
+
+---
+
+## Q2: CI/CD 是什么？怎么配置？
+
+CI（持续集成）和 CD（持续部署）是现代前端工程的核心实践。
+
+```text
+┌───────────────────────────────────────┐
+│        开发者 push 代码到 GitHub        │
+└─────────────────┬─────────────────────┘
+                  │ 触发 CI 流水线
+                  ▼
+┌───────────────────────────────────────┐
+│        CI：代码质量检查                 │
+│  1. ESLint 检查代码规范                │
+│  2. TypeScript 类型检查                │
+│  3. 单元测试（Jest/Vitest）            │
+│  4. 构建检查（npm run build）          │
+└─────────────────┬─────────────────────┘
+                  │ CI 通过
+                  ▼
+┌───────────────────────────────────────┐
+│        CD：自动部署                     │
+│  1. 构建生产包                         │
+│  2. 部署到 CDN/服务器                  │
+│  3. 发送通知（飞书/钉钉/Slack）         │
+└───────────────────────────────────────┘
+```
+
+**GitHub Actions 配置示例：**
+
+```yaml
+# .github/workflows/ci.yml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run lint        # ESLint 检查
+      - run: npm run type-check  # TypeScript 类型检查
+      - run: npm run test        # 单元测试
+      - run: npm run build       # 构建检查
+```
+
+<Warning title="⚠️ CI/CD 的常见陷阱">
+
+1. **CI 太慢**：如果 CI 跑一次要 10 分钟，开发者会跳过。优化方案：缓存 node_modules、并行执行任务、只检查改动的文件。
+2. **CD 没有回滚**：自动部署后发现问题，没有回滚机制。优化方案：保留最近 3 个版本的构建产物，一键回滚。
+3. **测试覆盖率造假**：为了达标写无意义的测试。优化方案：关注关键路径的测试覆盖率，而不是数字。
+
+</Warning>
+
+<Tip title='🎢 通俗比喻：工厂流水线'>
+
+CI/CD 就像工厂的流水线。代码 push 到 GitHub 就像原材料进入工厂--先过质检（ESLint + 测试），质检不合格就打回（CI 失败，不允许合并）。质检合格就进入包装（构建）和发货（部署）。整个过程自动化，不需要人工干预。
+
+</Tip>
+
+### GitHub Actions 详解
+
+GitHub Actions 是最流行的 CI/CD 工具，核心概念：
+
+```yaml
+# .github/workflows/ci.yml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'  # 缓存 npm 依赖
+      - run: npm ci
+      - run: npm run lint        # ESLint 检查
+      - run: npm run type-check  # TypeScript 类型检查
+      - run: npm run test        # 单元测试
+      - run: npm run build       # 构建检查
+```
+
+### 前端 CI/CD 的完整流程
+
+```text
+开发者 push 代码 → 触发 CI 流水线
+  ↓
+CI 阶段（并行执行）：
+  1. ESLint 检查代码规范
+  2. TypeScript 类型检查
+  3. 单元测试（Jest/Vitest）
+  4. 构建检查（npm run build）
+  ↓
+CI 通过 → 触发 CD 流水线
+  ↓
+CD 阶段：
+  1. 构建生产包
+  2. 部署到 CDN/服务器
+  3. 发送通知（飞书/钉钉/Slack）
+```
+
+### 代码校验工具链
+
+| 工具 | 作用 | 检查时机 |
+|------|------|---------|
+| **ESLint** | 代码质量检查（错误、最佳实践） | 编辑器实时 + CI |
+| **Prettier** | 代码格式化（缩进、引号、分号） | 保存时自动格式化 |
+| **TypeScript** | 类型检查（类型错误、接口不匹配） | 编译时 + CI |
+| **commitlint** | 提交信息格式校验 | git commit 时 |
+| **lint-staged** | 只检查暂存区的文件 | git commit 时 |
+
+---
+
+## Q3: ESLint、Prettier、TypeScript 的关系？
+
+| 工具 | 作用 | 检查时机 |
+|------|------|---------|
+| **ESLint** | 代码质量检查（错误、最佳实践） | 编辑器实时 + CI |
+| **Prettier** | 代码格式化（缩进、引号、分号） | 保存时自动格式化 |
+| **TypeScript** | 类型检查（类型错误、接口不匹配） | 编译时 + CI |
+
+<Warning title="⚠️ ESLint 和 Prettier 的冲突">
+
+ESLint 既有"代码质量'规则（如 no-unused-vars），也有"代码格式"规则（如 indent）。Prettier 也管"代码格式"。两者会冲突。
+
+解决方案：用 `eslint-config-prettier` 关闭 ESLint 中所有与 Prettier 冲突的格式规则，让 ESLint 只管质量，Prettier 只管格式。
+
+</Warning>
+
+### 面试官真正在意的
+
+上面那张工具对比表，背下来的人很多。但面试官往往会追问一层：**ESLint、Prettier、TypeScript 三者的执行顺序是什么？如果 ESLint 报了一个格式错误，Prettier 又把格式改了，谁赢？**
+
+执行顺序是：**Prettier 格式化 → TypeScript 类型检查 → ESLint 质量检查**。在保存文件时，编辑器先跑 Prettier 格式化代码，再跑 ESLint 检查质量。在 CI 中，通常是 `npm run lint`（ESLint）和 `npm run type-check`（TypeScript）并行执行。关于冲突，Prettier 赢--因为 `eslint-config-prettier` 放在 ESLint 配置的最后，关闭了所有与 Prettier 冲突的格式规则。所以 ESLint 不会报格式错误，格式完全交给 Prettier 管。这也是为什么两者不会冲突--不是"谁赢"的问题，而是从架构上就把职责分开了。
+
+### 自动化测试策略
+
+前端自动化测试分为三层：
+
+| 层级 | 工具 | 覆盖范围 | 速度 |
+|------|------|---------|------|
+| **单元测试** | Jest / Vitest | 函数、组件、工具类 | 最快（毫秒级） |
+| **集成测试** | Testing Library | 组件交互、API 调用 | 较快（秒级） |
+| **端到端测试** | Playwright / Cypress | 完整用户流程 | 最慢（分钟级） |
+
+```javascript
+// 单元测试示例（Vitest）
+import { describe, it, expect } from 'vitest';
+import { add } from './math';
+
+describe('add', () => {
+  it('should add two numbers', () => {
+    expect(add(1, 2)).toBe(3);
+  });
+});
+
+// 组件测试示例（Testing Library）
+import { render, screen, fireEvent } from '@testing-library/react';
+import Counter from './Counter';
+
+test('increments counter', () => {
+  render(<Counter />);
+  fireEvent.click(screen.getByText('Increment'));
+  expect(screen.getByText('Count: 1')).toBeInTheDocument();
+});
+```
+
+### 自动化部署策略
+
+自动化部署有三种策略：
+
+| 策略 | 说明 | 适用场景 |
+|------|------|---------|
+| **蓝绿部署** | 新旧版本同时运行，切换流量 | 零停机部署 |
+| **金丝雀部署** | 先部署到少量服务器，观察后全量 | 高风险更新 |
+| **滚动部署** | 逐步替换旧版本 | 大规模集群 |
+
+---
+
+## Q4: Git 核心命令详解
+
+> **📌 Git 专题：** Q4-Q7 聚焦 Git 工程实践，涵盖核心命令、高级操作、工作流和高频面试题。虽然不属于 CI/CD 范畴，但 Git 是工程规范的基础设施，与 CI/CD 流水线紧密配合。
+
+Git 命令看似简单，但每组命令之间的区别往往是面试高频考点。
+
+<Steps>
+
+  <Step title="git pull vs git fetch">
+
+  `git fetch` 只从远程拉取最新数据到本地的远程追踪分支（如 `origin/main`），**不会自动合并**到当前分支。`git pull` 等价于 `git fetch` + `git merge`（或 `git fetch` + `git rebase`，取决于配置），会自动合并。
+
+  ```bash
+  # 只拉取，不合并（安全）
+  git fetch origin
+
+  # 拉取并合并（可能产生合并提交）
+  git pull origin main
+
+  # 拉取并变基（更干净的历史）
+  git pull --rebase origin main
+  ```
+
+  </Step>
+  <Step title="git merge vs git rebase">
+
+  `git merge` 保留完整的分支历史，会生成一个合并提交（merge commit）。`git rebase` 把当前分支的提交"搬到"目标分支的最新位置，历史更线性、更干净，但会改写提交历史。
+
+  ```bash
+  # merge：保留分支历史，产生合并提交
+  git checkout feature
+  git merge main
+  # 结果：A - B - C - M（M 是合并提交）
+
+  # rebase：线性历史，不产生合并提交
+  git checkout feature
+  git rebase main
+  # 结果：A - B' - C'（提交被重新应用）
+  ```
+
+  **核心原则：** 已经 push 到远程的公共分支，**禁止 rebase**。只对本地未推送的分支做 rebase。
+
+  </Step>
+  <Step title="git cherry-pick 使用场景">
+
+  `git cherry-pick` 把某个特定提交从一个分支"摘"到当前分支。常见场景：hotfix 需要从 main 分支摘到 release 分支，或者从 feature 分支摘一个 bugfix 到 main。
+
+  ```bash
+  # 把提交 abc1234 应用到当前分支
+  git cherry-pick abc1234
+
+  # cherry-pick 多个提交
+  git cherry-pick abc1234 def5678
+
+  # cherry-pick 一个范围的提交（不包含起始提交）
+  git cherry-pick abc1234..ghi9012
+  ```
+
+  </Step>
+  <Step title="git stash 使用场景">
+
+  `git stash` 把当前工作区和暂存区的修改临时保存，让工作区恢复干净。常见场景：正在开发 feature，突然需要切到其他分支修 bug。
+
+  ```bash
+  # 保存当前修改
+  git stash
+
+  # 保存时加说明
+  git stash push -m "正在开发的用户模块"
+
+  # 查看所有 stash 列表
+  git stash list
+
+  # 恢复最近一次 stash（保留 stash 记录）
+  git stash apply
+
+  # 恢复最近一次 stash（删除 stash 记录）
+  git stash pop
+
+  # 删除指定 stash
+  git stash drop stash@{0}
+
+  # 清空所有 stash
+  git stash clear
+  ```
+
+  </Step>
+  <Step title="git reset vs git revert">
+
+  `git reset` 移动 HEAD 指针，**丢弃提交历史**（危险）。`git revert` 创建一个新提交来**撤销**某个提交的内容（安全）。两者都能"撤销"提交，但 `revert` 不改写历史，适合已推送的提交。
+
+  ```bash
+  # reset：丢弃最近 3 个提交（soft/mixed/hard 区别见 Q7）
+  git reset --hard HEAD~3
+
+  # revert：安全撤销（生成一个新的"反向"提交）
+  git revert abc1234
+  ```
+
+  **核心原则：** 已经 push 的提交用 `revert`，本地未推送的提交可以用 `reset`。
+
+  </Step>
+
+</Steps>
+
+**Git 核心命令速查表：**
+
+| 命令 | 作用 | 是否安全 | 适用场景 |
+|------|------|---------|---------|
+| `git fetch` | 拉取远程数据 | 安全 | 查看远程更新 |
+| `git pull` | 拉取并合并 | 注意冲突 | 日常同步 |
+| `git merge` | 合并分支 | 安全 | 保留完整历史 |
+| `git rebase` | 变基分支 | 危险（改写历史） | 本地分支整理 |
+| `git cherry-pick` | 摘取特定提交 | 安全 | hotfix、跨分支搬运 |
+| `git stash` | 临时保存修改 | 安全 | 紧急切换分支 |
+| `git reset` | 移动 HEAD | 危险（丢弃历史） | 本地提交回退 |
+| `git revert` | 安全撤销提交 | 安全 | 已推送提交的撤销 |
+
+<Note title="💡 一句话总结">
+
+git fetch 只拉不并，git pull 拉并合一；merge 保历史，rebase 要干净；cherry-pick 摘单个，stash 暂存忙；reset 丢历史，revert 安全撤。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 git reset --hard 的灾难">
+
+正在 feature 分支开发，老板说"切到 main 修个 bug"。你 `git reset --hard HEAD~5` 试图回到 5 个提交之前，结果 5 个提交的代码全丢了。如果没有 reflog，这些代码就永远消失了。
+
+</Card>
+<Card title="✅ git stash 的正确姿势">
+
+`git stash push -m "feature: 用户模块" → git checkout main → 修 bug → git checkout feature → git stash pop`。stash 就像一个临时抽屉，把桌上的文件暂存进去，回来时再拿出来，桌面恢复原样。
+
+</Card>
+</CardGroup>
+
+<Tip title='💡 面试技巧'>
+
+回答时重点说**使用场景和注意事项**（如公共分支禁止 rebase、已推送用 revert 不用 reset），不要只罗列命令参数。
+
+</Tip>
+
+---
+
+## Q5: Git 高级操作
+
+### git tag 打标签
+
+标签（Tag）用于标记发布版本，是一个指向特定提交的不可变引用。
+
+```bash
+# 轻量标签（只记录提交）
+git tag v1.0.0
+
+# 附注标签（记录作者、日期、说明，推荐）
+git tag -a v1.0.0 -m "第一个正式版本"
+
+# 给历史提交打标签
+git tag -a v1.0.0 abc1234 -m "第一个正式版本"
+
+# 推送标签到远程
+git push origin v1.0.0
+
+# 推送所有标签
+git push origin --tags
+
+# 删除本地标签
+git tag -d v1.0.0
+
+# 删除远程标签
+git push origin --delete v1.0.0
+```
+
+### git release 发布流程
+
+标准的 Git 发布流程：
+
+```bash
+# 1. 从 develop 创建 release 分支
+git checkout -b release/1.2.0 develop
+
+# 2. 修复 release 分支上的 bug（只修 bug，不加新功能）
+
+# 3. 合并到 main 并打标签
+git checkout main
+git merge --no-ff release/1.2.0
+git tag -a v1.2.0 -m "Release 1.2.0"
+
+# 4. 合并回 develop
+git checkout develop
+git merge --no-ff release/1.2.0
+
+# 5. 删除 release 分支
+git branch -d release/1.2.0
+
+# 6. 推送
+git push origin main --tags
+git push origin develop
+```
+
+### 自动更改版本号（semantic-release）
+
+`semantic-release` 根据 Conventional Commits 的提交信息，自动决定版本号升级策略并发布：
+
+```bash
+# 安装
+npm install --save-dev semantic-release
+
+# package.json 配置
+{
+  "scripts": {
+    "semantic-release": "semantic-release"
+  }
+}
+```
+
+```yaml
+# GitHub Actions 中集成 semantic-release
+- name: Release
+  run: npx semantic-release
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+```
+
+版本号升级规则：
+
+| 提交类型 | 版本变化 | 示例 |
+|---------|---------|------|
+| `fix:` | Patch（1.0.0 → 1.0.1） | 修复 bug |
+| `feat:` | Minor（1.0.0 → 1.1.0） | 新增功能 |
+| `BREAKING CHANGE` | Major（1.0.0 → 2.0.0） | 破坏性变更 |
+
+### git bisect 调试
+
+`git bisect` 用二分法快速定位哪个提交引入了 bug：
+
+```bash
+# 开始 bisect
+git bisect start
+
+# 标记当前版本有 bug
+git bisect bad
+
+# 标记某个版本没有 bug
+git bisect good v1.0.0
+
+# Git 自动切到中间的提交，你测试后标记：
+git bisect good   # 这个提交没问题
+# 或
+git bisect bad    # 这个提交有问题
+
+# 重复标记，直到找到引入 bug 的提交
+# 最终输出：abc1234 is the first bad commit
+
+# 结束 bisect，回到原来的分支
+git bisect reset
+```
+
+### git blame 追溯
+
+`git blame` 查看文件每一行最后修改的提交和作者：
+
+```bash
+# 查看文件每一行的修改记录
+git blame src/App.tsx
+
+# 查看指定行范围
+git blame -L 10,20 src/App.tsx
+
+# 忽略空行
+git blame -w src/App.tsx
+```
+
+<Note title="💡 一句话总结">
+
+tag 标记版本，release 管发布，semantic-release 自动化版本号，bisect 二分法定位 bug，blame 追溯每一行的作者。
+
+</Note>
+
+---
+
+## Q6: Git 工作流对比
+
+选择哪种 Git 工作流，取决于团队规模、发版频率和项目复杂度。
+
+```text
+┌─────────────────────────────────────────────────────┐
+│                   Git 工作流对比                      │
+├──────────────┬──────────────┬───────────────────────┤
+│   Git Flow   │ GitHub Flow  │  Trunk-Based Dev     │
+├──────────────┼──────────────┼───────────────────────┤
+│ 5 种分支     │ 2 种分支     │ 1 个主干 + 短期分支    │
+│ main/develop │ main/feature │ main/feature(< 2天)   │
+│ feature/     │              │                       │
+│ release/     │              │                       │
+│ hotfix       │              │                       │
+├──────────────┼──────────────┼───────────────────────┤
+│ 月度发版     │ 持续部署     │ 每天多次发版           │
+│ 大型项目     │ 中小型项目   │ 大厂标配               │
+└──────────────┴──────────────┴───────────────────────┘
+```
+
+### Git Flow
+
+Git Flow 有 5 种分支，适合发版周期长（如每月发版）的项目：
+
+| 分支 | 说明 | 生命周期 |
+|------|------|---------|
+| `main` | 生产环境代码 | 永久 |
+| `develop` | 开发主分支 | 永久 |
+| `feature/*` | 功能分支 | 短期 |
+| `release/*` | 发布准备分支 | 短期 |
+| `hotfix/*` | 紧急修复分支 | 短期 |
+
+**缺点：** 分支多、合并冲突多、CI 维护成本高。对于需要持续部署的项目，Git Flow 过于笨重。
+
+### GitHub Flow
+
+GitHub Flow 只有 `main` 和 `feature` 分支，适合持续部署的项目：
+
+1. 从 `main` 创建 feature 分支
+2. 在 feature 分支开发并提交
+3. 创建 Pull Request
+4. Code Review + CI 通过后合并到 `main`
+5. 合并后自动部署
+
+**优点：** 简单、适合持续部署。**缺点：** 没有 release 分支，不适合需要多版本并行维护的项目。
+
+### GitLab Flow
+
+GitLab Flow 在 GitHub Flow 的基础上增加了环境分支：
+
+1. `main` 分支是开发主分支
+2. `pre-production` 分支是预发布环境
+3. `production` 分支是生产环境
+4. 代码从 `main` → `pre-production` → `production` 逐级合并
+
+**适合场景：** 需要多环境（开发、预发布、生产）逐级发布的项目。
+
+### Trunk Based Development
+
+主干开发，只有 `main` 和短期 feature 分支（不超过 2 天）。大厂（字节、腾讯、Google）普遍使用：
+
+- feature 分支生命周期极短（不超过 2 天）
+- 频繁合并到 main，减少合并冲突
+- 配合 Feature Flag 控制未完成功能的可见性
+- 需要强大的 CI/CD 和测试覆盖来保障质量
+
+<Note title="💡 一句话总结">
+
+Git Flow 适合月度发版，GitHub Flow 简单易用，GitLab Flow 多环境逐级发布，Trunk-Based 是大厂标配——选哪种取决于发版频率和团队规模。
+
+</Note>
+
+---
+
+## Q7: 高频面试题
+
+### git pull --rebase 和 git pull 有什么区别？
+
+`git pull` 默认执行 `git fetch` + `git merge`，会产生一个合并提交（merge commit），历史分叉。`git pull --rebase` 执行 `git fetch` + `git rebase`，把本地提交"搬到"远程最新提交之后，历史更线性。
+
+```bash
+# 默认：产生合并提交
+git pull origin main
+# 结果：... - A - M（merge commit）
+
+# rebase：线性历史
+git pull --rebase origin main
+# 结果：... - A' - B'（提交被重新应用）
+```
+
+**建议：** 在团队中配置 `git config --global pull.rebase true`，保持历史干净。
+
+### git stash 怎么用？有哪些常用命令？
+
+```bash
+git stash                           # 保存当前修改
+git stash push -m "说明文字"        # 保存时加说明
+git stash list                      # 查看所有 stash
+git stash apply                     # 恢复（保留 stash 记录）
+git stash pop                       # 恢复并删除 stash 记录
+git stash drop stash@{0}            # 删除指定 stash
+git stash clear                     # 清空所有 stash
+git stash show -p                    # 查看 stash 的具体内容
+git stash push -u                    # 包含未追踪的文件
+```
+
+### git cherry-pick 和 git revert 有什么区别？
+
+两者都能"撤销"或"搬运"提交，但机制完全不同：
+
+| 对比维度 | cherry-pick | revert |
+|---------|-------------|--------|
+| **作用** | 把某个提交"摘"到当前分支 | 撤销某个提交的内容 |
+| **结果** | 复制提交内容 | 生成"反向"提交 |
+| **历史** | 原提交不变 | 生成新提交 |
+| **场景** | 跨分支搬运代码 | 安全撤销已推送的提交 |
+
+```bash
+# cherry-pick：把提交从 feature 分支摘到 main
+git checkout main
+git cherry-pick abc1234
+
+# revert：撤销某个已推送的提交
+git checkout main
+git revert abc1234
+```
+
+### git reset --soft/--mixed/--hard 有什么区别？
+
+三种模式的区别在于**重置的范围**：
+
+| 模式 | HEAD | 暂存区 | 工作区 | 用途 |
+|------|------|--------|--------|------|
+| `--soft` | 移动 | 不动 | 不动 | 合并多个提交为一个 |
+| `--mixed` | 移动 | 重置 | 不动 | 重新选择要提交的文件 |
+| `--hard` | 移动 | 重置 | 重置 | 彻底丢弃所有修改 |
+
+```bash
+# --soft：保留所有修改在暂存区（适合合并提交）
+git reset --soft HEAD~3
+git commit -m "合并为一个提交"
+
+# --mixed：保留所有修改在工作区（默认模式）
+git reset HEAD~1
+
+# --hard：彻底丢弃所有修改（危险！）
+git reset --hard HEAD~1
+```
+
+### 怎么撤销一个已经 push 的提交？
+
+分两种情况：
+
+**情况 1：** 只撤销最近一次 push 的提交
+
+```bash
+# 用 revert（推荐，安全）
+git revert HEAD
+git push origin main
+```
+
+**情况 2：** 撤销多次 push 的提交
+
+```bash
+# revert 一个范围的提交
+git revert HEAD~3..HEAD
+git push origin main
+```
+
+**情况 3：** 强制回退（危险，需要团队协商）
+
+```bash
+# 强制回退到指定提交（会丢失后续提交）
+git reset --hard abc1234
+git push --force origin main
+# ⚠️ 危险！会丢失 abc1234 之后的所有提交
+# ⚠️ 需要团队成员重新 clone 或 git pull --rebase
+```
+
+<Warning title="⚠️ git push --force 的风险">
+
+`git push --force` 会覆盖远程历史，团队其他成员的本地分支会与远程不一致。如果必须使用，建议用 `git push --force-with-lease`，它会在远程有新提交时拒绝推送，避免覆盖他人的工作。
+
+```bash
+# 比 --force 更安全
+git push --force-with-lease origin main
+```
+
+</Warning>
+
+---
+
+## 🔍 底层源码：commitlint 是怎么工作的？
+
+<div class="follow-up">
+commitlint 是怎么校验 commit message 的？
+</div>
+
+commitlint 通过 Git 的 `commit-msg` hook 触发（详见 [commitlint 源码](https://github.com/conventional-changelog/commitlint)）。当开发者执行 `git commit -m "xxx"` 时，Git 会调用 `.husky/commit-msg` 脚本，该脚本调用 commitlint 读取 commit message，用正则表达式校验是否符合 Conventional Commits 规范。不合规的提交会被拒绝（exit code 1）。
+
+```javascript
+// commitlint 的核心校验逻辑（简化）
+function parseCommitMessage(message) {
+  // 匹配 <type>(<scope>): <subject>
+  const regex = /^(\w+)(?:\(([^)]+)\))?: (.+)$/;
+  const match = message.match(regex);
+  if (!match) return { valid: false, error: '格式不正确' };
+
+  const [, type, scope, subject] = match;
+  const validTypes = ['feat', 'fix', 'docs', 'style', 'refactor', 'test', 'chore'];
+  if (!validTypes.includes(type)) {
+    return { valid: false, error: `type 必须是 ${validTypes.join('/')}` };
+  }
+  return { valid: true };
+}
+```
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："你们团队的 Git 工作流是怎样的？"
+
+**及格回答（60-70分）：**
+> "我们用 Git Flow，有 main、develop、feature 分支。提交信息用 Conventional Commits 规范。"
+
+面试官评价：**知道规范但不理解落地**。
+
+**满分回答（90-100分）：**
+
+> 我们团队的 Git 工作流基于**Trunk-Based Development**（主干开发），而不是 Git Flow。核心分支只有 `main` 和短期的 `feature/*` 分支，feature 分支通常不超过 2 天就合并回 main。<sup>[1]</sup>
+
+> 代码质量通过**CI 流水线**保障。每次 push 或 PR 都会触发 GitHub Actions，依次执行 ESLint 检查、TypeScript 类型检查、单元测试、构建检查。任何一个步骤失败，PR 不允许合并。提交信息用 Conventional Commits 规范，通过 commitlint + husky 在本地校验。<sup>[2]</sup>
+
+> 部署通过**CD 流水线**自动化。main 分支合并后自动构建并部署到 CDN。我们保留最近 3 个版本的构建产物，如果线上发现问题，可以一键回滚到上一个版本。部署完成后自动发送飞书通知到团队群。<sup>[3]</sup>
+
+> 实际踩坑：CI 太慢（超过 5 分钟）会导致开发者跳过检查。我们的优化方案是：缓存 node_modules、并行执行 ESLint 和测试、用 lint-staged 只检查改动的文件。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="ESLint 和 Prettier 会冲突吗?怎么解决?" icon="layer-group">
+
+  **答题要点：** 两者都管代码格式，会冲突。用 eslint-config-prettier 关闭 ESLint 的格式规则。
+
+  **高分回答：**
+  "ESLint 既有'代码质量'规则（如 no-unused-vars），也有'代码格式'规则（如 indent）。Prettier 也管'代码格式'。两者会冲突。解决方案是用 `eslint-config-prettier` 关闭 ESLint 中所有与 Prettier 冲突的格式规则，让 ESLint 只管质量，Prettier 只管格式。
+  ```json
+  // .eslintrc.json
+  {
+    "extends": [
+      "eslint:recommended",
+      "prettier"
+    ]
+  }
+  ```
+
+"
+
+  </Accordion>
+
+  <Accordion title="Git Flow 和 Trunk-Based Development 怎么选?" icon="node">
+
+  **答题要点：** Git Flow 适合发版周期长的项目，Trunk-Based 适合持续部署的项目。
+
+  **高分回答：**
+  "Git Flow 有 main、develop、feature、release、hotfix 五种分支，适合发版周期长（如每月发版）的项目。但分支多、合并冲突多、CI 维护成本高。Trunk-Based Development 只有 main 和短期 feature 分支，适合持续部署（每天多次发版）的项目。feature 分支不超过 2 天就合并，减少合并冲突。大厂（字节、腾讯）普遍用 Trunk-Based Development。"
+
+  </Accordion>
+
+  <Accordion title="🔥 CI 太慢怎么办?" icon="skull">
+
+  **答题要点：** 从缓存、并行、增量三个维度优化。
+
+  **高分回答：**
+  "CI 太慢（超过 5 分钟）会导致开发者跳过检查。优化方案：
+1. **缓存**：缓存 node_modules（用 actions/cache），避免每次 npm install。
+2. **并行**：ESLint、TypeScript、测试并行执行，不要串行。
+3. **增量**：用 Turborepo 或 lint-staged 只检查改动的文件/包，不要全量检查。
+4. **构建缓存**：Turborepo 的 remote cache 可以跨 CI 复用构建产物。
+  优化后 CI 时间从 10 分钟降到 1-2 分钟。"
+
+  </Accordion>
+
+  <Accordion title="GitHub Actions 的核心概念是什么?" icon="layer-group">
+
+  **答题要点：** 说出 workflow、job、step、action 四个核心概念。
+
+  **高分回答：**
+  "GitHub Actions 有四个核心概念：
+  1. **Workflow**：一个自动化流程，由 `.github/workflows/*.yml` 文件定义。可以有多个 workflow（如 CI、CD、Release）。
+  2. **Job**：workflow 中的一个任务，运行在独立的虚拟机上。多个 job 可以并行执行。
+  3. **Step**：job 中的一个步骤，可以是 shell 命令或 action。
+  4. **Action**：可复用的步骤单元，如 `actions/checkout@v4`（检出代码）、`actions/setup-node@v4`（安装 Node.js）。
+
+  执行流程：workflow 触发 → 并行执行所有 job → 每个 job 按顺序执行 step → 所有 job 完成 → workflow 结束。"
+
+  </Accordion>
+
+  <Accordion title="怎么配置 GitHub Actions 的缓存?" icon="stopwatch">
+
+  **答题要点：** 说出缓存的配置方式和失效策略。
+
+  **高分回答：**
+  "GitHub Actions 的缓存通过 `actions/cache` 配置：
+  ```yaml
+  - uses: actions/cache@v4
+    with:
+      path: ~/.npm
+      key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+      restore-keys: |
+        ${{ runner.os }}-node-
+  ```
+
+  缓存失效策略：
+  1. **key 变更**：package-lock.json 变更时，生成新的 key，旧缓存失效
+  2. **restore-keys**：如果精确匹配失败，用前缀匹配找最近的缓存
+  3. **缓存过期**：GitHub 自动清理 7 天未使用的缓存
+
+  性能提升：缓存 node_modules 后，npm install 时间从 2 分钟降到 10 秒。"
+
+  </Accordion>
+
+  <Accordion title="怎么配置自动化部署?" icon="node">
+
+  **答题要点：** 说出 CD 流水线的配置方式和部署策略。
+
+  **高分回答：**
+  "GitHub Actions 的自动化部署配置：
+  ```yaml
+  - name: Deploy
+    if: github.ref == 'refs/heads/main'
+    run: npm run deploy
+    env:
+      DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+  ```
+
+  部署策略：
+  1. **GitHub Pages**：适合静态网站，免费但功能有限
+  2. **Vercel / Netlify**：适合前端项目，自动预览 PR
+  3. **自建服务器**：用 SSH 部署，灵活但需要维护
+  4. **云服务**：阿里云 OSS、腾讯云 COS，适合国内访问"
+
+  </Accordion>
+
+  <Accordion title="怎么配置自动化测试?" icon="node">
+
+  **答题要点：** 说出测试的配置方式和覆盖率报告。
+
+  **高分回答：**
+  "GitHub Actions 的自动化测试配置：
+  ```yaml
+  - name: Run tests
+    run: npm run test -- --coverage
+  - name: Upload coverage
+    uses: codecov/codecov-action@v3
+    with:
+      token: ${{ secrets.CODECOV_TOKEN }}
+  ```
+
+  测试策略：
+  1. **单元测试**：每次 push 都运行，确保基础功能正常
+  2. **集成测试**：PR 时运行，确保组件交互正常
+  3. **端到端测试**：main 分支合并后运行，确保完整流程正常
+  4. **覆盖率报告**：用 Codecov 生成覆盖率报告，PR 中显示覆盖率变化"
+
+  </Accordion>
+
+  <Accordion title="git pull --rebase 和 git pull 有什么区别?" icon="layer-group">
+
+  **答题要点：** 区别在于 merge vs rebase，历史是否线性。
+
+  **高分回答：**
+  "`git pull` 默认执行 `git fetch` + `git merge`，会产生合并提交（merge commit），历史分叉。`git pull --rebase` 执行 `git fetch` + `git rebase`，把本地提交'搬到'远程最新提交之后，历史更线性。
+  ```bash
+  # 默认：产生合并提交
+  git pull origin main
+  # 结果：... - A - M（merge commit）
+
+  # rebase：线性历史
+  git pull --rebase origin main
+  # 结果：... - A' - B'（提交被重新应用）
+  ```
+  建议在团队中配置 `git config --global pull.rebase true`，保持历史干净。"
+
+  </Accordion>
+
+  <Accordion title="git stash 怎么用?有哪些常用命令?" icon="layer-group">
+
+  **答题要点：** 说出 stash 的核心场景和常用命令。
+
+  **高分回答：**
+  "`git stash` 把当前工作区和暂存区的修改临时保存，让工作区恢复干净。常见场景：正在开发 feature，突然需要切到其他分支修 bug。
+  ```bash
+  git stash                           # 保存修改
+  git stash push -m '说明文字'        # 保存时加说明
+  git stash list                      # 查看列表
+  git stash apply                     # 恢复（保留记录）
+  git stash pop                       # 恢复并删除记录
+  git stash push -u                   # 包含未追踪的文件
+  ```
+  `apply` 和 `pop` 的区别：`apply` 恢复后保留 stash 记录，`pop` 恢复后删除记录。如果恢复时有冲突，用 `apply` 更安全——stash 记录还在，可以反复尝试。"
+
+  </Accordion>
+
+  <Accordion title="git cherry-pick 和 git revert 有什么区别?" icon="stopwatch">
+
+  **答题要点：** 两者都能"撤销"或"搬运"，但机制不同。
+
+  **高分回答：**
+  "`cherry-pick` 是把某个提交从一个分支'摘'到当前分支，`revert` 是创建一个新提交来撤销某个提交的内容。
+  ```bash
+  # cherry-pick：跨分支搬运
+  git checkout main
+  git cherry-pick abc1234
+
+  # revert：安全撤销
+  git checkout main
+  git revert abc1234
+  ```
+  核心区别：`cherry-pick` 是复制提交内容，`revert` 是生成'反向'提交。两者都不改写历史，都是安全操作。"
+
+  </Accordion>
+
+  <Accordion title="git reset --soft/--mixed/--hard 有什么区别?" icon="layer-group">
+
+  **答题要点：** 三种模式的区别在于重置的范围。
+
+  **高分回答：**
+  "`--soft` 只移动 HEAD，暂存区和工作区不变（适合合并多个提交）。`--mixed` 移动 HEAD 并重置暂存区，工作区不变（默认模式，适合重新选择文件）。`--hard` 移动 HEAD 并重置暂存区和工作区（危险，彻底丢弃修改）。
+  ```bash
+  # --soft：保留修改在暂存区
+  git reset --soft HEAD~3 && git commit -m '合并为一个提交'
+
+  # --mixed：保留修改在工作区
+  git reset HEAD~1
+
+  # --hard：彻底丢弃修改
+  git reset --hard HEAD~1  # ⚠️ 危险！
+  ```
+  已经 push 的提交不要用 `reset`，用 `revert` 更安全。"
+
+  </Accordion>
+
+  <Accordion title="怎么撤销一个已经 push 的提交?" icon="node">
+
+  **答题要点：** 分情况讨论，推荐 revert，慎用 force push。
+
+  **高分回答：**
+  "分两种情况：
+  1. **安全撤销**（推荐）：用 `git revert` 生成一个'反向'提交
+  ```bash
+  git revert HEAD
+  git push origin main
+  ```
+  2. **强制回退**（危险，需团队协商）：用 `git reset` + `git push --force-with-lease`
+  ```bash
+  git reset --hard abc1234
+  git push --force-with-lease origin main
+  ```
+  `--force-with-lease` 比 `--force` 更安全——它会在远程有新提交时拒绝推送，避免覆盖他人的工作。"
+
+  </Accordion>
+
+  <Accordion title="🔥 git bisect 怎么用?什么场景适合?" icon="skull">
+
+  **答题要点：** 用二分法快速定位引入 bug 的提交。
+
+  **高分回答：**
+  "`git bisect` 用二分法快速定位哪个提交引入了 bug。当项目有几百个提交，手动排查太慢时，bisect 只需要 log2(n) 次就能找到。
+  ```bash
+  git bisect start
+  git bisect bad              # 当前版本有 bug
+  git bisect good v1.0.0      # v1.0.0 没有 bug
+  # Git 自动切到中间的提交，测试后标记 good/bad
+  # 重复直到找到引入 bug 的提交
+  git bisect reset            # 结束，回到原分支
+  ```
+  适合场景：线上出了 bug，知道某个版本没有 bug，想快速定位是哪个提交引入的。比手动 `git log` 排查快 10 倍以上。"
+
+  </Accordion>
+
+  <Accordion title="git tag 和 semantic-release 怎么配合?" icon="stopwatch">
+
+  **答题要点：** tag 标记版本，semantic-release 自动化版本号。
+
+  **高分回答：**
+  "`git tag` 用于标记发布版本（如 `v1.0.0`），`semantic-release` 根据 Conventional Commits 的提交信息自动决定版本号升级策略。
+  ```bash
+  # 手动打标签
+  git tag -a v1.0.0 -m '第一个正式版本'
+  git push origin v1.0.0
+
+  # semantic-release 自动化（根据提交类型升级版本）
+  # fix: → Patch（1.0.0 → 1.0.1）
+  # feat: → Minor（1.0.0 → 1.1.0）
+  # BREAKING CHANGE: → Major（1.0.0 → 2.0.0）
+  ```
+  在 CI/CD 中集成 `semantic-release`，合并 PR 后自动打 tag、发 npm 包、生成 CHANGELOG，完全不需要手动管理版本号。"
+
+  </Accordion>
+
+  <Accordion title="Git 工作流怎么选?Git Flow vs Trunk-Based" icon="node">
+
+  **答题要点：** 取决于发版频率和团队规模。
+
+  **高分回答：**
+  "Git Flow 有 5 种分支（main/develop/feature/release/hotfix），适合发版周期长（如每月发版）的项目。但分支多、合并冲突多、CI 维护成本高。
+  Trunk-Based Development 只有 main 和短期 feature 分支（不超过 2 天），适合持续部署（每天多次发版）的项目。大厂（字节、腾讯、Google）普遍使用 Trunk-Based Development，配合 Feature Flag 控制未完成功能的可见性。
+  GitHub Flow 介于两者之间，只有 main 和 feature 分支，适合中小型项目持续部署。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Q8: Jenkins 是什么？怎么用 Jenkinsfile 配置流水线？
+
+Jenkins 是最老牌的开源 CI/CD 自动化服务器，2011 年从 Hudson 项目 fork 而来。它的核心优势是**插件生态极其丰富**（1800+ 插件），几乎可以对接任何工具链，特别适合中大型团队自建 CI/CD 平台。
+
+### Jenkins 的核心概念
+
+```text
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│   Pipeline   │ →   │    Stage     │ →   │    Step      │
+│  (流水线)     │     │  (构建阶段)   │     │  (具体步骤)   │
+└──────────────┘     └──────────────┘     └──────────────┘
+```
+
+| 概念 | 说明 |
+|------|------|
+| **Pipeline** | 整个构建部署流程（Jenkinsfile 定义） |
+| **Stage** | 流水线的一个阶段（如构建、测试、部署） |
+| **Step** | 阶段中的具体操作（如执行 shell 命令） |
+| **Job** | 一个任务配置（可以是 Pipeline 或 Freestyle） |
+| **Node** | 执行构建的机器（Master/Agent） |
+
+### Pipeline 语法：Declarative vs Scripted
+
+Jenkins Pipeline 有两种语法风格，推荐使用 **Declarative Pipeline**（结构清晰、易维护）：
+
+```groovy
+// Declarative Pipeline（推荐）
+pipeline {
+    agent any
+
+    environment {
+        NODE_HOME = tool('NodeJS-18')
+        PATH = "$NODE_HOME/bin:$PATH"
+    }
+
+    options {
+        timeout(time: 30, unit: 'MINUTES')  // 全局超时
+        disableConcurrentBuilds()            // 禁止并发构建
+        buildDiscarder(logRotator(numToKeepStr: '10'))  // 保留最近 10 次构建
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/org/repo.git'
+            }
+        }
+        stage('Install') {
+            steps {
+                sh 'npm ci'
+            }
+        }
+        stage('Lint & Test') {
+            parallel {                       // 并行执行，节省时间
+                stage('ESLint') { steps { sh 'npm run lint' } }
+                stage('TypeCheck') { steps { sh 'npm run type-check' } }
+                stage('Unit Test') { steps { sh 'npm run test:coverage' } }
+            }
+        }
+        stage('Build') {
+            steps {
+                sh 'npm run build'
+                archiveArtifacts artifacts: 'dist/**'  // 归档构建产物
+            }
+        }
+        stage('Deploy') {
+            when {
+                branch 'main'                // 只在 main 分支部署
+            }
+            steps {
+                sh 'aws s3 sync dist/ s3://my-bucket/ --delete'
+                sh 'aws cloudfront create-invalidation --distribution-id EXXX --paths "/*"'
+            }
+        }
+    }
+
+    post {
+        success { slackSend(channel: '#deploy', message: "构建成功: ${env.BUILD_URL}") }
+        failure { slackSend(channel: '#deploy', message: "构建失败: ${env.BUILD_URL}") }
+    }
+}
+```
+
+### Jenkinsfile 最佳实践
+
+**1. 使用 `npm ci` 而不是 `npm install`**
+
+`npm ci` 严格按照 `package-lock.json` 安装依赖，保证 CI 环境和本地环境一致。`npm install` 可能更新 lock 文件，导致"本地能跑、CI 挂了"的问题。
+
+**2. 并行执行独立任务**
+
+ESLint、TypeScript、单元测试之间没有依赖关系，用 `parallel` 块并行执行，CI 时间从串行的 6 分钟缩短到并行的 2 分钟。
+
+**3. 归档构建产物**
+
+用 `archiveArtifacts` 保存 `dist/` 目录，方便回滚和调试。配合 `buildDiscarder` 策略自动清理旧产物，避免磁盘爆满。
+
+**4. Post 阶段通知**
+
+在 `post` 块中配置构建结果通知（Slack、飞书、钉钉），无论成功还是失败都通知团队。
+
+**5. Shared Library 复用流水线**
+
+多项目共用的流水线逻辑抽成 Shared Library，避免每个项目的 Jenkinsfile 重复代码：
+
+```groovy
+// vars/frontendPipeline.groovy（Shared Library）
+def call(Map config) {
+    pipeline {
+        agent any
+        stages {
+            stage('Install') { steps { sh 'npm ci' } }
+            stage('Lint')    { steps { sh 'npm run lint' } }
+            stage('Test')    { steps { sh 'npm run test' } }
+            stage('Build')   { steps { sh 'npm run build' } }
+            stage('Deploy')  {
+                when { branch config.deployBranch ?: 'main' }
+                steps { sh config.deployScript }
+            }
+        }
+    }
+}
+
+// 项目 Jenkinsfile（一行调用）
+@Library('frontend-shared-lib') _
+frontendPipeline([
+    deployBranch: 'main',
+    deployScript: 'npm run deploy'
+])
+```
+
+<Note title="💡 一句话总结">
+
+Jenkins 的核心是 Pipeline as Code——用 Jenkinsfile 定义完整的构建部署流程，阶段可并行、可条件控制、可复用，配合 1800+ 插件生态对接任意工具链。
+
+</Note>
+
+### 灰度发布（Grayscale Release）
+
+灰度发布的核心思想是**让新版本逐步生效**，而不是一次性全量切换。
+
+```text
+灰度发布策略：
+
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│   金丝雀发布  │     │   蓝绿部署   │     │   A/B 测试   │
+│  (Canary)    │     │ (Blue-Green) │     │  (A/B Test)  │
+└──────────────┘     └──────────────┘     └──────────────┘
+      │                     │                     │
+      ▼                     ▼                     ▼
+  1% → 10% → 100%      两套环境切换         按用户特征分流
+```
+
+**前端灰度发布实现方案：**
+
+```javascript
+// 1. 基于 Nginx 的灰度分流
+// nginx.conf
+upstream backend_blue {
+    server 10.0.0.1:3000;  // 旧版本
+}
+upstream backend_green {
+    server 10.0.0.2:3000;  // 新版本
+}
+
+server {
+    location / {
+        // 根据 Cookie 或 Header 分流
+        if ($http_x_gray = "true") {
+            proxy_pass http://backend_green;
+        }
+        proxy_pass http://backend_blue;
+    }
+}
+
+// 2. 前端 Feature Flag 控制
+const features = {
+  newUI: {
+    enabled: true,
+    percentage: 10,  // 10% 用户看到新 UI
+    whitelist: ['user-123', 'user-456']
+  }
+};
+
+function isEnabled(featureName, userId) {
+  const feature = features[featureName];
+  if (!feature.enabled) return false;
+  if (feature.whitelist.includes(userId)) return true;
+  return hash(userId) % 100 < feature.percentage;
+}
+```
+
+<Tip title="面试技巧">
+
+回答时重点说**Jenkins 的插件生态**和**灰度发布策略**。面试官想听的不只是"怎么配置 Jenkins"，而是"怎么设计一套可靠的自动化部署流程"。说清楚金丝雀发布、蓝绿部署、A/B 测试的区别和适用场景。
+
+</Tip>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [Conventional Commits 规范](https://www.conventionalcommits.org/)：Git 提交信息的官方规范。<sup>[1]</sup>
+- 📖 [GitHub Actions 官方文档](https://docs.github.com/en/actions)：GitHub 的 CI/CD 配置指南。<sup>[2]</sup>
+- 📖 [Git 官方文档](https://git-scm.com/doc)：Git 命令的权威参考手册。<sup>[3]</sup>
+- 🟢 [commitlint 源码](https://github.com/conventional-changelog/commitlint)：commit message 校验工具的核心实现。
+- 🔗 [semantic-release 文档](https://semantic-release.gitbook.io/)：自动化版本管理和发布工具。
+- 📖 [Atlassian Git 工作流对比](https://www.atlassian.com/git/tutorials/comparing-workflows)：Git Flow、GitHub Flow 等工作流的详细对比。
+- 🔗 [Harness 官方文档](https://developer.harness.io/docs/)：Harness 平台的完整文档，覆盖 CI、CD、Feature Flags 等模块。
+- 📖 [Harness Test Intelligence](https://developer.harness.io/docs/continuous-integration/use-ci/run-tests/test-intelligence/)：AI 驱动的选择性测试，只运行受代码变更影响的测试用例。

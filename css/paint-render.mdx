@@ -1,0 +1,371 @@
+---
+title: "重排与重绘"
+---
+
+> **面试官为什么问这个？**
+>
+> 面试官问这个，本质上是在考察你是否具备在宏观层面**调校浏览器"心跳流水线"的能力**。如果你的网页在滑动时严重掉帧，甚至仅仅因为鼠标悬停在一个按钮上就导致整个页面假死发热，这是因为你在无意中写出了触发全屏"重排（Reflow）"的毁灭性代码，引爆了浏览器的渲染引擎。
+
+---
+
+## Q1: 为什么要警惕重排（Reflow）这头野兽？
+
+<Steps>
+
+  <Step title="渲染流水线的心跳法则">
+
+  当浏览器拿到 HTML/CSS 时，它不是一锅端画在屏幕上的，而是要经历漫长的流水线：`DOM树 -> CSSOM树 -> 结合成 Render Tree -> 计算布局(Layout) -> 绘制像素(Paint) -> 交给显卡合成(Composite)`。只要你在 JS 中对元素做了一丁点修改，这条漫长的流水线就会被迫重新启动。
+
+  </Step>
+  <Step title='致命痛点：重排的灾难性牵连'>
+
+  如果你修改了元素的**几何属性（宽高、位置、边距）**，比如改变了它的 `width`，引擎会绝望地发现：不仅这个元素的大小变了，它旁边的兄弟会被它挤开，它的父容器会被它撑爆！于是引擎不得不在瞬间对成千上万个相关联的节点进行疯狂的物理数学重算！这就是昂贵的**重排**。
+
+  </Step>
+  <Step title="重绘的轻量级妥协">
+
+  但如果你只是修改了**外观属性（颜色、背景、阴影）**，比如改变了 `color`。元素的骨架根本没变，谁也没挤着谁。引擎松了一口气，它完全跳过了恐怖的 Layout 计算阶段，直接进入 Paint 阶段，拿把刷子重新给那个位置上了一遍颜色。这叫**重绘**。
+
+  </Step>
+  <Step title='合成阶段的终极降维'>
+
+  如果只修改 `transform` 和 `opacity`，并在前期配合 `will-change` 将元素提升为独立的 GPU 图层，浏览器会直接跳过 Layout 和 Paint 两个阶段，只在最后的合成阶段命令 GPU 对纹理执行矩阵变换。这是渲染流水线中最轻量的操作，快到让人战栗--理解这个 Style -> Layout -> Paint -> Composite 的分层降维阶梯，才是前端性能优化的第一性原理。
+
+  </Step>
+  <Step title="关键洞察: Layout Thrashing 的致命陷阱">
+
+  很多新手不知道，仅仅是"读取'一个几何属性（如 `offsetWidth`），也能引发毁灭性的重排。当你在循环体里交替执行"写入样式"和"读取几何属性"时，浏览器为了返回精确值，会在一帧内被迫同步触发上百次 Forced Synchronous Layout。在工业基建中，必须通过 FastDOM 或 React 的批处理机制，将所有 DOM 读操作和写操作在时间线上做物理层面的分离，彻底扼杀这头性能野兽。
+
+  </Step>
+
+</Steps>
+
+**重排与重绘 解决的核心问题：**
+
+```text
+问题：任何样式修改都可能触发渲染流水线的重新启动，导致性能灾难
+
+修改 width → 引擎重算整棵树的几何排版（重排）→ 重新绘制像素（重绘）→ 昂贵
+修改 color → 引擎跳过布局计算 → 只重新绘制像素（重绘）→ 代价较小
+
+解决：理解渲染流水线的触发条件，将高频操作降维到最轻量的阶段
+
+只改 transform/opacity → 跳过 Layout 和 Paint → 直接进入 Composite → GPU 矩阵变换 → 极限丝滑
+```
+
+<Note title="💡 一句话总结">
+
+重排是浏览器渲染流水线中最昂贵的雪崩重建，理解它的触发条件是前端性能优化的第一课。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 死亡重排 (极慢)">
+
+修改 `width/height`、`padding`、`margin`、`display`、`font-size`，或者增删了 DOM 节点。这会引发引擎内部几何算法大地震。记住：**重排必定引发后续的重绘！**
+
+</Card>
+<Card title='✅ 温和重绘 (较快)'>
+
+仅仅修改 `color`、`background-color`、`box-shadow`、`visibility`。骨架不发生变动，只进行像素重刷，代价较小。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么'（渲染流水线的阶段划分），再说"怎么优化"（将操作降维到最轻量的阶段）。重点是理解渲染流水线的完整链路，而不是背诵"重排比重绘慢"。
+
+</Tip>
+
+---
+
+## Q2: 关键突破：硬件加速与复合层
+
+既然重绘和重排都这么耗性能，有没有办法**既能修改样式，又能绕开这两个漫长的阶段**呢？
+
+```text
+┌───────────────────────────────────────┐
+│           Style（样式重算）             │  ← 修改任何样式都会触发
+└─────────────────┬─────────────────────┘
+                  │ 修改几何属性？
+                  ▼
+┌───────────────────────────────────────┐
+│           Layout（重排）               │  ← 最昂贵！牵一发而动全身
+└─────────────────┬─────────────────────┘
+                  │ 修改外观属性？
+                  ▼
+┌───────────────────────────────────────┐
+│           Paint（重绘）                │  ← 较轻量，只重刷像素
+└─────────────────┬─────────────────────┘
+                  │ 只改 transform/opacity？
+                  ▼
+┌───────────────────────────────────────┐
+│        Composite（合成）               │  ← 最轻量！GPU 矩阵变换
+└───────────────────────────────────────┘
+```
+
+如果你只修改 `transform` 和 `opacity`，并在前期配合 `will-change` 将元素提升为了独立的 GPU 图层。浏览器会直接跳过 Layout 和 Paint 两个阶段，只在最后的合成阶段命令 GPU："把这块做好的图层直接平移 10px 或者透明度减半"。这在底层是轻量的纹理矩阵运算，快到让人战栗。
+
+<Warning title="⚠️ 机制: Forced Synchronous Layout (强制同步布局) ">
+
+很多新手不知道，**仅仅是"读取'一个属性，也能引发毁灭性的重排！**
+
+当你在 JS 中连续写了 `box.style.width = '100px'; console.log(box.offsetWidth);`。当你索要 `offsetWidth` 的那一瞬间，由于你上一行刚改了宽度，引擎为了给你提供最精确的答案，不得不立刻、强制打断手头的一切工作，在主线程同步启动一次全屏重排！这被称为 Forced Synchronous Layout（强制同步布局），是性能圈常见的杀手。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 装修房子">
+
+重排就像拆墙重建--你改了一面墙的位置，整栋楼的承重结构都要重新计算，旁边的房间也要跟着调整。重绘就像重新刷漆--墙没动，只是换了个颜色。而 Composite 就像在墙上贴了一张海报--墙和漆都没动，只是把一张现成的图片挪了个位置。
+
+</Tip>
+
+---
+
+## Q3: 重排、重绘与合成有什么区别？
+
+### 基础梳理
+
+| 对比维度 | 重排 (Reflow/Layout) | 重绘 (Repaint/Paint) | 合成 (Composite) |
+|---------|---------------------|---------------------|-----------------|
+| **触发属性** | width, height, margin, padding, display, font-size | color, background, box-shadow, visibility | transform, opacity |
+| **影响范围** | 整棵树的几何计算 | 仅受影响区域的像素 | 仅图层的矩阵变换 |
+| **性能代价** | 极高（毫秒级） | 中等 | 极低（微秒级） |
+| **是否触发后续** | 必定触发重绘 | 不触发重排 | 不触发重排和重绘 |
+| **是否使用 GPU** | 否（CPU 计算） | 否（CPU 绘制） | 是（GPU 矩阵变换） |
+
+### 专家视角深度剖析
+
+很多候选人只能背诵上面的表格，但大厂面试官真正在意的是：**为什么 `transform` 和 `opacity` 能跳过 Layout 和 Paint？这是浏览器的"偷懒'还是精心设计？**
+
+这是浏览器工程师的**精心设计**。在 Blink 的渲染流程中，当元素被提升为独立的 GPU 图层（Composite Layer）后，它的内容已经被"拍照"成了一张纹理（Bitmap）存在了显存里。后续对 `transform` 和 `opacity` 的修改，本质上只是告诉 GPU："把这张照片平移一下"或"把这张照片变透明一点"--这完全是 GPU 的矩阵运算，不需要重新计算布局，也不需要重新绘制像素。
+
+所以 `transform` 动画比 `left/top` 动画流畅一万倍--前者是 GPU 的微秒级矩阵运算，后者是 CPU 的毫秒级几何重算。
+
+```javascript
+// 死亡重排：每一帧都触发 Layout
+for (let i = 0; i &lt; 100; i++) {
+  element.style.left = i + 'px'; // 触发 Layout
+}
+
+// 最佳优化：只触发 Composite
+element.style.transform = `translateX(100px)`; // 跳过 Layout 和 Paint
+// 关键点：将操作降维到渲染流水线的最轻量阶段
+```
+
+---
+
+## Q4: 经典面试题：Layout Thrashing（布局颠簸抖动）
+
+**什么是 Layout Thrashing？**
+在一帧的 16.6ms 短暂的时间窗口内，开发者在循环体里（比如在 `for` 循环中操作 DOM）**交替执行"写入样式"和"读取几何属性（如 clientHeight）"**。这会逼迫浏览器为了返回准确的几何值，在一帧内被迫强行同步触发（Forced Synchronous Layout）上百次布局重排！
+
+**display: none vs visibility: hidden 的区别：**
+当你使用 `display: none` 时，你发出了残酷的**物理毁灭指令**--元素从 Render Tree 上被彻底剥离，触发全局重排。而 `visibility: hidden` 只是**隐身术**--元素依然占据空间，只触发轻量级重绘。
+
+**关键区别：**
+
+| 场景 | 触发重排 | 触发重绘 | 元素占位 |
+|------|---------|---------|---------|
+| `display: none` | ✅ 是 | ✅ 是 | ❌ 不占位 |
+| `visibility: hidden` | ❌ 否 | ✅ 是 | ✅ 占位 |
+| `opacity: 0` | ❌ 否 | ✅ 是 | ✅ 占位 |
+| `transform: scale(0)` | ❌ 否 | ❌ 否 | ✅ 占位 |
+
+<Tip title="建议: ">
+
+在工业基建中，我们必须通过 FastDOM 这样的库，或者 React 自身的批处理调度机制，强行将所有的 DOM 读操作和写操作在时间线上做**物理层面的分离**，以彻底扼杀 Layout Thrashing 这头性能野兽。
+
+</Tip>
+
+---
+
+## 🔍 源码：Blink 引擎是如何实现的？
+
+<div class="follow-up">
+渲染流水线的生命周期状态机在 Blink 中是怎么实现的？
+</div>
+
+在 Chrome 的 Blink 渲染引擎中，每一帧的刷新必须严格踏过 `LifecycleState` 的状态机（详见 [Blink 源码 src/core/frame/frame_lifecycle.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/frame/frame_lifecycle.cc)）：
+
+```cpp
+// 详见：Blink 源码 src/core/frame/frame_lifecycle.cc
+enum class LifecycleState {
+  kNoLifecycleUpdates,
+  kInStyleRecalc,        // 1. 样式重算 (你改了 class，引擎开始算新样式)
+  kStyleClean,           // 样式计算完成
+
+  kInLayout,             // 2. 布局阶段！(这就是臭名昭著的【重排 Reflow】)
+  kLayoutClean,          // 布局完成
+
+  kInPrePaint,           // 3. 预绘制 (构建绘制树)
+
+  kInPaint,              // 4. 绘制阶段！(这就是【重绘 Repaint】)
+  kPaintClean,           // 绘制完成
+
+  kInCompositing,        // 5. 合成阶段！(扔给 GPU 做最后拼贴)
+};
+
+// 如果你只改 color，引擎的状态机会在 kStyleClean 后直接跳过 kInLayout，直奔 kInPaint。
+// 如果你改了 transform 且是独立图层，状态机极有可能会直接跳过 kInLayout 和 kInPaint，直奔最后的 kInCompositing 终极飞升！
+```
+
+<div class="follow-up">
+Virtual DOM 为什么能减少重排重绘？
+</div>
+
+很多人以为 Virtual DOM 的是比原生 DOM 快，这是一个外行的误解！原生 JS 哪怕是 `document.createElement` 也快得惊人，真正的慢永远来自于随后触发的浏览器渲染流程的 Layout 环节。Vue 和 React 的 Virtual DOM 在性能防御上的终极黑魔法，是**在内存中构建了一个绝对隔离的无副作用沙箱（也就是 vdom 树）**！当你的业务代码狂暴地修改了 100 次状态时，它们只是在这个内存沙箱里极速地打着补丁（Diff 计算），直到下一个宏/微任务节拍到来，框架会将这 100 次修改提纯、合并出**唯一的一套真实 DOM 物理指令集**，一次性扔给浏览器主线程执行。详见 [React 源码 packages/react-reconciler](https://github.com/facebook/react/tree/main/packages/react-reconciler)。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："请问什么是重排（Reflow）和重绘（Repaint）？在实际开发中如何避免重排导致的性能问题？"
+
+**及格回答（60-70分）：**
+> "重排就是改了宽高位置等会影响布局的属性，重绘就是改了颜色等不影响布局的属性。重排必定导致重绘，重绘不一定导致重排。我们要尽量把多次修改样式的操作合并成一次，或者用 class 一次性改，尽量少用 offsetWidth 这些会强制重排的属性。"
+
+面试官评价：**知道规则但不理解设计**。
+
+**满分回答（90-100分）：**
+
+> 重排与重绘的本质，是浏览器在维护其庞大脆弱的渲染流水线（DOM -> CSSOM -> Render Tree -> Layout -> Paint -> Composite）时，由于开发者修改了节点属性而被迫引发的**不同层级的链式雪崩重建代价**。修改几何属性（宽高、位置、边距）触发最昂贵的重排——牵一发而动全身，引擎不得不对成千上万个关联节点进行物理数学重算。修改外观属性（颜色、背景）只触发轻量级重绘——骨架不变，只重新上色。<sup>[1]</sup>
+
+> 在 Blink 的 `FrameLifecycle` 状态机中，重排对应着最为致命的 `kInLayout` 阶段。由于 HTML 是流体排版，一个元素的几何属性变动会向外辐射引发整棵树的几何重算。重绘对应 `kInPaint` 阶段，仅做像素填充，代价稍低。但如果我们极度熟悉底层，完全可以将动画等高频操作**利用 `transform` 或 `opacity` 降维引流到 `kInCompositing` 合成阶段**，利用 GPU 独立图层的矩阵变换特性，切断对主线程 Layout 和 Paint 流程的任何染指。`transform` 动画比 `left/top` 动画流畅一万倍——前者是 GPU 的微秒级矩阵运算，后者是 CPU 的毫秒级几何重算。<sup>[2]</sup>
+
+> 在真实的复杂长列表或图表滚动场景中，最惨烈的灾难并非单纯的重排，而是 **Layout Thrashing（布局颠簸抖动）**——在一帧的 16.6ms 短暂的时间窗口内，开发者在循环体里交替执行"写入样式"和"读取几何属性（如 clientHeight）"，逼迫浏览器在一帧内被迫同步触发上百次 Forced Synchronous Layout。在工业基建中，我们必须通过 FastDOM 这样的库，或者 React 自身的批处理调度机制，强行将所有的 DOM 读操作和写操作在时间线上做物理层面的分离，以彻底扼杀这头性能野兽。<sup>[3]</sup>
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="第一层: display: none 和 visibility: hidden 有什么深刻的性能差别?" icon="layer-group">
+
+  **答题要点：**
+  不能只答"看不见"，必须点出"物理毁灭"与"隐身术"的主要区别。
+
+  **高分回答：**
+  "当你使用 `display: none` 时，你发出了残酷的**物理毁灭指令**。这个元素及其内部所有的庞大子树，会从的 Render Tree（渲染树）上被彻底剥离、灰飞烟灭！因此它会强烈地触发整棵树的全局**重排（Reflow）**，因为原来的坑位被物理消灭了，后面的所有商品卡片都会瞬间塌陷补位。而当你使用 `visibility: hidden` 时，你仅仅是发出了一道**隐身术**指令。这个元素依然死死霸占着它在 Render Tree 上的坑位和物理尺寸，只是引擎在 Paint 阶段不再用画笔去涂抹它的像素。因此它仅仅触发了轻量级的**重绘（Repaint）**，不会引发后面列表的塌陷重排！"
+
+  </Accordion>
+
+  <Accordion title="第二层: Vue 和 React 用什么黑魔法阻断了手动 DOM 操作带来的重排重绘灾难?" icon="stopwatch">
+
+  **答题要点：**
+  结合 Virtual DOM 的"内存沙箱"机制解释。
+
+  **高分回答：**
+  "很多人以为 Virtual DOM 的是比原生 DOM 快，这是一个外行的误解！原生 JS 哪怕是 `document.createElement` 也快得惊人，真正的慢永远来自于随后触发的浏览器渲染流程的 Layout 环节。Vue 和 React 的 Virtual DOM 在性能防御上的终极黑魔法，是**在内存中构建了一个绝对隔离的无副作用沙箱（也就是 vdom 树）**！当你的业务代码狂暴地修改了 100 次状态时，它们只是在这个内存沙箱里极速地打着补丁（Diff 计算），直到下一个宏/微任务节拍到来，框架会将这 100 次修改提纯、合并出**唯一的一套真实 DOM 物理指令集**，一次性扔给浏览器主线程执行。"
+
+  </Accordion>
+
+  <Accordion title="第三层: requestAnimationFrame 在渲染流水线的哪个阶段执行?" icon="node">
+
+  **答题要点：**
+  必须分场景讨论！rAF 不是宏任务也不是微任务。
+
+  **高分回答：**
+  "分两种情况：
+  **1. 浏览器渲染流程**：rAF 在微任务之后、渲染之前执行，是一个独立的阶段。Blink 中，`requestAnimationFrame` 注册的回调在 `BeginMainFrame` 的 `Animate` 步骤中执行。
+  **2. 与 setTimeout 的区别**：rAF 保证在每帧渲染前执行，频率自动匹配显示器刷新率（通常是 60Hz，即 16.67ms 一次）。`setTimeout(fn, 16)` 的问题是：最小延迟 4ms 的限制、回调执行时间和渲染时机不同步、后台标签页中 rAF 自动暂停（省电）而 setTimeout 继续执行。"
+
+  </Accordion>
+
+  <Accordion title="第四层: CSS containment 如何减少重排范围?" icon="stopwatch">
+
+  **答题要点：**
+  结合 `contain` 属性解释重排范围的限制。
+
+  **高分回答：**
+  "CSS `contain` 属性可以限制元素的渲染范围，减少重排的传播：
+  **1. `contain: layout`**：元素内部的布局变化不会影响外部。修改子元素的尺寸不会触发父元素及其兄弟元素的重排。
+  **2. `contain: paint`**：元素内部的绘制不会影响外部。溢出的内容会被裁剪，不会影响其他元素的绘制。
+  **3. `contain: size`**：元素的尺寸不依赖于子元素。子元素的变化不会影响元素自身的尺寸计算。
+  **4. `contain: strict`**：等同于 `contain: size layout paint style`，最严格的限制。
+  **使用场景**：在大型页面中，给独立的组件容器设置 `contain: layout paint`，可以限制浏览器的重排和重绘范围，提升性能。"
+
+  </Accordion>
+
+  <Accordion title="第五层: 如何用 Performance API 监控重排重绘?" icon="node">
+
+  **答题要点：**
+  必须分场景讨论！不同场景下的监控方法。
+
+  **高分回答：**
+  "监控重排重绘有多种方法：
+  **1. Performance API**：使用 `performance.mark()` 和 `performance.measure()` 测量特定操作的耗时。
+  **2. PerformanceObserver**：监听 `layout-shift` 事件，自动记录布局偏移。
+  **3. Chrome DevTools**：Performance 面板录制操作，查看 FPS 区域的红色块（掉帧）和火焰图中的 Long Task。
+  **4. Layout Instability API**：监听 `layout-shift` 事件，自动记录 CLS（Cumulative Layout Shift）。
+  ```javascript
+  const observer = new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) {
+      console.log('Layout shift:', entry.value);
+    }
+  });
+  observer.observe({ type: 'layout-shift', buffered: true });
+  ```"
+
+  </Accordion>
+
+  <Accordion title="🔥 杀手锏追问: 如果在一帧内连续读写 offsetWidth 100 次, 浏览器会触发几次重排?" icon="skull">
+
+  **答题要点：**
+  对比"读写分离"与"读写交替"的性能差异。
+
+  **高分回答：**
+  "**100 次！** 这就是臭名昭著的 Layout Thrashing。当你在循环中交替执行 `element.style.width = '100px'`（写）和 `console.log(element.offsetWidth)`（读）时，浏览器为了给你返回最精确的几何值，不得不在每一次读取前都强制同步触发一次全屏重排。因为上一行的写入可能已经改变了布局，浏览器必须立即重算才能给你准确的答案。
+
+  **优化方案**：将所有的写操作集中在一起，所有的读操作集中在一起。或者使用 FastDOM 库自动批量处理。在 React 中，框架的批处理机制会自动将多次 `setState` 合并为一次 DOM 更新，从架构层面避免了 Layout Thrashing。"
+
+  </Accordion>
+
+  <Accordion title="🔥 杀手锏追问: 在虚拟列表（Virtual List）中, 如何避免频繁的重排重绘?" icon="skull">
+
+  **答题要点：**
+  结合虚拟列表的实现原理解释性能优化。
+
+  **高分回答：**
+  "虚拟列表（Virtual List）的核心思想是只渲染可见区域的元素，避免渲染大量不可见元素。但即使使用虚拟列表，仍然可能频繁触发重排重绘：
+  **1. 滚动时的重排**：当用户滚动时，需要动态计算哪些元素进入/离开可见区域，这会触发重排。
+  **2. 元素高度变化**：如果元素高度不固定（如动态内容），需要在渲染后测量实际高度，这会触发强制同步布局。
+  **3. 优化方案**：
+  - 使用 `transform: translateY()` 做滚动，而不是修改 `top`，避免触发重排。
+  - 使用 `will-change: transform` 提前告知浏览器，将滚动元素提升为独立图层。
+  - 使用固定高度的元素，避免动态测量。
+  - 使用 `IntersectionObserver` 替代滚动事件监听，减少主线程负担。"
+
+  </Accordion>
+
+  <Accordion title="🔥 杀手锏追问: 如何用 CSS contain 属性优化大型列表的渲染性能?" icon="skull">
+
+  **答题要点：**
+  结合 contain 属性的使用场景解释。
+
+  **高分回答：**
+  "CSS `contain` 属性可以限制元素的渲染范围，优化大型列表的性能：
+  **1. `contain: layout`**：元素内部的布局变化不会影响外部。修改子元素的尺寸不会触发父元素及其兄弟元素的重排。
+  **2. `contain: paint`**：元素内部的绘制不会影响外部。溢出的内容会被裁剪，不会影响其他元素的绘制。
+  **3. `contain: size`**：元素的尺寸不依赖于子元素。子元素的变化不会影响元素自身的尺寸计算。
+  **4. 使用方式**：
+  ```css
+  .list-item {
+    contain: layout paint;
+    height: 50px;
+  }
+  ```
+  **5. 注意事项**：`contain: paint` 会裁剪溢出内容，可能影响弹窗等需要溢出的元素。`contain: size` 需要元素有明确的尺寸，否则会导致高度塌陷。
+  **最佳实践**：在大型列表中，给每个列表项设置 `contain: layout paint`，限制重排和重绘的范围。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [Rendering Performance - Google Developers](https://developers.google.com/web/fundamentals/performance/rendering)：Google 官方对渲染性能的全面指南，包含重排重绘的完整链路分析。<sup>[1]</sup>
+- 📖 [Blink 源码 frame_lifecycle.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/frame/frame_lifecycle.cc)：Chrome Blink 引擎中渲染流水线状态机的实现。<sup>[2]</sup>
+- 🟢 [MDN Web Docs - Reflow](https://developer.mozilla.org/en-US/docs/Glossary/Reflow)：MDN 对重排的权威解释，包含触发条件与优化策略。<sup>[3]</sup>

@@ -1,0 +1,503 @@
+---
+title: "Vue 发展史"
+---
+
+> **面试官为什么问这个？**
+>
+> 面试官问 Vue 的版本演进，不是想听你背诵发布年份，而是想看你是否理解**每个大版本解决了什么问题、付出了什么代价**。如果你能说清"Vue 2 为什么要引入虚拟 DOM"、"Vue 3 为什么要用 Proxy"，说明你理解架构决策背后的权衡，而不只是背 API。
+
+---
+
+## Q1: Vue 1 → 2 的核心变革是什么？
+
+<Steps>
+
+  <Step title="Vue 1 的观察者模式: 简单但低效">
+
+  Vue 1.x（2014年发布）采用**观察者模式**进行数据绑定。每个响应式属性都有一个独立的 Watcher，属性变化时直接通知对应的 DOM 节点更新。这种方式简单直观，但在大型应用中，Watcher 数量会爆炸式增长。
+
+  </Step>
+  <Step title='致命痛点：Watcher 数量爆炸'>
+
+  一个页面可能有几千个 Watcher，每个 Watcher 都要独立计算自己的更新。内存开销巨大，中低端浏览器频繁触发 GC（垃圾回收），导致整个主线程卡顿。
+
+  </Step>
+  <Step title="Vue 2 引入虚拟 DOM + 组件级 Watcher">
+
+  Vue 2（2016年发布）引入了**虚拟 DOM**，将更新粒度从"属性级 Watcher'升级为"组件级 Watcher"。每个组件只有一个 Watcher，数据变化时触发组件重新渲染，通过 diff 算法计算最小 DOM 操作。
+
+  </Step>
+  <Step title="Diff 算法的工程权衡">
+
+  Vue 2 的 diff 算法采用**同层比较**策略，不跨层级对比节点，将时间复杂度从 O(n^3) 降到 O(n)。同时通过 key 属性优化列表对比，最大限度减少不必要的 DOM 操作。这种"用 CPU 的 diff 算力换内存空间'的 trade-off 是 Vue 2 架构的核心思路。
+
+  </Step>
+  <Step title="关键启示: 架构决策的本质是权衡">
+
+  从 Vue 1 到 Vue 2 的演进告诉我们，没有"银弹'式的方案--虚拟 DOM 不是"比直接操作 DOM 快"，而是在开发体验和运行性能之间找到了一个平衡点。面试中回答这类问题时，重点不是背诵技术细节，而是展示你理解架构决策背后的 trade-off 思维。
+
+  </Step>
+
+</Steps>
+
+**Vue 2 解决的核心问题：**
+
+```text
+问题：Vue 1 的属性级 Watcher 数量爆炸，内存开销巨大
+
+Vue 1: 每个响应式属性 → 一个 Watcher → 直接绑定 DOM → 几千个 Watcher → 内存爆炸
+
+解决：Vue 2 引入虚拟 DOM + 组件级 Watcher
+
+Vue 2: 每个组件 → 一个 Watcher → 数据变化触发组件重渲染 → diff 算法计算最小 DOM 操作
+```
+
+<Note title="💡 一句话总结">
+
+Vue 2 通过引入虚拟 DOM 和组件级 Watcher，用 CPU 的 diff 算力换取了宝贵的内存空间，解决了 Vue 1 的内存爆炸问题。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 Vue 1 的属性级 Watcher">
+
+每个响应式属性都有一个独立的 Watcher，直接绑定到具体的 DOM 节点。就像一家工厂，每个零件都派一个专人盯着，简单但人手不够，几千个零件就要几千个人。
+
+</Card>
+<Card title='✅ Vue 2 的组件级 Watcher'>
+
+每个组件只有一个 Watcher，数据变化时触发组件重新渲染，通过 diff 算法计算最小 DOM 操作。就像改成车间制--整个车间只派一个质检员，人手省了，但改建（diff）要花更多功夫。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时重点说**权衡**--Vue 2 用 diff 的 CPU 开销换内存，不是"虚拟 DOM 比直接操作 DOM 快'。面试官想听的是你理解架构决策背后的 trade-off。
+
+</Tip>
+
+---
+
+## Q2: Vue 2 → 3 的核心变革是什么？
+
+Vue 3（2020年发布，代号 "One Piece"）是 Vue 历史上最大的重构。核心变革有三个：
+
+```text
+┌───────────────────────────────────────┐
+│        Vue 2 的三大痛点                 │
+│  1. defineProperty 无法检测新增/删除属性  │
+│  2. Options API 逻辑碎片化              │
+│  3. TypeScript 支持差                   │
+└─────────────────┬─────────────────────┘
+                  │ Vue 3 重构
+                  ▼
+┌───────────────────────────────────────┐
+│        Vue 3 的三大解法                 │
+│  1. Proxy 代理整个对象                  │
+│  2. Composition API 逻辑聚合            │
+│  3. TypeScript 原生重写                 │
+└───────────────────────────────────────┘
+```
+
+### 响应式系统重构
+
+| 对比维度 | Vue 2 (defineProperty) | Vue 3 (Proxy) |
+|---------|----------------------|---------------|
+| **拦截方式** | 逐个属性添加 getter/setter | 拦截整个对象的所有操作 |
+| **新增属性** | ❌ 需用 `Vue.set()` | ✅ 自动拦截 |
+| **删除属性** | ❌ 需用 `Vue.delete()` | ✅ 自动拦截 |
+| **数组下标赋值** | ❌ 无法检测 | ✅ 自动拦截 |
+| **Map/Set** | ❌ 不支持 | ✅ 支持 |
+| **嵌套对象** | 初始化时全量递归 | 访问时按需代理（惰性递归） |
+| **IE 兼容** | ✅ 支持 | ❌ 不支持 |
+
+### Composition API
+
+| 对比维度 | Options API | Composition API |
+|---------|-----------|----------------|
+| **代码组织** | 按选项分类（data/methods/computed） | 按逻辑功能组织 |
+| **逻辑复用** | Mixins（命名冲突、来源不明） | Composables（类型安全、来源清晰） |
+| **TypeScript** | 类型推断困难 | 完美支持 |
+
+### 编译器优化
+
+| 优化 | 说明 |
+|------|------|
+| **PatchFlag** | 编译器标记动态绑定，运行时只更新变化的部分 |
+| **Block Tree** | 树扁平化，只遍历动态节点，静态子树完全跳过 |
+| **静态提升** | 不依赖响应式数据的节点提升到渲染函数外部，只创建一次 |
+| **Fragments** | 组件可返回多个根节点（不再需要单根节点） |
+
+<Warning title="⚠️ Vue 3 的代价: 不兼容 IE">
+
+Proxy 是 ES6 特性，无法用 polyfill 模拟。Vue 3 不支持 IE，这是架构层面的取舍--用 IE 兼容性换来了更强大的响应式能力和更好的性能。
+
+</Warning>
+
+<Tip title='🎢 通俗比喻：从砖房到钢筋混凝土'>
+
+Vue 版本演进的核心是"Watcher 颗粒度的收放"--Vue 1 属性级（多但精准）、Vue 2 组件级（少但要 diff）、Vue 3 编译时优化（少且精准）。
+就像盖房子的材料升级。Vue 1 用砖头--每块砖（属性）都有一个人盯着（Watcher），简单但人手不够。Vue 2 改成预制板--整面墙（组件）只派一个人看着，人手省了但改建（diff）要花更多功夫。Vue 3 用钢筋混凝土--用更先进的材料（Proxy）和更聪明的设计（Composition API），既省人手又好改建，但不能在老房子（IE）上用。
+
+</Tip>
+
+---
+
+## Q3: Options API 和 Composition API 有什么区别？
+
+### 基础梳理
+
+| 对比维度 | Options API | Composition API |
+|---------|-----------|----------------|
+| **代码组织** | 按选项分类 | 按功能聚合 |
+| **逻辑复用** | Mixins | Composables |
+| **TypeScript** | 支持一般 | 完美支持 |
+| **tree-shaking** | 不支持 | 支持 |
+| **学习曲线** | 低 | 中等 |
+| **适用场景** | 简单组件 | 复杂组件、逻辑复用 |
+
+### Options API 的逻辑碎片化问题
+
+很多候选人知道 Composition API "更灵活"，但说不清**为什么不直接用 Options API**。
+
+Options API 的核心痛点是**逻辑碎片化**。一个功能的逻辑被分散在 `data`、`methods`、`computed`、`watch` 等不同选项中。当组件变大时，同一个功能的代码被拆得七零八落--比如"搜索功能"的输入框状态在 `data`、搜索方法在 `methods`、防抖逻辑在 `watch`、结果缓存在 `computed`。
+
+Mixins 的致命缺陷：**命名冲突**（两个 Mixins 定义同名属性会互相覆盖）、**来源不明**（你不知道某个属性来自哪个 Mixin）、**隐式依赖**（Mixins 之间可能互相依赖）。
+
+Composition API 通过 Composables 解决了这些问题。一个 Composable 把同一个功能的所有逻辑聚合在一个函数中，通过显式返回值暴露给组件。`const { query, results, search } = useSearch()`--你一眼就知道 `query` 来自 `useSearch`。
+
+```javascript
+// Options API：搜索功能的代码分散在不同选项中
+export default {
+  data() { return { query: '', results: [] } },
+  methods: { search() { /* ... */ } },
+  watch: { query: { handler: 'search', debounce: 300 } },
+  computed: { hasResults() { return this.results.length > 0 } }
+}
+
+// Composition API：搜索功能的代码物理聚合
+function useSearch() {
+  const query = ref('');
+  const results = ref([]);
+  const search = debounce(() => { /* ... */ }, 300);
+  watch(query, search);
+  const hasResults = computed(() => results.value.length > 0);
+  return { query, results, search, hasResults };
+}
+// 核心调度：从"按选项分类"变成"按功能聚合"
+```
+
+### Composables 的类型安全优势
+
+Composables 通过显式返回值暴露给组件，TypeScript 可以完美推断类型。`const { query, results, search } = useSearch()` 中，`query` 的类型是 `Ref<string>`，`results` 的类型是 `Ref<SearchResult[]>`。这比 Mixins 的隐式合并强得多——Mixins 中你不知道某个属性来自哪个 Mixin，也无法获得准确的类型推断。
+
+---
+
+## Q4: Vue 2 → 3 迁移中的经典踩坑
+
+### 响应式 API 变更
+
+Vue 2 中新增属性需要 `Vue.set()`，Vue 3 的 Proxy 自动拦截，不再需要。Vue 2 的 `{{ value | format }}` 过滤器语法在 Vue 3 中被移除，用 computed 或方法替代。
+
+### 全局 API 重构
+
+Vue 2 的 `Vue.use()`、`Vue.mixin()` 是静态方法，Vue 3 改为 `app.use()`、`app.mixin()` 实例方法，支持 Tree-shaking。
+
+### 生命周期改名
+
+| Vue 2 | Vue 3 |
+|-------|-------|
+| `beforeDestroy` | `onBeforeUnmount` |
+| `destroyed` | `onUnmounted` |
+
+**关键区别：**
+
+| 场景 | Vue 2 | Vue 3 |
+|------|------|------|
+| 创建实例 | `new Vue()` | `createApp()` |
+| 全局 API | `Vue.use()` | `app.use()` |
+| 根节点 | 必须单根节点 | 支持多根节点（Fragments） |
+| 新增属性 | `Vue.set()` | 直接赋值 |
+
+<Tip title="最佳实践: ">
+
+新项目直接用 Vue 3 + Composition API + `<script setup>` + Pinia。老项目如果是 Vue 2，可以渐进式迁移--先用 Composables 替换 Mixins，再逐步把组件迁移到 `<script setup>`。不要一次性重写所有组件。
+
+</Tip>
+
+---
+
+<Note title="💡 关于 defineProperty vs Proxy 的深入对比">
+
+defineProperty vs Proxy 的详细对比、Vue 3 为什么用 Proxy、Proxy 带来的问题等内容，详见 [Vue 响应式原理](/vue/vue-reactivity)。
+
+</Note>
+
+---
+
+## 🔍 底层源码：Vue 2 和 Vue 3 的响应式实现有什么区别？
+
+<div class="follow-up">
+Vue 2 的 defineProperty 是怎么实现响应式的？
+</div>
+
+Vue 2 用 `Object.defineProperty` 为每个属性添加 getter/setter（详见 [Vue 2 源码 src/core/observer/index.ts](https://github.com/vuejs/vue/blob/main/src/core/observer/index.ts)）：
+
+```javascript
+// Vue 2 的 defineReactive 函数（简化）
+function defineReactive(obj, key, val) {
+  const dep = new Dep();  // 每个属性一个 dep
+
+  Object.defineProperty(obj, key, {
+    get() {
+      if (Dep.target) {
+        dep.depend();  // 收集依赖：把当前 Watcher 加入 dep
+      }
+      return val;
+    },
+    set(newVal) {
+      if (newVal === val) return;
+      val = newVal;
+      dep.notify();  // 触发更新：通知所有 Watcher
+    }
+  });
+}
+```
+
+这段代码的问题是：**只能拦截已有的属性**。你必须预先知道对象有哪些属性，才能给每个属性设置 getter/setter。新增的属性不在预设列表中，自然拦截不到。所以 Vue 2 需要 `Vue.set()` 来手动触发。
+
+<div class="follow-up">
+Vue 3 的 Proxy 是怎么实现响应式的？
+</div>
+
+Vue 3 用 `Proxy` 代理整个对象（详见 [Vue 3 源码 packages/reactivity/src/reactive.ts](https://github.com/vuejs/core/blob/main/packages/reactivity/src/reactive.ts)）：
+
+```javascript
+// Vue 3 的 reactive 函数（简化）
+function reactive(target) {
+  return new Proxy(target, {
+    get(target, key, receiver) {
+      track(target, key);    // 依赖收集
+      return Reflect.get(target, key, receiver);
+    },
+    set(target, key, value, receiver) {
+      const result = Reflect.set(target, key, value, receiver);
+      trigger(target, key);  // 触发更新
+      return result;
+    },
+    deleteProperty(target, key) {
+      const result = Reflect.deleteProperty(target, key);
+      trigger(target, key);  // 删除属性也触发更新
+      return result;
+    }
+  });
+}
+```
+
+这段代码的优势是：**拦截对象级别的所有操作**。新增属性、删除属性、数组下标赋值，都能拦截到。而且 Proxy 是惰性代理--只有访问到的属性才会被递归代理，而 defineProperty 在初始化时就要递归遍历所有属性。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 Vue 的版本演进"
+
+**及格回答（60-70分）：**
+> "Vue 1 用观察者模式，Vue 2 引入虚拟 DOM，Vue 3 用 Proxy 和 Composition API。"
+
+面试官评价：**背版本号但不理解设计决策**。
+
+**满分回答（90-100分）：**
+
+> Vue 的架构演进始终围绕三个核心命题：**响应式的效率**、**代码组织的可维护性**、**编译时的性能优化**。每个大版本的变革都是为了偿还上一个版本留下的架构债--Vue 1 的内存爆炸催生了 Vue 2 的虚拟 DOM，Vue 2 的 defineProperty 盲区催生了 Vue 3 的 Proxy。<sup>[1]</sup>
+
+> Vue 1 的属性级 Watcher 简单但低效。在 Vue 1 的 `src/observer/watcher.js` 中，每个响应式属性都会 `new Watcher()` 创建一个独立的观察者。一个有 1000 个绑定变量的页面，内存中就有 1000 个 Watcher 实例，每个实例持有 deps、getter、value 等属性。Vue 2 在 `src/core/observer/index.js` 中引入了 `defineReactive` 函数，用 `Object.defineProperty` 为每个属性添加 getter/setter，但把 Watcher 的颗粒度放大到组件级别--一个组件只有一个渲染 Watcher。内存占用暴降数百倍，但代价是 `defineProperty` 只能拦截已有属性，新增属性需要 `Vue.set()`，数组下标赋值检测不到。<sup>[2]</sup>
+
+> Vue 3 在 `packages/reactivity/src/reactive.ts` 中用 `Proxy` 替代 `defineProperty`。Proxy 拦截对象级别的所有操作（get、set、deleteProperty、has、ownKeys），新增/删除属性自动检测。而且 Proxy 是惰性代理--只有访问到的属性才会被递归代理，而 defineProperty 在初始化时就要递归遍历所有属性，对大数据对象有性能问题。代价是 Proxy 不兼容 IE，无法 polyfill。<sup>[3]</sup>
+
+> 实际项目中的建议：新项目直接用 Vue 3 + Composition API + `<script setup>` + Pinia。老项目渐进式迁移--先用 Composables 替换 Mixins，再逐步把组件迁移到 `<script setup>`。不要一次性重写所有组件。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="Vue 2 的 defineProperty 为什么不能检测新增属性?" icon="layer-group">
+
+  **答题要点：** defineProperty 是针对已有属性的，你必须预先知道对象有哪些属性。
+
+  **高分回答：**
+  "`defineProperty` 是针对**已有属性**的--你必须预先知道对象有哪些属性，才能给每个属性设置 getter/setter。新增的属性不在预设列表中，自然拦截不到。
+  ```javascript
+    // Vue 2 中，这不会触发更新
+    const state = { name: 'Tom' };
+  Object.defineProperty(state, 'name', {
+      get() { /* 收集依赖 */ },
+      set() { /* 触发更新 */ }
+    });
+    state.age = 18;  // ❌ 新增属性，没有 getter/setter，不触发更新
+    // 必须用 Vue.set(state, 'age', 18) 手动触发
+```
+  数组的下标赋值也无法拦截，所以 Vue 2 重写了数组的 `push`、`pop`、`splice`、`shift`、`unshift`、`sort`、`reverse` 这 7 个方法来绕过。"
+
+  </Accordion>
+
+  <Accordion title="Vue 3 为什么不兼容 IE?" icon="stopwatch">
+
+  **答题要点：** Proxy 是 ES6 特性，无法 polyfill。
+
+  **高分回答：**
+  "Proxy 是 ES6 特性，**无法用 polyfill 模拟**--因为 Proxy 拦截的是语言层面的对象操作（get、set、delete），这不是简单的 API 可以模拟的。Vue 3 选择 Proxy 的原因有三个：
+1. **拦截范围**：能拦截所有操作（新增/删除属性、数组下标、has、ownKeys），defineProperty 做不到。
+2. **惰性代理**：只有访问到的属性才会被递归代理，defineProperty 在初始化时就要递归遍历所有属性。
+3. **性能**：Proxy 的 get/set trap 调用开销约 0.01μs，比 defineProperty 的 getter/setter 略慢，但惰性代理的整体性能更优。
+  这是一个架构层面的取舍--用 IE 兼容性换来了更强大的响应式能力和更好的大数据对象性能。"
+
+  </Accordion>
+
+  <Accordion title="Composition API 的 setup() 和 Options API 的 created 谁先执行?" icon="node">
+
+  **答题要点：** setup() 在 beforeCreate 之前执行。
+
+  **高分回答：**
+  "`setup()` 在 `beforeCreate` 之前执行，比 `created` 更早。此时组件实例还没有创建，所以 `setup()` 中没有 `this`。这也是为什么 Composition API 用 `ref()`、`reactive()` 来声明状态，而不是用 `data()` 返回对象。"
+
+  </Accordion>
+
+  <Accordion title="🔥 Vue 2 的虚拟 DOM 和 Vue 3 的虚拟 DOM 有什么区别?" icon="skull">
+
+  **答题要点：** Vue 3 的编译器做了 PatchFlag、Block Tree、静态提升三层优化。
+
+  **高分回答：**
+  "Vue 2 的虚拟 DOM 每次 diff 都要遍历整棵树，比较所有属性。Vue 3 的编译器在编译时做了三层优化：**PatchFlag**（标记动态绑定，只比较标记的部分）、**Block Tree**（扁平化动态节点，静态子树跳过）、**静态提升**（不依赖响应式的节点只创建一次）。这让 Vue 3 的 diff 从'遍历整棵树'变成'只遍历动态节点'，性能大幅提升。"
+
+  </Accordion>
+
+  <Accordion title="Vue 2 的数组响应式是怎么实现的?为什么要重写 7 个方法?" icon="layer-group">
+
+  **答题要点：** defineProperty 无法拦截数组下标赋值，Vue 2 通过重写数组原型方法绕过。
+
+  **高分回答：**
+  "Vue 2 的 `defineProperty` 无法拦截数组下标赋值（`arr[0] = 'new'`），也无法检测 `arr.length` 的变化。所以 Vue 2 在 `src/core/observer/array.js` 中重写了数组的 7 个变异方法：`push`、`pop`、`splice`、`shift`、`unshift`、`sort`、`reverse`。这些方法内部会调用 `ob.dep.notify()` 手动触发更新。
+
+  但直接用下标赋值（`arr[0] = 'x'`）仍然不触发更新，必须用 `Vue.set(arr, 0, 'x')` 或 `splice(0, 1, 'x')`。Vue 3 的 Proxy 完全解决了这个问题——Proxy 的 `set` trap 可以拦截所有属性赋值，包括数组下标。"
+
+  </Accordion>
+
+  <Accordion title="Vue 3 的 TypeScript 重写带来了什么好处?" icon="node">
+
+  **答题要点：** 类型安全、更好的 IDE 支持、自动生成类型声明。
+
+  **高分回答：**
+  "Vue 2 用 Flow 做类型检查，但 Flow 对泛型和条件类型的支持较弱，很多类型是 `any`。Vue 3 用 TypeScript 从头重写，带来了三个核心好处：
+
+  1）**类型安全**：`ref()` 返回 `Ref<T>`，`reactive()` 返回 `UnwrapNestedRefs<T>`，所有 API 都有精确的类型推断。
+  2）**IDE 支持**：Volar（Vue 的 VS Code 插件）可以利用 TypeScript 的语言服务，提供模板中的类型检查、自动补全、跳转定义。
+  3）**自动生成类型声明**：Vue 3 的源码用 TypeScript 编写，构建时自动生成 `.d.ts` 文件，第三方库可以精确推断 Vue API 的类型。"
+
+  </Accordion>
+
+  <Accordion title="Vue 3 的 Fragments 特性解决了什么问题?" icon="stopwatch">
+
+  **答题要点：** Vue 2 要求组件必须有单根节点，Vue 3 支持多根节点。
+
+  **高分回答：**
+  "Vue 2 的模板编译后，组件的根节点会被作为 `$el` 属性。如果模板有多个根节点，编译器不知道 `$el` 应该指向哪个节点，所以强制要求单根节点。开发者不得不额外包裹一个无意义的 `<div>`，增加了 DOM 层级。
+
+  Vue 3 的编译器支持 Fragments——组件可以返回多个根节点，编译器会生成一个虚拟的 Fragment 节点来包装它们。在运行时，Fragment 节点不会生成真实 DOM，只在 diff 时作为容器存在。这减少了不必要的 DOM 层级，也更符合语义化 HTML 的设计理念。"
+
+  </Accordion>
+
+  <Accordion title="🔥 Vue 3 的 Tree-shaking 是怎么实现的?为什么 Vue 2 做不到?" icon="skull">
+
+  **答题要点：** Vue 3 的 API 设计为具名导出，Vue 2 的全局 API 挂在构造函数上无法 Tree-shaking。
+
+  **高分回答：**
+  "Vue 2 的全局 API（`Vue.nextTick`、`Vue.observable`、`Vue.directive` 等）挂在 `Vue` 构造函数上。打包时，即使你没有用 `Vue.directive`，整个 `Vue` 对象也会被打包进去，因为 `import Vue from 'vue'` 会导入整个模块。
+
+  Vue 3 把 API 改为具名导出：`import { ref, computed, watch } from 'vue'`。打包工具（Vite/webpack）可以通过静态分析确定哪些 API 被使用了，未使用的 API 会被 Tree-shaking 移除。比如你只用了 `ref` 和 `computed`，`watch`、`watchEffect`、`nextTick` 等都不会被打包。
+
+  但有个细节：Vue 3 的内部模块之间有依赖关系，真正的 Tree-shaking 效果取决于依赖图的复杂度。尤雨溪在 Vue 3 设计时就考虑了这一点——每个 API 都是独立的模块，尽量减少交叉引用。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Q5: Vue 1/2/3 的完整演变史
+
+Vue 的架构演进始终围绕三个核心命题：**响应式的效率**、**代码组织的可维护性**、**编译时的性能优化**。每个大版本的变革都是为了偿还上一个版本留下的架构债。
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│   Vue 1.x    │ → │   Vue 2.x    │ → │   Vue 3.x    │
+│  2014-2016   │   │  2016-2020   │   │  2020-至今    │
+│              │   │              │   │              │
+│ 属性级 Watcher│   │ 组件级 Watcher│   │ 编译时优化    │
+│ defineProperty│   │ 虚拟 DOM     │   │ Proxy        │
+│ 简单但内存爆炸│   │ diff 算法    │   │ Composition API│
+└──────────────┘   └──────────────┘   └──────────────┘
+```
+
+### Vue 1.x（2014）：开创性的响应式
+
+尤雨溪在 2014 年发布 Vue 0.6（后更名 Vue 1.x），核心创新是**数据驱动视图**。每个响应式属性都有一个独立的 Watcher，属性变化时直接通知对应的 DOM 节点更新。这种"脏检查 + 精准更新"的模式比 Angular 1.x 的全脏检查高效得多。
+
+Vue 1 的核心流程：
+
+```text
+数据变化 → 属性的 setter 触发 → dep.notify() → Watcher 更新 → 精准 DOM 操作
+```
+
+### Vue 2.x（2016）：虚拟 DOM 与工程化
+
+Vue 1 的属性级 Watcher 在大型应用中导致内存爆炸。Vue 2 引入虚拟 DOM，将 Watcher 颗粒度从属性级升级为组件级。每个组件只有一个 Watcher，数据变化时触发组件重新渲染，通过 diff 算法计算最小 DOM 操作。
+
+Vue 2 的核心改进：
+- **虚拟 DOM**：用 CPU 的 diff 算力换内存空间
+- **Server-Side Rendering (SSR)**：支持服务端渲染
+- **Weex 跨端**：虚拟 DOM 可渲染到原生平台
+- **Flow 类型检查**：内部使用 Flow 做类型安全
+
+### Vue 3.x（2020）：Proxy、Composition API 与 TypeScript
+
+Vue 3 是 Vue 历史上最大的重构，解决了 Vue 2 的三大痛点：
+
+```text
+┌───────────────────────────────────────┐
+│        Vue 2 的三大痛点                 │
+│  1. defineProperty 的响应式盲区         │
+│  2. Options API 的逻辑碎片化           │
+│  3. Flow 类型检查的局限性              │
+└─────────────────┬─────────────────────┘
+                  │ Vue 3 重构
+                  ▼
+┌───────────────────────────────────────┐
+│        Vue 3 的三大解法                 │
+│  1. Proxy 拦截整个对象                  │
+│  2. Composition API 逻辑聚合            │
+│  3. TypeScript 从头重写                │
+└───────────────────────────────────────┘
+```
+
+### 版本演进的核心规律
+
+| 维度 | Vue 1 | Vue 2 | Vue 3 |
+|------|-------|-------|-------|
+| **响应式** | defineProperty（属性级） | defineProperty（组件级） | Proxy（对象级） |
+| **Watcher 颗粒度** | 属性级（多但精准） | 组件级（少但要 diff） | 编译时优化（少且精准） |
+| **代码组织** | Options API（雏形） | Options API（成熟） | Composition API |
+| **类型检查** | 无 | Flow | TypeScript |
+| **IE 支持** | ✅ | ✅ | ❌ |
+| **SSR** | ❌ | ✅ | ✅（更优） |
+| **Tree-shaking** | ❌ | ❌ | ✅ |
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [Vue 3 官方文档 - Vue 3 迁移指南](https://v3-migration.vuejs.org/)：Vue 官方从 Vue 2 迁移到 Vue 3 的完整指南。<sup>[1]</sup>
+- 📖 [Vue 2 源码 src/core/observer/index.ts](https://github.com/vuejs/vue/blob/main/src/core/observer/index.ts)：Vue 2 的 defineProperty 响应式实现。<sup>[2]</sup>
+- 📖 [Vue 3 源码 packages/reactivity/src/reactive.ts](https://github.com/vuejs/core/blob/main/packages/reactivity/src/reactive.ts)：Vue 3 的 Proxy 响应式实现。<sup>[3]</sup>
+- 🟢 [《Vue.js 设计与实现》](https://book.douban.com/subject/35768338/)：霍春阳著，系统性学习 Vue 3 架构设计。

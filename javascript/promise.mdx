@@ -1,0 +1,1218 @@
+---
+title: "Promise"
+---
+
+> **面试官为什么问这个？**
+>
+> Promise 是现代前端异步编程的基石。面试官问这个，本质上是在考察你：**是否掌握了复杂异步状态的流转机制？** 如果你答不清楚，说明你只会调库调接口，遇到真正的并发竞态问题、异步错误捕获、复杂的渲染时序问题时，必然会写出极难排查的 bug。
+
+---
+
+## Q1: Promise 的历史？为什么要有它？
+
+<Steps>
+
+  <Step title="回调地狱时代">
+
+    早期的 JS 依赖回调函数处理异步。如果多个异步操作有依赖关系，代码会变成不断向右缩进的"回调地狱"，极难维护，且错误处理非常容易遗漏。
+
+  </Step>
+  <Step title="致命痛点: 控制反转与信任问题">
+
+    当你把回调函数传给第三方库执行时，你无法确定它会调用几次（可能调多次、可能不调）。你失去了对代码执行权力的控制（控制反转）。
+
+  </Step>
+  <Step title="ES6 引入 Promise">
+
+    Promise 提出了一个革命性的思想：不把回调传给第三方，而是让第三方返回一个"承诺"对象。拿到承诺后，我们自己决定在它成功或失败时做什么。
+
+  </Step>
+  <Step title="核心机制: 状态机模型 + 控制反转的再反转">
+
+    Promise 是一个单向不可逆的有限状态机（pending → fulfilled/rejected）。状态一旦改变，永远定格。
+
+  </Step>
+  <Step title="关键洞察: then 回调强制异步">
+
+    即使 Promise 已经 fulfilled，`.then` 的回调也会被强制放入微任务队列，保证执行顺序一致性（防 Zalgo 现象）。
+
+  </Step>
+
+</Steps>
+
+**Promise 解决的核心问题：**
+
+```text
+问题：回调地狱 + 信任缺失（控制反转）
+
+回调时代：将处理逻辑丢给别人执行，听天由命。
+
+解决：状态机模型 + 控制反转的再反转
+
+Promise时代：别人只负责汇报状态（成功/失败），处理逻辑自己控制，且状态不可逆。
+```
+
+<Note title="💡 一句话总结">
+
+Promise 将异步操作的控制权从第三方接管回了调用者手中，并通过状态机保证了执行的唯一性和可靠性。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有 Promise (回调时代) ">
+
+你去餐厅点餐，点完后你把自己家的钥匙给了服务员，跟他说："做好了去我家帮我把菜摆好"。如果服务员是个粗心的人，他可能去你家摆了三次，也可能根本没去。
+
+</Card>
+<Card title="✅ 引入 Promise">
+
+你去餐厅点餐，服务员给你一个"取餐器"（Promise）。你拿着取餐器回座位。取餐器只有两种最终状态：响了（做好了）或者显示异常（做砸了）。一旦响了，你自己去取餐。你牢牢掌握着主动权。
+
+</Card>
+</CardGroup>
+
+---
+
+## Q2: Promise 的本质与核心机制是什么？
+
+Promise 的本质是一个**状态机**，核心逻辑只有 3 步：
+
+```text
+┌───────────────────────────────────────┐
+│        pending（初始状态）              │  ← 只能在这里发起转换
+└─────────────────┬─────────────────────┘
+                  │ 转换方向（二选一）
+      ┌───────────┴───────────┐
+      ▼                       ▼
+┌───────────┐           ┌───────────┐
+│ fulfilled │           │ rejected  │
+│ (value)   │           │ (reason)  │
+└───────────┘           └───────────┘
+        状态只能改变一次，永远不可逆转
+```
+
+<Warning title="⚠️ 核心机制: 状态单向不可逆">
+
+正如 ECMAScript 规范在 Promise Objects 章节中强调的：**"A promise is either resolved or unresolved. A resolved promise can be either fulfilled or rejected."**
+
+- **状态只能改变一次**：`resolve` 之后再 `resolve` 或 `reject` 绝对无效。
+- **then 回调总是异步的**：即使 Promise 已经是 fulfilled，`.then` 的回调也会被强制放入微任务队列。
+
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 泼出去的水">
+
+Promise 的状态就像泼出去的水，一旦 `resolve` 或者 `reject` 了，这碗水就结成了死冰。不管你再怎么折腾它，它的值和状态都永远定格在那一瞬间了。
+
+
+</Tip>
+
+### 状态机的三态转换规则
+
+Promise 严格遵循有限状态机模型，只有两种转换路径：
+
+| 当前状态 | 可执行操作 | 转换结果 |
+|---------|-----------|---------|
+| pending | `resolve(value)` | fulfilled |
+| pending | `reject(reason)` | rejected |
+| fulfilled | 任何操作 | 不变 |
+| rejected | 任何操作 | 不变 |
+
+```javascript
+// 状态不可逆的典型表现
+const p = new Promise((resolve, reject) => {
+  resolve('success');
+  reject('error');       // 被忽略
+  resolve('again');      // 被忽略
+});
+p.then(v => console.log(v)); // 'success'
+```
+
+### thenable 对象与 Promise 的区别
+
+`thenable` 是任何具有 `.then` 方法的对象，它不是真正的 Promise，但可以被 `Promise.resolve()` 识别和展开：
+
+```javascript
+// thenable 对象——不是 Promise，但能被链式调用
+const thenable = {
+  then(resolve) { resolve(42); }
+};
+Promise.resolve(thenable).then(v => console.log(v)); // 42
+```
+
+---
+
+## Q3: then 回调为什么必须是异步的？
+
+很多候选人只知道 `.then` 是微任务，但大厂面试官真正在意的是：**如果 Promise 已经同步 resolve 了，为什么 V8 依然要把 `.then` 强行扔进微任务队列？**
+
+如果 `.then` 的回调在 Promise 已 fulfilled 时同步执行、在 pending 时异步执行，代码的行为就会因为内部状态的时序不同而产生极其诡异的偏差（Zalgo 现象）。为了保证执行顺序的**绝对一致性**，ECMA-262 规范规定，V8 的 `PerformPromiseThen` 无论 Promise 当前是什么状态，都会创建一个微任务（`PromiseReactionJobTask`）加入微任务队列。
+
+```javascript
+const p = Promise.resolve(42);
+p.then(v => console.log(v));
+console.log('sync');
+// 输出：sync → 42
+// 即便 p 瞬间完成，then 回调也绝不插队
+```
+
+### Zalgo 现象与一致性保证
+
+"Zalgo"是指异步 API 有时同步执行、有时异步执行，导致代码行为不可预测：
+
+```javascript
+// ❌ Zalgo：行为取决于内部状态
+function riskyAsync(callback) {
+  if (cache) callback(cache);    // 同步调用
+  else fetch(url).then(callback); // 异步调用
+}
+// 调用者无法确定 callback 什么时候执行
+
+// ✅ Promise 保证：无论状态如何，then 总是异步
+function safeAsync() {
+  if (cache) return Promise.resolve(cache);
+  return fetch(url);
+}
+// 调用者可以确定：then 回调一定在当前同步代码之后执行
+```
+
+### 微任务队列的入队时机
+
+Promise 的 `.then` 回调在以下时机入队微任务队列：
+
+| Promise 状态 | 入队时机 |
+|-------------|---------|
+| pending → fulfilled | `resolve()` 调用时，所有 `.then(onFulfilled)` 入队 |
+| pending → rejected | `reject()` 调用时，所有 `.catch(onRejected)` 入队 |
+| 已 fulfilled | `.then()` 调用时立即入队 |
+| 已 rejected | `.catch()` 调用时立即入队 |
+
+---
+
+## Q4: Promise API 核心对比
+
+### 基础梳理
+
+| 方法 | 成功条件 | 失败条件 | 返回值 |
+|------|----------|----------|--------|
+| `Promise.all` | 全部成功 | 任一失败（fail-fast） | `[v1, v2, ...]` 按顺序 |
+| `Promise.allSettled` | 全部敲定 | 永不 reject | `[{status, value/reason}, ...]` |
+| `Promise.race` | 第一个敲定 | 第一个敲定 | 第一个敲定的值 |
+| `Promise.any` | 第一个成功 | 全部失败 | 第一个成功的值 / `AggregateError` |
+
+**经典场景：如果传入空数组会怎样？**
+`Promise.all([])` 会立即 resolve 一个空数组。这是规范行为——"全部成功"在没有任务时自然就是成功的。
+
+### Promise.all 的并发控制
+
+`Promise.all` 没有并发限制，所有 Promise 同时发起。在实际项目中，需要手动实现并发控制：
+
+```javascript
+/**
+ * 手动实现并发限制
+ * 核心思想：维护一个固定大小的执行池，池满时用 Promise.race 等待任意一个完成
+ * @param {Function[]} tasks - 任务函数数组，每个函数返回 Promise
+ * @param {number} limit - 最大并发数，默认 3
+ * @returns {Promise<Array>} 按原始顺序排列的结果数组
+ */
+async function parallelLimit(tasks, limit = 3) {
+  const results = [];                     // 存储结果，用索引保证顺序
+  const executing = new Set();            // 当前正在执行的 Promise 集合（执行池）
+  for (const [i, task] of tasks.entries()) {
+    // 启动任务，完成后将结果存入对应索引，并从执行池中移除
+    const p = task().then(r => { results[i] = r; executing.delete(p); });
+    executing.add(p);                     // 将 Promise 加入执行池
+    if (executing.size >= limit) await Promise.race(executing); // 池满，等任意一个完成
+  }
+  await Promise.all(executing);           // 等待执行池中剩余任务全部完成
+  return results;                         // 按原始顺序返回结果
+}
+```
+
+### Promise.any 的 AggregateError
+
+当 `Promise.any` 的所有 Promise 都 reject 时，会抛出 `AggregateError`：
+
+```javascript
+try {
+  await Promise.any([
+    Promise.reject('error 1'),
+    Promise.reject('error 2'),
+  ]);
+} catch (e) {
+  console.log(e instanceof AggregateError); // true
+  console.log(e.errors); // ['error 1', 'error 2']
+}
+```
+
+---
+
+## Q5: 手写 Promise A+：核心逻辑
+
+手写 Promise 的关键不是背代码，而是理解四件事：状态机、回调队列、异步调度、thenable 展平。
+
+```javascript
+/**
+ * 手写 Promise A+ 实现
+ * 核心机制：状态机 + 回调队列 + 异步调度 + thenable 展平
+ * 遵循 Promises/A+ 规范：https://promisesaplus.com/
+ */
+
+// 三种状态常量——Promise 状态只能从 PENDING 单向转换，不可逆
+const PENDING = 'pending';
+const FULFILLED = 'fulfilled';
+const REJECTED = 'rejected';
+
+class MyPromise {
+  /**
+   * @param {Function} executor - 执行器函数，接收 resolve 和 reject 两个回调
+   * 同步执行，任何异常都会自动触发 reject
+   */
+  constructor(executor) {
+    this.status = PENDING;                // 初始状态：pending（等待中）
+    this.value = undefined;               // fulfilled 时的成功值
+    this.reason = undefined;              // rejected 时的失败原因
+    this.onFulfilledCallbacks = [];       // pending 状态时缓存的 fulfilled 回调队列
+    this.onRejectedCallbacks = [];        // pending 状态时缓存的 rejected 回调队列
+
+    /**
+     * resolve 函数：将 Promise 从 pending 转为 fulfilled
+     * @param {*} value - 成功值，可以是普通值、Promise 或 thenable
+     */
+    const resolve = (value) => {
+      // 如果 resolve 的值是 Promise 或 thenable，需要递归展平
+      // 这是实现"链式调用中返回 Promise 自动拆包"的关键
+      if (value instanceof MyPromise) return value.then(resolve, reject);
+      // 只有 pending 状态才能转换——这是"状态不可逆"的保证
+      if (this.status === PENDING) {
+        this.status = FULFILLED;          // 状态定格为 fulfilled
+        this.value = value;               // 存储成功值
+        // 批量执行 pending 时注册的所有 onFulfilled 回调
+        this.onFulfilledCallbacks.forEach(fn => fn());
+      }
+    };
+
+    /**
+     * reject 函数：将 Promise 从 pending 转为 rejected
+     * @param {*} reason - 失败原因
+     */
+    const reject = (reason) => {
+      // 同样只在 pending 状态下生效——后续调用被静默忽略（状态吸收）
+      if (this.status === PENDING) {
+        this.status = REJECTED;           // 状态定格为 rejected
+        this.reason = reason;             // 存储失败原因
+        // 批量执行 pending 时注册的所有 onRejected 回调
+        this.onRejectedCallbacks.forEach(fn => fn());
+      }
+    };
+
+    // 同步执行 executor，捕获异常自动 reject
+    // 这保证了 executor 中的 throw 会被转为 rejected 状态
+    try { executor(resolve, reject); } catch (e) { reject(e); }
+  }
+
+  /**
+   * then 方法：Promise 链式调用的核心
+   * 返回一个新的 Promise，实现链式调用和值传递
+   * @param {Function} onFulfilled - 成功回调
+   * @param {Function} onRejected - 失败回调
+   * @returns {MyPromise} 新的 Promise 实例
+   */
+  then(onFulfilled, onRejected) {
+    // 值穿透：如果回调不是函数，用默认值函数替代
+    // onFulfilled 默认返回原值（实现值穿透：.then(123).then(v => v) 得到 123）
+    // onFulfilled = typeof onFulfilled === 'function' ? onFulfilled : v => v;
+    // onRejected 默认抛出原错误（实现错误冒泡：.catch 前的 rejection 继续传递）
+    onFulfilled = typeof onFulfilled === 'function' ? onFulfilled : v => v;
+    onRejected = typeof onRejected === 'function' ? onRejected : r => { throw r; };
+
+    // 创建新的 Promise（promise2），这是 Promise A+ 规范要求
+    const promise2 = new MyPromise((resolve, reject) => {
+      /**
+       * 统一处理回调执行的逻辑
+       * 用 queueMicrotask 包裹，保证回调强制异步执行（防 Zalgo 现象）
+       * @param {Function} callback - 要执行的回调函数
+       * @param {*} value - 传给回调的值
+       */
+      const handle = (callback, value) => {
+        // queueMicrotask 保证回调总是在微任务中异步执行
+        // 即使 Promise 已经 fulfilled，回调也不会同步执行
+        queueMicrotask(() => {
+          try {
+            const x = callback(value);    // 执行回调，拿到返回值 x
+            // resolvePromise 处理 x 的所有可能类型：普通值、Promise、thenable
+            // 这是实现 thenable 展平的核心——递归解析嵌套的 Promise
+            resolvePromise(promise2, x, resolve, reject);
+          } catch (e) { reject(e); }      // 回调抛异常，promise2 直接 reject
+        });
+      };
+
+      // 根据当前 Promise 状态，决定如何执行回调
+      if (this.status === FULFILLED) handle(onFulfilled, this.value);
+      // 已 fulfilled：立即在微任务中执行 onFulfilled
+      else if (this.status === REJECTED) handle(onRejected, this.reason);
+      // 已 rejected：立即在微任务中执行 onRejected
+      else {
+        // 还是 pending 状态：把回调存入队列，等 resolve/reject 时再批量执行
+        this.onFulfilledCallbacks.push(() => handle(onFulfilled, this.value));
+        this.onRejectedCallbacks.push(() => handle(onRejected, this.reason));
+      }
+    });
+    return promise2;                      // 返回新 Promise，支持链式调用
+  }
+
+  /**
+   * catch 方法：then(null, onRejected) 的语法糖
+   * 用于捕获 Promise 链中的错误
+   */
+  catch(onRejected) { return this.then(null, onRejected); }
+
+  /**
+   * finally 方法：无论成功或失败都会执行的回调
+   * 关键：回调的返回值不影响最终结果，原始值或错误会透传
+   * @param {Function} callback - 最终执行的回调
+   */
+  finally(callback) {
+    return this.then(
+      // 成功时：执行 callback，然后把原始 value 传递下去
+      value => MyPromise.resolve(callback()).then(() => value),
+      // 失败时：执行 callback，然后把原始 reason 继续抛出
+      reason => MyPromise.resolve(callback()).then(() => { throw reason; })
+    );
+  }
+}
+```
+
+<Warning title="⚠️ 核心: resolvePromise 的 thenable 展平">
+
+`.then` 的回调返回值可以是 Promise、thenable 对象或普通值。`resolvePromise` 递归处理这些情况，确保无论嵌套多少层，最终都会被"展平"为一个普通值。关键：必须检测循环引用 `if (promise2 === x)`，否则会陷入无限递归。
+
+
+</Warning>
+
+### resolvePromise 的四种情况
+
+`resolvePromise` 需要处理 `.then` 回调返回值的所有可能情况：
+
+| 返回值类型 | 处理方式 |
+|-----------|---------|
+| 普通值 | 直接 `resolve(x)` |
+| Promise | 递归调用 `x.then(resolvePromise)` |
+| thenable | 取 `x.then` 后递归调用 |
+| 循环引用 | 拒绝并抛出 `TypeError` |
+
+### Promise A+ 规范的核心要求
+
+Promise A+ 规范（Promises/A+）定义了 `.then` 方法的行为标准：
+
+1. `.then` 必须返回一个新的 Promise（支持链式调用）
+2. `onFulfilled` 和 `onRejected` 必须异步执行（微任务）
+3. `onFulfilled` 和 `onRejected` 必须作为函数调用（`this` 为 `undefined`）
+4. `resolvePromise` 必须处理 thenable 展平和循环引用
+
+---
+
+## Q6: async/await：Generator + Promise 的语法糖
+
+```javascript
+async function fetchData() {
+  const response = await fetch(url);
+  const data = await response.json();
+  return data;
+}
+
+// 等价于：
+function* fetchData() {
+  const response = yield fetch(url);
+  const data = yield response.json();
+  return data;
+}
+// + 一个自动执行器，用 Promise 链驱动 generator
+```
+
+`await` 的本质是 `yield` + `Promise.resolve(value).then()`。当 Promise resolve 后，自动执行器调用 `gen.next(value)` 恢复执行。错误通过 `gen.throw(err)` 注入到 generator 内部，所以 `await` 的错误能被 `try/catch` 捕获。
+
+### async/await 的执行顺序
+
+`await` 下面的代码会被打包成微任务，这是理解 async/await 执行顺序的关键：
+
+```javascript
+console.log('1');
+async function foo() {
+  console.log('2');
+  await Promise.resolve();
+  console.log('3'); // 微任务
+}
+foo();
+console.log('4');
+// 输出：1 → 2 → 4 → 3
+```
+
+**关键点：**
+1. `await` 右边的函数**立刻同步执行**（输出 2）
+2. `await` 下面的代码被打包进**隐形的 `Promise.then()`**（输出 3 是微任务）
+3. 所以 `await` 下面的代码一定在当前同步代码之后执行（输出 4 在输出 3 之前）
+
+### 错误处理的最佳实践
+
+async/await 的错误处理有两种模式：
+
+```javascript
+// 模式 1：try/catch（推荐）
+async function fetchData() {
+  try {
+    const data = await fetch(url);
+    return data;
+  } catch (e) {
+    console.error('请求失败', e);
+  }
+}
+
+// 模式 2：.catch() 兜底
+async function fetchData() {
+  const data = await fetch(url).catch(e => {
+    console.error('请求失败', e);
+    return null;
+  });
+  return data;
+}
+```
+
+---
+
+## Q7: Promise 状态吸收是什么？
+
+Promise 的状态吸收（State Absorption）是指：**Promise 一旦从 pending 转变为 fulfilled 或 rejected，后续所有的 `resolve` 或 `reject` 调用都会被静默忽略，不会抛出任何错误。** 这是 ECMAScript 规范中 `PromiseResolveThenableJob` 和 `PromiseResolveFunction` 的核心设计——状态机模型保证了 Promise 的状态只能改变一次，永远不可逆。
+
+```javascript
+/**
+ * 状态吸收的典型表现
+ * 状态一旦确定就不可变，后续的 resolve/reject 调用被静默忽略
+ */
+const p = new Promise((resolve, reject) => {
+  resolve('first');     // 第一次调用：pending → fulfilled，值为 'first'
+  reject('second');     // 被忽略——状态已经是 fulfilled，不会抛错也不会改变值
+  resolve('third');     // 同样被忽略——状态不可逆，只能 settle 一次
+});
+
+p.then(v => console.log(v)); // 'first'——最终值由第一次 settle 决定
+```
+
+### 状态吸收在实际业务中的影响
+
+状态吸收并非只是"面试冷知识"，它在真实项目中会直接影响你对竞态条件的处理：
+
+```javascript
+/**
+ * 竞态场景：多次并发请求，只有第一个返回的结果生效
+ * 利用外层标志位 + Promise 状态吸收实现"先到先得"
+ * @param {string} url - 请求地址
+ * @returns {Promise} 第一个成功响应的 Promise
+ */
+let hasResolved = false;
+function fetchFirstWin(url) {
+  return new Promise((resolve) => {
+    fetch(url).then(res => {
+      if (!hasResolved) {
+        hasResolved = true;               // 标记已成功，防止后续请求再次 resolve
+        resolve(res);                     // 只有第一次 resolve 生效
+      }
+      // 后续的 resolve 不会执行到这里，因为 hasResolved 已经是 true
+    });
+  });
+}
+
+/**
+ * 更简洁的做法：直接利用 Promise 的状态吸收特性
+ * 不需要手动维护标志位——Promise 内部机制保证状态只改变一次
+ * @param {string} url - 请求地址
+ * @returns {Promise} 第一个成功响应的 Promise
+ */
+function fetchFirstWinSimpler(url) {
+  return new Promise((resolve, reject) => {
+    fetch(url).then(resolve).catch(reject);
+    // 如果 fetch 多次调用 resolve，只有第一次生效（状态吸收）
+  });
+}
+```
+
+<Warning title="⚠️ 状态吸收 vs throw 在 executor 中的行为">
+
+在 Promise executor 中，`throw` 只有在状态仍是 `pending` 时才会触发 `reject`。一旦 `resolve` 已经被调用，`throw` 不会被捕获（因为 executor 已经执行完毕），不会影响 Promise 的状态。
+
+```javascript
+// throw 在 resolve 之前 → 触发 reject
+new Promise((resolve, reject) => {
+  throw new Error('fail');
+}).catch(e => console.log(e.message)); // 'fail'
+
+// throw 在 resolve 之后 → 被忽略
+new Promise((resolve, reject) => {
+  resolve('ok');
+  throw new Error('fail');
+}).then(v => console.log(v)); // 'ok'（Error 被静默吞掉）
+```
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 一次性快照">
+
+Promise 的状态吸收就像拍了一张不可修改的快照。一旦快门按下（`resolve` 或 `reject`），画面就定格了。你再怎么在镜头前挥舞手臂（后续调用 `resolve`/`reject`），快照里的画面不会有任何变化。唯一能改变结果的机会，是在快门按下之前。
+
+</Tip>
+
+---
+
+## Q8: 如何实现并发任务控制？
+
+`Promise.all` 没有并发限制，所有 Promise 同时发起。在实际项目中，批量请求 100 个接口会瞬间打满浏览器的同域并发连接数（Chrome 限制 6 个），导致后面的请求排队等待，甚至触发服务端限流。并发任务控制的核心思想是：**维护一个固定大小的执行池，池满时用 `Promise.race` 等待任意一个完成后再加入新任务。**
+
+```javascript
+/**
+ * 手写并发控制器
+ * 核心思想：维护一个固定大小的 Set 作为执行池，
+ * 池满时用 Promise.race 等待任意一个任务完成后再加入新任务
+ */
+class ConcurrencyController {
+  /**
+   * @param {number} limit - 最大并发数
+   */
+  constructor(limit = 3) {
+    this.limit = limit;                   // 并发上限
+    this.executing = new Set();           // 当前正在执行的 Promise 集合
+  }
+
+  /**
+   * 添加一个任务到执行池
+   * 如果池已满，会等待任意一个任务完成后再执行
+   * @param {Function} task - 返回 Promise 的任务函数
+   * @returns {Promise} 该任务的 Promise
+   */
+  async add(task) {
+    // 池满时，用 Promise.race 等待任意一个任务完成腾出位置
+    // while 循环确保在极端情况下（多个任务同时完成）也能正确等待
+    while (this.executing.size >= this.limit) {
+      await Promise.race(this.executing);
+    }
+
+    // 启动任务，.finally 保证无论成功失败都从执行池中移除
+    const p = task().finally(() => this.executing.delete(p));
+    this.executing.add(p);               // 将 Promise 加入执行池
+    return p;                            // 返回 Promise，外部可 await 获取结果
+  }
+
+  /**
+   * 等待执行池中所有任务完成
+   * @returns {Promise} 所有任务完成后的 Promise
+   */
+  async waitAll() {
+    await Promise.all(this.executing);    // 等待所有正在执行的任务完成
+  }
+}
+
+// 使用示例
+const controller = new ConcurrencyController(3); // 最多同时 3 个请求
+const urls = Array.from({ length: 20 }, (_, i) => `/api/data/${i}`);
+const tasks = urls.map(url => () => fetch(url).then(r => r.json()));
+
+const results = [];
+for (const task of tasks) {
+  controller.add(task).then(r => results.push(r)); // 逐个添加任务
+}
+await controller.waitAll();               // 等待所有 20 个任务全部完成
+```
+
+### 更简洁的实现：parallelLimit 函数
+
+```javascript
+/**
+ * 更简洁的并发控制实现
+ * 与 ConcurrencyController 等价，但用函数式风格，代码更紧凑
+ * @param {Function[]} tasks - 任务函数数组，每个函数返回 Promise
+ * @param {number} limit - 最大并发数，默认 3
+ * @returns {Promise<Array>} 按原始顺序排列的结果数组
+ */
+async function parallelLimit(tasks, limit = 3) {
+  const results = [];                     // 用索引存储结果，保证顺序与输入一致
+  const executing = new Set();            // 当前正在执行的 Promise 集合
+  for (const [i, task] of tasks.entries()) {
+    // 启动任务：完成后存结果到对应索引，并从执行池移除
+    const p = task().then(r => { results[i] = r; executing.delete(p); });
+    executing.add(p);                     // 加入执行池
+    if (executing.size >= limit) await Promise.race(executing); // 池满，等任意一个完成
+  }
+  await Promise.all(executing);           // 等待最后一批任务完成
+  return results;
+}
+
+// 使用示例
+const tasks = urls.map(url => () => fetch(url).then(r => r.json()));
+const results = await parallelLimit(tasks, 5);
+// 最多同时 5 个请求，结果按原始顺序排列
+```
+
+### p-limit 的设计思路
+
+社区中最流行的并发控制库 `p-limit` 的核心原理与此类似，但它使用队列来管理等待中的任务，避免了多余的 `Promise.race` 微任务：
+
+```javascript
+/**
+ * p-limit 的核心思路（简化版）
+ * 与 parallelLimit 的区别：用队列代替 Promise.race，避免多余的微任务
+ * 社区中最流行的并发控制库 p-limit 就是这个思路
+ * @param {number} concurrency - 最大并发数
+ * @returns {Function} 限流函数，接收任务函数并返回 Promise
+ */
+function pLimit(concurrency) {
+  const queue = [];                       // 等待执行的任务队列
+  let activeCount = 0;                    // 当前正在执行的任务数
+
+  /**
+   * 内部调度器：任务完成后从队列中取出下一个任务执行
+   * 通过 .finally 注册，保证无论成功失败都会触发
+   */
+  const next = () => {
+    activeCount--;                        // 活跃任务数减一
+    if (queue.length > 0) {
+      queue.shift()();                    // 从队列头部取出下一个任务并执行
+    }
+  };
+
+  /**
+   * 返回限流函数：调用时如果并发未满则立即执行，否则排入队列
+   * @param {Function} fn - 要执行的任务函数
+   * @param  {...any} args - 传给任务函数的参数
+   * @returns {Promise} 任务执行结果
+   */
+  return (fn, ...args) =>
+    new Promise((resolve, reject) => {
+      /**
+       * run 函数：实际执行任务的闭包
+       * 用闭包捕获 resolve/reject，任务完成后通知调用方
+       */
+      const run = () => {
+        activeCount++;                    // 活跃任务数加一
+        fn(...args).then(resolve, reject).finally(next); // 执行任务，完成后调度下一个
+      };
+      if (activeCount < concurrency) run(); // 并发未满，立即执行
+      else queue.push(run);               // 并发已满，排入等待队列
+    });
+}
+
+// 使用
+const limit = pLimit(3);                  // 最多同时 3 个任务
+const results = await Promise.all(
+  urls.map(url => limit(() => fetch(url).then(r => r.json())))
+);
+```
+
+<Warning title="⚠️ parallelLimit 与 p-limit 的关键区别">
+
+`parallelLimit` 用 `Promise.race` 实现"等待"，`p-limit` 用队列实现"排队"。两者在功能上等价，但 `p-limit` 的队列方式不会产生多余的 `Promise.race` 微任务，性能更优。在实际项目中，推荐直接使用 `p-limit` 库。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 餐厅等位">
+
+并发任务控制就像餐厅的等位系统。餐厅有 3 张空桌（limit = 3）。前 3 组客人直接入座（任务开始执行）。第 4 组客人来了，必须等其中一桌吃完离开（`Promise.race` 等待任意一个任务完成），才能入座。餐厅不会因为来了 100 组客人就把所有桌子都摆出来——桌子数（并发数）是固定的，多余的客人只能排队（队列等待）。
+
+</Tip>
+
+---
+
+## 🔍 底层源码：V8 是如何实现 Promise 的？
+
+<div class="follow-up">
+V8 中 Promise 的微任务到底是怎么入队的？
+</div>
+
+V8 内部使用 Torque 语言实现 Promise（详见 [V8 源码：src/builtins/promise-then.tq](https://github.com/v8/v8/blob/main/src/builtins/promise-then.tq)）：
+
+```cpp
+// V8 源码（极简抽象）
+transitioning macro PerformPromiseThenImpl(...) {
+  const reaction = NewPromiseReaction(onFulfilled, onRejected);
+  if (promise.status == PENDING) {
+    promise.reactions.Push(reaction); // 加入等待队列
+  } else {
+    EnqueueMicrotask(reaction);       // 已经是 settled，立刻入队微任务
+  }
+}
+```
+
+<div class="follow-up">
+async/await 在底层到底是什么？
+</div>
+
+async/await 在 V8 内部被直接编译为 **Generator 状态机 + 自动执行器**。`await expr` 被转换为 `yield Promise.resolve(expr)`，自动执行器在 Promise resolve 后调用 `gen.next(res)` 恢复执行，在 reject 时调用 `gen.throw(err)` 注入错误。
+
+---
+
+## Q9: try/catch 能捕获 Promise 错误吗？什么可以捕获？
+
+这是面试中最高频的 Promise 错误处理问题。很多候选人以为 `try/catch` 万能，但它对异步的 Promise rejection 根本无能为力。
+
+### try/catch 能捕获 Promise 错误吗？
+
+**结论：`try/catch` 不能捕获异步的 Promise rejection，只能捕获同步错误和 `await` 的 rejection。**
+
+根本原因是 `try/catch` 是同步的——它在当前调用栈执行完毕后就结束了。而 Promise 的 reject 是异步的（微任务），发生在 `try/catch` 已经退出之后：
+
+```javascript
+// ❌ 错误：try/catch 捕获不到异步的 Promise rejection
+try {
+  Promise.reject(new Error('async error'));
+} catch (e) {
+  // 永远不会执行——catch 在当前同步调用栈中，
+  // 而 Promise.reject 的 rejection 在微任务队列中异步触发
+  console.error('caught:', e);
+}
+// UnhandledPromiseRejection（未捕获的 rejection）
+
+// ✅ 正确：await 让同步代码"暂停"，把异步 rejection 拉回当前调用栈
+async function safeFetch() {
+  try {
+    const data = await fetch('/api/data');   // await 将异步转为同步
+    return data;
+  } catch (e) {
+    // 可以捕获——await 暂停执行，rejection 在 try/catch 的调用栈内触发
+    console.error('caught:', e);
+  }
+}
+
+// ✅ 正确：executor 内的 throw 是同步的，可以被 try/catch 捕获
+try {
+  new Promise((resolve, reject) => {
+    throw new Error('sync error in executor');  // 同步抛出
+  });
+} catch (e) {
+  console.error('caught:', e);  // 可以捕获
+}
+```
+
+**根本原因：**
+
+```text
+try/catch 捕获的是当前调用栈中的同步异常。
+
+同步代码：  try { throw Error } → 捕获 ✅
+executor：  new Promise(() => { throw Error }) → 捕获 ✅（同步执行）
+异步 reject：Promise.reject() 的 rejection → 捕获 ❌（微任务，不在调用栈中）
+await：     await promise → 捕获 ✅（await 将异步拉回同步调用栈）
+```
+
+### 什么可以捕获 Promise 错误？
+
+有四种方式可以捕获 Promise 的 rejection：
+
+**方式 1：`.catch()` 方法**
+
+```javascript
+// .catch() 是 Promise 专用的错误捕获方式
+fetch('/api/data')
+  .then(res => res.json())
+  .catch(e => {
+    console.error('请求失败:', e);  // 捕获链中任何一步的 rejection
+  });
+
+// 捕获范围：从 .then() 开始到 .catch() 之间的所有错误
+fetch('/api/user')
+  .then(res => res.json())         // 这里出错 → 被 catch 捕获
+  .then(user => parse(user))       // 这里出错 → 被 catch 捕获
+  .catch(e => console.error(e));   // 兜底捕获
+```
+
+**方式 2：`async/await` + `try/catch`**
+
+```javascript
+// async/await 让异步代码看起来像同步，try/catch 自然生效
+async function loadPage() {
+  try {
+    const user = await fetch('/api/user').then(r => r.json());
+    const orders = await fetch(`/api/orders/${user.id}`).then(r => r.json());
+    return { user, orders };
+  } catch (e) {
+    // 捕获 await 链中任何一步的 rejection
+    console.error('加载失败:', e);
+  }
+}
+```
+
+**方式 3：`unhandledrejection` 事件（全局兜底）**
+
+```javascript
+// 浏览器环境：捕获所有未处理的 Promise rejection
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('未捕获的 rejection:', event.reason);
+  event.preventDefault(); // 阻止默认行为（控制台报错）
+});
+
+// Node.js 环境
+process.on('unhandledrejection', (reason, promise) => {
+  console.error('未捕获的 rejection:', reason);
+});
+```
+
+**方式 4：`Promise.allSettled` vs `Promise.all`**
+
+```javascript
+// ❌ Promise.all：一个失败全部失败，错误信息只有第一个
+try {
+  const results = await Promise.all([
+    fetch('/api/a'),
+    fetch('/api/b'),  // 假设这个失败了
+    fetch('/api/c'),  // 即使这个成功，结果也被丢弃
+  ]);
+} catch (e) {
+  console.error(e); // 只能拿到第一个失败的原因，其他结果丢失
+}
+
+// ✅ Promise.allSettled：等待全部完成，拿到每个结果的状态
+const results = await Promise.allSettled([
+  fetch('/api/a'),
+  fetch('/api/b'),
+  fetch('/api/c'),
+]);
+// results: [
+//   { status: 'fulfilled', value: Response },
+//   { status: 'rejected', reason: Error },
+//   { status: 'fulfilled', value: Response },
+// ]
+results.forEach((result, i) => {
+  if (result.status === 'rejected') {
+    console.error(`请求 ${i} 失败:`, result.reason);
+  }
+});
+```
+
+### Promise 错误处理最佳实践
+
+**规则 1：永远不要让 Promise rejection 无人处理**
+
+```javascript
+// ❌ 错误：rejection 无人处理，导致 unhandledrejection
+fetch('/api/data').then(res => res.json());
+// 如果 fetch 失败，没有任何 .catch()，浏览器报 Uncaught (in promise) Error
+
+// ✅ 正确：链尾必须有 .catch() 兜底
+fetch('/api/data')
+  .then(res => res.json())
+  .catch(e => {
+    console.error('请求失败:', e);
+    return null; // 返回降级值，保证后续逻辑不中断
+  });
+```
+
+**规则 2：错误边界模式——局部 catch 做降级，链尾 catch 做兜底**
+
+```javascript
+// 局部 catch：为关键步骤提供降级方案
+fetch('/api/user')
+  .then(res => res.json())
+  .catch(e => {
+    console.warn('用户信息获取失败，使用默认值');
+    return { id: 'guest', name: '访客' }; // 降级：返回默认用户
+  })
+  .then(user => fetch(`/api/orders/${user.id}`))
+  .then(res => res.json())
+  .catch(e => {
+    // 兜底：捕获前面所有未处理的错误
+    console.error('页面加载失败:', e);
+    showErrorPage(e);
+  });
+```
+
+**规则 3：统一错误处理模式**
+
+```javascript
+/**
+ * 统一的异步错误处理包装器
+ * 将 Promise 的 rejection 转为 [error, data] 格式，避免 try/catch 嵌套
+ * @param {Promise} promise - 要执行的 Promise
+ * @returns {Promise<[Error|null, any]>} [错误, 数据] 格式的结果
+ */
+async function to(promise) {
+  try {
+    const data = await promise;
+    return [null, data];
+  } catch (e) {
+    return [e, null];
+  }
+}
+
+// 使用：解构赋值，代码更清晰
+const [err, user] = await to(fetch('/api/user').then(r => r.json()));
+if (err) {
+  console.error('获取用户失败:', err);
+  return;
+}
+// 继续使用 user...
+```
+
+<Note title="💡 一句话总结">
+
+`try/catch` 只能捕获同步错误和 `await` 的 rejection；异步的 Promise rejection 必须用 `.catch()` 或 `unhandledrejection` 事件捕获。最佳实践是：链尾 `.catch()` 兜底 + 局部 `.catch()` 做降级。
+
+</Note>
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 Promise 的核心原理，以及它解决了什么问题？"
+
+**及格回答（60-70分）：**
+> "Promise 是用来解决回调地狱的。它是状态机，三种状态只能单向转换。then 的回调异步执行（微任务）。支持链式调用。Promise.all 全部成功才 resolve，race 取第一个完成的。"
+
+面试官评价：**背了规则但不理解设计，缺乏底层深度。**
+
+**满分回答（90-100分）：**
+
+> "Promise 解决的核心问题不仅是链式调用，更是解决了**控制反转与信任问题**。作为单向不可逆的有限状态机，它保证了状态一旦变更为兑现（fulfilled）或拒绝（rejected），就只会执行一次。<sup>[1]</sup>"
+
+> "`then` 回调强制异步执行。根据 ECMA-262 规范，即使 Promise 已经兑现，`PerformPromiseThen` 也会创建一个 `PromiseReactionJobTask` 放入微任务队列，绝对保证执行顺序一致性（防 Zalgo 现象）。手写 Promise 时最难点在于 `resolvePromise` 的 **thenable 展平机制**——允许嵌套，只要对象有 `.then` 就会递归解析。<sup>[2]</sup>"
+
+> "async/await 不是什么全新的运行时机制，它在 V8 内部被编译为 Generator 状态机 + 自动执行器。`await expr` 被转换为 `yield Promise.resolve(expr)`。错误通过 `gen.throw(err)` 重新注入到函数体内，这就是为什么 `await` 的错误能被 `try/catch` 捕获。<sup>[3]</sup>"
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title='Promise.all 的实现原理?' icon="layer-group">
+
+    **答题要点：**
+    点出核心细节：如何保证返回顺序、如何判断结束。
+
+    **高分回答：**
+    "核心步骤有三：1) 遍历 promises 数组，用 `Promise.resolve()` 包裹每一个元素以兼容非 Promise 值。2) 使用 `index` 将结果存入 `results` 数组，而不是使用 `push`，这是为了**强行保证返回结果的顺序与传入顺序一致**。3) 用一个独立的 `count` 变量跟踪完成数，当 `count === len` 时执行最终的 `resolve(results)`。任何一个拒绝则直接触发外层的 `reject`（fail-fast）。"
+
+  </Accordion>
+
+  <Accordion title='resolvePromise 为什么要处理循环引用?' icon="stopwatch">
+
+    **答题要点：**
+    体现对规范安全性的理解。
+
+    **高分回答：**
+    "如果 `.then` 的回调返回了 promise 自身（比如 `const p = p1.then(() => p)`），如果没有循环引用检测，程序就会陷入无限递归死等自己的状态改变。规范明确要求，在 `resolvePromise` 内部必须检测 `if (promise2 === x)`，一旦命中必须立刻拒绝，并抛出一个 `TypeError: Chaining cycle detected`。"
+
+  </Accordion>
+
+  <Accordion title='async/await 中的 await 到底干了什么事?' icon="stopwatch">
+
+    **答题要点：**
+    不要只答"等待"，要说出暂停和微任务包转。
+
+    **高分回答：**
+    "`await` 右侧调用的函数会**立刻同步执行**。而 `await` 下面的所有代码，都会被打包塞进一个隐形的 `Promise.then()` 里，变成一个微任务去排队！所以在 Event Loop 中，遇到 `await` 并不是线程卡住了，而是当前协程让出控制权，将后续代码作为微任务注册到该 Promise 上。"
+
+  </Accordion>
+
+  <Accordion title='🔥 值穿透, 状态不可逆, 隐式包装三大陷阱?' icon="skull">
+
+    **答题要点：**
+    用代码推演三个经典陷阱。
+
+    **高分回答：**
+    "三个经典陷阱：
+    
+    1. **值穿透**：`.then` 接收非函数时发生值穿透。`Promise.resolve(1).then(2).then(console.log)` 输出 `1`。
+    
+    2. **状态不可逆**：`resolve('success'); throw new Error('error')` ——throw 被忽略，因为状态已经 fulfilled。
+    
+    3. **隐式包装**：`.then(() => new Error('error'))` 不会触发 catch，因为 `return Error` 被包装为成功的 Promise。只有 `throw` 或 `return rejectedPromise` 才会触发 catch。"
+
+  </Accordion>
+
+  <Accordion title='Promise.all 和 Promise.allSettled 的区别?' icon="layer-group">
+
+    **答题要点：**
+    点出 fail-fast 行为和容错能力的差异。
+
+    **高分回答：**
+    "`Promise.all` 是 fail-fast 策略——任何一个 Promise reject，整个 `Promise.all` 立刻 reject，其他 Promise 的结果被忽略。这在批量请求场景下会导致"一个失败全部失败"的问题。
+    
+    `Promise.allSettled` 是 ES2020 引入的，它会等待所有 Promise 都敲定（fulfilled 或 rejected），然后返回一个包含每个结果状态的数组。适合"不放弃任何一个结果"的场景，比如批量上传文件，即使部分失败也要知道哪些成功哪些失败。
+    
+    ```javascript
+    const results = await Promise.allSettled([
+      fetch('/api/a'),
+      fetch('/api/b'),
+    ]);
+    // results: [{status:'fulfilled', value:...}, {status:'rejected', reason:...}]
+    ```"
+
+  </Accordion>
+
+  <Accordion title='如何实现 Promise 的并发控制?' icon="node">
+
+    **答题要点：**
+    手写一个带并发限制的 Promise 调度器。
+
+    **高分回答：**
+    "`Promise.all` 没有并发限制，所有 Promise 同时发起。如果一次请求 100 个接口，会瞬间打满浏览器的并发连接数（Chrome 同域限制 6 个），导致后面的请求排队等待。
+    
+    实现思路：维护一个执行池，大小为 `limit`。当池满时，用 `Promise.race` 等待任意一个完成后，再加入新的任务。
+    
+    ```javascript
+    /**
+     * 并发控制器：用 Set 作为执行池，Promise.race 实现等待
+     * @param {Function[]} tasks - 任务函数数组
+     * @param {number} limit - 最大并发数
+     * @returns {Promise<Array>} 按原始顺序排列的结果数组
+     */
+    async function parallelLimit(tasks, limit = 3) {
+      const results = [];                 // 用索引存储结果，保证顺序一致
+      const executing = new Set();        // 当前执行池
+      for (const [i, task] of tasks.entries()) {
+        const p = task().then(r => { results[i] = r; executing.delete(p); }); // 完成后存结果并移除
+        executing.add(p);                 // 加入执行池
+        if (executing.size >= limit) await Promise.race(executing); // 池满等任意完成
+      }
+      await Promise.all(executing);       // 等待最后一批任务
+      return results;
+    }
+    ```
+    
+    更优雅的方案是使用 p-limit 这类库，或使用 ES2025 的 `Promise.withResolvers()` 简化实现。"
+
+  </Accordion>
+
+  <Accordion title='🔥 如何取消一个已经发起的 Promise?' icon="skull">
+
+    **答题要点：**
+    说明 Promise 本身不可取消，需要借助 AbortController。
+
+    **高分回答：**
+    "Promise 本身设计上**没有取消机制**——状态一旦确定就不可逆。但可以通过以下方式实现'取消'效果：
+    
+    **方案 1：AbortController（推荐）**
+    ```javascript
+    const controller = new AbortController();
+    fetch(url, { signal: controller.signal })
+      .then(res => res.json())
+      .catch(e => {
+        if (e.name === 'AbortError') console.log('请求被取消');
+      });
+    controller.abort(); // 取消请求
+    ```
+    
+    **方案 2：竞态取消**
+    ```javascript
+    let currentId = 0;
+    async function fetchData() {
+      const id = ++currentId;
+      const data = await fetch(url);
+      if (id !== currentId) return; // 已过期，丢弃结果
+      return data;
+    }
+    ```
+    
+    **方案 3：Promise.race 与哨兵值**
+    ```javascript
+    function withCancel(promise, signal) {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          signal.addEventListener('abort', () => reject(new Error('cancelled')));
+        })
+      ]);
+    }
+    ```"
+
+  </Accordion>
+
+  <Accordion title='Promise 链式调用的错误处理最佳实践?' icon="node">
+
+    **答题要点：**
+    说明 .catch() 的位置对错误捕获范围的影响。
+
+    **高分回答：**
+    "Promise 链式调用中，`.catch()` 的位置决定了它能捕获哪些错误：
+    
+    **位置 1：链尾（捕获整个链的错误）**
+    ```javascript
+    fetch('/api/user')
+      .then(res => res.json())
+      .then(user => fetch(`/api/orders/${user.id}`))
+      .then(res => res.json())
+      .catch(e => console.error('整个链的错误', e));
+    ```
+    
+    **位置 2：中间（局部错误处理）**
+    ```javascript
+    fetch('/api/user')
+      .then(res => res.json())
+      .catch(e => {
+        console.error('用户请求失败', e);
+        return { id: 'default' }; // 降级处理
+      })
+      .then(user => fetch(`/api/orders/${user.id}`))
+      .then(res => res.json())
+      .catch(e => console.error('订单请求失败', e));
+    ```
+    
+    **最佳实践：**
+    1. 链尾 `.catch()` 兜底，防止未捕获的 Promise rejection
+    2. 中间 `.catch()` 做降级处理，保证链继续执行
+    3. 避免在 `.then()` 中嵌套 Promise，保持链式调用的扁平化"
+
+  </Accordion>
+
+  <Accordion title='🔥 什么是 Promise 的状态吸收（state absorption）?' icon="skull">
+
+    **答题要点：**
+    Promise 的状态一旦确定就不可变，resolve 一个 Promise 时会发生状态传递，链式调用中的最终状态由最后一个 settle 的 Promise 决定。
+
+    **高分回答：**
+    "Promise 的状态吸收是指：**当 `resolve()` 接收到一个 Promise（或 thenable）时，新 Promise 的状态会完全'吸收'该 Promise 的状态**——它不会立即 fulfilled，而是等到被吸收的 Promise 也 settle 后，才以相同的值或原因变成对应的状态。
+    
+    这是 `resolvePromise` 内部机制的核心体现：
+    
+    ```javascript
+    // 场景 1：resolve 一个 pending 的 Promise → 状态被吸收
+    const inner = new Promise(resolve => {
+      setTimeout(() => resolve('inner done'), 1000);
+    });
+    const outer = Promise.resolve(inner); // outer 不会立即 fulfilled
+    outer.then(v => console.log(v));       // 1 秒后输出 'inner done'
+    
+    // 场景 2：resolve 一个 rejected 的 Promise → rejection 被吸收
+    const rejected = Promise.reject('fail');
+    const absorbed = Promise.resolve(rejected);
+    absorbed.catch(e => console.log(e));   // 输出 'fail'——不是 fulfilled！
+    ```
+    
+    状态吸收在链式调用中的关键影响：
+    
+    ```javascript
+    // 链式调用中，then 回调返回的 Promise 也会被吸收
+    fetch('/api/user')
+      .then(user => {
+        // 返回一个新的 pending Promise，下一个 then 会等待它 settle
+        return fetch(`/api/orders/${user.id}`);
+      })
+      .then(res => {
+        // 这里的值是第二个 fetch 的结果，不是第一个
+        // 因为第一个 then 返回的 Promise 被链吸收了
+        return res.json();
+      });
+    
+    // 等价于 resolvePromise 的递归展开：
+    // p1.then(cb) → 如果 cb 返回 Promise p2，则 p2 的状态被吸收为 p1.then 的最终状态
+    ```
+    
+    **与状态不可逆的区别**：状态不可逆强调的是'同一个 Promise 不能 settle 两次'；状态吸收强调的是'`resolve(p)` 时，p 的状态会传递给外层 Promise，外层不会立即 fulfilled'。两者结合保证了 Promise 链中值和状态传递的确定性。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [ECMAScript 规范：Promise Objects](https://tc39.es/ecma262/#sec-promise-objects)：*官方规范，定义了 Promise 状态机与 `PerformPromiseThen` 算法。* <sup>[1]</sup>
+- 📖 [V8 Blog: Fast async/await](https://v8.dev/blog/fast-async)：*V8 团队官方博文，解释了针对 async/await 所做的底层极致优化。* <sup>[2]</sup>
+- 🟢 [Jake Archibald: Tasks, microtasks, queues and schedules](https://jakearchibald.com/2015/tasks-microtasks-queues-and-schedules/)：*Chrome 开发者布道师写的神作，深刻讲解了 Promise 微任务的执行时序。* <sup>[3]</sup>

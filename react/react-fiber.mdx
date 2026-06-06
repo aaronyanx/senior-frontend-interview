@@ -1,0 +1,868 @@
+---
+title: "React Fiber 架构"
+---
+
+> **面试官为什么问这个？**
+>
+> Fiber 架构是 React 为了解决"UI 渲染与 JS 执行共享单线程"而进行的最宏大的底层重构。面试官考察该问题，本质上是在考察你是否具备底层系统调度（时间切片）、内存数据结构（链表）以及并发竞争（优先级）的视野。如果你答不清楚，说明你对 React 的理解停留在"会写组件"而不是"理解引擎怎么跑"。
+
+---
+
+## Q1: 为什么需要 Fiber？Stack Reconciler 的局限是什么？
+
+<Steps>
+
+  <Step title="16.6ms 的渲染帧预算">
+
+现代浏览器为了保持 60fps 的流畅度，要求每一帧的执行时间必须在 16.6ms 以内。在这 16.6ms 中，浏览器需要执行 JavaScript 脚本、计算样式（Style）、执行布局（Layout）和重绘（Paint）。JS 执行的时间预算通常只有 5-8ms。
+
+  </Step>
+  <Step title="同步递归霸占主线程">
+
+React 15 的 Stack Reconciler 用原生 JavaScript 递归调用对比虚拟 DOM。这种同步递归的特点是：一旦开始，在整个组件树处理完毕之前，无法中断或暂停。组件树嵌套越深，主线程被霸占的时间越长。
+
+  </Step>
+  <Step title="掉帧与卡顿的视觉灾难">
+
+一次深度的 `setState` 可能占用主线程 50ms 甚至 100ms 以上。由于主线程被完全霸占，浏览器无法按时执行绘制，用户看到的就是页面无响应、输入框阻塞、动画掉帧。
+
+  </Step>
+  <Step title="时间切片的需求">
+
+为了解决这个问题，必须将巨大的更新任务拆分成若干个微小的执行单元（Fiber 节点），每执行完一个单元就检查是否还有剩余时间。如果没有剩余时间，就将控制权交还给浏览器。
+
+  </Step>
+  <Step title="重构底层架构的决心">
+
+由于 JavaScript 原生调用栈无法在中间状态暂停并事后恢复，React 团队彻底放弃了递归算法，转而在用户态实现了一个带有状态保存功能的虚拟调用栈——Fiber 架构。
+
+  </Step>
+
+</Steps>
+
+**Fiber 解决的核心问题：**
+
+```text
+问题：同步递归 + 无法中断 = 主线程阻塞
+
+setState → 递归遍历整个组件树 → 主线程被霸占 100ms → 掉帧阻塞
+
+解决：Fiber 时间切片 — 用链表替代递归，每执行一个节点就检查剩余时间
+
+setState → 执行一个 Fiber 节点 → 检查时间 → 有剩余继续，没剩余让出主线程 → 下一帧恢复
+```
+
+<Note title="💡 一句话总结">
+
+Fiber 让 React 从"一口气跑完"变成了"跑一段歇一下"，从根本上解决了同步渲染的阻塞问题。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 原生调用栈的限制">
+
+原生的 JS 函数调用栈（Call Stack）缺乏主动让权（Yield）机制，必须按严格的后进先出顺序执行至栈空。就像一口气跑到山顶，中途不能停下休息，跑不动了只能硬撑到终点。
+
+</Card>
+<Card title="✅ Fiber 虚拟调用栈">
+
+将协调过程从依赖原生调用栈，转变为由自己控制执行周期的链表数据结构。就像爬山时修了台阶，每走一段就有休息平台，随时可以停下来欣赏风景。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么"（16.6ms 帧预算 + 同步递归阻塞），再说"怎么解决"（Fiber 时间切片）。面试官想听的是你理解架构决策背后的性能约束，而不是背诵 API。
+
+</Tip>
+
+---
+
+## Q2: Fiber 节点的链表结构是如何替代递归的？
+
+Fiber 的核心目标是实现一种针对 UI 渲染优化的虚拟调用栈。每一个 Fiber 节点本质上就是一个普通的 JavaScript 对象，但它通过三个指针（`return`、`child`、`sibling`）构建出一棵单链表树结构，使得 React 可以用深度优先的循环迭代（`while` 循环）替代传统的递归调用。
+
+### Fiber 节点的核心属性
+
+每个 Fiber 节点包含三类信息：身份标识（`tag`、`key`、`type`）、链表指针（`return`、`child`、`sibling`）、状态与副作用（`memoizedState`、`updateQueue`、`flags`）。其中 `tag` 标识节点类型（0=FunctionComponent、1=ClassComponent、5=HostComponent），`flags` 标识需要执行的副作用（Placement=2、Update=4、Deletion=8）。
+
+### Reconciler 原理：由简到难的讲解
+
+Reconciler（协调器）的核心工作是对比新旧虚拟 DOM 树，找出需要更新的节点。React 15 的 Stack Reconciler 用递归实现，React 16 的 Fiber Reconciler 用迭代实现。协调过程分两步：第一步是 `beginWork`（从父到子，创建/更新 Fiber 节点，打上 flags 标记），第二步是 `completeWork`（从子到父，创建真实 DOM 节点，收集副作用列表）。
+
+```text
+┌─────────────────┐
+│     App Fiber   │
+└────────┬─▲──────┘
+  child  │ │ return
+         ▼ │
+┌─────────────────┐       sibling        ┌─────────────────┐
+│    List Fiber   ├──────────────────────►│  Footer Fiber   │
+└────────┬─▲──────┘                      └─────────────────┘
+  child  │ │ return
+         ▼ │
+┌─────────────────┐
+│   Item Fiber    │
+└─────────────────┘
+
+遍历顺序（深度优先）：
+App → List → Item → (Item 没有 child) → (Item 没有 sibling)
+→ 回到 List → (List 没有 sibling) → 回到 App → Footer → 回到 App → 结束
+```
+
+```javascript
+// Fiber 的核心遍历算法（简化版）
+function workLoop(deadline) {
+  while (nextUnitOfWork !== null && !shouldYield()) {
+    // 执行当前 Fiber 节点的工作
+    nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
+  }
+
+  // 如果没有剩余时间，让出主线程
+  if (nextUnitOfWork !== null) {
+    requestIdleCallback(workLoop);
+  }
+}
+
+function performUnitOfWork(fiber) {
+  // 1. 处理当前节点（beginWork）
+  beginWork(fiber);
+
+  // 2. 返回下一个要处理的节点
+  if (fiber.child) return fiber.child;       // 优先找子节点
+  let next = fiber;
+  while (next) {
+    if (next.sibling) return next.sibling;   // 再找兄弟节点
+    next = next.return;                       // 最后回到父节点
+  }
+  return null;
+}
+```
+
+<Warning title="⚠️ 链表遍历的陷阱">
+
+虽然结构变成了链表，但 React 的遍历顺序依然是"深度优先"。先找到最深处的子节点，然后再找兄弟节点，最后回到父节点。如果在中间因为时间切片被中断，React 只需要保存当前正在处理的那个 Fiber 节点指针（`nextUnitOfWork`），下一帧就可以从该指针精准恢复——这是递归做不到的。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 超级马里奥的存档点">
+
+原生递归就像玩一命通关的《超级马里奥》，一旦开始就不能停，中途死了或有事（时间用完）就必须重头再来。Fiber 就像在每个关卡增加了存档点（保存 `nextUnitOfWork` 指针）。时间不够了？没关系，在当前的 Fiber 节点存个档，去干别的事（让浏览器绘制），回来后直接读取存档继续打，不用从 1-1 重新开始。
+
+</Tip>
+
+### Fiber 节点的完整数据结构详解
+
+Fiber 节点在源码中由 `FiberNode` 构造函数生成，除了核心的链表指针外，还包含大量辅助属性。理解这些属性对阅读 React 源码至关重要。
+
+```javascript
+// React 源码：FiberNode 的完整结构（简化版）
+// 来源：packages/react-reconciler/src/ReactInternalTypes.js
+function FiberNode(tag, pendingProps, key, mode) {
+  // ===== 1. 身份标识 =====
+  this.tag = tag;                // 节点类型标识
+  this.key = key;                // React Key（列表 diff 的依据）
+  this.elementType = null;       // createElement 的第一个参数
+  this.type = null;              // 具体的组件类型或 DOM 标签名
+  this.stateNode = null;         // 对应的真实 DOM 节点或类组件实例
+
+  // ===== 2. 链表指针（构建 Fiber 树骨架） =====
+  this.return = null;            // 指向父 Fiber 节点
+  this.child = null;             // 指向第一个子 Fiber 节点
+  this.sibling = null;           // 指向下一个兄弟 Fiber 节点
+  this.index = 0;                // 在父节点的子节点列表中的索引
+
+  // ===== 3. 状态与更新 =====
+  this.pendingProps = pendingProps;  // 新传入的 props
+  this.memoizedProps = null;         // 上次渲染时的 props
+  this.memoizedState = null;         // 上次渲染时的 state（或 Hooks 链表）
+  this.updateQueue = null;           // 更新队列（存放 setState 的更新）
+
+  // ===== 4. 副作用标记 =====
+  this.flags = NoFlags;              // 当前节点的副作用标记
+  this.subtreeFlags = NoFlags;       // 子树的副作用标记（冒泡优化）
+  this.deletions = null;             // 需要删除的子节点列表
+
+  // ===== 5. 双缓冲机制 =====
+  this.alternate = null;             // 指向另一棵树上的对应节点
+
+  // ===== 6. 调度优先级 =====
+  this.lanes = NoLanes;              // 该节点的优先级
+  this.childLanes = NoLanes;         // 子树中所有待处理的优先级
+}
+```
+
+### tag 常见值与对应节点类型
+
+| tag 值 | 常量名 | 说明 |
+|--------|--------|------|
+| 0 | FunctionComponent | 函数组件 |
+| 1 | ClassComponent | 类组件 |
+| 3 | HostRoot | 根节点（div#root） |
+| 5 | HostComponent | 原生 DOM 元素（div、span） |
+| 6 | HostText | 文本节点 |
+| 7 | Fragment | Fragment |
+| 8 | ForwardRef | forwardRef 包裹的组件 |
+| 11 | ContextProvider | Context.Provider |
+| 12 | ContextConsumer | Context.Consumer |
+| 13 | SuspenseComponent | Suspense 组件 |
+
+### flags 副作用标记系统
+
+React 用位运算标记 Fiber 节点的副作用类型，多个 flags 可以通过按位或合并：
+
+```javascript
+// 常见的 flags 值
+const NoFlags        = 0b000000000000;  // 无副作用
+const Placement      = 0b000000000010;  // 需要插入 DOM（值为 2）
+const Update         = 0b000000000100;  // 需要更新属性（值为 4）
+const ChildDeletion  = 0b000000001000;  // 子节点有删除（值为 8）
+const Visibility     = 0b000000100000;  // Suspense 切换可见性
+const Snapshot       = 0b000010000000;  // 需要调用 getSnapshotBeforeUpdate
+const Passive        = 0b000100000000;  // 需要执行 useEffect
+
+// 判断节点是否有某个标记：按位与
+if (fiber.flags & Placement) {
+  // 需要将该节点插入 DOM
+}
+
+// 子树冒泡优化：如果 subtreeFlags 为 0，跳过整棵子树
+if (fiber.subtreeFlags === 0) {
+  // 该子树没有任何副作用，Commit 阶段可以直接跳过
+}
+```
+
+---
+
+## Q3: Reconciler 工作流程详解——由简到难
+
+### 第一层：整体流程概览
+
+Reconciler（协调器）的工作分为两大阶段：**Render 阶段**（可中断，在内存中计算差异）和 **Commit 阶段**（不可中断，应用到真实 DOM）。
+
+```text
+setState / render 触发
+       │
+       ▼
+  ┌─────────────────────────────────────────────────┐
+  │              Render 阶段（可中断）                │
+  │                                                  │
+  │  beginWork（从父到子）                            │
+  │    │  对每个节点：创建/复用 Fiber，reconcile 子节点 │
+  │    │  打上 flags 标记                             │
+  │    ▼                                              │
+  │  遇到叶子节点                                      │
+  │    │                                              │
+  │    ▼                                              │
+  │  completeWork（从子到父）                          │
+  │    │  创建真实 DOM，收集副作用到 subtreeFlags       │
+  │    │  回溯到根节点                                 │
+  └────┼──────────────────────────────────────────────┘
+       │
+       ▼
+  ┌─────────────────────────────────────────────────┐
+  │             Commit 阶段（不可中断）                │
+  │                                                  │
+  │  beforeMutation → mutation → layout               │
+  │  将 flags 标记的操作一次性应用到真实 DOM             │
+  │  切换双缓冲指针                                    │
+  └─────────────────────────────────────────────────┘
+```
+
+### 第二层：beginWork 详解
+
+`beginWork` 是 Render 阶段的"向下遍历"过程。它从根节点开始，对每个 Fiber 节点执行以下操作：
+
+```javascript
+// beginWork 的核心逻辑（简化版）
+function beginWork(current, workInProgress) {
+  // 1. 判断是否可以复用旧的 Fiber 节点
+  if (current !== null) {
+    const oldProps = current.memoizedProps;
+    const newProps = workInProgress.pendingProps;
+    if (oldProps === newProps && !didReceiveUpdate) {
+      // props 没变，且没有收到更新——可以 bailout（跳过）
+      return bailoutOnAlreadyFinishedWork(current, workInProgress);
+    }
+  }
+
+  // 2. 根据 tag 类型执行不同的处理逻辑
+  switch (workInProgress.tag) {
+    case FunctionComponent:
+      return updateFunctionComponent(current, workInProgress);
+    case ClassComponent:
+      return updateClassComponent(current, workInProgress);
+    case HostComponent:
+      return updateHostComponent(current, workInProgress);
+    case HostRoot:
+      return updateHostRoot(current, workInProgress);
+    // ... 其他类型
+  }
+}
+
+// updateFunctionComponent 的核心
+function updateFunctionComponent(current, workInProgress) {
+  // 1. 执行函数组件，获取新的 JSX
+  const nextChildren = renderWithHooks(current, workInProgress, Component, props);
+
+  // 2. 对比新旧子节点，生成新的子 Fiber 节点
+  reconcileChildren(current, workInProgress, nextChildren);
+
+  // 3. 返回第一个子 Fiber 节点（继续向下遍历）
+  return workInProgress.child;
+}
+```
+
+`beginWork` 的返回值决定了下一个要处理的节点：
+- 返回 `child`：继续向下遍历子节点
+- 返回 `null`：没有子节点，开始 `completeWork`
+
+### 第三层：completeWork 详解
+
+`completeWork` 是 Render 阶段的"向上回溯"过程。当遍历到叶子节点（没有 child）时，开始 `completeWork`。
+
+```javascript
+// completeWork 的核心逻辑（简化版）
+function completeWork(current, workInProgress) {
+  switch (workInProgress.tag) {
+    case HostComponent: {
+      // 1. 创建真实 DOM 节点
+      const instance = createElement(workInProgress.type, newProps);
+
+      // 2. 将子节点的 DOM 挂载到当前节点
+      appendAllChildren(instance, workInProgress);
+
+      // 3. 处理属性（className、style、onClick 等）
+      finalizeInitialChildren(instance, workInProgress.type, newProps);
+
+      // 4. 将 DOM 节点保存到 Fiber 的 stateNode
+      workInProgress.stateNode = instance;
+      break;
+    }
+    case FunctionComponent:
+      // 函数组件不需要创建 DOM，只需要冒泡 subtreeFlags
+      bubbleProperties(workInProgress);
+      break;
+  }
+
+  // 5. 将子树的副作用冒泡到父节点
+  // 这是 subtreeFlags 的核心——让 Commit 阶段可以跳过没有副作用的子树
+  if (returnFiber !== null) {
+    returnFiber.subtreeFlags |= workInProgress.subtreeFlags | workInProgress.flags;
+  }
+}
+```
+
+`completeWork` 的关键作用：
+1. **创建真实 DOM**：对 HostComponent 调用 `createElement` 创建 DOM 节点
+2. **处理属性**：调用 `finalizeInitialChildren` 设置 DOM 属性
+3. **冒泡副作用**：将子树的 flags 通过 `subtreeFlags` 冒泡到父节点
+
+### 第四层：commitWork 详解
+
+Commit 阶段是不可中断的，分为三个子阶段：
+
+```text
+Commit 阶段的三个子阶段：
+
+beforeMutation          mutation              layout
+     │                      │                    │
+     ▼                      ▼                    ▼
+处理快照                执行 DOM 操作          执行副作用
+getSnapshotBeforeUpdate  插入/更新/删除        componentDidMount
+                        commitMutationEffects   useEffect
+                                               useLayoutEffect
+```
+
+```javascript
+// Commit 阶段的核心逻辑（简化版）
+function commitRoot(root) {
+  // ===== beforeMutation 阶段 =====
+  // 处理 getSnapshotBeforeUpdate（类组件快照）
+  commitBeforeMutationEffects(root);
+
+  // ===== mutation 阶段 =====
+  // 执行 DOM 操作：插入、更新、删除
+  commitMutationEffects(root, finishedWork);
+
+  // 切换双缓冲指针
+  root.current = finishedWork;
+
+  // ===== layout 阶段 =====
+  // 执行副作用：componentDidMount、useLayoutEffect、ref 更新
+  commitLayoutEffects(root, finishedWork);
+}
+
+// mutation 阶段的 DOM 操作
+function commitMutationEffects(root, fiber) {
+  // 深度优先遍历 Fiber 树
+  while (fiber !== null) {
+    const flags = fiber.flags;
+
+    // 根据 flags 执行对应的 DOM 操作
+    if (flags & Placement) {
+      // 插入 DOM 节点
+      commitPlacement(fiber);
+    }
+    if (flags & Update) {
+      // 更新 DOM 属性
+      commitUpdate(fiber);
+    }
+    if (flags & ChildDeletion) {
+      // 删除 DOM 节点
+      commitDeletion(fiber);
+    }
+
+    // 继续遍历（优先子节点，再兄弟节点，最后父节点）
+    fiber = nextFiber;
+  }
+}
+```
+
+<Tip title="🎢 通俗比喻: 建筑施工的三个阶段">
+
+Render 阶段的 `beginWork` 就像建筑师画蓝图——从大楼外观到每个房间的布局，逐层设计并标记"这里要建墙、那里要开窗"。`completeWork` 就像施工队从最底层开始建造——先建好每一层的房间，再向上盖楼。
+
+Commit 阶段的 `beforeMutation` 就像拍一张"施工前"的照片（快照）。`mutation` 就像正式施工——拆墙、砌墙、装窗户（DOM 操作）。`layout` 就像装修完成后的验收——安装家具、挂窗帘、接通水电（副作用执行）。
+
+</Tip>
+
+---
+
+## Q4: 双缓冲机制详解
+
+### 为什么需要两棵树？
+
+如果只维护一棵 Fiber 树，每次更新都需要直接修改当前树的节点。如果更新被中断，用户看到的将是一个"半更新"的破损 UI。
+
+```text
+单缓冲的问题：
+
+  当前显示的树（正在被修改）
+  ┌─────────┐
+  │  App    │
+  ├───┬─────┤
+  │ A │  B  │  ← A 已经更新，B 还没更新
+  └───┴─────┘
+  用户看到：半新半旧的 UI（撕裂）
+
+双缓冲的解决方案：
+
+  current 树（屏幕显示）     workInProgress 树（后台构建）
+  ┌─────────┐               ┌─────────┐
+  │  App    │               │  App'   │
+  ├───┬─────┤               ├───┬─────┤
+  │ A │  B  │               │ A'│ B'  │
+  └───┴─────┘               └───┴─────┘
+  用户看到完整的旧 UI         在后台完整构建
+
+  Commit 完成后，指针切换：
+  root.current = workInProgress
+  → 用户瞬间看到完整的新 UI
+```
+
+### alternate 属性的复用机制
+
+两棵 Fiber 树通过 `alternate` 属性互相指代。更新时，React 不会销毁旧节点重建新节点，而是复用旧的 Fiber 节点，只更新变化的属性。
+
+```javascript
+// 双缓冲的创建与切换
+function createWorkInProgress(current, pendingProps) {
+  let workInProgress = current.alternate;
+
+  if (workInProgress === null) {
+    // 首次渲染：创建新的 workInProgress 节点
+    workInProgress = new FiberNode(current.tag, pendingProps, current.key);
+    workInProgress.type = current.type;
+    workInProgress.stateNode = current.stateNode;
+
+    // 建立双向链接
+    workInProgress.alternate = current;
+    current.alternate = workInProgress;
+  } else {
+    // 非首次渲染：复用已有的 workInProgress 节点
+    workInProgress.pendingProps = pendingProps;
+    workInProgress.flags = NoFlags;
+    workInProgress.subtreeFlags = NoFlags;
+    workInProgress.deletions = null;
+  }
+
+  // 复用不变的属性
+  workInProgress.child = current.child;
+  workInProgress.memoizedState = current.memoizedState;
+  workInProgress.updateQueue = current.updateQueue;
+
+  return workInProgress;
+}
+```
+
+### 双缓冲的核心优势
+
+| 维度 | 说明 |
+|------|------|
+| **UI 一致性** | 用户看到的永远是完整的旧树或完整的新树，不会出现半更新的中间态 |
+| **GC 压力低** | 节点通过复用而非销毁重建，大型应用的 Fiber 树可能有上万个节点，复用极大降低垃圾回收频率 |
+| **中断安全** | Render 阶段在 workInProgress 树上工作，中断不影响 current 树的显示 |
+| **灵感来源** | 图形学中的双缓冲技术——游戏引擎在后台渲染下一帧，渲染完成后一次性替换到屏幕上 |
+
+---
+
+## Q5: 时间切片原理详解
+
+### 时间切片的执行流程
+
+```text
+第一帧（16.6ms）
+├── JS 执行预算（~5ms）
+│   ├── 执行 Fiber 节点 1（1ms）
+│   ├── 执行 Fiber 节点 2（1ms）
+│   ├── 执行 Fiber 节点 3（1ms）
+│   ├── shouldYield() → 还有时间 → 继续
+│   ├── 执行 Fiber 节点 4（1ms）
+│   ├── shouldYield() → 还有时间 → 继续
+│   ├── 执行 Fiber 节点 5（0.5ms）
+│   └── shouldYield() → 没时间了 → 让出主线程
+├── 浏览器渲染（~11ms）
+│   └── Layout → Paint → Composite
+└── 宏任务回调
+
+第二帧（16.6ms）
+├── JS 执行预算（~5ms）
+│   ├── 从节点 6 恢复（读取 nextUnitOfWork）
+│   ├── 执行 Fiber 节点 6（1ms）
+│   ├── ...
+│   └── 所有节点处理完毕 → 进入 Commit 阶段
+├── 浏览器渲染（~11ms）
+└── 用户看到更新后的 UI
+```
+
+### shouldYield 的实现
+
+```javascript
+// React 源码中的 shouldYield 实现
+// 来源：packages/scheduler/src/forks/Scheduler.js
+
+let deadline = 0;
+const yieldInterval = 5; // 5ms 的切片单位
+
+function shouldYieldToHost() {
+  const currentTime = getCurrentTime();
+  // 如果距离帧截止时间不足 5ms，就让出主线程
+  if (currentTime >= deadline) {
+    // 没有时间了，让出主线程
+    return true;
+  }
+  return false;
+}
+
+// 调度器使用 MessageChannel 创建宏任务
+const channel = new MessageChannel();
+const port = channel.port2;
+channel.port1.onmessage = performWorkUntilDeadline;
+
+function requestHostCallback(callback) {
+  scheduledHostCallback = callback;
+  // 通过 MessageChannel 发送消息，触发宏任务
+  port.postMessage(null);
+}
+
+function performWorkUntilDeadline() {
+  if (scheduledHostCallback !== null) {
+    const currentTime = getCurrentTime();
+    // 设置截止时间：当前时间 + 5ms
+    deadline = currentTime + yieldInterval;
+    const hasMoreWork = scheduledHostCallback(currentTime);
+    if (hasMoreWork) {
+      // 还有工作，继续调度
+      port.postMessage(null);
+    }
+  }
+}
+```
+
+### 为什么是 5ms 而不是 16.6ms？
+
+5ms 是 React 内部的切片单位，而不是帧预算。每帧 16.6ms 中，浏览器需要执行 JS（~5ms）、Layout（~4ms）、Paint（~3ms）、Composite（~1ms），剩余时间给其他任务。React 选择 5ms 作为切片单位，是为了给浏览器渲染和其他任务留出足够的时间。
+
+```text
+一帧 16.6ms 的时间分配：
+
+├── JS 执行 ──────┤├── Layout ──┤├── Paint ──┤├── Composite ┤├── 其他 ┤
+│     ~5ms        ││    ~4ms    ││   ~3ms    ││    ~1ms     ││  ~3ms  │
+
+React 的 5ms 切片 ≈ JS 执行的全部预算
+→ 执行完一个切片后，必须让出主线程给浏览器渲染
+```
+
+<Warning title="⚠️ 时间切片不是万能的">
+
+时间切片只能拆分多个小任务，**无法拆分单个大任务**。如果一个 Fiber 节点的渲染函数本身就需要 50ms（比如一个超复杂的计算），时间切片无法帮助你——因为单个 Fiber 节点的 `beginWork` 是原子执行的。解决方案是将大组件拆分成小组件，让每个组件的渲染时间都在 5ms 以内。
+
+</Warning>
+
+---
+
+### 基础梳理（Render vs Commit 对比）
+
+| 维度 | Render 阶段 | Commit 阶段 |
+|------|------------|-------------|
+| **核心任务** | 对比新旧数据，找出需要更新的节点 | 将标记一次性应用到真实 DOM |
+| **是否可中断** | 可以中断和恢复 | 绝对不可中断 |
+| **是否触发副作用** | 不触发（纯计算） | 触发（DOM 操作、ref 更新） |
+| **执行频率** | 可能执行多次（被中断后重试） | 只执行一次 |
+| **对应生命周期** | render、getDerivedStateFromProps | componentDidMount、componentDidUpdate |
+
+### 专家视角深度剖析
+
+很多候选人只能说出"Render 阶段可中断、Commit 阶段不可中断"，但大厂面试官真正在意的是：**为什么 Commit 阶段绝对不能中断？**
+
+答案在于用户看到的 UI 必须是**原子化的一致状态**。如果 Commit 阶段执行到一半被中断，用户会看到一个"半新半旧"的破损 UI——比如列表只更新了一半，按钮样式变了但文字没变。这比卡顿更糟糕，因为它会破坏用户对界面的信任。
+
+Render 阶段之所以可以中断，是因为它只在内存中操作 Fiber 节点的 `flags`（副作用标记），不涉及任何真实 DOM 操作。中断后重新开始，只需要从上一次中断的 Fiber 节点继续遍历即可，之前计算的中间结果通过 `workInProgress` 树保留。
+
+这也解释了为什么 React 废弃了 `componentWillMount` 等生命周期——它们在 Render 阶段执行，但开发者经常在里面写副作用代码（如发请求、操作 DOM）。一旦 Render 阶段被中断和重试，这些副作用会被多次执行，导致不可预测的 bug。
+
+```javascript
+// 正确做法：副作用放在 Commit 阶段（useEffect）
+function MyComponent() {
+  // ❌ 错误：Render 阶段的副作用
+  // fetch('/api/data'); // 可能被执行多次
+
+  // ✅ 正确：Commit 阶段的副作用
+  useEffect(() => {
+    fetch('/api/data'); // 只执行一次
+  }, []);
+}
+```
+
+---
+
+## 🔍 底层源码：Fiber 节点的数据结构
+
+<div class="follow-up">
+Fiber 在源码中究竟长什么样？
+</div>
+
+在 React 源码中，Fiber 节点由 `FiberNode` 构造函数生成，包含了节点信息、链表指针以及副作用标记。详见 [React 源码 packages/react-reconciler/src/ReactInternalTypes.js](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/ReactInternalTypes.js#L65)。
+
+```javascript
+// React 源码简化版：Fiber 节点结构
+function FiberNode(tag, pendingProps, key, mode) {
+  // 1. 节点基本信息
+  this.tag = tag;             // 节点类型（FunctionComponent/ClassComponent/HostComponent）
+  this.key = key;             // React Key
+  this.type = null;           // 具体的组件类型或 DOM 标签名
+
+  // 2. 链表指针（构造虚拟调用栈的核心）
+  this.return = null;         // 指向父 Fiber 节点
+  this.child = null;          // 指向第一个子 Fiber 节点
+  this.sibling = null;        // 指向下一个兄弟 Fiber 节点
+
+  // 3. 状态与副作用
+  this.memoizedState = null;  // 保存 Hooks 链表或类组件的 State
+  this.updateQueue = null;    // 状态更新的队列
+  this.flags = NoFlags;       // 副作用标记（Placement/Update/Deletion）
+
+  // 4. 双缓冲机制
+  this.alternate = null;      // 指向另一棵树上的对应节点
+}
+```
+
+这段代码做了 3 件事：第一，`tag`、`key`、`type` 定义了节点的基本身份；第二，`return`、`child`、`sibling` 三个指针构成了链表树的骨架，替代了原生递归调用栈；第三，`flags` 和 `alternate` 分别支撑了副作用标记系统和双缓冲机制。
+
+<div class="follow-up">
+时间切片在源码中是怎么实现的？
+</div>
+
+详见 [React 源码 packages/react-reconciler/src/ReactFiberWorkLoop.js](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/ReactFiberWorkLoop.js)：
+
+```javascript
+// shouldYield 判断是否应该让出主线程
+function shouldYield() {
+  const currentTime = getCurrentTime();
+  // 如果距离帧截止时间不足 5ms，就让出主线程
+  return currentTime >= deadline;
+}
+
+// workLoop 是 Fiber 的核心循环
+function workLoopConcurrent() {
+  // 与同步模式的唯一区别：多了 shouldYield() 检查
+  while (workInProgress !== null && !shouldYield()) {
+    performUnitOfWork(workInProgress);
+  }
+}
+```
+
+React 选择 `MessageChannel` 而不是 `requestAnimationFrame` 来调度时间切片，因为 `MessageChannel` 的回调是纯粹的宏任务，不受屏幕刷新率限制，可以更高效地压榨 CPU 空闲时间。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 React Fiber 架构"
+
+**及格回答（60-70分）：**
+> "Fiber 是 React 16 引入的新架构，用链表替代递归，实现了时间切片，解决了同步渲染卡顿的问题。"
+
+面试官评价：**知道结论但不理解机制**。
+
+**满分回答（90-100分）：**
+
+> Fiber 解决的核心问题是 16.6ms 帧预算下的同步阻塞。React 15 的 Stack Reconciler 用原生递归对比虚拟 DOM，一旦开始就无法中断，大型应用一次 setState 可能霸占主线程 100ms 导致掉帧。React 16 彻底放弃递归，用 Fiber 节点的 `child`、`sibling`、`return` 三个指针构建虚拟调用栈，通过 `while` 循环实现深度优先遍历。
+
+> 时间切片的核心在于 `shouldYield()` 检查。每执行完一个 Fiber 节点，React 会检查距离当前帧截止时间是否不足 5ms，如果是就通过 `MessageChannel` 让出主线程，下一帧再从 `nextUnitOfWork` 指针恢复。这种"存档-恢复"机制是原生递归做不到的。
+
+> 双缓冲机制让 React 同时维护 `current` 和 `workInProgress` 两棵 Fiber 树。Render 阶段在 `workInProgress` 树上计算差异并打上 `flags` 标记，Commit 阶段一次性同步应用到真实 DOM，然后通过 `alternate` 属性切换指针。节点通过复用而非销毁重建，极大降低了 V8 的 GC 压力。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="Fiber 的时间切片为什么选择 MessageChannel 而不是 requestAnimationFrame?" icon="layer-group">
+
+**答题要点：**
+从调度频率和帧同步两个维度对比。
+
+**高分回答：**
+"requestAnimationFrame 的执行频率受限于浏览器刷新率（60Hz，16.6ms），后台标签页甚至会降到极低。React 需要的是一种尽可能高频、不受屏幕刷新率限制的宏任务调度器来压榨 CPU 空闲时间。`MessageChannel` 是纯粹的宏任务，在事件循环中优先级高，且不受显示器刷新率的物理限制。如果只需要在每帧绘制前做一次视觉更新，用 rAF；如果是为了实现高频的微小任务切片调度，`MessageChannel` 是最佳选择。未来浏览器原生支持 `scheduler.postTask` 后，React 可能会切换到原生 API。"
+
+  </Accordion>
+
+  <Accordion title="Fiber 架构下的 Render 阶段为什么可能被执行多次?" icon="stopwatch">
+
+**答题要点：**
+结合中断恢复和生命周期废弃来解释。
+
+**高分回答：**
+"Render 阶段是纯内存计算，不涉及真实 DOM 操作，所以可以被中断和恢复。当高优先级更新（如用户输入）到来时，React 会中断当前低优先级的 Render，转而处理高优先级任务。中断后，之前低优先级的 Render 阶段需要从头重新开始（因为 `workInProgress` 树可能已经过时）。这意味着 Render 阶段可能被执行多次。这也是 React 废弃 `componentWillMount` 等生命周期的根本原因——它们在 Render 阶段执行，但开发者经常在里面写副作用，被多次执行会导致不可预测的 bug。"
+
+  </Accordion>
+
+  <Accordion title="什么是双缓冲树 (Double Buffering) ?为什么需要两棵树?" icon="node">
+
+**答题要点：**
+从 GC 压力和 UI 一致性两个角度解释。
+
+**高分回答：**
+"React 同时维护 `current`（屏幕显示）和 `workInProgress`（后台构建）两棵 Fiber 树。Render 阶段复用 `current` 树的节点来构建 `workInProgress` 树，仅对变化的属性更新。Commit 阶段完成后，通过 `alternate` 属性切换指针。这种设计有两个核心好处：第一，避免了每次更新都销毁和重建上万个 Fiber 对象，极大降低了 V8 的 GC 压力；第二，确保用户看到的 UI 永远是完整的一致状态——要么是旧树，要么是新树，不会出现半更新的中间态。灵感来自图形学的双缓冲技术。"
+
+  </Accordion>
+
+  <Accordion title="🔥 如果在 Render 阶段调用 setState, 会发生什么?" icon="skull">
+
+**答题要点：**
+从死循环防护和实际踩坑场景两个角度回答。
+
+**高分回答：**
+"Render 阶段本身就是在处理状态更新，如果在处理更新的过程中又触发了新的状态更新，系统会陷入无限循环。React 检测到正在处于 render 阶段时，会立即抛出 'Too many re-renders' 错误来阻止死循环。实际踩坑场景中，这常常发生在新接手项目的同学在组件主体中直接写了 `setCount(count + 1)` 而忘记放入 `useEffect` 或事件处理函数中。解决方案：所有的 `setState` 操作都必须被约束在副作用（`useEffect`）或事件处理函数（如 `onClick`）中。"
+
+  </Accordion>
+
+  <Accordion title="Fiber 的 beginWork 和 completeWork 分别做什么?" icon="layer-group">
+
+**答题要点：**
+从遍历方向和核心职责两个维度对比。
+
+**高分回答：**
+"`beginWork` 是从父到子的深度优先遍历，核心职责是根据新的 JSX 创建或复用 Fiber 节点，调用 `reconcileChildren` 对比新旧子节点，打上 `flags` 标记（Placement/Update/Deletion）。`completeWork` 是从子到父的回溯过程，核心职责是为 HostComponent 创建真实 DOM 节点（`createElement`），处理属性（`finalizeInitialChildren`），并将子树的副作用冒泡到父节点（`subtreeFlags`）。两者配合完成了 Render 阶段的全部工作：beginWork 标记'要做什么'，completeWork 准备'怎么做'。"
+
+  </Accordion>
+
+  <Accordion title="React 为什么选择深度优先而不是广度优先遍历 Fiber 树?" icon="stopwatch">
+
+**答题要点：**
+从 UI 渲染的一致性需求解释。
+
+**高分回答：**
+"深度优先遍历保证了子节点一定在父节点之前完成 completeWork。这意味着当父节点执行 completeWork 时，所有子节点的 DOM 已经创建完毕，可以直接 `appendChild` 到父节点的 DOM 上。如果是广度优先，父节点可能在子节点之前完成，此时无法将子节点的 DOM 挂载到父节点上。从 UI 角度看，深度优先也更符合'先处理最内层组件，再向外扩展'的渲染逻辑——内层组件的 DOM 必须先就绪，外层容器才能正确布局。"
+
+  </Accordion>
+
+  <Accordion title="flags 标记系统是怎么工作的?" icon="node">
+
+**答题要点：**
+从位标记和批量处理两个角度解释。
+
+**高分回答：**
+"React 用位运算来标记 Fiber 节点的副作用类型。常见的 flags 包括：Placement（值为 2，需要插入 DOM）、Update（值为 4，需要更新属性）、Deletion（值为 8，需要删除 DOM）、ChildDeletion（值为 16，子节点有删除）。多个 flags 可以通过按位或合并到一个节点上。Commit 阶段遍历 Fiber 树时，通过按位与判断节点是否有某个标记。子树的 flags 通过 `subtreeFlags` 冒泡到父节点——如果 `subtreeFlags` 为 0，说明整棵子树没有任何副作用，Commit 阶段可以直接跳过，这是重要的性能优化。"
+
+  </Accordion>
+
+  <Accordion title="🔥 workInProgress 树和 current 树是怎么切换的?" icon="skull">
+
+**答题要点：**
+从指针切换和节点复用两个角度解释。
+
+**高分回答：**
+"每次更新开始时，React 根据 current 树的根节点创建 workInProgress 树的根节点（通过 `createWorkInProgress` 复用或创建）。Render 阶段在 workInProgress 树上计算差异，Commit 阶段将差异应用到真实 DOM 后，执行 `root.current = finishedWork`，将根节点的 current 指针从旧树切换到新树。旧树的节点不会立即被 GC，而是保留为下一次更新的 alternate。下次更新时，React 检查 current 树的节点是否可以复用（`canReuseFiber`），如果可以就直接更新属性，不需要创建新对象。这种'复用+切换'的模式就是双缓冲的核心。"
+
+  </Accordion>
+
+  <Accordion title="🔥 Fiber 到底好在哪？解决了什么本质问题?" icon="skull">
+
+**答题要点：**
+不要只说"时间切片"，要从五个维度系统阐述 Fiber 架构带来的根本性改变。
+
+**高分回答：**
+"Fiber 的价值不是某一个单点优化，而是一整套针对 UI 渲染场景的系统性解决方案。可以从五个维度来看：
+
+**1. 可中断渲染（时间切片）**
+
+Stack Reconciler 用原生递归，一旦开始就无法中断。Fiber 用链表替代递归，每执行完一个节点就通过 `shouldYield()` 检查是否需要让出主线程。中断后只需保存 `nextUnitOfWork` 指针，下一帧精准恢复：
+
+```javascript
+// Stack Reconciler（递归，不可中断）
+function reconcile(children) {
+  for (const child of children) {
+    reconcile(child); // 霸占主线程直到递归结束
+  }
+}
+
+// Fiber Reconciler（迭代，可中断）
+function workLoop() {
+  while (nextUnitOfWork && !shouldYield()) {
+    nextUnitOfWork = performUnitOfWork(nextUnitOfWork); // 一个节点一个节点执行
+  }
+  if (nextUnitOfWork) requestHostCallback(workLoop); // 时间不够，让出主线程
+}
+```
+
+**2. 优先级调度**
+
+Fiber 架构引入了 Lane 优先级模型，高优先级更新（用户输入）可以打断低优先级更新（数据预取）。这在 Stack Reconciler 中完全不可能——所有更新按 FIFO 顺序同步执行，用户输入被大列表渲染阻塞：
+
+```javascript
+// 高优先级打断低优先级
+startTransition(() => {
+  setBigList(filtered);  // 低优先级，可以被打断
+});
+setInputValue(e.target.value); // 高优先级，立即响应
+```
+
+**3. 双缓冲（中断安全）**
+
+Fiber 同时维护 `current` 和 `workInProgress` 两棵树。Render 阶段在 `workInProgress` 树上工作，中断不影响屏幕显示的 `current` 树。Commit 完成后一次性切换指针，用户永远看到完整的 UI，不会出现半更新的中间态。
+
+**4. 副作用标记系统（subtreeFlags 冒泡优化）**
+
+Fiber 用 `flags` 和 `subtreeFlags` 标记需要执行的副作用。Commit 阶段如果发现某棵子树的 `subtreeFlags === 0`，直接跳过整棵子树，避免无意义的遍历。这是 Stack Reconciler 没有的优化。
+
+**5. 并发模式的基础**
+
+Fiber 是 React 18 并发特性的底层基础。`useTransition`、`useDeferredValue`、Suspense 等特性都依赖 Fiber 的可中断和可恢复能力。没有 Fiber，这些 API 在架构上就不可能实现。
+
+**总结**：Fiber 解决的核心问题是**让 React 拥有了对渲染过程的主动控制权**——可以中断、可以恢复、可以设置优先级、可以跳过无变化的子树。Stack Reconciler 把控制权交给了 JavaScript 引擎的调用栈（后进先出、无法暂停），Fiber 把控制权拿回了 React 自己手中。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [Lin Clark: A Cartoon Intro to Fiber](https://www.youtube.com/watch?v=ZCuYPiUIONs)：React 核心团队成员用漫画形式讲解 Fiber 架构的经典演讲。<sup>[1]</sup>
+- 📖 [React 源码 ReactFiberWorkLoop.js](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/ReactFiberWorkLoop.js)：揭示了时间切片和中断恢复的核心逻辑。<sup>[2]</sup>
+- 📖 [双缓冲技术在图形学中的应用](https://en.wikipedia.org/wiki/Multiple_buffering)：揭示了 `current` 与 `workInProgress` 设计的思想源泉。<sup>[3]</sup>
+- 🟢 [Dan Abramov 对 Concurrent Mode 的解释](https://react.dev/blog/2022/03/29/react-v18.html)：深入理解并发模式下多优先级调度的意义。<sup>[4]</sup>

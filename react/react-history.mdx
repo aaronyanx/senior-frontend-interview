@@ -1,0 +1,546 @@
+---
+title: "React 版本演进史"
+---
+
+> **面试官为什么问这个？**
+>
+> React 从 2010 年 Facebook 内部的 FaxJS 原型到 2024 年的 React 19，十余年的演进并非简单的 API 增加，而是一次次底层的架构重构和范式转移。面试官考察该问题，本质上是在考察你是否具备宏观的架构视野——如果你答不清楚，说明你对 React 的理解停留在"会用 API"而不是"理解设计决策"。
+
+---
+
+## Q1: React 的历史？为什么要有它？
+
+```text
+┌────────────────┐   ┌────────────────┐   ┌────────────────┐   ┌────────────────┐   ┌────────────────┐
+│ 2010 XHP+PHP   │ → │ 2011 FaxJS     │ → │ 2012 Instagram │ → │ 2013 开源发布  │ → │ 2015 React 15  │
+│ UI 危机         │   │ 函数式原型      │   │ 内部验证       │   │ 虚拟 DOM 亮相   │   │ Stack Reconciler│
+└────────────────┘   └────────────────┘   └────────────────┘   └────────────────┘   └────────────────┘
+```
+
+<Steps>
+
+  <Step title="2010 年 - Facebook 的 UI 危机">
+
+Facebook 当时用 PHP + XHP（PHP 的 XML 扩展）拼接 HTML DOM。通知系统是重灾区——用户收到一条新消息，需要手动查询 DOM 节点、判断是否已存在、再插入或更新。随着消息类型（点赞、评论、@提及）不断膨胀，代码变成一团意大利面条，状态与 DOM 严重耦合，修一个 bug 冒出三个新 bug。
+
+  </Step>
+  <Step title="2011 年 - Jordan Walke 的原型 FaxJS">
+
+Facebook 工程师 Jordan Walke 受函数式编程（特别是 Erlang 的 Actor 模型）启发，构建了 FaxJS 原型。核心思想：**UI = f(state)**——给定一个状态，函数返回一棵描述 UI 结构的轻量对象树（即虚拟 DOM 的雏形）。状态变化时重新调用函数生成新树，框架自动 diff 两棵树的差异并更新真实 DOM。开发者从此不再手动操作 DOM。
+
+  </Step>
+  <Step title="2012 年 - Instagram 的验证">
+
+Facebook 内部孵化出 Instagram 后，团队面临"从零构建一个完整 SPA"的需求。他们选择用 FaxJS 的思想来驱动 Instagram 的前端。这次内部验证证明了声明式 UI 的可行性——代码量大幅减少，bug 率显著降低，团队开始认真打磨这套方案。
+
+  </Step>
+  <Step title="2013 年 - React 开源（JSConf US）">
+
+2013 年 5 月，JSConf US 上 React 正式开源。虚拟 DOM + JSX 的组合震惊了业界——"在 JavaScript 里写 HTML？"引发了巨大争议。Facebook 花了很长时间说服社区接受"关注点分离不是文件分离，而是组件分离"的理念。早期生态极不完善，没有路由、没有状态管理，但核心思想逐渐被验证。
+
+  </Step>
+  <Step title="2015 年 - React 15（Stack Reconciler）">
+
+React 15 采用 Stack Reconciler 架构：用同步递归遍历虚拟 DOM 树做 diff。这个架构简单直接，在中小型应用中表现良好。但它的致命问题是**同步且不可中断**——一旦开始 diff，就必须一口气跑完整棵组件树，大型应用可能阻塞主线程 100ms+，导致掉帧和输入延迟。
+
+  </Step>
+
+</Steps>
+
+**React 诞生解决的核心问题：**
+
+```text
+问题：手动操作 DOM + 状态与视图耦合 = 代码混乱、难以维护
+
+新消息到达 → 手动查询 DOM → 判断节点是否存在 → 插入或更新 → 状态散落在各处
+
+解决：声明式 UI — 状态驱动视图，框架自动 diff 更新
+
+state 变化 → 调用 render() → 生成新虚拟 DOM → diff 对比 → 只更新变化的真实 DOM
+```
+
+<Note title="💡 一句话总结">
+
+React 的诞生源于 Facebook 的 UI 维护危机，Jordan Walke 用"UI = f(state)"的函数式思想创造了虚拟 DOM，让开发者从手动操作 DOM 的泥潭中解放出来。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有 React（2010 年之前）">
+
+前端用 jQuery 手动操作 DOM，状态散落在各种全局变量和 DOM 属性中。通知系统每来一条消息就要 `document.querySelector` + `if/else` 判断 + `appendChild`，就像一个仓库管理员没有任何清单系统，每次取货都要满仓库翻找。
+
+</Card>
+<Card title="✅ 引入 React（2013 年之后）">
+
+声明式 UI 让开发者只需描述"UI 应该长什么样"，框架负责 diff 和更新。就像仓库引入了智能库存系统——管理员只需要说"我要 5 号货架上的东西"，系统自动定位、取货、更新库存记录。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么"（Facebook 的 UI 维护危机），再说"怎么解决"（声明式 UI + 虚拟 DOM）。面试官想听的是你理解技术诞生的驱动力，而不是背诵年份。
+
+</Tip>
+
+---
+
+## Q2: React 15 的问题是什么？怎么解决？
+
+### Stack Reconciler 的致命问题
+
+React 15 的协调器（Stack Reconciler）采用同步递归算法遍历整棵组件树。当 `setState` 触发更新时，React 从根节点开始递归对比每个组件的虚拟 DOM，这个过程一旦开始就无法中断。
+
+```text
+setState 触发
+     │
+     ▼
+┌──────────────────────────────────────────┐
+│  同步递归遍历整个组件树                      │
+│  每个组件:  shouldComponentUpdate?         │
+│            → render() 生成新虚拟 DOM        │
+│            → diff 对比新旧虚拟 DOM          │
+│            → 收集差异                       │
+│                                           │
+│  ⚠️ 无法中断！必须一口气跑完！               │
+│  大型应用: 100ms+ 阻塞主线程               │
+└──────────────────────────────────────────┘
+     │
+     ▼
+  commit 更新到真实 DOM
+```
+
+核心问题有三个：
+
+1. **同步递归无法中断**：JavaScript 的调用栈是后进先出结构，递归过程中无法在中间状态暂停并恢复。大型应用一次更新可能占用主线程 100ms+，直接导致掉帧。
+2. **没有优先级概念**：所有更新一视同仁——用户输入和数据加载的更新享有相同优先级，无法优先响应用户交互。
+3. **大型组件树性能悬崖**：组件数量越多，递归深度越深，性能呈线性下降，且没有优雅的降级方案。
+
+### React 15 的优化尝试
+
+面对这些问题，React 15 时期社区和官方提供了三种优化手段：
+
+**1. shouldComponentUpdate（手动中断递归）**
+
+```javascript
+class ListItem extends React.Component {
+  shouldComponentUpdate(nextProps) {
+    // 如果数据没变，跳过该子树的 diff
+    return nextProps.item.id !== this.props.item.id;
+  }
+  render() {
+    return <div>{this.props.item.name}</div>;
+  }
+}
+```
+
+`shouldComponentUpdate` 返回 `false` 时，React 会跳过该组件及其整个子树的 diff。但问题是：开发者必须手动判断每个 props 是否变化，遗漏任何一个就会导致不必要的渲染，写错了还会导致 UI 不更新。
+
+**2. PureComponent（浅比较自动化）**
+
+```javascript
+class ListItem extends React.PureComponent {
+  render() {
+    return <div>{this.props.item.name}</div>;
+  }
+}
+```
+
+`React.PureComponent` 自动对 props 和 state 做浅比较（shallow compare），省去了手写 `shouldComponentUpdate` 的麻烦。但浅比较有天然缺陷——如果父组件传入新的数组或对象引用（即使内容相同），浅比较会认为"变了"，导致无效渲染。
+
+**3. Batching（批处理合并更新）**
+
+```javascript
+// React 事件回调内：自动批处理
+handleClick() {
+  this.setState({ a: 1 });
+  this.setState({ b: 2 });
+  // 只触发一次渲染
+}
+
+// setTimeout 内：不批处理！
+handleClick() {
+  setTimeout(() => {
+    this.setState({ a: 1 });
+    this.setState({ b: 2 });
+    // 触发两次渲染！
+  }, 0);
+}
+```
+
+React 15 的批处理仅限于 React 自己管理的事件回调。在 `setTimeout`、`Promise` 等原生异步上下文中，每次 `setState` 都会立即触发一轮完整渲染。
+
+### 为什么这些优化不够？
+
+```text
+shouldComponentUpdate  →  手动维护成本高，容易出错
+PureComponent          →  浅比较无法处理复杂数据结构
+Batching               →  只在 React 事件内生效，异步上下文无效
+
+本质问题：这些优化都在"减少工作量"，但没有解决"工作方式"的根本缺陷
+
+Stack Reconciler 依然是同步递归 → 依然一口气跑完 → 依然阻塞主线程
+```
+
+打个比方：Stack Reconciler 就像一个必须一口气跑完全程的马拉松选手。`shouldComponentUpdate` 相当于给选手"抄近路"的机会（跳过某些子树），`PureComponent` 相当于"自动识别近路"，`Batching` 相当于"把多次出发合并成一次"。但无论怎么优化，选手依然不能中途停下来休息——**只有换一个"可以跑跑歇歇"的选手（Fiber 架构），才能从根本上解决问题。**
+
+<Note title="💡 一句话总结">
+
+React 15 的 Stack Reconciler 用同步递归做 diff，`shouldComponentUpdate`、`PureComponent` 和 Batching 只能"减少工作量"，无法改变"必须一口气跑完"的根本限制——React 16 的 Fiber 架构才是真正的解法。
+
+</Note>
+
+---
+
+## Q3: React 18 的并发模式是如何工作的？
+
+React 18 最核心的突破是将并发特性（Concurrent Features）从实验阶段正式落地。它的本质是赋予 React **中断并优先处理更重要渲染任务**的能力。
+
+```text
+┌───────────────────────────────────────────────┐
+│              浏览器主线程                        │
+└──────┬───────────────────────────────┬────────┘
+       │                               │
+       ▼                               ▼
+┌──────────────┐                ┌──────────────┐
+│  低优任务 (A)  │                │ 高优任务 (B)  │
+│ 渲染大列表     │                │ 用户输入框打字 │
+└──────┬───────┘                └──────┬───────┘
+       │                               │
+       │  (执行一半，耗时 5ms)           │
+       ├───────────────────────────────┤  ← React 调度器发现高优交互
+       │  中断当前 A 任务的渲染            │
+       │                               │
+       │                               ▼
+       │                        ┌──────────────┐
+       │                        │ 执行 B 任务   │
+       │                        │ 更新输入框 UI  │
+       │                        └──────┬───────┘
+       │                               │
+       │  (B 任务执行完毕)                │
+       ├───────────────────────────────┘  ← 恢复现场
+       ▼
+┌──────────────┐
+│  恢复任务 (A)  │
+│ 继续渲染大列表 │
+└──────────────┘
+```
+
+```javascript
+// 并发更新的核心 API
+import { startTransition, useDeferredValue } from 'react';
+
+function SearchList({ query }) {
+  // startTransition：把更新标记为"非紧急"，不阻塞用户输入
+  const [deferredQuery, setDeferredQuery] = useState(query);
+
+  const handleChange = (e) => {
+    // 紧急更新：立即响应输入框
+    setQuery(e.target.value);
+    // 非紧急更新：可以被中断，优先保证输入框响应
+    startTransition(() => {
+      setDeferredQuery(e.target.value);
+    });
+  };
+
+  // useDeferredValue：延迟更新一个值，本质是 startTransition 的语法糖
+  const deferredValue = useDeferredValue(query);
+}
+```
+
+<Warning title="⚠️ 并非所有任务都会并发">
+
+React 18 不会默认把所有更新都变成并发模式。开发者必须通过显式调用 `startTransition` 或使用 `useDeferredValue`，才能将某个更新标记为"非紧急任务"，从而触发并发中断机制。普通 `setState` 依然是同步优先级。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 急诊室的分诊台">
+
+并发模式就像医院急诊室的分诊机制。你正在给一个脚踝扭伤的病人（低优的列表渲染）做包扎，突然推车送来一个心脏病发的重症患者（高优的用户输入）。医生（React 调度器）会立即暂停包扎，优先抢救心脏病患者，等抢救结束脱离危险后，再回去把扭伤病人的绷带打完。
+
+</Tip>
+
+---
+
+## Q4: React 16 为什么是一次架构革命？
+
+<Steps>
+
+  <Step title="16.6ms 的帧预算与同步阻塞">
+
+现代浏览器为了保持 60fps，要求每帧执行时间在 16.6ms 以内。React 15 的 Stack Reconciler 用同步递归对比虚拟 DOM，一旦开始就无法中断。大型应用一次 `setState` 可能占用主线程 100ms+，直接导致掉帧卡顿。
+
+  </Step>
+  <Step title="Stack Reconciler 的致命局限">
+
+JavaScript 原生调用栈（Call Stack）是后进先出的结构，无法在中间状态暂停并事后恢复。这意味着 React 15 没有任何办法把一个巨大的更新任务拆成小块，只能一口气跑完。
+
+  </Step>
+  <Step title="Fiber 架构的引入">
+
+React 16 彻底抛弃递归算法，引入了基于单链表的 Fiber 架构。每个组件对应一个 Fiber 节点，通过 `child`、`sibling`、`return` 三个指针构建虚拟调用栈，用 `while` 循环替代递归，实现了时间切片（Time Slicing）。
+
+  </Step>
+  <Step title="生命周期的废弃与重塑">
+
+由于 Fiber 允许 Render 阶段的中断和重新执行，旧版带有副作用的生命周期（`componentWillMount`、`componentWillReceiveProps`、`componentWillUpdate`）可能被多次触发。React 逐步废弃这些 Hooks，引入 `getDerivedStateFromProps` 等更纯粹的替代方案。
+
+  </Step>
+  <Step title="Hooks 的范式转移 (16.8) ">
+
+Hooks 让函数组件拥有了状态管理和副作用处理的能力，逻辑复用从高阶组件（HOC）和 Render Props 的地狱中解放出来。`useState`、`useEffect`、`useMemo` 等 API 极大降低了代码耦合度。
+
+  </Step>
+
+</Steps>
+
+**React 16 解决的核心问题：**
+
+```text
+问题：同步递归 + 无法中断 = 大型应用卡顿
+
+setState → 同步递归遍历整个组件树 → 主线程被阻塞 100ms → 掉帧卡顿
+
+解决：Fiber 时间切片 — 拆分成微小执行单元，每执行一个就检查剩余时间
+
+setState → 执行一个 Fiber 节点 → 检查时间 → 有剩余继续，没剩余让出主线程 → 下一帧恢复
+```
+
+<Note title="💡 一句话总结">
+
+React 16 用 Fiber 链表替代递归调用栈，把"一口气跑完"变成了"跑一段歇一下"，彻底解决了大型应用的主线程阻塞问题。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 React 15 的痛点">
+
+同步递归对比虚拟 DOM，阻塞主线程无法中断；逻辑复用靠高阶组件层层嵌套。就像一个必须一口气跑完全程的马拉松，中途不能停下调整呼吸。
+
+</Card>
+<Card title="✅ React 16 的破局">
+
+Fiber 时间切片实现可中断渲染，Hooks 实现函数式逻辑复用，Error Boundaries 实现优雅降级。就像修了服务区的接力赛跑，可以停顿、可以重试、可以交接。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么"（同步递归阻塞主线程），再说"怎么解决"（Fiber 时间切片）。面试官想听的是你理解架构演进背后的驱动力，而不是流水账背版本号。
+
+</Tip>
+
+---
+
+## Q5: React 16 vs 18 vs 19 有哪些关键差异？
+
+### 基础梳理
+
+| 维度 | React 16 | React 18 | React 19 |
+|------|----------|----------|----------|
+| **渲染架构** | Fiber（可中断） | 并发渲染（Concurrent） | 编译器优化（React Compiler） |
+| **批处理** | 仅 React 事件内批处理 | 自动批处理（含 setTimeout/Promise） | 同 18，编译器自动优化 |
+| **SSR** | renderToString | 流式 SSR + Suspense | Server Components 原生集成 |
+| **状态管理** | useState/useReducer | + useTransition/useDeferredValue | + use() hook + Actions |
+| **事件系统** | 代理到 document | 代理到 Root Node | 同 18 |
+
+### 专家视角深度剖析
+
+很多候选人只能背诵上面的表格，但大厂面试官真正在意的是：**React 每次大版本升级背后的技术驱动力是什么？**
+
+React 16 的核心驱动力是**解决同步阻塞**。Fiber 架构把递归变成迭代，为时间切片奠定了基础。但 Fiber 只是"能中断"，并没有告诉 React "该中断什么、优先处理什么"。
+
+React 18 补上了这块拼图。它引入了 **Lanes 优先级模型**（用 32 位二进制位图表示任务优先级集合），让调度器可以根据任务类型（用户输入 > 过渡动画 > 数据获取）决定中断策略。同时，自动批处理（Automatic Batching）解决了 React 17 中 `setTimeout` 和 `Promise` 内 `setState` 不批处理的历史包袱。
+
+React 19 的方向是**编译器驱动优化**。React Compiler（原 React Forget）通过静态分析自动为组件添加 memoization，开发者不再需要手动写 `useMemo`、`useCallback`、`React.memo`。同时 `use()` hook 统一了资源读取（Promise、Context）的消费方式，Actions 简化了异步状态管理。
+
+```javascript
+// React 19 的 use() hook — 统一资源消费
+function UserProfile({ userId }) {
+  // use() 可以在条件语句和循环中使用（打破 Hooks 规则）
+  const user = use(fetchUser(userId)); // 自动与 Suspense 配合
+  return <div>{user.name}</div>;
+}
+
+// React 19 的 Actions — 简化异步状态
+function UpdateName() {
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState(null);
+
+  const handleSubmit = (name) => {
+    startTransition(async () => {
+      const error = await updateName(name);
+      if (error) { setError(error); return; }
+      redirect('/profile');
+    });
+  };
+}
+```
+
+---
+
+## Q6: React 事件系统为什么从 document 改到了 Root Node？
+
+**React 16 的事件委托：**
+
+React 16 将所有事件统一代理到全局 `document` 上。这在单应用时代没问题，但微前端场景下，多个 React 版本共存时，事件冒泡顺序会变得不可预测。
+
+**React 17 的改变：**
+
+从 React 17 开始，事件不再代理到 `document`，而是代理到该 React 应用渲染的根节点（Root Node，通常是 `div#root`）。这支持了多个 React 版本在同一页面共存。
+
+```javascript
+// React 16：事件代理到 document
+document.addEventListener('click', (e) => {
+  // 所有 React 应用的点击事件都在这里处理
+  dispatchEvent(e); // React 内部的合成事件分发
+});
+
+// React 17+：事件代理到 root node
+rootNode.addEventListener('click', (e) => {
+  // 只处理该 React 应用的事件
+  dispatchEvent(e);
+});
+```
+
+**关键区别：**
+
+| 场景 | React 16 | React 17+ |
+|------|----------|-----------|
+| 事件代理节点 | document | Root Node |
+| 微前端多版本共存 | 事件冲突 | 各自独立 |
+| stopPropagation 影响范围 | 影响所有 React 应用 | 只影响当前应用 |
+
+<Tip title="最佳实践: ">
+
+微前端项目中，如果父子应用使用不同 React 版本，要注意事件冒泡顺序的变化。React 18 子应用的 `onClick` 会在 Root Node 层触发，之后才冒泡到 `document` 触发父应用 React 16 的监听器。
+
+</Tip>
+
+---
+
+## 🔍 底层源码：Automatic Batching 是如何实现的？
+
+<div class="follow-up">
+React 18 的自动批处理是怎么做到跨越宏任务的？
+</div>
+
+在 React 17 及以前，只有 React 自己管理的事件回调（如 `onClick`）内部的 `setState` 才会合并更新。而在 Promise、`setTimeout` 等原生异步任务中，每次 `setState` 都会立即触发一轮完整渲染。React 18 彻底解决了这个问题，详见 [React 源码 packages/react-reconciler/src/ReactFiberWorkLoop.js](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/ReactFiberWorkLoop.js#L784)。
+
+```javascript
+// React 18 简化的调度逻辑
+function scheduleUpdateOnFiber(fiber, lane, eventTime) {
+  // 1. 将更新产生的 Lane（优先级）合并到根节点
+  markRootUpdated(root, lane, eventTime);
+
+  // 2. 将渲染任务推入到统一的微任务队列中（基于 MessageChannel 或 Promise）
+  // 不论触发上下文是 onClick 还是 setTimeout，最终的更新都会在这个微任务中被统一批量消费
+  ensureRootIsScheduled(root, eventTime);
+}
+```
+
+这段代码做了 2 件事：第一，所有更新不论来源都通过 `markRootUpdated` 合并到根节点的 Lane 集合中；第二，`ensureRootIsScheduled` 通过 `MessageChannel` 调度一个微任务来统一消费所有待处理的更新，实现自动批处理。
+
+<div class="follow-up">
+Lanes 优先级模型在源码中长什么样？
+</div>
+
+详见 [React 源码 packages/react-reconciler/src/ReactFiberLane.js](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/ReactFiberLane.js)：
+
+```javascript
+// Lanes 用 32 位二进制位图表示优先级
+export const SyncLane           = 0b0000000000000000000000000000001;
+export const InputContinuousLane = 0b0000000000000000000000000000100;
+export const DefaultLane         = 0b0000000000000000000000000010000;
+export const TransitionLane1     = 0b0000000000000000000000001000000;
+
+// 位运算实现极速优先级判断
+// 合并优先级：按位或
+mergeLanes(SyncLane, DefaultLane);  // 0b0001001
+
+// 判断是否包含某优先级：按位与
+(lanes & SyncLane) !== 0;  // true = 包含同步任务
+```
+
+Lanes 模型的优势在于：通过位运算（`&`、`|`），React 可以在 O(1) 时间内判断哪些任务属于同一批次、哪些高优任务插了队，比 ExpirationTime 的数字比较更高效。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 React 的历史和架构演进"
+
+**及格回答（60-70分）：**
+> "React 是 Facebook 在 2013 年开源的，React 16 引入了 Fiber 架构，React 18 引入了并发模式，React 19 引入了编译器优化。"
+
+面试官评价：**知道版本号但不理解驱动力**。
+
+**满分回答（90-100分）：**
+
+> React 的诞生源于 Facebook 2010 年的 UI 维护危机——PHP + XHP 拼接 DOM 导致通知系统代码混乱不堪。Jordan Walke 受函数式编程启发，构建了 FaxJS 原型，核心思想是"UI = f(state)"：状态变化时重新生成虚拟 DOM 树，框架自动 diff 更新。2013 年开源后，虚拟 DOM + JSX 的组合逐渐被业界接受。
+
+> React 的每一次大版本升级都是在解决一个具体的技术瓶颈。React 15 的 Stack Reconciler 用同步递归对比虚拟 DOM，大型应用一次 setState 可能阻塞主线程 100ms 导致掉帧。React 16 的核心突破是用 Fiber 链表替代递归调用栈，实现了时间切片——每执行完一个 Fiber 节点就检查剩余时间，没时间就让出主线程。
+
+> 但 Fiber 只解决了"能中断"的问题，没有解决"该中断什么"。React 18 引入了 Lanes 优先级模型（32 位二进制位图），让调度器可以区分同步任务、连续交互任务和过渡任务的优先级。同时 Automatic Batching 将批处理从 React 事件扩展到所有异步上下文（setTimeout、Promise），彻底解决了 setState 散弹式渲染的问题。
+
+> React 19 的方向是"让框架帮你优化"。React Compiler 通过静态分析自动添加 memoization，开发者不再需要手写 useMemo/useCallback。use() hook 统一了资源消费方式，可以在条件语句中使用。Actions 机制用 startTransition 包裹异步操作，简化了 loading/error 状态管理。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="React 18 的并发更新会不会出现 UI 撕裂 (Tearing) ?" icon="layer-group">
+
+**答题要点：**
+核心在于区分 Render 阶段和 Commit 阶段的中断特性。
+
+**高分回答：**
+"不会。并发中断仅仅发生在内存中的 Render 阶段（计算对比阶段）。当真正要把差异更新到真实 DOM 的 Commit 阶段时，操作是绝对同步且不可中断的。因此用户看到的 UI 永远是原子化的一致状态——要么是完全的旧状态，要么是完全的新状态，绝对不会出现屏幕一半新一半旧的'撕裂'现象。只要不在 Render 阶段（组件主体函数）写修改 DOM 或外部状态的副作用代码，并发中断就是绝对安全的。"
+
+  </Accordion>
+
+  <Accordion title="React 为什么要用 Lanes 替代 ExpirationTime?" icon="stopwatch">
+
+**答题要点：**
+从数据结构的表达能力角度解释设计决策。
+
+**高分回答：**
+"ExpirationTime 是一个数字，只能表达线性的优先级高低，无法表达'一组任务'的交叉概念。Lanes 采用 32 位二进制位图（Bitmask），每个 bit 代表一个优先级通道。通过位运算（按位与 `&`、按位或 `|`），React 可以在 O(1) 时间内判断哪些任务属于同一批次、哪些高优任务插了队。例如 `SyncLane = 0b0001` 表示同步任务，`TransitionLane = 0b0100` 表示过渡任务。在复杂动画和大数据表格同屏时，Lanes 能精准地把动画帧的渲染剥离出来优先投递给浏览器。"
+
+  </Accordion>
+
+  <Accordion title="微前端场景下 React 16 和 React 18 共存, 事件冒泡顺序是什么?" icon="node">
+
+**答题要点：**
+必须结合 React 17 事件委托节点的变化来分析。
+
+**高分回答：**
+"React 16 将事件代理到 `document`，React 17+ 代理到 Root Node。点击子应用（React 18）时，事件先冒泡到子应用的 Root Node，触发 React 18 的合成事件逻辑；随后继续冒泡到 `document`，触发父应用 React 16 的监听器。如果在 React 18 的 onClick 中调用了原生事件的 `e.stopPropagation()`，事件在原生 DOM 树上停止冒泡，父应用的监听器根本不会被触发。这种行为差异是微前端升级时最常见的坑。"
+
+  </Accordion>
+
+  <Accordion title="🔥 React Compiler 自动 memoization 会不会取代 useMemo/useCallback?" icon="skull">
+
+**答题要点：**
+对比手动优化和编译器优化的适用范围与局限性。
+
+**高分回答：**
+"React Compiler 的目标确实是让开发者不再需要手写 useMemo/useCallback。它通过静态分析组件代码，自动识别哪些值需要缓存、哪些函数引用需要稳定。但它有明确的边界：第一，编译器只能优化纯函数组件，包含外部副作用的代码无法自动优化；第二，编译器无法理解业务语义——比如一个昂贵的 API 请求，编译器不知道它应该被缓存。第三，目前编译器还在实验阶段，生产环境的覆盖率有限。短期内 useMemo/useCallback 仍然是必要的手动工具，长期来看编译器会逐步接管大部分场景。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 📖 [React: The Birth of a New Language](https://www.youtube.com/watch?v=8pDqJVdNa44)：Jordan Walke 在 2019 年的演讲，回顾 React 从 FaxJS 到开源的完整历程。<sup>[1]</sup>
+- 📖 [Pete Hunt: React - Rethinking Best Practices (JSConf 2013)](https://www.youtube.com/watch?v=x7cQ3mrcKaY)：React 开源时的首次公开演讲，震撼业界。<sup>[2]</sup>
+- 🟢 [React v18.0 Release Notes](https://react.dev/blog/2022/03/29/react-v18.html)：官方全面阐述 Concurrent Mode、Automatic Batching 和 Suspense for Data Fetching。<sup>[3]</sup>
+- 📖 [React 源码中的 Lanes 模型 PR](https://github.com/facebook/react/pull/18796)：Andrew Clark 提交的 Lanes 设计思路，解释了从 ExpirationTime 到 Bitmask 的演进。<sup>[4]</sup>
+- 🟢 [React 17 事件委托变更](https://react.dev/blog/2020/08/10/react-v17-rc.html#changes-to-event-delegation)：官方解释微前端多版本共存的事件系统变更。<sup>[5]</sup>
+- 🟢 [React Compiler 文档](https://react.dev/learn/react-compiler)：官方对 React Compiler 自动优化机制的权威解释。<sup>[6]</sup>

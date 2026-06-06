@@ -1,0 +1,1200 @@
+---
+title: "Agent 稳定性"
+---
+
+> **面试官为什么问这个？**
+>
+> Agent 稳定性是 AI 工程化中最难的问题之一。面试官问这个，本质上是在考察你：**是否处理过 Agent 长时间运行的实际问题（上下文溢出、状态丢失、错误累积），以及能不能设计可靠的多 Agent 记忆共享方案。** 如果你答不清楚，说明你的 AI 经验停留在 demo 阶段。
+
+---
+
+## Q1: 如何让 Agent 长时间稳定工作？
+
+<Steps>
+
+  <Step title="Agent 的长时间运行困境">
+
+LLM 的上下文窗口有限（128K/200K tokens），长时间运行会填满。Agent 会忘记最初的目标（上下文漂移），小错误逐步放大（错误累积），进程可能中断（网络、OOM、超时）。
+
+  </Step>
+  <Step title="致命痛点: 上下文窗口溢出">
+
+当 Agent 工作 5 小时以上，上下文窗口必然溢出。如果直接截断，Agent 会丢失关键信息。如果从头开始，之前的工作全部白费。
+
+  </Step>
+  <Step title="方案 1: 上下文压缩 (Context Compression) ">
+
+定期压缩上下文，保留关键信息，丢弃噪音。用小模型（如 Haiku）总结历史对话，只保留事实和决策，丢弃中间推理过程。
+
+  </Step>
+  <Step title="方案 2: Session 分段 + 自动接续">
+
+把长时间任务拆成多个 session，每个 session 结束时保存"交接笔记"（Brief），下一个 session 开始时自动加载。
+
+  </Step>
+  <Step title="方案 3: 检查点 + 恢复">
+
+用 Checkpoint 保存执行状态，中断后从最近的 checkpoint 恢复，而不是从头开始。
+
+  </Step>
+
+</Steps>
+
+**Agent 长时间稳定解决的核心问题：**
+
+```text
+问题：LLM 有上下文窗口限制，长时间运行必然溢出
+
+128K/200K tokens 的上下文窗口在 5 小时以上的工作中必然填满。
+直接截断丢失关键信息，从头开始则之前的工作全部白费。
+加上进程中断、错误累积、token 成本爆炸，Agent 无法长期可靠工作。
+
+解决：上下文压缩 + Session 分段 + 检查点恢复
+
+用 4 层记忆模型定期压缩上下文（100K→5K tokens）
+把长任务拆成多个 session，保存交接笔记自动接续
+用 checkpoint 保存状态，中断后从最近检查点恢复
+```
+
+**Agent 长时间运行的核心问题：**
+
+```text
+问题：上下文窗口溢出 + 状态丢失 + 错误累积
+
+Agent 运行 5 小时：
+├── 上下文窗口溢出（128K/200K tokens 装不下）
+├── 上下文漂移（Agent 忘记最初的目标）
+├── 错误累积（小错误逐步放大）
+├── token 成本爆炸
+├── 进程中断（网络、OOM、超时）
+└── 重复劳动（Agent 不记得已经做过了什么）
+```
+
+<Note title="💡 一句话总结">
+
+Agent 长时间稳定的核心是"分段 + 压缩 + 检查点"——把长任务拆成短 session，定期压缩上下文，用 checkpoint 保存状态。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有稳定性方案">
+
+你让 Agent 连续工作 8 小时写一个项目。3 小时后上下文溢出，Agent 忘记了之前的设计决策，开始重复劳动。6 小时后进程 OOM 崩溃，所有进度丢失，从头再来。
+
+</Card>
+<Card title="✅ 引入稳定性方案">
+
+你把任务拆成 10 个 session，每个 session 结束时保存交接笔记和 checkpoint。第 5 个 session 中断了，从 checkpoint 恢复继续。上下文用 Haiku 定期压缩，只保留关键决策和事实。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么"（上下文窗口溢出 + 状态丢失），再说"怎么解决"（上下文压缩 + session 分段 + 检查点恢复）。面试官想听的是你实际处理过这些问题，而不只是理论。
+
+</Tip>
+
+---
+
+## Q2: 上下文压缩和 Session 分段怎么实现？
+
+上下文压缩的本质是**保留关键信息，丢弃噪音**。核心逻辑只有 3 步：
+
+```text
+┌───────────────────────────────────────┐
+│    原始对话历史（100K tokens）           │  ← 包含大量冗余信息
+└─────────────────┬─────────────────────┘
+                  │ 4 层记忆模型压缩
+                  ▼
+┌───────────────────────────────────────┐
+│    压缩后的关键信息（5K tokens）          │  ← 只保留事实、决策、约束
+└───────────────────────────────────────┘
+```
+
+```javascript
+// 4 层记忆模型（agentmemory 的实现）：
+const memoryTiers = {
+  working: "原始工具调用记录（短期，当前 session）",
+  episodic: "压缩后的 session 摘要（发生了什么）",
+  semantic: "提取的事实和模式（我知道什么）",
+  procedural: "工作流和决策模式（怎么做）",
+};
+
+// 压缩流程：
+// 1. 原始记录 → SHA-256 去重（5 分钟窗口）
+// 2. 隐私过滤（去掉密钥、token 等敏感信息）
+// 3. LLM 压缩为结构化事实（用 Haiku 小模型，成本低）
+// 4. 向量化 + BM25 索引（支持语义检索）
+// 5. 频繁访问的记忆强化，陈旧记忆自动淘汰（遗忘曲线）
+```
+
+```javascript
+// Session 分段 + 自动接续（Guild 的实现）：
+// 1. session_start：加载 oath（原则）+ last_brief（上次交接）+ top_quest（当前任务）
+// 2. 工作中：claim quest → search lore → work → record findings
+// 3. session_end：write brief → fulfill quest
+
+// 关键：quest 完成后自动 cascade-unblock 依赖它的其他任务
+// Agent A 完成 QUEST-1 → QUEST-2 自动解锁 → Agent B 可以继续
+```
+
+<Warning title="⚠️ 核心机制: 上下文压缩的信息保留策略">
+
+压缩时保留什么、丢弃什么，决定了 Agent 能否正确接续工作。
+
+- **必须保留**：技术决策（"用 Zustand 不用 Redux"）、任务目标（"实现用户登录模块"）、关键约束（"不要修改 API 层"）
+- **可以丢弃**：中间推理过程、工具调用的原始输出、已验证的中间结果
+- **判断标准**：如果这条信息对下一步工作有直接影响，保留；否则丢弃
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 交接工作">
+
+Agent 长时间运行就像一个人连续加班 8 小时。到了第 4 小时，他需要把前 4 小时的工作整理成交接笔记（上下文压缩），然后休息一下（新建 session），醒来后看交接笔记继续工作（自动接续）。交接笔记不能太长（压缩），也不能太短（保留关键信息），要让"下一个自己"能无缝接续。
+
+</Tip>
+
+### Agent 稳定性的五大挑战
+
+Agent 长时间运行面临五个核心挑战，每个都需要专门的应对策略：
+
+| 挑战 | 表现 | 解决方案 |
+|------|------|---------|
+| **上下文窗口溢出** | Agent 忘记之前的决策 | 上下文压缩（4 层记忆模型） |
+| **上下文漂移** | Agent 偏离最初的目标 | 定期回溯目标、Session 分段 |
+| **错误累积** | 小错误逐步放大 | 检查点 + 回滚、Reviewer 节点 |
+| **进程中断** | 网络断开、OOM、超时 | Checkpoint 恢复、Session 接续 |
+| **Token 成本爆炸** | 长对话消耗大量 tokens | 压缩 + 模型分级 + Prompt Cache |
+
+### 上下文漂移的检测与预防
+
+上下文漂移是指 Agent 在长时间运行中逐渐偏离最初的目标。检测方法：定期把当前状态和最初的目标做语义相似度比较，如果相似度低于阈值，强制 Agent 回顾目标。
+
+```javascript
+// 上下文漂移检测
+async function checkDrift(currentState, originalGoal) {
+  const similarity = await embedding.similarity(
+    currentState.summary,
+    originalGoal.description
+  );
+
+  if (similarity < 0.7) {
+    // 漂移了！强制回顾目标
+    return {
+      drifted: true,
+      message: `你偏离了最初的目标：${originalGoal.description}。请回顾并调整方向。`
+    };
+  }
+  return { drifted: false };
+}
+
+// 在每个 session 结束时检测
+const drift = await checkDrift(currentState, originalGoal);
+if (drift.drifted) {
+  // 把目标回顾注入下一个 session 的 prompt
+  sessionBrief.goalReminder = drift.message;
+}
+```
+
+---
+
+## Q3: 多 Agent 如何共享记忆？
+
+### 基础梳理
+
+| 方案 | 实现 | 适用场景 |
+|------|------|---------|
+| **共享数据库（MCP Server）** | 所有 Agent 连接同一个 MCP Server，共享 SQLite | 最推荐，结构化数据 |
+| **共享文件系统** | 所有 Agent 读写同一个目录 | 最简单，非结构化数据 |
+| **REST API** | 集中式记忆服务器 | 需要远程访问 |
+| **事件总线** | Agent 发布记忆事件，其他 Agent 订阅 | 松耦合系统 |
+
+### 专家视角深度剖析
+
+```javascript
+// 方案 1：MCP Server（最推荐）
+// 所有 AI 工具通过 MCP 协议连接同一个记忆服务器
+
+// Claude Code 连接：
+// .claude/settings.json
+{
+  "mcpServers": {
+    "guild": {
+      "command": "guild",
+      "args": ["serve"]
+    }
+  }
+}
+
+// Codex 连接：
+// .codex/config.toml
+[mcp_servers.guild]
+command = "guild"
+args = ["serve"]
+
+// 两个工具连接同一个 MCP Server → 共享同一个 SQLite 数据库
+// Claude Code 写入：guild_lore_write({ kind: "decision", text: "用 Zustand" })
+// Codex 读取：guild_lore_search({ query: "状态管理" })
+// → Codex 能找到 Claude Code 记录的决策
+
+// 方案 2：共享文件系统（最简单）
+// .shared-memory/
+//   ├── context.md        // 项目上下文
+//   ├── decisions.md      // 技术决策记录
+//   └── tasks.md          // 任务状态
+
+// Claude Code 启动时读取 .shared-memory/context.md
+// Codex 启动时也读取同一个文件
+// → 两个 Agent 共享项目上下文
+```
+
+**记忆冲突怎么解决？**
+
+```javascript
+// 两个 Agent 记了矛盾的信息怎么办？
+
+// 方案 1：时间戳优先（最新的覆盖旧的）
+const memory = {
+  content: "用 Zustand",
+  timestamp: Date.now(),
+  version: 3, // 版本号递增
+};
+
+// 方案 2：写入锁（同一时间只有一个 Agent 可以写入）
+const lock = {
+  acquire(agentId) { /* 获取锁 */ },
+  release(agentId) { /* 释放锁 */ },
+};
+
+// 方案 3：人工审核（关键决策需要人类确认）
+// Agent A 记录"用 Redux"，Agent B 记录"用 Zustand"
+// 冲突时交给人类决定
+```
+
+### 记忆分层架构
+
+Agent 的记忆不是扁平的——它有层次结构，不同层次有不同的保留策略和访问频率：
+
+```text
+记忆分层架构：
+
+┌───────────────────────────────────────┐
+│    Working Memory（工作记忆）           │  ← 当前 session 的原始记录
+│    保留时间：当前 session              │  ← 访问频率：最高
+│    大小：100K+ tokens                 │
+├───────────────────────────────────────┤
+│    Episodic Memory（情景记忆）          │  ← 压缩后的 session 摘要
+│    保留时间：7 天                      │  ← 访问频率：中
+│    大小：5-10K tokens                 │
+├───────────────────────────────────────┤
+│    Semantic Memory（语义记忆）          │  ← 提取的事实和决策
+│    保留时间：永久                      │  ← 访问频率：中
+│    大小：1-5K tokens                  │
+├───────────────────────────────────────┤
+│    Procedural Memory（程序记忆）        │  ← 工作流和决策模式
+│    保留时间：永久                      │  ← 访问频率：低
+│    大小：1-2K tokens                  │
+└───────────────────────────────────────┘
+```
+
+### 记忆的遗忘曲线
+
+不是所有记忆都应该永久保留。频繁访问的记忆应该强化，长期未访问的记忆应该自动淘汰。这和人类的记忆机制类似——你记得住上周的会议内容，但记不住去年的。
+
+```javascript
+// 遗忘曲线实现
+function calculateRetention(memory) {
+  const daysSinceAccess = (Date.now() - memory.lastAccessed) / (1000 * 60 * 60 * 24);
+  const accessCount = memory.accessCount;
+
+  // 艾宾浩斯遗忘曲线的简化版
+  // R = e^(-t/S)，R 是保留率，t 是时间，S 是记忆强度
+  const strength = Math.log(accessCount + 1); // 访问次数越多，强度越高
+  const retention = Math.exp(-daysSinceAccess / (strength * 7));
+
+  return retention; // 0-1，低于 0.3 应该淘汰
+}
+```
+
+---
+
+## Q4: 检查点（Checkpoint）机制怎么实现？
+
+```javascript
+// LangGraph 的 Checkpoint 机制：
+import { MemorySaver } from '@langchain/langgraph';
+
+const graph = new StateGraph()
+  .addNode("step1", step1)
+  .addNode("step2", step2)
+  .compile({ checkpointer: new MemorySaver() });
+
+// 每个节点执行完后自动保存 state
+// 如果中断，可以从最近的 checkpoint 恢复
+const config = { configurable: { thread_id: "task-1" } };
+await graph.invoke(input, config); // 从头开始
+await graph.invoke(null, config);  // 从上次中断的地方继续
+```
+
+**Checkpoint 的三个核心能力：**
+
+| 能力 | 说明 | 实现 |
+|------|------|------|
+| **暂停/恢复** | interrupt + Command 实现人机协作 | interrupt() 保存 checkpoint，Command(resume=...) 恢复 |
+| **错误重试** | 节点失败后从最近成功的 checkpoint 恢复 | retry_policy 配置重试次数和退避策略 |
+| **时间旅行** | 回到任意 checkpoint 查看历史状态 | LangGraph Studio 可视化查看每个 checkpoint |
+
+<Tip title="最佳实践: ">
+
+Checkpoint 的存储后端选择：开发环境用 MemorySaver（内存，重启丢失），生产环境用 PostgreSQL（持久化、多实例共享）。关键配置：`thread_id` 用于区分不同的任务，`checkpoint_ns` 用于区分同一个任务的不同阶段。
+
+</Tip>
+
+---
+
+## Q5: Token 消耗怎么优化？
+
+<Steps>
+
+  <Step title="Token 消耗的核心问题">
+
+    Agent 长时间运行的 token 消耗是最大的成本痛点。一个 5 小时的任务，如果每轮对话都带上完整历史（100K tokens），总消耗可能达到数百万 tokens，费用上百美元。优化的核心是"减少不必要的 token"。
+
+  </Step>
+  <Step title="上下文压缩（Context Compression）">
+
+    定期用小模型（Haiku）压缩历史对话。把 100 条对话记录压缩为 10 条结构化事实，只保留关键决策和约束，丢弃中间推理过程。压缩比可以达到 20:1（100K → 5K tokens）。
+
+  </Step>
+  <Step title="摘要链（Summary Chain）">
+
+    多 Agent 系统中，Agent 之间传递信息时用摘要替代全文。Agent A 的输出有 1000 tokens，传给 Agent B 前先用小模型压缩为 100 tokens 的摘要。这样 Agent 间的通信开销降低 90%。
+
+  </Step>
+  <Step title="选择性记忆（Selective Memory）">
+
+    不是所有信息都需要记住。用重要性评分决定保留什么：技术决策（必须保留）、关键约束（必须保留）、中间推理过程（可以丢弃）、工具调用的原始输出（可以丢弃）。频繁访问的记忆强化，长期未访问的记忆自动淘汰（遗忘曲线）。
+
+  </Step>
+  <Step title="Token 预算管理（Token Budget Management）">
+
+    设置每个 Agent 的 token 预算上限和整个工作流的总预算。超出预算时降级到更简单的处理方式（强模型→弱模型，完整分析→摘要分析）。这是成本控制的最后防线。
+
+  </Step>
+
+</Steps>
+
+**Token 消耗优化的核心策略：**
+
+```text
+问题：Agent 长时间运行，token 消耗失控
+
+没有优化：5 小时任务，每轮 100K tokens，总消耗 500 万 tokens，费用 $100+
+
+解决：上下文压缩 + 摘要链 + 选择性记忆 + Token 预算管理
+
+上下文压缩：100K → 5K tokens（压缩比 20:1）
+摘要链：Agent 间通信 1000 → 100 tokens（压缩 90%）
+选择性记忆：只保留关键决策，丢弃中间推理
+Token 预算：每 Agent 4K tokens，工作流总计 50K tokens
+```
+
+<Note title="💡 一句话总结">
+
+Token 优化的核心是"只保留必要的"——压缩历史、摘要传递、选择性记忆、预算控制。
+
+</Note>
+
+```javascript
+// 1. 上下文压缩：用小模型压缩历史对话
+async function compressContext(history, targetTokens = 5000) {
+  const currentTokens = countTokens(history);
+  if (currentTokens <= targetTokens) return history;
+
+  // 用 Haiku 小模型做压缩（成本极低）
+  const summary = await haiku.invoke([
+    SystemMessage(content='把以下对话压缩为结构化事实列表，只保留关键决策、约束和目标。'),
+    HumanMessage(content: history),
+  ]);
+
+  return summary.content; // 100K → 5K tokens
+}
+
+// 2. 摘要链：Agent 间传递摘要而非全文
+async function summarizeAndPass(fullOutput) {
+  const summary = await haiku.invoke(
+    `用 100 tokens 总结以下内容的关键信息：${fullOutput}`
+  );
+  return summary.content; // 1000 tokens → 100 tokens
+}
+
+// 3. 选择性记忆：重要性评分决定保留什么
+function filterMemory(memories) {
+  return memories.filter(m => {
+    // 必须保留：技术决策、关键约束
+    if (m.type === 'decision' || m.type === 'constraint') return true;
+    // 高频访问的保留
+    if (m.accessCount > 5) return true;
+    // 其他丢弃
+    return false;
+  });
+}
+
+// 4. Token 预算管理
+const tokenBudget = {
+  perAgent: 4000,      // 单次调用上限
+  perWorkflow: 50000,  // 整个工作流上限
+  dailyTotal: 1000000, // 每日总量上限
+  onExceed: 'degrade', // 超预算策略：降级到弱模型
+
+  check(usage) {
+    if (usage.total > this.dailyTotal) {
+      throw new Error('Daily token budget exceeded');
+    }
+    if (usage.workflow > this.perWorkflow) {
+      return { action: 'degrade', model: 'gpt-4o-mini' };
+    }
+    return { action: 'continue' };
+  },
+};
+```
+
+### 模型分级策略
+
+不同复杂度的任务用不同模型，是 token 优化最有效的手段：
+
+| 任务类型 | 模型选择 | Token 成本 | 适用场景 |
+|---------|---------|-----------|---------|
+| **格式化/转换** | gpt-4o-mini / Haiku | 低 | JSON 格式化、数据转换、简单分类 |
+| **摘要/压缩** | gpt-4o-mini / Haiku | 低 | 上下文压缩、Agent 间摘要 |
+| **代码生成** | gpt-4o / Sonnet | 中 | 写代码、重构、修复 bug |
+| **复杂决策** | gpt-4o / Opus | 高 | 架构设计、技术选型、多因素分析 |
+
+```javascript
+// 模型分级：不同节点用不同模型
+const graph = new StateGraph()
+  .addNode('formatter', formatterNode)      // gpt-4o-mini（便宜）
+  .addNode('compressor', compressorNode)    // Haiku（最便宜）
+  .addNode('coder', coderNode)              // gpt-4o（中等）
+  .addNode('architect', architectNode)      // gpt-4o（中等）
+  .compile();
+
+// Prompt Cache 优化：把稳定的 System Prompt 放在前面
+const cachedPrompt = [
+  SystemMessage(content='你是代码审查专家...（500 tokens 的固定 prompt）'),
+  // 以上内容会被 Anthropic 的 Prompt Cache 缓存
+  // 后续请求只需发送变化的部分，节省 90% 输入 token
+  HumanMessage(content: userInput),
+];
+```
+
+<Tip title="🎢 通俗比喻: 家庭记账">
+
+Token 优化就像家庭记账。上下文压缩是把一个月的消费小票整理成一张汇总表（100 张→1 张）。摘要链是妻子告诉丈夫"今天花了 200 块买菜"，而不是把每张小票都念一遍。选择性记忆是只记大额支出（房租、工资），日常零钱不记。模型分级是买菜用普通袋子（便宜），装贵重物品用好袋子（贵）。Token 预算是每月设定消费上限，超了就降低生活标准（降级到弱模型）。
+
+</Tip>
+
+---
+
+## Q6: Agent 的错误处理怎么做？
+
+<Steps>
+
+  <Step title="Agent 错误的特殊性">
+
+    Agent 的错误和传统软件不同。传统软件的错误是确定性的（同一输入必然产生同一错误），Agent 的错误是概率性的（同一输入可能成功也可能失败，因为 LLM 的输出是不确定的）。这意味着 Agent 的错误处理需要更灵活的策略。
+
+  </Step>
+  <Step title="重试策略（指数退避）">
+
+    对于临时性错误（网络超时、API 限流），用指数退避重试。第 1 次等 1 秒，第 2 次等 2 秒，第 3 次等 4 秒。加随机抖动（Jitter）防止多个 Agent 同时重试导致雪崩。区分临时性错误（可重试）和永久性错误（不可重试）。
+
+  </Step>
+  <Step title="降级策略（Fallback）">
+
+    重试仍然失败时，降级到更简单的处理方式：强模型降级为弱模型（gpt-4o → gpt-4o-mini）、完整分析降级为摘要分析、自动处理降级为人工处理。降级的目标是"保证系统不中断"。
+
+  </Step>
+  <Step title="死循环检测与超时控制">
+
+    Multi-Agent 系统中最危险的错误是死循环——Agent A 认为应该让 B 处理，B 认为应该让 A 处理。解决方案：设置最大循环次数（maxIterations）、状态变化检测（连续两轮输出相同则强制终止）、全局超时控制（整个工作流的最长执行时间）。
+
+  </Step>
+
+</Steps>
+
+**Agent 错误处理的核心策略：**
+
+```text
+问题：Agent 的错误是概率性的，传统重试策略不够用
+
+传统软件：同一输入 → 同一错误 → 重试大概率还是失败
+Agent：同一输入 → 可能成功也可能失败 → 重试可能成功
+
+解决：指数退避重试 + 降级策略 + 死循环检测 + 超时控制
+
+重试：临时性错误（网络超时、API 限流）用指数退避重试
+降级：重试 3 次仍失败 → 强模型降级为弱模型
+死循环：maxIterations + 状态变化检测 + 全局超时
+超时：单次调用 30s，整个工作流 10min
+```
+
+<Note title="💡 一句话总结">
+
+Agent 错误处理的核心是"重试 + 降级 + 防死循环"——临时性错误重试，重试失败降级，死循环检测 + 超时兜底。
+
+</Note>
+
+### 重试策略：指数退避 + 随机抖动
+
+```javascript
+// 指数退避（Exponential Backoff）+ 随机抖动（Jitter）
+function getRetryDelay(attempt) {
+  const base = Math.pow(2, attempt) * 1000; // 1s → 2s → 4s → 8s
+  const jitter = Math.random() * 1000;       // 随机 0-1s 抖动
+  return base + jitter;
+}
+
+// 错误分类：区分临时性错误和永久性错误
+const retryableErrors = [
+  'TIMEOUT',        // 网络超时
+  'RATE_LIMIT',     // API 限流（429）
+  'SERVER_ERROR',   // 服务端 500 错误
+  'OVERLOADED',     // 模型过载
+];
+
+const nonRetryableErrors = [
+  'INVALID_PARAMS', // 参数错误（重试也不会成功）
+  'AUTH_FAILED',    // 认证失败（401/403）
+  'NOT_FOUND',      // 资源不存在（404）
+  'CONTEXT_OVERFLOW', // 上下文溢出（需要压缩后重试，不是简单重试）
+];
+
+// 带重试的 Agent 调用
+async function invokeWithRetry(agent, input, maxAttempts = 3) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await agent.invoke(input);
+    } catch (error) {
+      if (nonRetryableErrors.includes(error.code)) {
+        throw error; // 永久性错误，直接抛出
+      }
+      if (attempt === maxAttempts - 1) {
+        throw error; // 最后一次重试失败，抛出
+      }
+      const delay = getRetryDelay(attempt);
+      console.log(`重试 ${attempt + 1}/${maxAttempts}，等待 ${delay}ms`);
+      await sleep(delay);
+    }
+  }
+}
+```
+
+### 降级策略：多层 Fallback
+
+```javascript
+// 降级链：强模型 → 弱模型 → 规则引擎 → 人工处理
+const fallbackChain = [
+  {
+    name: 'gpt-4o',
+    model: new ChatOpenAI({ model: 'gpt-4o', maxTokens: 4000 }),
+    cost: 'high',
+  },
+  {
+    name: 'gpt-4o-mini',
+    model: new ChatOpenAI({ model: 'gpt-4o-mini', maxTokens: 4000 }),
+    cost: 'low',
+  },
+  {
+    name: 'rule-engine',
+    model: null, // 不用 LLM，用规则引擎
+    cost: 'zero',
+  },
+];
+
+async function invokeWithFallback(input) {
+  for (const tier of fallbackChain) {
+    try {
+      if (tier.model) {
+        return await tier.model.invoke(input);
+      } else {
+        return ruleEngine.execute(input); // 降级到规则引擎
+      }
+    } catch (error) {
+      console.warn(`${tier.name} 失败，降级到下一层`);
+      continue;
+    }
+  }
+  // 所有降级都失败，交给人工
+  return { type: 'human_review', message: '请人工处理此任务' };
+}
+```
+
+### 死循环检测与超时控制
+
+```javascript
+// 死循环检测：三种机制
+class LoopDetector {
+  constructor(maxIterations = 10, maxStaleRounds = 2) {
+    this.iterations = 0;
+    this.maxIterations = maxIterations;
+    this.maxStaleRounds = maxStaleRounds;
+    this.staleRounds = 0;
+    this.lastOutput = null;
+  }
+
+  check(currentOutput) {
+    // 机制 1：最大循环次数
+    this.iterations++;
+    if (this.iterations > this.maxIterations) {
+      throw new Error(`死循环检测：超过最大循环次数 ${this.maxIterations}`);
+    }
+
+    // 机制 2：状态变化检测
+    if (this.lastOutput && hash(currentOutput) === hash(this.lastOutput)) {
+      this.staleRounds++;
+      if (this.staleRounds >= this.maxStaleRounds) {
+        throw new Error('死循环检测：连续输出无变化');
+      }
+    } else {
+      this.staleRounds = 0;
+    }
+    this.lastOutput = currentOutput;
+  }
+}
+
+// 机制 3：全局超时控制
+async function withTimeout(promise, timeoutMs = 600000) { // 默认 10 分钟
+  const timeout = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('工作流超时')), timeoutMs);
+  });
+  return Promise.race([promise, timeout]);
+}
+
+// 使用示例
+const detector = new LoopDetector(10, 2);
+const result = await withTimeout(
+  runWorkflow(detector),
+  600000 // 10 分钟超时
+);
+```
+
+### 错误处理的决策树
+
+```text
+Agent 调用失败：
+├── 临时性错误？（TIMEOUT / RATE_LIMIT / 500）
+│   ├── 重试次数 < 3？ → 指数退避重试
+│   └── 重试次数 >= 3？ → 降级到下一层
+├── 永久性错误？（AUTH_FAILED / INVALID_PARAMS）
+│   └── 不重试，直接降级或报错
+├── 上下文溢出？（CONTEXT_OVERFLOW）
+│   └── 压缩上下文后重试（不是简单重试）
+└── 死循环？（maxIterations / staleRounds）
+    └── 强制终止，返回当前最佳结果
+```
+
+<Tip title="🎢 通俗比喻: 快递配送">
+
+Agent 错误处理就像快递配送。重试策略是快递员第一次送没人签收，等 1 小时后再来，再等 2 小时再来（指数退避）。多个快递员同时来会导致门口拥堵（随机抖动防止雪崩）。降级策略是快递送不到就放驿站（强模型→弱模型），驿站也放不了就退回发件人（降级到规则引擎）。死循环检测是快递员在两个地址之间来回跑（A 说送到 B，B 说送到 A），系统检测到后强制送到最近的代收点（强制终止）。超时控制是包裹必须在 3 天内送达，超时就自动退回（全局超时兜底）。
+
+</Tip>
+
+---
+
+## 🔍 底层源码：Agent 记忆系统的实现
+
+<div class="follow-up">
+agentmemory 的 4 层记忆模型是怎么实现的？
+</div>
+
+agentmemory 用 REST API 提供记忆服务（详见 [agentmemory GitHub](https://github.com/agentmemory/agentmemory)）：
+
+```javascript
+// agentmemory 的核心架构：
+// 1. REST API 跑在 localhost:3111
+// 2. SQLite 存储记忆数据
+// 3. 向量化索引支持语义检索
+
+// 写入记忆：
+await fetch('http://localhost:3111/memory', {
+  method: 'POST',
+  body: JSON.stringify({
+    agent_id: 'claude-code',
+    content: '决定使用 Zustand 而不是 Redux',
+    type: 'decision',
+    tier: 'semantic', // 4 层：working / episodic / semantic / procedural
+  }),
+});
+
+// 检索记忆（语义搜索）：
+const memories = await fetch('http://localhost:3111/memory/search?q=状态管理');
+// 返回 Claude Code 之前记录的决策
+
+// 压缩记忆（用小模型总结）：
+await fetch('http://localhost:3111/memory/compress', {
+  method: 'POST',
+  body: JSON.stringify({ agent_id: 'claude-code', tier: 'working' }),
+});
+// working 层的原始记录被压缩为 episodic 层的摘要
+```
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："Agent 长时间运行怎么保持稳定？"
+
+**及格回答（60-70分）：**
+> "分段 session、定期总结上下文、用 checkpoint 保存状态。"
+
+面试官评价：**知道方案但不理解细节**。
+
+**满分回答（90-100分）：**
+
+> "Agent 长时间运行的核心问题是**上下文窗口溢出**和**状态一致性**。上下文窗口溢出：LLM 的上下文窗口是有限的（如 200K tokens），长时间运行会填满。解决方案是上下文压缩——用 4 层记忆模型（working → episodic → semantic → procedural），定期用小模型（Haiku）压缩原始记录为结构化事实，丢弃中间推理过程，保留关键决策和约束。<sup>[1]</sup>"
+
+> "状态一致性：多个 Agent 并行运行时需要共享状态。方案有三种：MCP Server（所有 Agent 连接同一个记忆服务器，共享 SQLite 数据库，最推荐）、REST API（集中式记忆服务，支持远程访问）、共享文件系统（最简单，所有 Agent 读写同一个 markdown 文件）。记忆冲突用时间戳优先或写入锁解决。<sup>[2]</sup>"
+
+> "容错设计：Agent 中断后用 checkpoint 恢复（LangGraph 的 Checkpoint 机制，每个节点执行后自动保存状态快照）。Session 分段把长任务拆成多个短 session，每个 session 结束时保存交接笔记（Brief），下一个 session 开始时自动加载。quest 完成后自动 cascade-unblock 依赖它的其他任务。<sup>[3]</sup>"
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="上下文窗口溢出时, 怎么决定保留哪些信息?" icon="layer-group">
+
+**答题要点：**
+说出信息保留的判断标准和压缩策略。
+
+**高分回答：**
+"用重要性评分决定保留什么：
+    
+1. **必须保留**：技术决策（'用 Zustand 不用 Redux'）、任务目标（'实现用户登录模块'）、关键约束（'不要修改 API 层'）。这些信息对下一步工作有直接影响。
+    
+2. **可以丢弃**：中间推理过程、工具调用的原始输出、已验证的中间结果。这些信息已经完成了使命，不影响后续工作。
+    
+3. **压缩策略**：用小模型（Haiku）做压缩，把 100 条对话记录压缩为 10 条结构化事实。压缩时保留事实和决策，丢弃推理过程。频繁访问的记忆强化，陈旧记忆自动淘汰（遗忘曲线）。"
+
+  </Accordion>
+
+  <Accordion title="多个 Agent 记了矛盾的信息怎么办?" icon="stopwatch">
+
+**答题要点：**
+说出三种冲突解决策略。
+
+**高分回答：**
+"记忆冲突有三种解决策略：
+    
+1. **时间戳优先**：最新的信息覆盖旧的。简单有效，但可能丢失旧信息中的有效部分。
+    
+2. **写入锁**：同一时间只有一个 Agent 可以写入。避免冲突，但降低并行度。
+    
+3. **人工审核**：关键决策需要人类确认。Agent A 记录'用 Redux'，Agent B 记录'用 Zustand'，冲突时交给人类决定。
+    
+实际项目中通常组合使用：普通信息用时间戳优先，关键决策用人工审核。MCP Server 的 SQLite 支持事务，可以实现原子写入，避免部分写入导致的不一致。"
+
+  </Accordion>
+
+  <Accordion title="怎么控制多 Agent 的 token 成本?" icon="node">
+
+**答题要点：**
+说出三个关键策略。
+
+**高分回答：**
+"token 成本控制有三个关键：
+    
+1. **模型分级**：80% 的简单任务用 gpt-4o-mini（便宜 10 倍），20% 的决策用 gpt-4o。不同 Agent 用不同模型——格式化用弱模型，决策用强模型。
+    
+2. **上下文压缩**：定期压缩历史对话，只保留关键信息。100K tokens 的历史压缩为 5K tokens 的摘要，节省 95% 的 token。
+    
+3. **Prompt Cache**：Anthropic 的 Prompt Cache 可以节省 90% 的输入 token 费用。把稳定的 System Prompt 放在前面，变化的用户输入放在后面，相同前缀的请求直接复用缓存。"
+
+  </Accordion>
+
+  <Accordion title="Agent 中断了怎么恢复?" icon="skull">
+
+**答题要点：**
+说出 checkpoint 恢复和 session 接续两种方案。
+
+**高分回答：**
+"Agent 中断恢复有两种方案：
+
+1. **Checkpoint 恢复**（LangGraph）：每个节点执行后自动保存状态快照。中断后从最近成功的 checkpoint 恢复，不需要从头开始。配置 `retry_policy` 可以自动重试失败的节点。
+
+2. **Session 接续**（Guild）：把长任务拆成多个 session，每个 session 结束时保存交接笔记（Brief）。中断后新建 session，加载交接笔记继续工作。关键是交接笔记要包含：已完成的任务、未完成的任务、关键决策、当前约束。
+
+选择标准：短任务（1 小时以内）用 checkpoint，长任务（超过 1 小时）用 session 分段 + checkpoint。两者可以组合使用——session 内用 checkpoint，session 间用交接笔记。"
+
+  </Accordion>
+
+  <Accordion title="怎么检测 Agent 是否偏离了最初目标?" icon="layer-group">
+
+**答题要点：**
+说出目标漂移的检测方法和预防措施。
+
+**高分回答：**
+"目标漂移（Goal Drift）是 Agent 长时间运行的常见问题。检测方法：
+
+1. **语义相似度检测**：定期把当前状态的摘要和最初的目标做 Embedding 相似度比较。如果相似度低于 0.7，说明 Agent 偏离了目标。在每个 session 结束时自动检测。
+
+2. **里程碑检查**：把大目标拆成多个里程碑，每个 session 结束时检查是否完成了当前里程碑。如果连续两个 session 没有推进里程碑，说明可能偏离了。
+
+3. **定期回溯**：在每个 session 开始时，强制 Agent 回顾最初的目标和已完成的工作。这就像项目经理每天早上开站会——回顾昨天做了什么、今天计划做什么、有什么阻碍。
+
+预防措施：在 session 的 Brief 中明确写上'当前目标'和'已完成的里程碑'，Agent 加载 Brief 时会自动回顾。"
+
+  </Accordion>
+
+  <Accordion title="Agent 的错误累积怎么处理?" icon="stopwatch">
+
+**答题要点：**
+说出错误累积的原因和三种应对策略。
+
+**高分回答：**
+"错误累积是指小错误在 Agent 长时间运行中逐步放大。例如 Agent 选了一个不合适的库，后续所有代码都基于这个库，最后整个项目都要推翻重来。
+
+应对策略：
+
+1. **Reviewer 节点**：在关键决策点加 Reviewer Agent，检查前一个 Agent 的输出是否合理。Reviewer 发现问题时，回滚到上一个 checkpoint 重新执行。这是'代码审查'的 AI 版本。
+
+2. **里程碑验证**：每个里程碑完成后，用独立的 Agent 验证成果。如果验证失败，回滚到里程碑开始前的 checkpoint。这比等到最后才发现问题要好得多。
+
+3. **人工检查点**：对于高风险决策（技术选型、架构设计），在 Agent 执行前加 interrupt 节点，等待人类审批。人类可以修改 Agent 的建议，或直接否决。"
+
+  </Accordion>
+
+  <Accordion title="怎么设计 Agent 的重试和降级策略?" icon="stopwatch">
+
+**答题要点：**
+从错误分类、退避策略、降级方案三个维度回答。
+
+**高分回答：**
+"重试和降级策略的设计：
+
+1. **错误分类**：区分临时性错误（网络超时、API 限流，可重试）和永久性错误（参数错误、权限不足，不可重试）。只有临时性错误才重试。
+
+2. **退避策略**：用指数退避（Exponential Backoff）+ 随机抖动（Jitter）。第 1 次等 1 秒，第 2 次等 2 秒，第 3 次等 4 秒。随机抖动防止多个 Agent 同时重试导致雪崩。
+
+3. **降级方案**：重试 3 次仍然失败时，降级到更简单的处理方式：强模型降级为弱模型（gpt-4o → gpt-4o-mini）、完整分析降级为摘要分析、自动处理降级为人工处理。
+
+4. **熔断机制**：如果某个 Agent 连续失败 5 次，暂时禁用它，避免浪费 tokens。5 分钟后自动恢复。这和微服务的 Circuit Breaker 模式一样。"
+
+  </Accordion>
+
+  <Accordion title="🔥 Agent 长时间运行的 Token 成本怎么控制?" icon="skull">
+
+**答题要点：**
+从压缩、缓存、模型分级三个维度回答成本控制。
+
+**高分回答：**
+"Agent 长时间运行的 Token 成本控制有三个关键：
+
+1. **上下文压缩**：定期压缩历史对话，只保留关键信息。100K tokens 的历史压缩为 5K tokens 的摘要，节省 95% 的 token。用小模型（Haiku）做压缩，成本极低。
+
+2. **Prompt Cache**：Anthropic 的 Prompt Cache 可以节省 90% 的输入 token 费用。把稳定的 System Prompt 放在前面，变化的用户输入放在后面。相同前缀的请求直接复用缓存的 KV Cache。
+
+3. **模型分级**：80% 的简单任务用 gpt-4o-mini（便宜 10 倍），20% 的决策用 gpt-4o。在 LangGraph 中，不同节点可以用不同的模型。格式化用弱模型，决策用强模型。
+
+4. **预算控制**：设置每个 Agent 的 token 预算上限。超出预算时降级到更简单的处理方式，或暂停执行等待人类审批。LangGraph 的 `maxTokens` 配置可以限制单次调用的 token 数。"
+
+  </Accordion>
+
+  <Accordion title="上下文压缩和摘要链有什么区别?" icon="layer-group">
+
+**答题要点：**
+从压缩对象、压缩时机、压缩目标三个维度对比。
+
+**高分回答：**
+"上下文压缩和摘要链都是减少 token 的技术，但应用场景不同：
+
+1. **上下文压缩（Context Compression）**：压缩的是 Agent 自身的历史对话。在每个 session 结束时，用小模型（Haiku）把 100K tokens 的历史压缩为 5K tokens 的结构化事实。目标是让 Agent 在下一个 session 中不会因为上下文溢出而丢失关键信息。
+
+2. **摘要链（Summary Chain）**：压缩的是 Agent 之间传递的信息。Agent A 的输出有 1000 tokens，传给 Agent B 前先压缩为 100 tokens 的摘要。目标是减少 Multi-Agent 系统中 Agent 间的通信开销。
+
+简单说：上下文压缩是压缩自己的记忆，摘要链是压缩传给别人的消息。两者可以同时使用——Agent 自身的历史用上下文压缩，传给其他 Agent 的信息用摘要链。"
+
+  </Accordion>
+
+  <Accordion title="Token 预算超了怎么办?" icon="stopwatch">
+
+**答题要点：**
+说出三种超预算策略：降级、暂停、告警。
+
+**高分回答：**
+"Token 预算超了有三种应对策略：
+
+1. **降级到弱模型**：最常用的策略。gpt-4o 降级为 gpt-4o-mini，成本降低 10 倍。虽然输出质量下降，但系统不会中断。在 LangGraph 中，不同节点可以动态切换模型。
+
+2. **暂停执行等待审批**：对于非紧急任务，暂停 Agent 执行，通知用户 token 预算已用完，等待用户决定是否追加预算。这适合成本敏感的场景。
+
+3. **压缩后继续**：如果上下文太大导致 token 消耗高，先压缩上下文（100K → 5K tokens），然后继续执行。这可以释放大量 token 预算。
+
+实际项目中通常组合使用：先压缩上下文，如果仍然超预算就降级到弱模型，如果还是超就暂停等待审批。"
+
+  </Accordion>
+
+  <Accordion title="Agent 的死循环怎么检测和防止?" icon="stopwatch">
+
+**答题要点：**
+说出三种死循环检测机制。
+
+**高分回答：**
+"死循环是 Multi-Agent 系统最危险的错误，有三种检测机制：
+
+1. **最大循环次数（maxIterations）**：设置 Supervisor 的最大轮转次数（如 10 次）。超过次数强制终止，返回当前最佳结果。这是最简单也最有效的兜底。
+
+2. **状态变化检测（Stale Rounds）**：如果连续 N 轮（如 2 轮）的状态没有变化（Agent 的输出和上一轮相同），说明陷入了死循环，强制终止。用 hash 比较输出内容。
+
+3. **全局超时（Global Timeout）**：整个工作流的最长执行时间（如 10 分钟）。超时后强制终止。这防止了 Agent 在某些节点卡住的情况。
+
+预防措施：在 Supervisor 的 prompt 中明确写'如果 Agent A 和 Agent B 互相推诿，直接交给人工处理'。LLM 会理解这个指令，从源头避免死循环。"
+
+  </Accordion>
+
+  <Accordion title="降级策略和重试策略怎么配合?" icon="node">
+
+**答题要点：**
+说出重试→降级的优先级链。
+
+**高分回答：**
+"重试和降级是两个不同层次的容错机制，配合使用：
+
+1. **先重试**：临时性错误（网络超时、API 限流）用指数退避重试 3 次。第 1 次等 1 秒，第 2 次等 2 秒，第 3 次等 4 秒。大部分临时性错误在重试后能成功。
+
+2. **重试失败再降级**：重试 3 次仍然失败时，降级到更简单的处理方式。降级链是：强模型→弱模型→规则引擎→人工处理。
+
+3. **永久性错误直接降级**：参数错误、认证失败等永久性错误，不需要重试（重试也不会成功），直接进入降级链。
+
+4. **上下文溢出特殊处理**：上下文溢出不是简单的重试——需要先压缩上下文，然后再调用。这是'压缩后重试'，不是'原样重试'。
+
+优先级：重试（临时性错误）→ 降级（重试失败或永久性错误）→ 人工兜底（所有自动策略都失败）。"
+
+  </Accordion>
+
+  <Accordion title="🔥 多 Agent 共享记忆的一致性怎么保证?" icon="skull">
+
+**答题要点：**
+从事务、锁、冲突解决三个维度回答。
+
+**高分回答：**
+"多 Agent 共享记忆的一致性保证：
+
+1. **事务写入**：MCP Server 的 SQLite 支持事务。Agent 写入记忆时，用事务确保原子性——要么全部写入成功，要么全部回滚。避免部分写入导致的不一致。
+
+2. **乐观锁**：每个记忆记录带版本号。Agent 读取时记录版本号，写入时检查版本号是否变化。如果版本号变了，说明其他 Agent 已经修改了，需要重新读取后再写入。
+
+3. **冲突解决策略**：
+   - 普通信息：时间戳优先（最新的覆盖旧的）
+   - 关键决策：人工审核（冲突时交给人类决定）
+   - 结构化数据：CRDT（Conflict-free Replicated Data Type）自动合并
+
+4. **最终一致性**：不需要强一致性——允许短暂的不一致，最终所有 Agent 会看到相同的数据。这和分布式系统的 CAP 定理一样——在分区容错和一致性之间做权衡。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Q7: 上下文压缩策略有哪些？
+
+Agent 长时间运行时，上下文窗口必然溢出。上下文压缩不是"随便删掉历史"，而是**有策略地保留关键信息、丢弃噪音**。四种核心策略各有适用场景，通常需要组合使用。
+
+### 策略 1：滑动窗口（Sliding Window）
+
+只保留最近 N 轮对话，丢弃早期历史。最简单但最粗暴——可能丢失关键决策。
+
+```javascript
+// 滑动窗口：保留最近 N 条消息
+function slidingWindow(messages, maxMessages = 20) {
+  const system = messages.filter(m => m.role === "system");
+  const history = messages.filter(m => m.role !== "system");
+  const recent = history.slice(-maxMessages);
+  return [...system, ...recent];
+}
+
+// 优点：实现简单，token 消耗可预测
+// 缺点：早期的关键决策可能被丢弃
+// 适用：短期对话（&lt; 30 分钟），不需要长期记忆
+```
+
+### 策略 2：摘要链（Summary Chain）
+
+定期用 LLM 把长对话历史压缩为结构化摘要。压缩比可达 20:1（100K tokens 压缩为 5K tokens）。
+
+```javascript
+// 摘要链：长对话 → 分块 → 逐块摘要 → 合并
+async function summarizeChain(messages, targetTokens = 5000) {
+  const currentTokens = countTokens(messages);
+  if (currentTokens <= targetTokens) return messages;
+
+  // 用小模型（Haiku）做压缩，成本极低
+  const summary = await haiku.invoke([
+    { role: "system", content: `将以下对话压缩为结构化摘要，保留：
+    1. 技术决策（如"用 Zustand 不用 Redux"）
+    2. 关键约束（如"不要修改 API 层"）
+    3. 未完成的任务
+    4. 当前进度
+    丢弃中间推理过程和工具调用的原始输出。` },
+    { role: "user", content: JSON.stringify(messages) },
+  ]);
+
+  return [
+    { role: "system", content: `对话历史摘要：${summary.content}` },
+    ...messages.slice(-5), // 保留最近 5 条消息（保留最近上下文）
+  ];
+}
+
+// 优点：压缩比高，保留关键信息
+// 缺点：需要额外的 LLM 调用（有成本和延迟）
+// 适用：长时间编码会话（&gt; 30 分钟），需要保留决策历史
+```
+
+### 策略 3：选择性注入（Selective Context Injection）
+
+不是把所有代码文件都塞进上下文，而是用语义搜索只注入与当前任务相关的文件。
+
+```javascript
+// 选择性注入：只注入相关上下文
+async function selectiveContext(projectFiles, currentTask, maxTokens = 10000) {
+  // 1. 用 Embedding 计算任务和文件的语义相似度
+  const taskEmbedding = await embed(currentTask);
+  const scoredFiles = await Promise.all(
+    projectFiles.map(async file => ({
+      file,
+      score: cosineSimilarity(taskEmbedding, await embed(file.path + file.summary)),
+    }))
+  );
+
+  // 2. 按相关性排序，只取 top-K
+  const ranked = scoredFiles.sort((a, b) => b.score - a.score);
+
+  // 3. 按 token 预算填充
+  let totalTokens = 0;
+  const selected = [];
+  for (const { file } of ranked) {
+    const tokens = countTokens(file.content);
+    if (totalTokens + tokens > maxTokens) break;
+    selected.push(file);
+    totalTokens += tokens;
+  }
+
+  return selected.map(f => `// ${f.path}\n${f.content}`).join("\n\n");
+}
+
+// 优点：token 效率最高，只给 LLM 需要的信息
+// 缺点：需要 Embedding 索引，首次构建有成本
+// 适用：大型项目（&gt; 1 万行代码），多文件重构
+```
+
+### 策略 4：Token 预算管理（Token Budget Management）
+
+限制每次请求和整体工作流的 Token 数量，超出时触发降级策略。
+
+```javascript
+// Token 预算管理
+const tokenBudget = {
+  // 单次调用限制
+  perCall: { input: 8000, output: 4000 },
+  // 单个 Agent 的 session 限制
+  perSession: 100000,
+  // 整个工作流限制
+  perWorkflow: 500000,
+  // 每日总量限制
+  dailyTotal: 5000000,
+
+  check(usage) {
+    // 单次超限 → 触发压缩
+    if (usage.input > this.perCall.input) {
+      return { action: "compress", target: this.perCall.input * 0.6 };
+    }
+    // session 超限 → 触发摘要
+    if (usage.session > this.perSession) {
+      return { action: "summarize", target: this.perSession * 0.3 };
+    }
+    // 工作流超限 → 降级到弱模型
+    if (usage.workflow > this.perWorkflow) {
+      return { action: "degrade", model: "gpt-4o-mini" };
+    }
+    // 每日超限 → 暂停执行
+    if (usage.daily > this.dailyTotal) {
+      return { action: "pause", reason: "Daily budget exceeded" };
+    }
+    return { action: "continue" };
+  },
+};
+
+// 超预算时的降级链
+const degradeChain = [
+  { action: "compress", desc: "压缩上下文" },      // 第一步：压缩
+  { action: "summarize", desc: "摘要历史" },        // 第二步：摘要
+  { action: "degrade", desc: "切换弱模型" },        // 第三步：降级模型
+  { action: "pause", desc: "暂停等待审批" },        // 最后一步：暂停
+];
+```
+
+### 四种策略的组合使用
+
+实际项目中，四种策略通常组合使用，按优先级依次触发：
+
+```text
+Agent 上下文管理的完整流程：
+
+1. 启动时：选择性注入（只加载相关文件）
+   └── 10 万行项目 → 只加载 5 个相关文件（10K tokens）
+
+2. 运行中：Token 预算监控（每次调用检查）
+   └── 超过 8K input → 触发滑动窗口（保留最近 20 轮）
+
+3. 每 30 分钟：摘要链压缩（定期压缩历史）
+   └── 100K tokens 历史 → 5K tokens 摘要
+
+4. 紧急情况：Token 预算超限 → 降级到弱模型或暂停
+   └── 全天用量超限 → 暂停执行，等待人工审批
+```
+
+| 组合场景 | 策略组合 | 效果 |
+|---------|---------|------|
+| 短期对话（&lt; 30 分钟） | 滑动窗口 | 简单高效，token 可控 |
+| 长时间编码（1-5 小时） | 摘要链 + Token 预算 | 保留决策历史，成本可控 |
+| 大型项目重构 | 选择性注入 + 摘要链 + Token 预算 | 只给相关信息，压缩历史 |
+| 多 Agent 协作 | 选择性注入 + 摘要链 + Token 预算 + 模型分级 | 全方位优化 |
+
+<Note title="一句话总结">
+
+上下文压缩不是"随便删历史"，而是四种策略的组合：滑动窗口（简单粗暴）、摘要链（保留关键决策）、选择性注入（只给相关信息）、Token 预算管理（成本兜底）。实际项目中按优先级依次触发。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="没有上下文压缩">
+
+Agent 运行 2 小时后上下文溢出，忘记之前的代码设计决策，开始重复修改已经完成的文件。Token 消耗失控，一天烧掉 $200。
+
+</Card>
+<Card title="引入上下文压缩">
+
+Agent 运行 2 小时后自动触发摘要压缩，100K tokens 历史压缩为 5K tokens 的结构化摘要。选择性注入只加载当前任务相关的 5 个文件。Token 消耗可预测，一天控制在 $30 以内。
+
+</Card>
+</CardGroup>
+
+<Tip title="面试技巧">
+
+回答时重点说**四种策略的适用场景和组合方式**，而不是只罗列策略名称。面试官想听的是"我在项目中用选择性注入把 10 万行项目的上下文从 200K tokens 压缩到 10K tokens，再用摘要链每 30 分钟压缩历史，Token 成本从 $200/天降到 $30/天"。
+
+</Tip>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [agentmemory GitHub](https://github.com/agentmemory/agentmemory)：*开源的 AI 记忆系统，实现了 4 层记忆模型和 REST API 记忆服务。* <sup>[1]</sup>
+- 📖 [Guild GitHub](https://github.com/mathomhaus/guild)：*开源的 MCP 记忆服务器，实现了 quest 系统和 session 分段。* <sup>[2]</sup>
+- 🟢 [LangGraph Checkpoint 文档](https://langchain-ai.github.io/langgraphjs/concepts/persistence)：*LangGraph 官方对 Checkpoint 机制的详细说明。* <sup>[3]</sup>
+- 🔗 [Anthropic: Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)：*Anthropic 官方对 Agent 错误处理和降级策略的最佳实践指南。*
+- 📖 [OpenAI Cookbook: Token Optimization](https://cookbook.openai.com/)：*OpenAI 官方对 token 消耗优化的实战指南，包含 Prompt Cache 和模型分级策略。*
+- 🟢 [LangGraph Retry Policy 文档](https://langchain-ai.github.io/langgraphjs/how-tos/)：*LangGraph 的重试策略和错误处理机制详解。*

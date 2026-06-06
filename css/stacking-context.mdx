@@ -1,0 +1,303 @@
+---
+title: "层叠上下文 (Stacking Context)"
+---
+
+> **面试官为什么问这个？**
+>
+> 面试官问这个，本质上是在考察你是否具备在三维渲染空间中解决"遮挡冲突"的底层调试能力。如果你在写复杂 UI（如全屏弹窗被一个视频组件遮挡）时，只会绝望地往 CSS 里狂写 `z-index: 999999` 却发现依然无效，这说明你完全没掌握 Blink 渲染树生成 3D 复合层的物理法则。
+
+---
+
+## Q1: 为什么 z-index: 9999 会被 z-index: 1 踩在脚下？
+
+<Steps>
+
+  <Step title="二维平面的错觉">
+
+  初级开发者通常认为网页是一张扁平的画纸，`z-index` 就像是每种颜料的厚度，数字越大，涂得越高，自然就会遮住下面的东西。这是大错特错的。
+
+  </Step>
+  <Step title="致命痛点: z-index 的「失效」">
+
+  当你写了一个全局弹窗，给它 `z-index: 99999`，却发现它依然被一个地图组件或 Canvas 遮挡。你疯狂加大数字到 2147483647（32位整形极限），还是无效。这是因为你完全没理解层叠上下文的"结界"规则。
+
+  </Step>
+  <Step title="三维结界的诞生 (Stacking Context)">
+
+  真实的情况是，网页是一栋**有严格层级体系的摩天大楼**。一旦某个元素通过特定属性（如 `position: relative` + `z-index: 1`）触发了"层叠上下文'，它就相当于建立了一个完全封闭的独立楼层。子元素无法跨越父元素的结界去跟外面的元素比高低！
+
+  </Step>
+  <Step title="七大绘制层的严格排序">
+
+  在 Blink 的 `PaintLayer` 中，每个层叠上下文内部严格遵循七大绘制层从低到高排序：背景和边框 -> 负 z-index 子上下文 -> 常规流块级元素 -> 浮动元素 -> 行内元素（文字）-> z-index 为 0 或 auto 的定位元素 -> 正数 z-index 的定位元素。这也是浮动盒子能遮挡块级背景，但绝对遮不住文字的根本原因。
+
+  </Step>
+  <Step title='关键洞察：CSS3 属性的暗杀机制'>
+
+  在现代 CSS3 中，`transform`、`opacity &lt; 1`、`filter`、`will-change` 等硬件加速属性会在**不需要任何 position 和 z-index 的情况下，瞬间强制创建全新的层叠上下文**。更隐蔽的是，`transform` 还会劫持 `position: fixed` 的包含块--你的全局吸顶导航栏如果被包在加了 transform 的动画盒子里，会瞬间变成普通的 absolute 元素跟着页面滚动。架构级防御是全面拥抱 React Portal 等技术，将关键弹窗在物理 DOM 上直接拉举至 Body 根域。
+
+  </Step>
+
+</Steps>
+
+**层叠上下文 解决的核心问题：**
+
+```text
+问题：z-index 的"失效"--子元素的 z-index 无法跨越父结界
+
+父元素 A: z-index: 1，子元素: z-index: 999999
+父元素 B: z-index: 2，子元素: z-index: 1
+结果：B 的子元素（1楼的2层）踩在 A 的子元素（1楼的999999层）之上！
+
+解决：理解层叠上下文的"拼爹"法则
+
+z-index 只在同一结界内比较。遇到遮挡问题，不要动子元素，向上排查找到两个碰撞的顶级父节点。
+```
+
+**一句话总结：层叠上下文是浏览器在 Z 轴上的"封建制结界"，子元素的 z-index 永远被封死在父结界内部，绝无可能跨越。**
+
+<CardGroup cols={2}>
+
+<Card title="🚫 盲目堆叠 (屎山代码)">
+
+当弹窗被遮挡时，疯狂加上 `z-index: 99999`，加到 2147483647（32位整形极限）还是被挡住。因为你没发现弹窗的父容器的层级比别人低。
+
+</Card>
+<Card title='✅ 理解结界源头'>
+
+遇到遮挡，不要动子元素！打开 Chrome DevTools，顺着祖先链向上排查，找到真正发生层叠上下文碰撞的两个顶级父节点，去调整它俩的 z-index 或脱离包含块。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么'（z-index 只在同一结界内比较），再说"怎么解决"（向上排查父节点）。重点是理解层叠上下文的"拼爹"法则，而不是背诵 z-index 的数值范围。
+
+</Tip>
+
+---
+
+## Q2: 除了 z-index，谁还能偷偷创造层叠上下文？
+
+这是面试中最毒的陷阱。很多人以为只有定位（`position`）加 `z-index` 才会创造结界。但在现代 CSS3 的新世界里，为了调用 GPU 硬件加速，浏览器底层赋予了多的新属性一种**"暗夜潜行"的特权**。
+
+```text
+┌───────────────────────────────────────┐
+│           根层叠上下文 (Root)           │  ← <html> 元素，天然的顶层结界
+└─────────────────┬─────────────────────┘
+                  │ 子元素触发新结界
+                  ▼
+┌───────────────────────────────────────┐
+│        独立层叠上下文 (Child)           │  ← 内部的 z-index 被封死在此结界内
+└───────────────────────────────────────┘
+```
+
+以下属性可以**不需要 z-index** 就瞬间创建新的层叠上下文：
+
+1. **变形与动画**：`transform` 不为 `none`、`will-change` 设置了 `transform`。
+2. **透明度**：`opacity` 小于 `1`（比如 `0.99` 也能触发）。
+3. **视觉滤镜**：`filter`、`backdrop-filter` 不为 `none`。
+4. **新型布局**：Flex 和 Grid 容器的子元素，只要其 `z-index` 不为 `auto`（哪怕是 `0`），瞬间独立！
+5. **极度暴力的隔离**：`isolation: isolate`（这是唯一一个专门为了强行制造层叠上下文而生的属性）。
+
+<Warning title="⚠️ 机制: 层叠上下文的七大绘制层">
+
+正如 W3C CSS 规范在 [CSS Positioned Layout Module Level 3](https://www.w3.org/TR/css-position-3/) 中定义的，在一个单独的层叠上下文结界内部，七大层级从低到高严格排序：
+
+- **层级 1**：形成该层叠上下文的元素的背景（background）和边框（border）。
+- **层级 2**：Z 轴为负数（z-index: -1）的子层叠上下文。
+- **层级 3**：常规流中的块级元素（display: block，且 position: static）。
+- **层级 4**：非定位的浮动元素（float: left/right）。
+- **层级 5**：常规流中的行内元素（文字、span、inline-block）。
+- **层级 6**：z-index 为 0，或者 z-index 为 auto 的定位元素。
+- **层级 7**：正数 z-index（z-index &gt; 0）的定位元素。
+
+所以浮动盒子能遮挡块级背景，但绝对遮不住文字的原因！
+
+</Warning>
+
+<Tip title='🎢 通俗比喻：摩天大楼的楼层'>
+
+层叠上下文就像一栋摩天大楼。1 楼（父结界 A）里有人在 999 层叠了 999 张桌子（z-index: 999），但 2 楼（父结界 B）里哪怕只放了 1 张桌子（z-index: 1），2 楼的桌子也会压在 1 楼所有 999 张桌子之上--因为人家起步就比你高一层楼。
+
+</Tip>
+
+---
+
+## Q3: z-index: auto 与 z-index: 0 有什么区别？
+
+### 基础梳理
+
+| 对比维度 | z-index: auto | z-index: 0 |
+|---------|-------------|-----------|
+| **是否创建层叠上下文** | **不创建**（在普通定位元素上） | **创建** |
+| **在层叠顺序中的位置** | 与未定位元素同级 | 与 z-index: 0 的定位元素同级 |
+| **子元素的 z-index 范围** | 可以跨越父元素与其他元素比较 | 被封死在父结界内 |
+| **Flex/Grid 子元素** | 创建层叠上下文（规范特殊规定） | 创建层叠上下文 |
+
+### 专家视角深度剖析
+
+很多候选人只能背诵上面的表格，但大厂面试官真正在意的是：**为什么 `z-index: auto` 和 `z-index: 0` 在普通定位元素上的行为不同，但在 Flex/Grid 子元素上却相同？**
+
+这是 W3C 规范的**刻意设计**。在普通流中，`z-index: auto` 意味着"我不参与层叠上下文的创建"，元素按照 DOM 顺序排列。而 `z-index: 0` 意味着"我创建一个层叠上下文，但我的层级是 0"。
+
+但在 Flex/Grid 的上下文中，规范做了一个特殊规定：Flex/Grid 容器的子元素，只要其 `z-index` 不为 `auto`（哪怕是 `0`），就会瞬间创建独立的层叠上下文。这是为了**保证弹性/网格布局系统的纯净性**--如果允许子元素的层叠上下文"泄漏"到外部，就会破坏布局系统的隔离性。
+
+```css
+/* 普通定位元素：z-index: auto 不创建结界 */
+.parent { position: relative; z-index: auto; }
+.parent .child { z-index: 999; } /* 可以跨越父元素与其他元素比较 */
+
+/* 普通定位元素：z-index: 0 创建结界 */
+.parent { position: relative; z-index: 0; }
+.parent .child { z-index: 999; } /* 被封死在父结界内 */
+
+/* Flex/Grid 子元素：z-index: 0 和 auto 都创建结界 */
+.flex-container { display: flex; }
+.flex-item { z-index: 0; } /* 创建层叠上下文 */
+.flex-item { z-index: auto; } /* 不创建层叠上下文 */
+/* 关键点：Flex/Grid 的特殊规定保证了布局系统的隔离性 */
+```
+
+---
+
+## Q4: 经典面试题：transform 劫持 position: fixed
+
+**transform 为什么会影响 position: fixed？**
+`transform` 不仅会强行制造层叠上下文，它还会**强烈地劫持内部的 position: fixed 包含块！** 规范中明确指出：通常情况下，`fixed` 定位的参照物是最高层的视口（Viewport）。但是，一旦其任何一个祖先元素被设置了 `transform`（或 `perspective`、`filter`），这个祖先元素就会瞬间篡位，成为这个 `fixed` 元素的包含块参照物！
+
+**opacity &lt; 1 的陷阱：**
+如果一个元素设置了 `opacity: 0.99`，它也会创建层叠上下文。这在做淡入淡出动画时隐蔽--你以为只是改了透明度，实际上整个层叠结构都变了。
+
+**关键区别：**
+
+| 场景 | position: fixed 的行为 | 是否创建层叠上下文 |
+|------|---------------------|-------------|
+| 无 transform 祖先 | 相对于视口定位 | 否 |
+| 有 transform 祖先 | 相对于 transform 祖先定位 | 是 |
+| opacity: 0.99 | 不影响 fixed 定位 | 是 |
+| filter: blur(1px) | 劫持 fixed 定位 | 是 |
+
+<Tip title="建议: ">
+
+在开发全局吸顶导航栏时，不要在任何祖先元素上使用 `transform`、`filter`、`perspective` 等属性，否则会劫持 `fixed` 定位。如果必须使用动画，将动画元素放在与导航栏平级的 DOM 层级中，而不是嵌套在导航栏内部。
+
+</Tip>
+
+---
+
+## 🔍 源码：Blink 引擎是如何实现的？
+
+<div class="follow-up">
+层叠上下文的七大绘制层在 Blink 中是怎么实现的？
+</div>
+
+在 Chrome 的 Blink 渲染引擎中，`PaintLayer` 类对 Z 轴上的绘制顺序有着死板的军规（详见 [Blink 源码 src/core/paint/paint_layer.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/paint/paint_layer.cc)）。每次屏幕刷新执行 Paint 阶段时，画家（GPU）会**严格按照从低到高的顺序铺设颜料**（后画的覆盖先画的）：
+
+```cpp
+// 详见：Blink 源码 src/core/paint/paint_layer.cc
+// 层叠上下文底部的 "七大绘制层" (从下往上铺设)：
+
+// 层级 1：基础底盘（The Base）
+// 形成该层叠上下文的元素的 背景（background）和 边框（border）。
+
+// 层级 2：被流放的底层（The Underworld）
+// Z 轴为负数（z-index: -1）的子层叠上下文。
+
+// 层级 3：普通块级大军（The Normal Block Flow）
+// 常规流中的块级元素（display: block，且 position: static）。
+
+// 层级 4：上流社会的浮动阶层（The Float Flow）
+// 非定位的浮动元素（float: left/right）。
+
+// 层级 5：文字与内联世界（The Inline Flow）
+// 常规流中的行内元素（文字、span、inline-block）。
+// (所以浮动盒子能遮挡块级背景，但绝对遮不住文字的原因！)
+
+// 层级 6：不拔尖的定位层（The Zero-index Layer）
+// z-index 为 0，或者 z-index 为 auto 的定位元素。
+
+// 层级 7：高空统治者（The Upper Echelons）
+// 正数 z-index（z-index > 0）的定位元素。
+```
+
+<div class="follow-up">
+transform 劫持 fixed 定位在 Blink 中是怎么实现的？
+</div>
+
+在 Blink 底层，当一个元素被设置了 `transform` 时，它会成为一个 **Containing Block（包含块）**。对于 `position: fixed` 的子元素，引擎在查找包含块时会沿着祖先链向上搜索，如果遇到带有 `transform` 的祖先元素，就会将其作为包含块，而不是使用视口（Viewport）。详见 [Blink 源码 src/core/layout/layout_object.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/layout/layout_object.cc) 中的 `ContainerForFixedPosition` 函数。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："请解释一下层叠上下文（Stacking Context），以及 z-index 为什么有时会失效？"
+
+**及格回答（60-70分）：**
+> "层叠上下文决定了元素谁在上面谁在下面。z-index 只有在 position 设置为 relative / absolute / fixed 的时候才生效。它失效通常是因为拼不过父元素的 z-index，因为 z-index 只能在同一个层叠上下文里面比。"
+
+面试官评价：**知道规则但不理解设计**。
+
+**满分回答（90-100分）：**
+
+> 层叠上下文是浏览器在三维空间（Z轴）中管理和绘制 DOM 树的一种**封建制物理结界**。它的核心法则是"拼爹"——一旦元素独立成层，其内部所有子元素的 Z 轴权重将绝对被封死在该结界内部，绝无可能跨越去干扰外部环境。父元素 A 的子元素 z-index: 999999 会被父元素 B 的子元素 z-index: 1 踩在脚下——因为人家起步就比你高一层楼。<sup>[1]</sup>
+
+> 在 Blink 的 `PaintLayer` 源码绘制机制中，一个结界内部严格遵循 7 大绘制层从低到高排序：背景和边框 -> 负 z-index 子上下文 -> 常规流块级元素 -> 浮动元素 -> 行内元素（文字）-> z-index 为 0 或 auto 的定位元素 -> 正数 z-index 的定位元素。这也是为什么浮动盒子能遮挡块级背景，但绝对遮不住文字的根本原因。<sup>[2]</sup>
+
+> 在真实的复杂动效开发中，隐蔽的灾难来自于 **CSS3 属性的暗杀**——`transform`、`opacity &lt; 1`、`filter`、`will-change` 等硬件加速属性，会在**不需要任何 position 和 z-index 的情况下，瞬间强制创建一个全新的层叠上下文**！更隐蔽的是，`transform` 还会劫持 `position: fixed` 的包含块——你的全局吸顶导航栏如果被包在加了 transform 的动画盒子里，会瞬间变成普通的 absolute 元素跟着页面滚动。架构级防御是全面拥抱 React Portal 等技术，将关键弹窗在物理 DOM 上直接拉举至 Body 根域。<sup>[3]</sup>
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="第一层: 两个兄弟元素都没有 z-index, 谁会覆盖谁?" icon="layer-group">
+
+  **答题要点：**
+  必须提到"后来者居上"的 DOM 顺序法则。
+
+  **高分回答：**
+  "如果它们都在同一层级（比如都是同级的父元素的子节点），且 `z-index` 都是默认的 `auto` 或 `0`，它们在层叠权重上是平等的。此时，渲染引擎会冷酷地**依靠它们在 HTML DOM 树中出现的先后顺序**来决定。写在 HTML 下面的元素（即后被解析渲染的元素），会像涂最后一层颜料一样，直接覆盖在上面的元素之上。"
+
+  </Accordion>
+
+  <Accordion title="第二层: transform 除了遮挡关系, 还会对 position: fixed 产生什么毁灭性的打击吗?" icon="stopwatch">
+
+  **答题要点：**
+  结合 W3C 规范解释"包含块劫持"机制。
+
+  **高分回答：**
+  "`transform` 不仅会强行制造层叠上下文，它还会**强烈地劫持内部的 position: fixed 包含块！** 规范中明确指出：通常情况下，`fixed` 定位的参照物是最高层的视口（Viewport）。但是，一旦其任何一个祖先元素被设置了 `transform`（或 `perspective`、`filter`），这个祖先元素就会瞬间篡位，成为这个 `fixed` 元素的包含块参照物！这意味着，你的全局吸顶导航栏（Fixed），如果被包在了一个加了 transform 的动画盒子里，它会瞬间变成一个普通的 absolute 元素，跟着页面一起滚动滚走，导致整个前端应用吸顶逻辑彻底瘫痪崩坏！"
+
+  </Accordion>
+
+  <Accordion title="第三层: 如何用 JS 获取一个元素当前的层叠上下文状态?" icon="node">
+
+  **答题要点：**
+  必须分场景讨论！CSS 本身没有 API，需要结合 DevTools。
+
+  **高分回答：**
+  "分两种情况：
+  **1. 开发调试**：Chrome DevTools 的 `3D View` 面板可以可视化所有层叠上下文和复合层。在 Elements 面板中，选中元素后查看 `z-index` 是否生效--如果元素没有创建层叠上下文，`z-index` 会显示为灰色（无效）。
+  **2. JS 检测**：可以通过 `getComputedStyle(element).zIndex` 获取计算后的 z-index 值。但要判断元素是否创建了层叠上下文，需要检查多个属性（`position`、`opacity`、`transform`、`filter` 等），目前没有单一 API 可以直接判断。"
+
+  </Accordion>
+
+  <Accordion title="🔥 杀手锏追问: 如果一个元素同时满足多个层叠上下文创建条件 (如 position: relative + z-index: 1 + opacity: 0.9 + transform: scale(1)) , 它会创建几个层叠上下文?" icon="skull">
+
+  **答题要点：**
+  对比"叠加"与"唯一"的概念。
+
+  **高分回答：**
+  "**永远只创建 1 个层叠上下文！** 层叠上下文不是"叠加"的--一个元素要么是层叠上下文，要么不是，不存在"创建了 3 个层叠上下文"的说法。多个条件同时满足时，它们的效果是**冗余**的，而不是叠加的。最终的层叠顺序由这唯一的层叠上下文中的 z-index 值决定。但需要注意的是，不同的创建条件可能会影响子元素的行为--比如 `transform` 会劫持 `fixed` 定位，而 `opacity &lt; 1` 不会。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [CSS Positioned Layout Module Level 3 - W3C 规范](https://www.w3.org/TR/css-position-3/)：W3C 官方对层叠上下文的权威定义，包含七大绘制层的完整排序规则。<sup>[1]</sup>
+- 📖 [Blink 源码 paint_layer.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/paint/paint_layer.cc)：Chrome Blink 引擎中层叠上下文绘制的实现。<sup>[2]</sup>
+- 🟢 [MDN Web Docs - Stacking Context](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_positioned_layout/Understanding_z-index/Stacking_context)：MDN 对层叠上下文的全面教程，包含创建条件与可视化调试方法。<sup>[3]</sup>

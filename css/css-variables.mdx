@@ -1,0 +1,418 @@
+---
+title: "CSS 变量 (Custom Properties)"
+---
+
+> **面试官为什么问这个？**
+>
+> 面试官问这个，本质上是在考察你是否具备在现代前端工程中构建**微秒级无损主题切换系统**的架构能力。如果你在 2024 年做暗黑模式还在用 Sass/Less 预处理器疯狂编译输出两套臃肿的 CSS 文件，这说明你对浏览器原生的 CSS Variables（自定义属性）的运行时级突破一无所知。
+
+---
+
+## Q1: 为什么抛弃 Sass/Less 变量，拥抱原生 CSS 变量？
+
+<Steps>
+
+  <Step title="预处理器变量的死亡宿命 (编译期死锁) ">
+
+  像 Sass 中的 `$primary-color: #f00;`。这种变量在运行 `npm run build` 的那一刻，就已经被 webpack 编译器彻彻底底地"焊死'成了普通的 CSS 文本。当网页在用户浏览器里跑起来时，这个变量**根本不存在**。如果你想通过 JS 在用户点击按钮时换颜色，预处理器变量毫无用武之地。
+
+  </Step>
+  <Step title="致命痛点: 主题切换的天文数字级开销">
+
+  过去做两套主题，你要强行覆盖几万行 CSS 类的颜色属性，引发浏览器天文数字级别的重新样式计算与卡顿。每新增一种主题，CSS 体积就膨胀一倍，维护成本指数级增长。
+
+  </Step>
+  <Step title='原生自定义属性的觉醒（运行时鲜活）'>
+
+  原生 CSS 变量（`--primary-color: #f00;`）是真正生存在浏览器内存中、伴随整个 DOM 树生命周期的活体对象。它不仅继承、覆盖，甚至直接开放了底层 API 给 JavaScript 随意读写（`style.setProperty`）。你只需在根节点改变几个变量的值，浏览器底层渲染引擎会自动捕获变量更新，并在几毫秒内如水波纹般瞬间重绘所有关联的组件。
+
+  </Step>
+  <Step title="依赖收集的响应式本质">
+
+  在 Blink 的 `CSSVariableResolver` 中，当元素 A 通过 `var()` 引用了变量 X 时，引擎的 `StyleRecalculator` 会悄悄把元素 A 注册到变量 X 的观察者列表中。所以当你执行 `setProperty` 修改变量时，引擎不需要遍历几十万个 DOM 节点，而是直接沿着依赖列表，瞬间精准地只把受到影响的节点标记为 Dirty 并触发重绘--这与 Vue 的 `reactive()` 在思想上完全一致。
+
+  </Step>
+  <Step title='关键洞察：类型注入与变量边界'>
+
+  原生 CSS 变量在浏览器眼里只是毫无意义的字符串文本，因此无法直接支持 `transition` 动画插值。但通过 CSS Houdini 的 `@property` API 注册类型标签（syntax、initial-value、inherits）后，被注入灵魂的变量瞬间就能支持渐变插值。同时需要注意变量污染陷阱：在微前端架构中，可利用 Shadow DOM 的隔离气凝胶将第三方库的变量封锁在暗影结界内部，防止全局命名空间污染。
+
+  </Step>
+
+</Steps>
+
+**CSS 变量 解决的核心问题：**
+
+```text
+问题：预处理器变量是"编译期死锁"，运行时无法修改，主题切换需要成吨的覆盖类
+
+Sass 变量 $color: red → 编译后变成普通 CSS 文本 → 运行时不存在 → 无法动态修改
+切换主题 → 覆盖几万行 CSS → 浏览器天文数字级重算 → 卡顿
+
+解决：原生 CSS 变量是"运行时活体"，改一个变量，全站自动更新
+
+--color: red → 运行时驻留在 DOM 树中 → JS 可随时读写 → 改一个变量 → 引擎自动精准重绘
+```
+
+<Note title="💡 一句话总结">
+
+原生 CSS 变量让主题切换从"编译期覆盖类"变成了"运行时改一个值"，是现代前端工程的突破。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 预处理器主题方案">
+
+强行编写 `.dark-theme .btn { background: black; }` 等成千上万个覆盖类。导致最终打包出的 CSS 文件体积膨胀数倍。维护痛苦，极易产生样式冲突。
+
+</Card>
+<Card title='✅ 原生 CSS 变量方案'>
+
+`.btn { background: var(--bg-color); }`。无论切换 1 种还是 100 种主题，`.btn` 的代码永远不用改。只需要在根域动态替换掉 `--bg-color` 这一个变量的色值即可。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么'（预处理器变量的编译期死锁），再说"怎么解决"（原生变量的运行时活体机制）。重点是理解两种变量的生命周期差异，而不是背诵 `var()` 的语法。
+
+</Tip>
+
+---
+
+## Q2: var() 的层叠穿透机制与 Fallback 回退
+
+原生 CSS 变量并不是简单的文本替换，它们遵守着极度森严的 **DOM 层叠（Cascade）与继承（Inheritance）法则**。
+
+```text
+┌───────────────────────────────────────┐
+│           :root（<html>）              │  ← 全局最高神权：--main-brand: red
+└─────────────────┬─────────────────────┘
+                  │ 继承
+                  ▼
+┌───────────────────────────────────────┐
+│        .card-container                │  ← 局部诸侯造反：--main-brand: blue
+└─────────────────┬─────────────────────┘
+                  │ 继承（蓝色覆盖红色）
+                  ▼
+┌───────────────────────────────────────┐
+│           .button                     │  ← var(--main-brand) → blue
+└───────────────────────────────────────┘                  var(--text-color, black) → black（兜底）
+```
+
+```css
+/* 1. 在整个世界的最高神权（:root，即 <html>）定下铁律 */
+:root {
+  --main-brand: #ff0000;
+}
+
+/* 2. 局部诸侯（卡片容器）造反，强行覆写变量！ */
+.card-container {
+  /* 在这个容器内部及其所有子孙，--main-brand 变成了蓝色 */
+  --main-brand: #0000ff;
+}
+
+.button {
+  /*
+     3. 机制：var() 的后备防御（Fallback）
+     如果 --text-color 这个变量在当前 DOM 链条上根本没定义？
+     浏览器绝不会崩溃，它会优雅地启用逗号后面的 'black' 兜底保命！
+  */
+  color: var(--text-color, black);
+  background: var(--main-brand);
+}
+```
+
+<Warning title="⚠️ 机制: 变量并不是文本宏替换">
+
+你不能用 CSS 变量去替换一个属性名或者单位！
+
+- ❌ `var(--side): 20px;` -- 变量不能作为属性名。
+- ❌ `margin: 20 var(--unit);` -- 变量不能作为单位。
+- ✅ `margin: var(--spacing);` -- 变量只能作为**属性值**存在。
+
+浏览器引擎在词法分析阶段，将自定义属性视为一组特殊的 Token 序列，它们只能作为属性值存在，绝不能改变 CSS 的语法结构法则。
+
+</Warning>
+
+<Tip title='🎢 通俗比喻：家族族谱继承'>
+
+CSS 变量的继承就像家族族谱--爷爷在族谱上写了"家族品牌色是红色"（:root 定义），所有子孙都默认用红色。但爸爸这一支说"我们家用蓝色"（.card-container 覆写），那爸爸及其所有子孙都用蓝色。如果有人问"家族的吉祥物是什么"（--text-color），族谱上没写，就用备选答案"熊猫"（fallback 值 black）。
+
+</Tip>
+
+---
+
+## Q3: Sass/Less 变量与原生 CSS 变量有什么区别？
+
+### 基础梳理
+
+| 对比维度 | Sass/Less 变量 | 原生 CSS 变量 |
+|---------|-------------|-------------|
+| **生命周期** | 编译期（Build-Time） | 运行时（Runtime） |
+| **运行时存在** | ❌ 不存在（被替换为文本） | ✅ 存在（驻留在 DOM 树中） |
+| **JS 可读写** | ❌ 不可以 | ✅ 可以（`setProperty`） |
+| **继承与层叠** | ❌ 不支持 | ✅ 支持（遵循 CSS Cascade） |
+| **主题切换** | 需要成吨的覆盖类 | 改一个变量值即可 |
+| **类型系统** | 有（颜色、数字、字符串） | 无（纯字符串，需 @property 注册） |
+
+### 专家视角深度剖析
+
+很多候选人只能背诵上面的表格，但大厂面试官真正在意的是：**原生 CSS 变量的依赖追踪机制是怎么实现的？为什么改一个变量就能精准更新成千上万个节点？**
+
+在 Chrome 的 Blink 渲染引擎中，CSS 变量的解析与依赖追踪类似 Vue/React 的响应式系统。当元素 A 引用了变量 X，Blink 引擎的 `StyleRecalculator` 会悄悄把元素 A 注册到变量 X 的观察者列表中！所以当你 JS 执行 `document.body.style.setProperty('--x', 'red')` 时，引擎不需要遍历几十万个 DOM 节点，而是直接沿着依赖列表，瞬间精准地只把受到影响的节点标记为 Dirty（脏）并触发重绘！
+
+这就是原生 CSS 变量的"响应式"本质--它和 Vue 的 `reactive()` 在思想上是完全一致的。
+
+```javascript
+// 原生 CSS 变量的"响应式"更新
+document.body.style.setProperty('--theme-color', 'blue');
+// 引擎不需要遍历所有节点，而是沿着依赖列表精准更新
+// 只有引用了 --theme-color 的节点会被标记为 Dirty 并触发重绘
+// 关键点：依赖收集 + 精准更新，与 Vue/React 的响应式系统异曲同工
+```
+
+---
+
+## Q4: 经典面试题：CSS 变量的动画与类型注册
+
+**CSS 变量能做动画吗？**
+在传统的认知中，这是不可能的！因为在浏览器的眼里，CSS 变量只是一长串**毫无意义的字符串文本**（它根本不知道你装的是颜色、像素还是角度）。既然是文本，浏览器怎么可能知道该怎么对文本进行帧动画插值计算呢？
+
+但现代 CSS 降世了 **CSS Houdini 标准 API `@property`**！我们通过 `@property` 强行在底层给这个变量打上类型标签（Type Casting）。一旦引擎确认了它是个合法颜色值，这个被注入灵魂的 CSS 变量瞬间就能支持 `transition` 渐变插值了！
+
+**变量污染的陷阱：**
+如果有两套复杂的第三方 UI 库，它们内部恰好都使用了一个一模一样的变量名 `--button-color`，你的业务就会遭遇毁灭性的全局变量污染。
+
+**关键区别：**
+
+| 场景 | 原生 CSS 变量 | @property 注册后的变量 |
+|------|-------------|-------------------|
+| **transition 动画** | ❌ 不支持（纯字符串） | ✅ 支持（有类型标签） |
+| **类型检查** | ❌ 无（任意值） | ✅ 有（syntax 定义） |
+| **初始值** | 无 | initial-value 定义 |
+| **继承控制** | 默认继承 | inherits 可配置 |
+
+<Tip title="建议: ">
+
+在微前端架构中，利用原生 CSS 变量解决跨技术栈的 UI 统一问题--在 React 基座应用中通过 `setProperty` 注入全局 CSS 变量体系，内部无论嵌套的是 Vue 子应用、还是 Web Components 弹窗，它们全都能无伤继承。同时，对于需要动画的变量，使用 `@property` 注册类型。
+
+</Tip>
+
+---
+
+## 🔍 源码：Blink 引擎是如何实现的？
+
+<div class="follow-up">
+CSS 变量的解析与依赖追踪在 Blink 中是怎么实现的？
+</div>
+
+在 Chrome 的 Blink 渲染引擎中，CSS 变量的解析与依赖追踪类似 Vue/React 的响应式系统（详见 [Blink 源码 src/core/css/css_variable_resolver.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/css/css_variable_resolver.cc)）：
+
+```cpp
+// 详见：Blink 源码 src/core/css/css_variable_resolver.cc
+// 解析与回溯引擎
+
+const CSSValue* CSSVariableResolver::ResolveVariable(
+    const AtomicString& name,
+    const CSSValue* fallback) {
+
+  // 1. 快速的局部检索：先找自己身上有没有挂这个变量？
+  const CSSValue* value = element.GetCustomProperty(name);
+
+  // 2. 漫长的血脉回溯：如果自己没有，引擎会顺着 DOM 树逆流而上，疯狂寻找父元素的自定义属性映射表！
+  if (!value && element.parentElement()) {
+    value = ResolveVariableForParent(element.parentElement(), name);
+  }
+
+  // 3. 兜底保护
+  if (!value) { value = fallback; }
+
+  // 引擎最牛逼的暗箱操作：依赖收集 (Dependency Tracking)！
+  // 当元素 A 引用了变量 X，Blink 引擎的 StyleRecalculator 会悄悄把元素 A 注册到变量 X 的观察者列表中！
+  // 所以当你 JS 执行 `document.body.style.setProperty('--x', 'red')` 时，
+  // 引擎不需要遍历几十万个 DOM 节点，而是直接沿着依赖列表，瞬间精准地只把受到影响的节点标记为 Dirty（脏）并触发重绘！
+  return value;
+}
+```
+
+<div class="follow-up">
+@property 在 Blink 中是怎么实现类型注册的？
+</div>
+
+`@property` 在 Blink 中通过 `CSSPropertyDescriptor` 注册自定义属性的类型信息（syntax、initial-value、inherits）。当引擎在解析 `var()` 时，如果发现该变量有 `@property` 注册，就会使用注册的 syntax 进行类型校验和插值计算。详见 [Blink 源码 src/core/css/css_property_descriptors.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/css/css_property_descriptors.cc)。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："请问原生 CSS 变量和 Sass 变量有什么区别？你在开发主题切换系统时是怎么做的？"
+
+**及格回答（60-70分）：**
+> "Sass 变量是在编译时候处理的，打包完就没了。原生 CSS 变量是在浏览器里运行的，可以用 JS 动态去改。做主题切换的时候，我就定义一个深色模式的 class，里面覆盖一套原生的 CSS 变量。点击按钮的时候，给 body 加上这个 class 就好了。"
+
+面试官评价：**知道规则但不理解设计**。
+
+**满分回答（90-100分）：**
+
+> 两者有着降维级别的生命周期差距。Sass 变量是**构建时（Build-Time）**的文本宏替换——运行 `npm run build` 时就被编译器彻彻底底地"焊死"成了普通 CSS 文本，运行时根本不存在。而原生自定义属性则是驻留在浏览器内存 DOM 树中的**运行时（Runtime）**状态对象，可以通过 JS 的 `style.setProperty` 随时读写。<sup>[1]</sup>
+
+> 由于原生变量受 CSS 规范的层叠（Cascade）和继承法则约束，在 Blink 引擎底层，`ResolveVariable` 函数会构建起严密的父子引用链与依赖收集树。当我们只改动挂在根节点的 `--theme-color` 时，Blink 的样式重算器（Style Recalculator）只会精准地将依赖了该变量的叶子节点标记为需要样式更新，而不会像传统的更换大量 className 那样引发全域的 DOM 节点重新匹配与重排灾难。这种"依赖收集 + 精准更新"的机制，与 Vue 的 `reactive()` 在思想上完全一致。<sup>[2]</sup>
+
+> 在真实的微前端工业架构中，我们利用原生 CSS 变量解决了恶劣的跨技术栈痛点——在 React 基座应用中通过 `setProperty` 注入全局的一套 CSS 变量体系，内部无论嵌套的是 Vue 子应用、还是 Web Components 弹窗，它们全都能完美继承并吸附这套全局 UI 规范。同时，对于需要动画的变量，使用 `@property` 注册类型标签（syntax、initial-value、inherits），让纯字符串变量获得插值能力，支持 `transition` 渐变动画。<sup>[3]</sup>
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="第一层: CSS 变量能加上 transition 动画吗?" icon="layer-group">
+
+  **答题要点：**
+  必须提到 `@property` 的类型注册机制。
+
+  **高分回答：**
+  "在传统的认知中，这是不可能的！因为在浏览器的眼里，CSS 变量只是一长串**毫无意义的字符串文本**（它根本不知道你装的是颜色、像素还是角度）。既然是文本，浏览器怎么可能知道该怎么对文本进行帧动画插值计算呢？但如果在现代高阶前端开发中，我们可以祭出有效的 **CSS Houdini 标准 API `@property`**！我们通过 `@property --my-color { syntax: '<color>'; initial-value: red; inherits: false; }`，强行在底层给这个变量打上类型标签（Type Casting）。一旦引擎确认了它是个合法颜色值，这个被注入灵魂的 CSS 变量瞬间就能支持 `transition` 渐变插值了！"
+
+  </Accordion>
+
+  <Accordion title="第二层: 如何防范第三方库的全局变量污染?" icon="stopwatch">
+
+  **答题要点：**
+  结合 Shadow DOM 的隔离机制解释。
+
+  **高分回答：**
+  "如果仅仅在轻量级场景，最朴素的方案是用 PostCSS 等构建工具在编译期强制加上项目前缀（如 `--alipay-button-color`）。但如果是无法掌控的预编译第三方包，这招彻底失效。有效的防御体系，是祭出 **Web Components 的 Shadow DOM 技术**。当我们把一个第三方库包裹进创建好的 `ShadowRoot` 时，浏览器底层会升起一道绝对无情的隔离气凝胶。外部根节点 `:root` 定义的 CSS 变量，只能单向渗透进去作为默认继承（且只能在内部没有定义时生效）。而第三方库在自己根节点上疯狂定义的 `--button-color`，将被死死封锁在 Shadow DOM 的暗影结界内部，绝不泄漏一滴出去污染全域的 Light DOM 空间！"
+
+  </Accordion>
+
+  <Accordion title="第三层: CSS 变量的继承链有多深?性能开销大吗?" icon="node">
+
+  **答题要点：**
+  必须分场景讨论！继承链深度与性能的关系。
+
+  **高分回答：**
+  "分两种情况：
+  **1. 继承链深度**：CSS 变量的继承链深度理论上没有限制--它会一直沿着 DOM 树向上回溯，直到找到定义或到达 `:root`。在极端情况下（如 100 层嵌套），回溯的性能开销会线性增长。
+  **2. 性能优化**：Blink 引擎在底层做了精明的缓存优化--一旦某个变量的值被解析过，引擎会将其缓存在当前节点的 `ComputedStyle` 中。后续访问时直接命中缓存，无需再次回溯。只有当变量值被修改时，引擎才会沿着依赖列表精准更新受影响的节点。"
+
+  </Accordion>
+
+  <Accordion title="第四层: CSS 变量在 CSS-in-JS 方案中如何使用?" icon="stopwatch">
+
+  **答题要点：**
+  结合 CSS-in-JS 框架解释变量的使用方式。
+
+  **高分回答：**
+  "在 CSS-in-JS 方案中，CSS 变量可以与 JS 动态值结合使用：
+  **1. styled-components**：在 JS 中定义变量，通过 props 动态注入。
+  ```javascript
+  const Button = styled.button`
+    background: var(--bg-color);
+    color: var(--text-color);
+  `;
+  ```
+  **2. Emotion**：使用 `css` 函数定义样式，通过 `style` 属性动态设置变量。
+  **3. CSS Modules**：在 `.module.css` 文件中定义变量，通过 `composes` 复用。
+  **4. 混合方案**：在全局 CSS 中定义主题变量，在 CSS-in-JS 中引用变量。
+  **最佳实践**：将主题变量定义在全局 CSS 中（`:root`），在 CSS-in-JS 中通过 `var()` 引用。这样可以利用 CSS 变量的依赖收集机制，实现精准的主题切换。"
+
+  </Accordion>
+
+  <Accordion title="第五层: CSS 变量的 fallback 值和默认值有什么区别?" icon="node">
+
+  **答题要点：**
+  必须分场景讨论！fallback 和 default 的使用场景。
+
+  **高分回答：**
+  "CSS 变量的 fallback 值和默认值是两个不同的概念：
+  **1. Fallback 值**：在 `var()` 函数中定义的备用值，当变量未定义时使用。
+  ```css
+  .element { color: var(--text-color, black); }
+  ```
+  **2. 默认值**：在 `@property` 中定义的 `initial-value`，当变量未定义时使用。
+  ```css
+  @property --text-color {
+    syntax: '<color>';
+    initial-value: black;
+    inherits: false;
+  }
+  ```
+  **区别**：
+  - Fallback 值是局部的，每个 `var()` 调用都可以有不同的 fallback。
+  - 默认值是全局的，所有未定义的变量都会使用 `initial-value`。
+  **使用场景**：
+  - 使用 fallback 值：当不同元素需要不同的默认值时。
+  - 使用默认值：当所有元素共享相同的默认值时。"
+
+  </Accordion>
+
+  <Accordion title="🔥 杀手锏追问: 如果在 :root 上定义了 1000 个 CSS 变量, 但只有 10 个被实际使用, 会影响性能吗?" icon="skull">
+
+  **答题要点：**
+  对比"声明开销"与"使用开销"。
+
+  **高分回答：**
+  "**声明开销几乎为零，使用开销与引用数量成正比。** 在 Blink 底层，CSS 变量的声明只是在 `ComputedStyle` 的自定义属性映射表中注册一个键值对，这个操作的开销极小（O(1)）。只有当某个元素通过 `var()` 引用了某个变量时，引擎才会触发依赖收集和变量解析。所以 1000 个变量的声明不会影响性能，但 1000 个变量被 10000 个元素引用时，依赖收集的开销会线性增长。
+
+  **建议**：在主题切换系统中，只在 `:root` 上定义核心的、会被大量组件引用的变量（如颜色、间距、字号）。对于只在少数组件中使用的变量，应该在组件的局部作用域中定义，而不是污染全局命名空间。"
+
+  </Accordion>
+
+  <Accordion title="🔥 杀手锏追问: CSS 变量在微前端架构中如何避免命名冲突?" icon="skull">
+
+  **答题要点：**
+  结合微前端的隔离机制解释变量冲突的解决方案。
+
+  **高分回答：**
+  "在微前端架构中，CSS 变量的命名冲突是一个常见问题：
+  **1. 命名空间**：为每个子应用的变量添加前缀（如 `--app1-primary-color`、`--app2-primary-color`）。
+  **2. Shadow DOM**：将子应用包裹在 Shadow DOM 中，利用 Shadow DOM 的样式隔离特性。
+  **3. CSS Modules**：使用 CSS Modules 的 Hash 机制，确保类名和变量名唯一。
+  **4. 动态注入**：在子应用挂载时动态注入变量，卸载时移除。
+  **5. 全局主题**：在主应用中定义全局主题变量，子应用通过 `var()` 引用，避免重复定义。
+  **最佳实践**：使用命名空间 + CSS Modules 的组合方案。在主应用中定义全局主题变量（如 `--global-primary-color`），在子应用中定义局部变量（如 `--app1-local-color`）。"
+
+  </Accordion>
+
+  <Accordion title="🔥 杀手锏追问: 如何用 CSS 变量实现响应式的主题切换系统?" icon="skull">
+
+  **答题要点：**
+  结合媒体查询和 JS 动态切换解释。
+
+  **高分回答：**
+  "用 CSS 变量实现响应式的主题切换系统需要考虑：
+  **1. 定义主题变量**：在 `:root` 上定义主题变量，使用 `prefers-color-scheme` 媒体查询检测系统主题。
+  ```css
+  :root {
+    --bg-color: #ffffff;
+    --text-color: #000000;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg-color: #1a1a1a;
+      --text-color: #ffffff;
+    }
+  }
+  ```
+  **2. JS 动态切换**：通过 `setProperty` 动态修改变量值。
+  ```javascript
+  function setTheme(theme) {
+    document.documentElement.style.setProperty('--bg-color', theme.bg);
+    document.documentElement.style.setProperty('--text-color', theme.text);
+  }
+  ```
+  **3. 持久化存储**：将用户选择的主题保存到 LocalStorage。
+  **4. 过渡动画**：使用 `transition` 实现主题切换的平滑过渡。
+  **最佳实践**：结合媒体查询和 JS 动态切换，提供系统主题和自定义主题两种模式。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [CSS Custom Properties for Cascading Variables Module Level 1 - W3C 规范](https://www.w3.org/TR/css-variables-1/)：W3C 官方对 CSS 自定义属性的权威定义，包含层叠与继承的完整规则。<sup>[1]</sup>
+- 📖 [Blink 源码 css_variable_resolver.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/css/css_variable_resolver.cc)：Chrome Blink 引擎中 CSS 变量解析与依赖追踪的实现。<sup>[2]</sup>
+- 🟢 [MDN Web Docs - Using CSS custom properties](https://developer.mozilla.org/en-US/docs/Web/CSS/Using_CSS_custom_properties)：MDN 对 CSS 变量的全面教程，包含 @property 类型注册的高级用法。<sup>[3]</sup>

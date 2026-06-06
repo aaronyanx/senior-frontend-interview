@@ -1,0 +1,654 @@
+---
+title: "Vue 编译流程 (Compiler)"
+---
+
+> **面试官为什么问这个？**
+>
+> Vue 3 的性能优势很大程度来自编译器优化。面试官问这个，是在考察你是否理解：模板是怎么变成渲染函数的？PatchFlag 和 Block Tree 是怎么让 diff 从 O(n) 变成 O(动态节点数) 的？如果你只停留在"模板变成 render 函数"，说明你不理解 Vue 3 性能飞跃的真正原因。
+
+---
+
+## Q1: 模板编译的三个阶段是什么？
+
+<Steps>
+
+  <Step title="阶段一: Parse（解析）">
+
+  编译器把模板字符串解析成 AST（抽象语法树）。每个节点记录了标签名、属性、子节点、指令等信息。比如 `<div :class="dynamic">{{ msg }}</div>` 会被解析成一个 Element 节点，包含一个 Directive 属性和一个 Interpolation 子节点。
+
+  </Step>
+  <Step title="阶段二: Transform（转换）">
+
+  遍历 AST，对节点做优化标记。这是编译器最核心的阶段——PatchFlag、Block Tree、静态提升、事件缓存等优化都在这个阶段完成。转换后的 AST 包含了运行时需要的所有优化信息。
+
+  </Step>
+  <Step title="阶段三: Generate（代码生成）">
+
+  把优化后的 AST 转换成 JavaScript 代码字符串。就是你看到的 `createElementVNode("div", null, ...)` 这种代码。生成的代码包含静态提升的变量声明、render 函数体、以及所有 PatchFlag 标记。
+
+  </Step>
+
+</Steps>
+
+**编译器解决的核心问题：**
+
+```text
+问题：开发者不想手写 DOM 操作，但浏览器只认识真实 DOM
+
+手写 DOM 操作 → 繁琐、容易出错、难以维护
+直接操作真实 DOM → 无法批量优化、无法跨平台
+
+解决：模板 → 编译器 → 渲染函数 → 虚拟 DOM → diff → 真实 DOM
+
+开发者写模板（声明式）→ 编译器转换为渲染函数（命令式）→ 运行时处理 diff 和 DOM 更新
+```
+
+<Note title="💡 一句话总结">
+
+编译器做三件事：解析（模板字符串 → AST）、转换（AST 优化标记）、生成（AST → 渲染函数代码）。核心价值在转换阶段的优化标记。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有编译器优化">
+
+每次渲染都遍历整棵 VNode 树，比较所有属性。就像每次盘点仓库都要逐个检查所有货架上的所有商品——即使 99% 的商品根本没动过。
+
+</Card>
+<Card title="✅ 有编译器优化">
+
+编译器在构建时标记哪些节点是动态的，运行时只遍历标记的节点。就像仓库管理系统在商品入库时就打上标签——盘点时只检查有标签的商品，跳过所有没动过的。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时重点说**编译器做了什么优化**（PatchFlag、静态提升、Block Tree），不要只说"模板变成渲染函数"——面试官想听的是你理解为什么模板比手写 render 函数性能好。
+
+</Tip>
+
+---
+
+## Q2: PatchFlag 是怎么工作的？
+
+### 位掩码的基本原理
+
+PatchFlag 是编译器在 `createElementVNode` 调用中附加的位掩码数字，编码了元素有哪些动态绑定。运行时通过位运算快速判断需要更新哪些属性，跳过所有静态属性的比较。
+
+```typescript
+// packages/shared/src/patchFlags.ts
+export const enum PatchFlags {
+  TEXT = 1,         // 动态文本内容
+  CLASS = 1 << 1,   // 动态 class
+  STYLE = 1 << 2,   // 动态 style
+  PROPS = 1 << 3,   // 动态属性（非 class/style）
+  FULL_PROPS = 1 << 4,  // 有动态 key 的属性（需要完整比较）
+  HYDRATE_EVENTS = 1 << 5,  // 有事件监听器
+  STABLE_FRAGMENT = 1 << 6,  // 稳定的 Fragment（子节点顺序不变）
+  KEYED_FRAGMENT = 1 << 7,   // 有 key 的 Fragment
+  UNKEYED_FRAGMENT = 1 << 8, // 没有 key 的 Fragment
+  NEED_PATCH = 1 << 9,       // 需要非 props 的 patch
+  DYNAMIC_SLOTS = 1 << 10,   // 动态 slot
+}
+```
+
+### 位运算的执行过程
+
+编译器用按位或（`|`）组合多个标记，运行时用按位与（`&`）检查：
+
+```javascript
+// 编译时：组合标记
+// <div :class="cls" :style="sty">Hello</div>
+// 编译器生成：PatchFlag.CLASS | PatchFlag.STYLE = 2 | 4 = 6
+
+// 运行时：检查标记
+if (patchFlag & PatchFlags.CLASS) {  // 6 & 2 = 2 → truthy
+  // 只更新 class
+}
+if (patchFlag & PatchFlags.STYLE) {  // 6 & 4 = 4 → truthy
+  // 只更新 style
+}
+if (patchFlag & PatchFlags.TEXT) {   // 6 & 1 = 0 → falsy
+  // 跳过文本更新
+}
+```
+
+<Warning title="⚠️ React 为什么没有 PatchFlag?">
+
+React 的 JSX 在运行时才被处理（通过 Babel 转换为 `createElement` 调用），编译器无法在构建时分析哪些属性是动态的。所以 React 每次 diff 都需要遍历所有 props 进行 `shallowEqual` 比较。Vue 3 的模板是编译时 DSL，编译器可以在构建阶段做静态分析，这是 Vue 3 性能优势的根源。
+
+</Warning>
+
+### 常见的 PatchFlag 值
+
+| 模板写法 | 编译后的 PatchFlag | 说明 |
+|---------|-------------------|------|
+| `{{ msg }}` | `1` (TEXT) | 只有文本变化 |
+| `:class="cls"` | `2` (CLASS) | 只有 class 变化 |
+| `:style="sty"` | `4` (STYLE) | 只有 style 变化 |
+| `:id="id"` | `8` (PROPS) | 只有特定属性变化 |
+| `[dynamicKey]="val"` | `16` (FULL_PROPS) | 需要完整比较 |
+| `<div>静态</div>` | 无 PatchFlag | 完全静态，跳过 |
+
+---
+
+## Q3: Block Tree 的动态节点追踪是怎么实现的？
+
+### Block 的核心思想
+
+模板中只有 `v-if`/`v-for` 会改变 DOM 结构，其他区域的节点数量和层级是固定的。Block Tree 的核心思想是：把结构稳定的区域标记为 Block，内部维护一个扁平化的 `dynamicChildren` 数组，重渲染时只遍历这个数组，静态子树完全跳过。
+
+### openBlock + createBlock 的实现
+
+```javascript
+// 编译后的代码（简化）
+const _hoisted_1 = createElementVNode("h1", null, "Hello")
+
+function render() {
+  return (openBlock(), createElementBlock("div", null, [
+    _hoisted_1,  // 静态节点，不进入 dynamicChildren
+    createElementVNode("span", { class: normalizeClass(ctx.cls) },
+      toDisplayString(ctx.msg), 3 /* TEXT | CLASS */)  // 动态节点，进入 dynamicChildren
+  ]))
+}
+```
+
+```javascript
+// 运行时的 openBlock + createBlock
+let currentBlock = null
+
+function openBlock() {
+  currentBlock = []  // 初始化空数组，收集动态节点
+}
+
+function createVNode(type, props, children, patchFlag) {
+  const vnode = { type, props, children, patchFlag }
+  if (patchFlag > 0 && currentBlock) {
+    currentBlock.push(vnode)  // 有 PatchFlag 的节点被收集
+  }
+  return vnode
+}
+
+function createElementBlock(type, props, children) {
+  const vnode = createVNode(type, props, children)
+  vnode.dynamicChildren = currentBlock  // 赋值扁平化的动态节点数组
+  currentBlock = null  // 清空
+  return vnode
+}
+```
+
+### 运行时 diff 的优化效果
+
+重渲染时，如果一个 VNode 有 `dynamicChildren`，渲染器直接遍历这个数组而不是 `children`：
+
+```javascript
+// packages/runtime-core/src/renderer.ts（简化）
+function patchElement(oldVNode, newVNode) {
+  const el = (newVNode.el = oldVNode.el)
+  const oldChildren = oldVNode.children
+  const newChildren = newVNode.children
+
+  if (newVNode.dynamicChildren) {
+    // 有 dynamicChildren：只遍历动态节点
+    patchBlockChildren(oldVNode.dynamicChildren, newVNode.dynamicChildren)
+  } else {
+    // 没有 dynamicChildren：全量 diff
+    patchChildren(oldVNode, newVNode, el)
+  }
+}
+```
+
+<Warning title="⚠️ v-if/v-for 会打断 Block Tree">
+
+`v-if` 和 `v-for` 会改变 DOM 结构，所以它们会创建自己的子 Block，打断父 Block 的 `dynamicChildren` 收集。深层嵌套的条件渲染会削弱这个优化效果。
+
+</Warning>
+
+---
+
+## Q4: 静态提升是怎么实现的？
+
+### 基本原理
+
+不依赖响应式数据的 VNode 被提升到渲染函数外部，只创建一次，后续渲染直接复用引用。
+
+```javascript
+// 编译前的模板
+<div>
+  <h1>Hello</h1>     <!-- 完全静态 -->
+  <span>{{ msg }}</span>  <!-- 动态 -->
+</div>
+
+// 编译后的代码
+const _hoisted_1 = createElementVNode("h1", null, "Hello")  // 模块级别，只创建一次
+
+function render() {
+  return createElementVNode("div", null, [
+    _hoisted_1,  // 直接引用，不重新创建
+    createElementVNode("span", null, toDisplayString(ctx.msg), 1 /* TEXT */)
+  ])
+}
+```
+
+### 事件缓存
+
+除了 VNode 静态提升，Vue 3 的编译器还会缓存事件处理函数的引用：
+
+```javascript
+// 编译前
+<button @click="handler">Click</button>
+
+// 编译后
+createElementVNode("button", {
+  onClick: _cache[0] || (_cache[0] = (...args) => ctx.handler(...args))
+}, "Click")
+```
+
+事件缓存确保内联函数不每次创建新的引用，避免子组件因为 props 变化（函数引用变化）而触发不必要的 re-render。
+
+<Note title="💡 一句话总结">
+
+静态提升让不依赖响应式的节点只创建一次，事件缓存让内联函数引用不变。两者共同减少了 VNode 创建和 diff 的开销。
+
+</Note>
+
+---
+
+## Q5: 编译器是怎么处理 v-if 和 v-for 的？
+
+### v-if 的编译
+
+`v-if` 在编译器中被转换为三元表达式。每个分支都是一个独立的 Block：
+
+```javascript
+// 编译前
+<div v-if="show">Visible</div>
+<div v-else>Hidden</div>
+
+// 编译后
+(show)
+  ? (openBlock(), createElementBlock("div", null, "Visible"))
+  : (openBlock(), createElementBlock("div", null, "Hidden"))
+```
+
+### v-for 的编译
+
+`v-for` 编译为 `renderList` 函数调用，每一项创建一个独立的 VNode：
+
+```javascript
+// 编译前
+<li v-for="item in list" :key="item.id">{{ item.name }}</li>
+
+// 编译后
+renderList(ctx.list, (item) => {
+  return (openBlock(), createElementBlock("li", { key: item.id },
+    toDisplayString(item.name), 1 /* TEXT */))
+})
+```
+
+### v-if 和 v-for 对 Block Tree 的影响
+
+`v-if`/`v-for` 会创建子 Block，打断父 Block 的 `dynamicChildren` 收集。这意味着：
+
+```text
+父 Block 的 dynamicChildren 只包含直接子节点中的动态节点
+  └── v-if 创建的子 Block 有自己独立的 dynamicChildren
+       └── v-for 创建的每个子 Block 也有自己独立的 dynamicChildren
+```
+
+<Tip title="最佳实践: ">
+
+避免在 `v-for` 中使用 `v-if`。Vue 3 中 `v-for` 的优先级高于 `v-if`，每次渲染都会先遍历再判断。应该用 `computed` 预先过滤列表，或者把 `v-if` 移到外层容器上。
+
+</Tip>
+
+---
+
+## Q6: 编译器是怎么处理 v-model 的？
+
+v-model 在编译器中根据元素类型生成不同的代码：
+
+### 原生元素
+
+```javascript
+// 编译前
+<input v-model="name" />
+
+// 编译后
+createElementVNode("input", {
+  modelValue: ctx.name,
+  "onUpdate:modelValue": $event => ctx.name = $event
+}, null, 8 /* PROPS */, ["modelValue", "onUpdate:modelValue"])
+// 需要 PROPS PatchFlag，因为 modelValue 和 onUpdate 都是动态属性
+```
+
+### 组件
+
+```javascript
+// 编译前
+<MyInput v-model="name" />
+
+// 编译后
+createVNode(MyInput, {
+  modelValue: ctx.name,
+  "onUpdate:modelValue": $event => ctx.name = $event
+})
+```
+
+### 带参数的 v-model
+
+```javascript
+// 编译前
+<UserForm v-model:name="name" v-model:age="age" />
+
+// 编译后
+createVNode(UserForm, {
+  name: ctx.name,
+  "onUpdate:name": $event => ctx.name = $event,
+  age: ctx.age,
+  "onUpdate:age": $event => ctx.age = $event
+}, null, 8 /* PROPS */, ["name", "onUpdate:name", "age", "onUpdate:age"])
+```
+
+<Warning title="⚠️ v-model 的性能注意">
+
+`v-model` 在原生元素上会绑定 `modelValue` + `onUpdate:modelValue` 两个动态属性。如果有多个 `v-model`，PatchFlag 会是 `FULL_PROPS`（16），运行时需要完整比较所有 props。在性能敏感的场景，考虑用 `:value` + `@input` 手动绑定。
+
+</Warning>
+
+---
+
+## Q7: 编译器的优化对 SSR 有什么影响？
+
+### SSR 的编译优化
+
+Vue 3 的编译器为 SSR 生成了专门的代码路径。静态节点在 SSR 中直接输出 HTML 字符串，不需要创建 VNode：
+
+```javascript
+// SSR 编译输出（简化）
+function ssrRender(_ctx, _push) {
+  _push(`<div><h1>Hello</h1><span>${_ctx.msg}</span></div>`)
+  // h1 是静态的，直接输出 HTML 字符串
+  // msg 是动态的，用模板字符串插值
+}
+```
+
+### 静态节点的 SSR 优化
+
+编译器会标记完全静态的子树，SSR 渲染时直接输出预编译的 HTML 字符串：
+
+```javascript
+// 完全静态的子树
+const _hoisted_1 = `<div class="static"><h1>Hello</h1><p>World</p></div>`
+
+function ssrRender(_ctx, _push) {
+  _push(_hoisted_1)  // 直接输出字符串，零开销
+}
+```
+
+<Note title="💡 一句话总结">
+
+编译器的静态分析在 SSR 中价值更大——静态节点直接输出 HTML 字符串，连 VNode 都不需要创建，SSR 性能大幅提升。
+
+</Note>
+
+---
+
+## Q8: Vue 的编译器和 Svelte 的编译器有什么区别？
+
+### 设计理念的差异
+
+| 对比维度 | Vue 3 | Svelte |
+|---------|-------|--------|
+| **运行时** | 有（虚拟 DOM + diff） | 无（直接操作 DOM） |
+| **编译输出** | 渲染函数 + VNode | 直接操作 DOM 的命令式代码 |
+| **优化策略** | PatchFlag + Block Tree + 静态提升 | 每个赋值语句编译为 DOM 操作 |
+| **组件更新** | 精确到组件级（响应式追踪） | 精确到变量级（编译时分析） |
+
+### Svelte 的编译策略
+
+Svelte 的编译器在编译时分析每个变量在模板中的使用位置，为每个变量生成精确的 DOM 更新代码：
+
+```javascript
+// Svelte 源码
+let count = 0;
+
+// Svelte 编译后（简化）
+function update(changed) {
+  if (changed.count) {
+    text.data = count;  // 直接更新文本节点
+  }
+}
+```
+
+### Vue 3 的编译策略
+
+Vue 3 的编译器生成的是渲染函数，运行时通过 diff 找出差异：
+
+```javascript
+// Vue 3 编译后
+function render() {
+  return createElementVNode("div", null,
+    toDisplayString(ctx.count), 1 /* TEXT */)
+}
+// 运行时：比较新旧 VNode，更新 textContent
+```
+
+<Warning title="⚠️ 虚拟 DOM 的额外开销">
+
+Svelte 没有虚拟 DOM 的开销——不需要创建 VNode、不需要 diff、不需要遍历。但 Vue 3 的虚拟 DOM 也有优势：跨平台能力（SSR、Weex、Canvas）、更好的 TypeScript 类型推断、以及 Block Tree 优化后接近 Svelte 的性能。选择取决于项目需求。
+
+</Warning>
+
+---
+
+## 🔍 底层源码：编译器的核心实现
+
+<div class="follow-up">
+编译器的入口函数在哪里？
+</div>
+
+Vue 3 的编译器入口在 `packages/compiler-core/src/compile.ts`（详见 [Vue 3 源码 packages/compiler-core/src/compile.ts](https://github.com/vuejs/core/blob/main/packages/compiler-core/src/compile.ts)）：
+
+```typescript
+// packages/compiler-core/src/compile.ts
+export function baseCompile(template: string, options: CompilerOptions) {
+  // 1. 解析：模板字符串 → AST
+  const ast = parse(template, options)
+
+  // 2. 转换：AST 优化标记
+  transform(ast, {
+    ...options,
+    nodeTransforms: [
+      transformElement,     // 处理元素节点
+      transformText,        // 处理文本节点
+      transformExpression,  // 处理表达式
+      transformSlotOutlet,  // 处理 slot
+      // ... 其他转换
+    ],
+    directiveTransforms: {
+      on: transformOn,      // 处理 v-on
+      bind: transformBind,  // 处理 v-bind
+      model: transformModel // 处理 v-model
+    }
+  })
+
+  // 3. 生成：AST → 渲染函数代码
+  return generate(ast, options)
+}
+```
+
+<div class="follow-up">
+PatchFlag 是在哪个阶段生成的？
+</div>
+
+PatchFlag 在 `transformElement` 转换中生成。当遍历到元素节点时，编译器检查节点的所有属性和子节点，确定哪些是动态的，然后计算 PatchFlag 值（详见 [Vue 3 源码 packages/compiler-core/src/transforms/transformElement.ts](https://github.com/vuejs/core/blob/main/packages/compiler-core/src/transforms/transformElement.ts)）：
+
+```typescript
+// packages/compiler-core/src/transforms/transformElement.ts
+function buildProps(node, context) {
+  const props = []
+  let patchFlag = 0
+
+  // 遍历所有属性，判断动态类型
+  for (const prop of node.props) {
+    if (prop.type === NodeTypes.DIRECTIVE) {
+      if (prop.name === 'on') {
+        patchFlag |= PatchFlags.NEED_PATCH
+      } else if (prop.name === 'bind') {
+        if (prop.arg.content === 'class') patchFlag |= PatchFlags.CLASS
+        else if (prop.arg.content === 'style') patchFlag |= PatchFlags.STYLE
+        else patchFlag |= PatchFlags.PROPS
+      }
+    }
+  }
+
+  return { props, patchFlag }
+}
+```
+
+<div class="follow-up">
+Block Tree 是在哪个阶段建立的？
+</div>
+
+Block Tree 在 `transform` 阶段的 `hoistStatic` 转换中建立。编译器遍历 AST，识别结构稳定的区域（没有 `v-if`/`v-for`），将其标记为 Block。每个 Block 维护一个 `dynamicChildren` 数组，收集所有带 PatchFlag 的动态节点（详见 [Vue 3 源码 packages/compiler-core/src/transforms/hoistStatic.ts](https://github.com/vuejs/core/blob/main/packages/compiler-core/src/transforms/hoistStatic.ts)）。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："Vue 3 的编译器做了哪些优化？"
+
+**及格回答（60-70分）：**
+> "编译器做了 PatchFlag、Block Tree、静态提升三个优化。PatchFlag 标记动态绑定，Block Tree 扁平化动态节点，静态提升让静态节点只创建一次。"
+
+面试官评价：**知道优化名称但不理解实现**。
+
+**满分回答（90-100分）：**
+
+> Vue 3 的编译器在 `baseCompile` 函数中分三阶段工作：parse（模板 → AST）、transform（AST 优化标记）、generate（AST → 渲染函数代码）。核心价值在 transform 阶段的三层优化。<sup>[1]</sup>
+
+> **PatchFlag**：在 `transformElement` 中生成。编译器遍历元素的所有属性和子节点，用位掩码标记动态绑定类型（TEXT=1、CLASS=2、STYLE=4、PROPS=8）。运行时用位运算检查，只更新标记的部分。React 没有这个机制——每次 diff 要遍历所有 props。<sup>[2]</sup>
+
+> **Block Tree**：在 `hoistStatic` 中建立。编译器识别结构稳定的区域（没有 `v-if`/`v-for`），标记为 Block。Block 内部维护 `dynamicChildren` 数组，收集所有带 PatchFlag 的动态节点。重渲染时只遍历这个数组，静态子树完全跳过。一棵 1000 个节点的子树，如果只有 3 个动态节点，diff 只比较 3 个。<sup>[3]</sup>
+
+> **静态提升**：不依赖响应式数据的 VNode 提升到模块级别，只创建一次。事件处理函数也被缓存（`_cache[0] || (_cache[0] = ...)`），避免每次渲染创建新的函数引用。
+
+### 大厂高频连环拷问
+
+> 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。
+
+<AccordionGroup>
+
+  <Accordion title="模板编译的三个阶段分别做什么?" icon="layer-group">
+
+**答题要点：** parse 解析、transform 转换、generate 生成。
+
+**高分回答：**
+"模板编译分三个阶段：
+1. **parse**：把模板字符串 `<div>{{ msg }}</div>` 解析成 AST。每个节点记录标签名、属性、子节点、指令等信息。
+2. **transform**：遍历 AST，给节点打标记。PatchFlag 标记动态绑定类型，静态节点标记为可提升，`v-if`/`v-for` 创建子 Block。
+3. **generate**：把优化后的 AST 转换成 JavaScript 代码字符串——就是 `createElementVNode(...)` 这种代码。
+
+编译器的入口在 `packages/compiler-core/src/compile.ts` 的 `baseCompile` 函数中。"
+
+  </Accordion>
+
+  <Accordion title="PatchFlag 的位运算具体是怎么做的?" icon="stopwatch">
+
+**答题要点：** 用按位或组合标记，用按位与检查标记。
+
+**高分回答：**
+"PatchFlag 是二进制位掩码。编译器用按位或组合多个标记：`PatchFlag.CLASS | PatchFlag.STYLE` = `2 | 4` = `6`。运行时用按位与检查：`6 & PatchFlag.CLASS` = `2`（truthy），`6 & PatchFlag.TEXT` = `0`（falsy）。
+
+位运算的性能极高——一条 CPU 指令就能完成。相比 React 的 `oldProps === newProps` 全量对象遍历，PatchFlag 让 Vue 3 在单节点更新上快几个数量级。"
+
+  </Accordion>
+
+  <Accordion title="Block Tree 和虚拟 DOM 的关系?" icon="node">
+
+**答题要点：** Block Tree 是虚拟 DOM 的优化层，不改变虚拟 DOM 的本质。
+
+**高分回答：**
+"Block Tree 不是替代虚拟 DOM，而是在虚拟 DOM 之上的优化层。虚拟 DOM 仍然是 Vue 3 的核心——渲染函数返回 VNode 树，diff 比较新旧 VNode 树。Block Tree 的作用是减少 diff 的工作量：通过 `dynamicChildren` 数组，把'遍历整棵树'变成'只遍历动态节点'。
+
+这和 React 的虚拟 DOM 没有本质区别——都是用 JS 对象描述 DOM 结构。区别在于 Vue 3 的编译器在构建时就分析了模板的结构信息，React 的 JSX 在运行时才被处理。"
+
+  </Accordion>
+
+  <Accordion title="静态提升和 React Compiler 的 memo 有什么区别?" icon="layer-group">
+
+**答题要点：** 静态提升是 VNode 级别优化，React Compiler 的 memo 是组件级别优化。
+
+**高分回答：**
+"Vue 3 的静态提升是 VNode 级别——把不依赖响应式的 VNode 对象提升到模块级别，只创建一次。这意味着连 VNode 对象的内存分配都省了。
+
+React Compiler 的 `memo`/`useMemo` 是组件级别——缓存组件的渲染结果或计算值，避免不必要的 re-render。但 React Compiler 不做 VNode 级别的优化——每次渲染仍然创建新的 VNode 对象。
+
+本质区别：Vue 3 的编译器从一开始就在设计层面考虑了优化（PatchFlag、Block Tree、静态提升是 Vue 3 的核心设计），React Compiler 是后来补上的优化手段。"
+
+  </Accordion>
+
+  <Accordion title="v-if 和 v-for 在编译器中是怎么处理的?" icon="stopwatch">
+
+**答题要点：** v-if 编译为三元表达式，v-for 编译为 renderList 调用。
+
+**高分回答：**
+"`v-if` 编译为三元表达式：`v-if='show'` 变成 `show ? createVNode(...) : createCommentVNode(...)`。每个分支是独立的 Block。
+
+`v-for` 编译为 `renderList` 函数调用：`v-for='item in list'` 变成 `renderList(list, item => createVNode(...))`。每一项创建独立的 VNode，用 key 标识。
+
+两者都会创建子 Block，打断父 Block 的 `dynamicChildren` 收集。所以深层嵌套的 `v-if`/`v-for` 会削弱 Block Tree 的优化效果。"
+
+  </Accordion>
+
+  <Accordion title="编译器的 tree-shaking 是怎么实现的?" icon="node">
+
+**答题要点：** API 为具名导出，打包工具可以静态分析。
+
+**高分回答：**
+"Vue 3 的 API 为具名导出：`import { ref, computed } from 'vue'`。打包工具（Vite/webpack）通过静态分析确定哪些 API 被使用了，未使用的会被 Tree-shaking 移除。
+
+Vue 2 做不到——全局 API 挂在 `Vue` 构造函数上，`import Vue from 'vue'` 会导入整个模块。Vue 3 在设计时就考虑了这一点——每个 API 都是独立模块，尽量减少交叉引用。
+
+但注意：Vue 3 的内部模块之间有依赖关系，真正的 Tree-shaking 效果取决于依赖图的复杂度。尤雨溪在设计时就确保了核心模块（reactivity、runtime-core、runtime-dom）之间的依赖是单向的。"
+
+  </Accordion>
+
+  <Accordion title="🔥 编译器优化在 SSR 中有什么价值?" icon="skull">
+
+**答题要点：** 静态节点直接输出 HTML 字符串，连 VNode 都不需要创建。
+
+**高分回答：**
+"编译器的静态分析在 SSR 中价值更大。SSR 的核心目标是把组件渲染成 HTML 字符串，如果每个节点都先创建 VNode 再序列化为 HTML，开销很大。
+
+Vue 3 的编译器为 SSR 生成专门的代码路径：完全静态的子树直接输出预编译的 HTML 字符串（`_hoisted_1 = '<div>...</div>'`），连 VNode 都不需要创建。动态节点用模板字符串插值（`\${_ctx.msg}`），直接拼接 HTML。
+
+这意味着一个有 1000 个静态节点 + 3 个动态节点的页面，SSR 只需要处理 3 个动态节点的序列化，静态部分直接输出字符串。这是 Vue 3 的 SSR 性能远超 Vue 2 的原因之一。"
+
+  </Accordion>
+
+  <Accordion title="🔥 Vue 的编译器和 Svelte 的编译器有什么本质区别?" icon="skull">
+
+**答题要点：** Vue 编译输出渲染函数 + 虚拟 DOM，Svelte 编译输出直接操作 DOM 的命令式代码。
+
+**高分回答：**
+"Vue 3 的编译器输出的是渲染函数——运行时仍然需要虚拟 DOM 和 diff。Svelte 的编译器输出的是直接操作 DOM 的命令式代码——没有虚拟 DOM，变量变化时直接更新对应的 DOM 节点。
+
+Svelte 的优势：没有虚拟 DOM 的额外开销（创建 VNode、diff、遍历），编译后的代码更小。Svelte 的劣势：编译时分析有局限性（动态组件、条件渲染等复杂场景处理较难），没有跨平台能力。
+
+Vue 3 的虚拟 DOM 也有优势：跨平台（SSR、Weex、Canvas）、更好的 TypeScript 类型推断、Block Tree 优化后接近 Svelte 的性能。尤雨溪曾表示 Vue 3 的 Vapor Mode（无 VDOM 模式）正在探索中，未来可能结合两者的优势。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [Vue 3 编译器源码 packages/compiler-core](https://github.com/vuejs/core/tree/main/packages/compiler-core)：Vue 3 模板编译器的核心实现，包含 parse、transform、generate 三个阶段。<sup>[1]</sup>
+- 📖 [Vue 3 源码 packages/compiler-core/src/transforms/transformElement.ts](https://github.com/vuejs/core/blob/main/packages/compiler-core/src/transforms/transformElement.ts)：PatchFlag 的生成逻辑，理解编译器如何标记动态绑定。<sup>[2]</sup>
+- 📖 [Vue 3 源码 packages/compiler-core/src/transforms/hoistStatic.ts](https://github.com/vuejs/core/blob/main/packages/compiler-core/src/transforms/hoistStatic.ts)：Block Tree 的建立和静态提升的实现。<sup>[3]</sup>
+- 🟢 [Vue 3 官方文档 - 渲染机制](https://vuejs.org/guide/extras/rendering-mechanism.html)：官方对编译器优化的最权威解释。

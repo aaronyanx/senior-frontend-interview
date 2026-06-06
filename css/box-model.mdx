@@ -1,0 +1,501 @@
+---
+title: "盒模型 (Box Model)"
+---
+
+> **面试官为什么问这个？**
+>
+> 面试官问这个，本质上是在考察你是否真正理解了 CSS 渲染引擎处理元素物理尺寸的内部逻辑。如果你连 W3C 标准模型和 IE 怪异模型的主要区别都说不清，在实际开发复杂弹性布局或全屏自适应页面时，你的元素就会容易出现诡异的溢出和滚动条。
+
+---
+
+## Q1: 盒模型的历史？为什么要有 border-box？
+
+<Steps>
+
+  <Step title="上古 IE 的「怪异」直觉">
+
+  在早期的 IE 浏览器中，它认为如果你给一个盒子设置了 `width: 100px`，那么这个盒子在屏幕上占据的总宽度就**必须是 100px**。至于你后来加的 padding 和 border，都必须在这个 100px 内部向内挤压内容空间。这被称为"IE 怪异盒模型'。
+
+  </Step>
+  <Step title="W3C 标准模型的灾难">
+
+  W3C 标准委员会规定：`width` 应该仅仅代表**内部真实内容（content）**的宽度。随着响应式设计的爆发，前端工程师发现：如果你写了 `width: 100%`，只要再加 1px 的 border，盒子就会立刻溢出父容器并出现丑陋的滚动条！这是致命的工程灾难。
+
+  </Step>
+  <Step title='border-box 的回归与大一统'>
+
+  CSS3 最终向 IE 的直觉低头，引入了 `box-sizing: border-box`，让开发者可以自由切回那种"所见即所得、永远不溢出"的经典物理直觉模型中。在现代大厂基建库（如 Tailwind CSS、Bootstrap）中，第一行全局重置代码就是 `*, ::before, ::after { box-sizing: border-box; }`。
+
+  </Step>
+  <Step title="引擎内部的数学分流">
+
+  在 Blink 的 `BoxModel::ComputeWidth` 源码中，引擎根据 `BoxSizing` 标志位直接决定数学公式的加减法：`border-box` 模式下，引擎将声明的 `width` 作为边界墙，在内部做严格的减法扣除 padding 和 border，剩下的才是真正的 content 宽度；`content-box` 模式下，引擎认为你设定的 width 就是内容宽度，后续继续向外叠加。
+
+  </Step>
+  <Step title='关键洞察：width: auto 的流体真谛'>
+
+  在标准的流体布局中，块级元素默认 `width: auto` 会像水一样自动填满父容器，此时增加 padding 或 margin 会自动缩减 content 宽度以保持总宽度不溢出。而一旦写了死板的 `width: 100%`，它就变成硬邦邦的石头，任何额外的 padding 或 margin 都会导致溢出。理解这两种宽度语义的差异，才是《CSS世界》中最优雅的流体布局真谛。
+
+  </Step>
+
+</Steps>
+
+**盒模型 解决的核心问题：**
+
+```text
+问题：W3C 标准模型下 width: 100% + padding + border = 溢出父容器
+
+设定 width: 100%，加 padding: 20px 和 border: 1px → 盒子膨胀到 142% → 溢出 → 出现滚动条
+
+解决：box-sizing: border-box 让 width 包含 padding 和 border
+
+设定 width: 100px，无论加多少 padding 和 border → 盒子永远锁死在 100px → 内容区域自动向内压缩
+```
+
+<Note title="💡 一句话总结">
+
+box-sizing: border-box 让开发者可以用"所见即所得"的直觉方式控制元素尺寸，彻底告别溢出灾难。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 标准模型 (content-box)">
+
+设定 `width: 100px` 后，如果加上 `padding: 20px` 和 `border: 1px`。这个盒子在屏幕上的最终真实占位会膨胀到 142px (100 + 40 + 2)。极易撑爆父容器！
+
+</Card>
+<Card title='✅ 怪异模型 (border-box)'>
+
+设定 `width: 100px` 后，无论你怎么加 padding 和 border，这个盒子在屏幕上的宽度永远被死死锁在 100px。内容区域会被自动向内压缩。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么'（W3C 标准模型导致溢出的痛点），再说"怎么解决"（border-box 的内部收缩机制）。重点是理解两种模型的设计哲学差异，而不是背诵属性值。
+
+</Tip>
+
+---
+
+## Q2: margin、padding、border 之间的物理博弈
+
+盒模型的四大家族--content、padding、border、margin--在流体布局中扮演着微妙的博弈角色。关键逻辑是 3 步：
+
+```text
+┌───────────────────────────────────────┐
+│           margin（外边距）              │  ← 唯一可与兄弟元素发生"空间湮灭"的属性
+└─────────────────┬─────────────────────┘
+                  │ 包裹
+                  ▼
+┌───────────────────────────────────────┐
+│           border（边框）               │  ← 绝对物理边界，永不与兄弟重叠
+└─────────────────┬─────────────────────┘
+                  │ 包裹
+                  ▼
+┌───────────────────────────────────────┐
+│     padding + content（内边距+内容）    │  ← 背景色融为一体，向内挤压或向外撑开
+└───────────────────────────────────────┘
+```
+
+1. **温和的 `padding`**：永远是向内挤压内容或向外撑开容器，它的背景色永远和 content 融为一体。
+2. **坚固的 `border`**：它是元素的绝对物理边界。在任何场景下，`border` 都绝不会与兄弟元素发生重叠或吞噬。
+3. **极度暴烈的 `margin`**：它是唯一可以在同级流中引发"空间湮灭"的属性（即 Margin 折叠/重叠现象），并且完全支持负值（负 margin 是实现许多高阶居中和栅格系统间距消除的核心黑魔法）。
+
+<Warning title="⚠️ 机制: margin 折叠的数学规则">
+
+正如 W3C CSS 规范在 [CSS Box Model Module Level 3](https://www.w3.org/TR/css-box-3/) 中定义的：**相邻块级元素的垂直 margin 会合并为单个 margin，其大小等于两个 margin 中的较大者。**
+
+- 如果两个 margin **都是正数**：取**最大值（Max）**。
+- 如果两个 margin **都是负数**：取绝对值最大的负数（即最小值，Min）。
+- 如果**一正一负**：将两者**相加（Add）**，作为最终间距。
+- 要打破折叠，唯一的解法就是触发 BFC（块级格式化上下文）将其物理隔离。
+
+</Warning>
+
+<Tip title='🎢 通俗比喻：两块磁铁的间距'>
+
+padding 就像给相框加内衬--它在框的内部向内挤压画面，或者向外撑大相框本身。border 就像相框的边框--它是绝对的物理边界，不会和其他相框"融合"。而 margin 就像两块同极磁铁靠近--它们之间的空间会被"压缩"成一个（取较大值），而不是简单地相加。
+
+</Tip>
+
+---
+
+## Q3: content-box 与 border-box 有什么区别？
+
+### 基础梳理
+
+| 对比维度 | content-box（W3C 标准） | border-box（IE 怪异/现代默认） |
+|---------|----------------------|---------------------------|
+| **width 指定的是** | 仅内容区宽度 | 内容 + padding + border 的总宽度 |
+| **加 padding 后** | 盒子向外膨胀 | 内容区向内收缩 |
+| **加 border 后** | 盒子向外膨胀 | 内容区向内收缩 |
+| **width: 100% + padding** | 溢出父容器 | 不溢出 |
+| **工业界使用率** | 几乎不用 | 几乎 100% |
+
+### 专家视角深度剖析
+
+很多候选人只能背诵上面的表格，但大厂面试官真正在意的是：**为什么 W3C 当初要设计 content-box 这种"反直觉"的模型？难道他们不知道这会导致溢出问题吗？**
+
+W3C 的设计初衷是**将"尺寸声明"与"视觉占位"彻底分离**。在 content-box 模型下，开发者声明的 `width` 精确地代表了内容区域的可用空间，padding 和 border 是"装饰性"的附加层，不应该影响内容区的计算。这种设计在理论上是优雅的--你可以精确控制内容区域的宽度，而不受装饰层的影响。
+
+但在响应式设计的实战中，这种"理论优雅"变成了灾难。当开发者写 `width: 100%` 时，他们的真实意图是"让元素填满父容器"，而不是"让内容区填满父容器"。content-box 模型下，任何额外的 padding 或 border 都会导致溢出，这与开发者的直觉完全相反。
+
+```css
+/* content-box 的致命陷阱 */
+.element {
+  box-sizing: content-box; /* 默认值 */
+  width: 100%;
+  padding: 20px;
+  border: 1px solid black;
+  /* 实际占位：100% + 40px + 2px = 溢出！ */
+}
+
+/* border-box 的优雅解法 */
+.element {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 20px;
+  border: 1px solid black;
+  /* 实际占位：永远是 100%，内容区自动收缩 */
+}
+/* 关键点：border-box 将"声明"与"占位"统一，符合开发者的直觉预期 */
+```
+
+---
+
+## Q4: 经典面试题：width: auto 与 width: 100% 的区别
+
+### width: auto 的流体自适应法则
+
+在标准的流体布局中，块级元素默认就是 `width: auto`，它会像水一样自动填满父容器。此时如果你增加 padding 或 margin，这滩"水"会自动缩减自己的 content 宽度以保持总宽度不溢出。
+
+### width: 100% 的死板陷阱
+
+一旦你写了死板的 `width: 100%`，它就变成了一块硬邦邦的石头，此时再加一丁点 padding 或 margin，它必定撞破父容器导致溢出！
+
+### 关键区别
+
+| 场景 | width: auto | width: 100% |
+|------|------------|-------------|
+| **默认行为** | 自动填满可用空间 | 强制等于父容器内容区宽度 |
+| **加 padding 后** | 自动缩减 content 区，不溢出 | 溢出父容器 |
+| **加 margin 后** | 自动缩减 content 区，不溢出 | 溢出父容器 |
+| **推荐使用** | ✅ 流体布局首选 | ❌ 几乎不需要 |
+
+<Tip title="建议: ">
+
+在现代大厂基建中，全局重置 `*, ::before, ::after { box-sizing: border-box; }` 是第一行代码。同时，对于普通块级元素，**不要滥用 `width: 100%`**--在 `width: auto` 的流体本性下，元素会自动根据 margin 和 padding 进行完美退让自适应，这才是《CSS世界》中最优雅的流体布局真谛。
+
+</Tip>
+
+---
+
+## Q5: 什么是包含块（Containing Block）？它有什么坑？
+
+### 包含块的基本概念
+
+包含块是 CSS 定位的参考基准。`position: absolute` 的元素相对于最近的定位祖先定位，`position: fixed` 的元素相对于视口定位--但如果祖先有 `transform`，fixed 的包含块会被劫持。
+
+```css
+/* 包含块的坑：transform 劫持 fixed 定位 */
+.parent {
+  transform: translateX(0); /* 创建新的包含块！ */
+}
+.child {
+  position: fixed;
+  top: 0;
+  /* 此时 child 相对于 .parent 定位，不是视口！ */
+}
+```
+
+### transform 劫持 fixed 定位
+
+<Warning title='⚠️ transform 劫持 fixed 定位'>
+
+一旦祖先元素有 `transform`（不为 none）、`perspective`、`filter`，就会创建新的包含块。`position: fixed` 的元素会相对于这个新包含块定位，而不是视口。这是前端开发中最隐蔽的布局陷阱之一。
+
+</Warning>
+
+### 包含块的层级关系
+
+包含块的查找遵循严格的祖先链规则。对于 `position: static` 或 `relative` 的元素，包含块是最近的块级祖先的内容区域。对于 `position: absolute` 的元素，包含块是最近的 `position` 不为 `static` 的祖先。对于 `position: fixed` 的元素，包含块通常是视口，除非祖先有 `transform`/`perspective`/`filter`。
+
+```css
+/* 包含块查找示例 */
+.grandparent { position: relative; }
+.parent { position: static; }
+.child { position: absolute; top: 0; left: 0; }
+/* .child 的包含块是 .grandparent，因为 .parent 是 static */
+```
+
+<Tip title="🎢 通俗比喻: GPS 定位偏移">
+
+包含块就像 GPS 的定位基准。正常情况下，`position: fixed` 的元素就像一个始终以地球（视口）为基准的 GPS，无论你怎么走，它都钉在地图的固定位置。但一旦祖先加了 `transform`，就像地球表面突然出现了一个"局部引力场'，这个 GPS 的基准被偷偷换成了这个局部引力场--你以为自己还在地球坐标系中，其实已经被"劫持"到了一个移动的参照系里。
+
+</Tip>
+
+### 包含块（Containing Block）的完整定义与确定规则
+
+包含块是 CSS 定位和百分比计算的参考基准。很多候选人只知道"absolute 相对于定位祖先"，但不知道包含块的完整确定规则，以及 `transform`、`filter` 等属性会"劫持"包含块。
+
+**如何确定包含块？**
+
+```text
+包含块的确定规则（按 position 分类）：
+
+position: static / relative
+  → 包含块 = 最近的块级祖先的 content 区域
+
+position: absolute
+  → 包含块 = 最近的 position 不为 static 的祖先的 padding 区域
+
+position: fixed
+  → 包含块 = 视口（viewport）
+  → 例外：祖先有 transform/perspective/filter 不为 none 时，包含块被劫持
+```
+
+```css
+/* 包含块确定示例 */
+.grandparent { position: relative; }
+.parent { position: static; }
+.child { position: absolute; top: 0; left: 0; }
+/* .child 的包含块是 .grandparent（跳过 static 的 .parent） */
+
+/* transform 劫持 fixed 定位 */
+.parent { transform: translateX(0); }
+.child { position: fixed; top: 0; left: 0; }
+/* .child 的包含块是 .parent，不是视口！ */
+```
+
+### 包含块与百分比计算
+
+百分比值的计算基准取决于属性类型，不同属性参考不同的包含块维度：
+
+| 属性 | 百分比参考的包含块维度 |
+|------|---------------------|
+| `width` / `left` / `right` / `margin` / `padding` | 包含块的 **宽度** |
+| `height` / `top` / `bottom` | 包含块的 **高度**（需要包含块有明确高度） |
+| `max-width` / `min-width` | 包含块的 **宽度** |
+| `max-height` / `min-height` | 包含块的 **高度** |
+
+<Warning title="⚠️ 包含块的隐藏陷阱">
+
+**陷阱 1：height 百分比需要包含块有明确高度**
+
+```css
+/* 父元素没有明确高度，子元素 height: 50% 无效 */
+.parent { /* 没有设置 height */ }
+.child { height: 50%; }  /* ❌ 百分比失效，等同于 auto */
+
+/* 解决：给父元素设置明确高度 */
+.parent { height: 400px; }
+.child { height: 50%; }  /* ✅ 200px */
+```
+
+**陷阱 2：transform 创建新的包含块**
+
+```css
+/* transform 会让 fixed 定位的元素相对于它定位，而不是视口 */
+.modal-container { transform: translateZ(0); }
+.modal { position: fixed; top: 50%; left: 50%; }
+/* modal 相对于 .modal-container 居中，不是视口！ */
+```
+
+**陷阱 3：padding 区域 vs content 区域**
+
+`position: absolute` 的元素的包含块是祖先的 **padding 区域**（包含 padding），而 `position: static/relative` 的元素的包含块是祖先的 **content 区域**（不包含 padding）。
+
+```css
+.parent {
+  position: relative;
+  width: 200px;
+  padding: 20px;
+}
+.child {
+  position: absolute;
+  left: 0;  /* 相对于 .parent 的 padding 区域左边缘 */
+}
+```
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: GPS 基准点">
+
+包含块就像 GPS 的基准点。`position: static` 的元素以最近的块级祖先为基准，`position: absolute` 以最近的定位祖先为基准，`position: fixed` 以视口为基准。但 `transform` 就像一个"信号干扰器"——它会偷偷把 fixed 的基准从视口"劫持"到自己身上，导致你以为元素钉在屏幕上，实际上它跟着一个移动的容器走了。
+
+</Tip>
+
+---
+
+## 🔍 源码：Blink 引擎是如何实现的？
+
+<div class="follow-up">
+Blink 引擎中 box-sizing 的计算逻辑是怎么实现的？
+</div>
+
+在 Chrome 的 Blink 渲染引擎中，计算盒模型的内部逻辑清晰，它根据你配置的 `BoxSizing` 标志位，直接决定了数学公式的加减法（详见 [Blink 源码 src/core/layout/box_model.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/layout/box_model.cc)）：
+
+```cpp
+// 详见：Blink 源码 src/core/layout/box_model.cc
+LayoutUnit BoxModel::ComputeWidth() const {
+  // 当开发者聪明地开启了 border-box 时：
+  if (style.BoxSizing() == EBoxSizing::kBorderBox) {
+    // 引擎会把你设定的 width 视为"物理极限界限"
+    // 然后直接从内部把 padding 和 border 的尺寸扣除掉，剩下的才是真正的 content 宽度！
+    return specified_width - padding_left - padding_right - border_left - border_right;
+  } else {
+    // 如果是老旧的 content-box（W3C 标准）：
+    // 引擎认为你设定的 width 就是内容宽度，后续在渲染流水线中会继续向外叠加
+    return specified_width;
+  }
+}
+```
+
+<div class="follow-up">
+margin 折叠在 Blink 中是怎么计算的？
+</div>
+
+在 Blink 的 `BlockLayoutAlgorithm::CollapseMargins` 函数中有着严密的数学判定（详见 [Blink 源码 src/core/layout/block_layout_algorithm.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/layout/block_layout_algorithm.cc)）：
+
+```cpp
+// BlockLayoutAlgorithm::CollapseMargins 的简化逻辑
+LayoutUnit CollapseMargins(LayoutUnit margin_a, LayoutUnit margin_b) {
+  if (margin_a > 0 && margin_b > 0) {
+    return std::max(margin_a, margin_b);  // 都正：取最大值
+  } else if (margin_a &lt; 0 && margin_b &lt; 0) {
+    return std::min(margin_a, margin_b);  // 都负：取最小值（绝对值最大）
+  } else {
+    return margin_a + margin_b;           // 一正一负：直接相加
+  }
+}
+```
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："请解释一下 CSS 的盒模型，以及 box-sizing 属性的作用。"
+
+**及格回答（60-70分）：**
+> "盒模型由 content、padding、border 和 margin 组成。box-sizing 默认是 content-box，宽度只包含内容。改成 border-box 后，宽度就包含了 border 和 padding，这样写 width: 100% 的时候加 padding 就不会出现滚动条了。"
+
+面试官评价：**知道规则但不理解设计**。
+
+**满分回答（90-100分）：**
+
+> 盒模型本质上是**浏览器排版引擎在二维空间中分配元素物理占据领地的基础协议**。W3C 标准模型（content-box）是一种理想化的"向外延展"模型——`width` 只代表内容区宽度，padding 和 border 向外叠加，容易导致 `width: 100%` 加 padding 后溢出父容器。IE 怪异模型（border-box）则是一种务实的"内部收缩"约束模型——`width` 包含 padding 和 border，内容区自动向内压缩。<sup>[1]</sup>
+
+> 在 Blink 的 `BoxModel::ComputeWidth` 源码算法中，当检测到 `border-box` 时，引擎会直接将声明的 `width` 作为边界墙，在内部做严格的减法（扣除 padding 和 border）来动态收缩 content 区域。这种物理隔绝对响应式栅格系统是关键的护城河。在现代大厂基建库（如 Tailwind CSS、Bootstrap）中，第一行全局重置代码就是 `*, ::before, ::after { box-sizing: border-box; }`。<sup>[2]</sup>
+
+> 更高端的理解是，对于一个普通的块级元素，**不要滥用 `width: 100%`**，因为在 `width: auto` 的流体本性下，元素的可用内容空间会自动根据 margin 和 padding 进行完美退让自适应，完全不需要 `border-box` 的介入就能实现不溢出。同时，margin 折叠（margin collapsing）是盒模型中最隐蔽的陷阱——相邻兄弟的垂直 margin 会合并取较大值，父子元素的 margin 会穿透，空块元素的自身 margin 也会合并。理解这些规则是避免布局 bug 的基础。<sup>[3]</sup>
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="第一层: margin 折叠中正负混合时, 浏览器底层怎么计算最终距离?" icon="layer-group">
+
+  **答题要点：**
+  不能只答"取较大值"，必须分正正、负负、正负三种情况。
+
+  **高分回答：**
+  "在 Blink 的 `CollapseMargins` 函数中：如果两个 margin **都是正数**，引擎取**最大值（Max）**；如果**都是负数**，取绝对值最大的那个（即最小值 Min）；如果**一正一负**，引擎会把它们直接**相加（Add）**。要打破这种折叠结界，唯一的解法就是触发 BFC（块级格式化上下文）将其物理隔离。"
+
+  </Accordion>
+
+  <Accordion title="第二层: 不用 JS, 如何用 CSS 实现宽度自适应的正方形?" icon="layer-group">
+
+  **答题要点：**
+  利用 padding 百分比基于父元素宽度计算的特性。
+
+  **高分回答：**
+  "核心破局点在于：**在 CSS 的规范中，元素的 `padding-top` 和 `padding-bottom` 如果设置为百分比，它的计算基准永远参照的是【父元素的宽度（Width）】，而不是高度！** 因此，我们可以将元素的 `height` 设为 `0`，然后把 `padding-bottom` 设为 `100%`。这样它的物理占位高度就百分之百完美等同于父元素的宽度，瞬间形成一个完美响应式的自适应正方形流体盒子。"
+
+  </Accordion>
+
+  <Accordion title="第三层: border-box 会影响 flex 子元素的空间分配吗?" icon="stopwatch">
+
+  **答题要点：**
+  必须分场景讨论！border-box 与 flex 的交互是高阶考点。
+
+  **高分回答：**
+  "分两种情况：
+  **1. flex-basis 与 width 的交互**：在 Flex 布局中，`flex-basis` 的优先级高于 `width`。如果元素是 `border-box`，`flex-basis` 指定的是包含 padding 和 border 的总宽度；如果是 `content-box`，`flex-basis` 指定的仅是内容区宽度。
+  **2. flex: 1 的行为**：`flex: 1` 等价于 `flex: 1 1 0%`，其中 `flex-basis: 0%` 意味着所有元素从零开始等分空间。在 `border-box` 模型下，这个 `0%` 是包含 padding 和 border 的总宽度为零，引擎会忽略 padding 和 border 的影响，直接等分容器空间。"
+
+  </Accordion>
+
+  <Accordion title="第四层: margin: auto 在块级元素和 Flex 元素中有什么不同行为?" icon="stopwatch">
+
+  **答题要点：**
+  结合 W3C 规范解释 margin: auto 在不同布局上下文中的行为差异。
+
+  **高分回答：**
+  "在普通块级元素中，`margin: auto` 只在水平方向上生效（前提是元素有明确的 `width`），垂直方向上 `margin: auto` 等于 0。这就是经典的水平居中方案 `margin: 0 auto;`。
+  但在 Flex 布局中，`margin: auto` 在**两个方向上都能生效**！这是因为 Flex 容器会将剩余空间分配给 `margin: auto` 的元素。`margin-left: auto` 会吞噬所有左侧剩余空间，将元素推到最右侧；`margin: auto` 则同时在水平和垂直方向上居中。这种行为在 Grid 布局中同样适用。"
+
+  </Accordion>
+
+  <Accordion title="第五层: border-box 和 content-box 在打印样式中有什么影响?" icon="node">
+
+  **答题要点：**
+  必须分场景讨论！打印场景下盒模型的行为差异。
+
+  **高分回答：**
+  "在打印样式（`@media print`）中，`box-sizing` 的选择同样重要，但有一个特殊场景需要注意：打印时浏览器会将页面宽度缩放到纸张大小。如果使用 `content-box`，`width: 100%` 加上 `padding` 和 `border` 会导致内容溢出纸张，出现打印截断。使用 `border-box` 则能保证内容完整地适应纸张宽度。
+  此外，打印时 `margin` 和 `padding` 的物理尺寸会基于纸张 DPI 重新计算，而非屏幕像素。如果你在打印样式中写了 `padding: 10px`，它在 300dpi 的打印纸上会比屏幕上看起来小得多。建议在打印样式中使用相对单位（如 `em`、`rem`）而非绝对单位（`px`）。"
+
+  </Accordion>
+
+  <Accordion title="🔥 杀手锏追问: 如果一个元素同时设置了 width, min-width, max-width 和 box-sizing: border-box, 引擎的最终宽度计算优先级是什么?" icon="skull">
+
+  **答题要点：**
+  对比约束层级，点出"四层博弈"的内部逻辑。
+
+  **高分回答：**
+  "引擎的计算顺序是严格的四步博弈：
+    1. 先根据 `box-sizing` 将 `width` 转换为 content 宽度（如果是 border-box，需要加上 padding 和 border）。
+    2. 然后检查 `min-width` 约束--如果计算结果小于 `min-width`，强制提升到 `min-width`。
+    3. 接着检查 `max-width` 约束--如果计算结果大于 `max-width`，强制压低到 `max-width`。
+    4. 最终得出的 content 宽度再根据 `box-sizing` 反向计算出实际占位。
+
+  **关键陷阱**：`min-width` 的优先级**永远高于** `max-width`！如果你同时写了 `min-width: 200px` 和 `max-width: 100px`，引擎会直接让 `min-width` 胜出，最终宽度为 200px--这是一个很多资深工程师都会踩的冷门坑。"
+
+  </Accordion>
+
+  <Accordion title="🔥 杀手锏追问: 在 CSS Grid 中, box-sizing 对 fr 单位的计算有什么影响?" icon="skull">
+
+  **答题要点：**
+  结合 Grid 的 Track Sizing Algorithm 解释 box-sizing 与 fr 的交互。
+
+  **高分回答：**
+  "在 Grid 布局中，`fr` 单位的计算发生在 Track Sizing Algorithm 的最后阶段。`box-sizing` 对 `fr` 的影响主要体现在两个方面：
+  **1. grid-item 的宽度**：如果子元素设置了 `box-sizing: border-box`，`width: 100%` 不会溢出格子；如果是 `content-box`，`width: 100%` 加上 `padding` 和 `border` 会导致溢出。
+  **2. grid-template-columns 中的固定列**：如果列定义中使用了 `px` 单位，`box-sizing` 不影响轨道宽度（轨道宽度由容器决定）。但如果列定义中使用了 `%` 单位，`box-sizing` 会影响百分比的计算基准。
+  **最佳实践**：在 Grid 布局中，始终使用 `border-box` 配合 `minmax(0, 1fr)` 来避免内容撑爆格子。"
+
+  </Accordion>
+
+  <Accordion title="🔥 杀手锏追问: 在打印样式中, box-sizing 的选择有什么特殊考虑?" icon="skull">
+
+  **答题要点：**
+  结合打印场景解释 box-sizing 的影响。
+
+  **高分回答：**
+  "在打印样式（`@media print`）中，`box-sizing` 的选择同样重要，但有一个特殊场景需要注意：打印时浏览器会将页面宽度缩放到纸张大小。如果使用 `content-box`，`width: 100%` 加上 `padding` 和 `border` 会导致内容溢出纸张，出现打印截断。使用 `border-box` 则能保证内容完整地适应纸张宽度。
+  此外，打印时 `margin` 和 `padding` 的物理尺寸会基于纸张 DPI 重新计算，而非屏幕像素。如果你在打印样式中写了 `padding: 10px`，它在 300dpi 的打印纸上会比屏幕上看起来小得多。建议在打印样式中使用相对单位（如 `em`、`rem`）而非绝对单位（`px`）。
+  **最佳实践**：在打印样式中，使用 `border-box` 确保内容不溢出，使用相对单位确保打印效果一致。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [CSS Box Model Module Level 3 - W3C 规范](https://www.w3.org/TR/css-box-3/)：W3C 官方对盒模型的权威定义，包含 margin 折叠的完整数学规则。<sup>[1]</sup>
+- 📖 [Blink 源码 box_model.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/layout/box_model.cc)：Chrome Blink 引擎中盒模型宽度计算的实现，`ComputeWidth` 函数是 border-box 与 content-box 分流的终极开关。<sup>[2]</sup>
+- 🟢 [张鑫旭《CSS世界》](https://www.zhangxinxu.com/wordpress/2016/05/css-box-model/)：对盒模型四大家族的经典通俗解释，工业界对盒模型理解的起点之作。<sup>[3]</sup>

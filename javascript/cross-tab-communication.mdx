@@ -1,0 +1,661 @@
+---
+title: "跨标签页通信"
+---
+
+> **面试官为什么问这个？**
+>
+> 跨标签页通信是前端多页面协作的核心问题。面试官问这个，本质上是在考察你：**当用户打开了多个标签页，这些页面之间如何安全、高效地交换数据？** 如果你只知道 `localStorage`，但说不清 `BroadcastChannel`、`SharedWorker`、`Service Worker` 的适用场景和底层差异，说明你对浏览器多标签页架构的理解停留在"听说过"而不是"能设计"。
+
+---
+
+## Q1: 跨标签页通信的历史？为什么需要它？
+
+```text
+┌───────────────┐   ┌───────────────┐   ┌───────────────┐   ┌───────────────┐
+│  Cookie 轮询  │ → │ localStorage  │ → │BroadcastChannel│ → │ Service Worker│
+│   (2000年)    │   │  storage 事件 │ → │   (2018年)    │ → │   (2015年)    │
+│  手动定时检查  │   │   (2009年)    │   │  专用 API     │   │  中心化代理   │
+└───────────────┘   └───────────────┘   └───────────────┘   └───────────────┘
+```
+
+<Steps>
+
+  <Step title="2000年: Cookie 轮询时代">
+
+    最早的方案是通过 Cookie 实现：一个标签页写入 Cookie，另一个标签页通过 `setInterval` 定时读取。简单但效率极低——定时器不断轮询浪费 CPU，且 Cookie 大小限制只有 4KB。
+
+  </Step>
+  <Step title="2009年: localStorage 与 storage 事件">
+
+    HTML5 引入了 `localStorage`，容量更大（5-10MB）。关键是：浏览器为 `localStorage` 的变化提供了 `storage` 事件——当一个标签页修改 `localStorage` 时，同源的其他标签页会收到通知。这是第一个"原生"的跨标签页通信机制。
+
+  </Step>
+  <Step title="2015-2018年: 专用 API 登场">
+
+    Service Worker 可以作为所有标签页的"中心代理"转发消息。BroadcastChannel API 提供了更纯粹的"广播"能力——无需经过存储层，直接在标签页之间发送消息。SharedWorker 则提供了一个共享的后台线程。
+
+  </Step>
+
+</Steps>
+
+**跨标签页通信解决的核心问题：**
+
+```text
+问题：浏览器标签页之间是完全隔离的
+用户在标签页 A 登录 → 标签页 B 不知道 → B 页面刷新后仍然是未登录状态
+
+解决：标签页之间可以互相通知状态变化
+用户在标签页 A 登录 → 通知标签页 B → 标签页 B 自动更新登录状态
+```
+
+<Note title="💡 一句话总结">
+
+浏览器的标签页是进程级隔离的，跨标签页通信就是在这个隔离之上建立消息通道。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有跨标签页通信">
+
+用户在标签页 A 修改了主题为暗色，切换到标签页 B 发现还是亮色——必须手动刷新才能同步。就像一栋大楼里每个房间都是隔音的，你在一间房喊"开饭了"，其他房间的人完全听不到。
+
+</Card>
+<Card title="✅ 引入跨标签页通信">
+
+标签页 A 切换主题后，标签页 B 立刻自动切换。就像大楼装了广播系统，任何房间发出通知，所有房间都能立刻收到。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说浏览器的隔离模型（标签页是独立的执行环境），再列举各种通信方案及其适用场景。面试官最想听到的是你能根据具体需求选择合适的方案。
+
+
+</Tip>
+
+---
+
+## Q2: localStorage 的 storage 事件机制
+
+`storage` 事件是最简单、兼容性最好的跨标签页通信方案。
+
+```text
+┌──────────────────┐                    ┌──────────────────┐
+│   标签页 A        │                    │   标签页 B        │
+│                  │                    │                  │
+│  localStorage    │ ─── storage 事件 ─→ │  监听 storage    │
+│  .setItem(k, v) │   （自动触发）      │  event.newValue  │
+└──────────────────┘                    └──────────────────┘
+```
+
+```javascript
+// 标签页 A：写入数据
+localStorage.setItem('user', JSON.stringify({ name: '张三', loggedIn: true }));
+
+// 标签页 B：监听变化
+window.addEventListener('storage', (event) => {
+  console.log(event.key);       // "user"
+  console.log(event.oldValue);  // 旧值（字符串）
+  console.log(event.newValue);  // 新值（字符串）
+  if (event.key === 'user') {
+    const user = JSON.parse(event.newValue);
+    updateUserUI(user);
+  }
+});
+```
+
+<Warning title="⚠️ 核心机制: storage 事件的触发条件">
+
+`storage` 事件有严格的触发条件：
+
+1. **只在其他标签页触发**：修改 localStorage 的标签页自己不会收到事件
+2. **必须是同源**：不同域名、端口、协议的标签页不会收到
+3. **值必须真正改变**：`setItem` 的新值和旧值相同时不触发
+
+```javascript
+// ❌ 自己收不到自己的 storage 事件
+window.addEventListener('storage', (e) => console.log('收到'));
+localStorage.setItem('key', 'value'); // 自己不会收到事件
+
+// ❌ 值没变，不触发
+localStorage.setItem('key', 'value');
+localStorage.setItem('key', 'value'); // 第二次不触发
+```
+
+
+</Warning>
+
+### localStorage 通信的局限性
+
+| 局限 | 说明 |
+|------|------|
+| **只能传字符串** | 必须 `JSON.stringify` / `JSON.parse` |
+| **容量限制** | 5-10MB（因浏览器而异） |
+| **同步 API** | `setItem` 是同步的，大量数据会阻塞主线程 |
+| **自己收不到** | 发送方无法收到自己的 storage 事件 |
+
+```javascript
+// ✅ 发送方也想收到通知——自己手动处理
+function broadcast(key, value) {
+  handleMessage(key, value);              // 自己立刻处理
+  localStorage.setItem(key, JSON.stringify(value)); // 其他标签页通过 storage 事件处理
+}
+```
+
+---
+
+## Q3: BroadcastChannel API 的设计
+
+BroadcastChannel 是专门为跨标签页通信设计的 API，不需要经过存储层，直接在标签页之间广播消息。
+
+```text
+┌──────────────────┐                    ┌──────────────────┐
+│   标签页 A        │                    │   标签页 B        │
+│                  │                    │                  │
+│  channel         │ ─── postMessage ─→ │  channel         │
+│  .postMessage()  │   （直接传递）      │  onmessage       │
+└──────────────────┘                    └──────────────────┘
+// 所有同源标签页共享同一个 channel name
+```
+
+```javascript
+// 标签页 A
+const channel = new BroadcastChannel('app-channel');
+channel.postMessage({ type: 'THEME_CHANGED', payload: 'dark' });
+
+// 标签页 B
+const channel = new BroadcastChannel('app-channel');
+channel.onmessage = (event) => {
+  if (event.data.type === 'THEME_CHANGED') {
+    applyTheme(event.data.payload);
+  }
+};
+channel.close(); // 用完关闭
+```
+
+<Warning title="⚠️ 核心机制: BroadcastChannel 不需要存储层">
+
+BroadcastChannel 和 localStorage 的本质区别：
+
+- **localStorage**：写入磁盘 → 触发 storage 事件 → 其他标签页读取磁盘。数据经过了存储层。
+- **BroadcastChannel**：直接通过浏览器内部的消息传递机制发送。数据不经过磁盘，纯内存操作，速度更快。
+
+
+</Warning>
+
+### 兼容性降级
+
+```javascript
+// BroadcastChannel 浏览器兼容性（2024年）
+// Chrome 54+ ✅  Firefox 38+ ✅  Safari 15.4+ ✅  Edge 79+ ✅
+
+// 如果需要兼容旧浏览器，降级到 localStorage
+function createChannel(name) {
+  if ('BroadcastChannel' in window) {
+    return new BroadcastChannel(name);
+  }
+  return {
+    postMessage(data) {
+      localStorage.setItem(`__bc_${name}`, JSON.stringify({
+        data, timestamp: Date.now(),
+      }));
+    },
+    onmessage: null,
+  };
+}
+```
+
+---
+
+## Q4: SharedWorker 通信机制
+
+SharedWorker 是一个可以被多个标签页共享的后台线程，多个标签页连接同一个 Worker 进行通信。
+
+```text
+┌──────────┐   ┌──────────┐   ┌──────────┐
+│ 标签页 A  │   │ 标签页 B  │   │ 标签页 C  │
+│ port ────┼──→│          │   │          │
+│          │   │ port ────┼──→│          │
+└────┬─────┘   └────┬─────┘   └────┬─────┘
+     └──────────────┼──────────────┘
+                    ▼
+           ┌──────────────────┐
+           │   SharedWorker    │  ← 共享的后台线程
+           │   消息转发中心    │
+           └──────────────────┘
+```
+
+```javascript
+// shared-worker.js
+const ports = [];
+self.onconnect = (event) => {
+  const port = event.ports[0];
+  ports.push(port);
+  port.onmessage = (e) => {
+    // 转发给所有其他标签页
+    ports.forEach(p => { if (p !== port) p.postMessage(e.data); });
+  };
+  port.start();
+};
+```
+
+<Warning title="⚠️ 核心机制: SharedWorker 的生命周期">
+
+- **创建**：第一个标签页调用 `new SharedWorker()` 时创建
+- **共享**：后续标签页连接到同一个实例
+- **销毁**：所有连接的标签页都关闭后自动销毁
+
+兼容性比 BroadcastChannel 更差：Safari 从 16.4+ 才支持。
+
+
+</Warning>
+
+### SharedWorker vs BroadcastChannel
+
+| 对比维度 | SharedWorker | BroadcastChannel |
+|---------|-------------|-----------------|
+| **通信模型** | 中心化（通过 Worker 转发） | 广播（直接发送） |
+| **消息过滤** | Worker 内部可以过滤 | 所有监听者都收到 |
+| **持久状态** | Worker 可以维护状态 | 无状态 |
+| **兼容性** | Safari 16.4+ | Safari 15.4+ |
+| **复杂度** | 高（需要 Worker 文件） | 低（直接使用） |
+
+---
+
+## Q5: Service Worker 通信机制
+
+Service Worker 作为所有标签页的"中心代理"，除了消息传递外还支持离线缓存和推送通知。
+
+```text
+┌──────────┐   ┌──────────┐   ┌──────────┐
+│ 标签页 A  │   │ 标签页 B  │   │ 标签页 C  │
+└────┬─────┘   └────┬─────┘   └────┬─────┘
+     │  postMessage │              │
+     └──────────────┼──────────────┘
+                    ▼
+           ┌──────────────────┐
+           │  Service Worker   │  ← 拦截请求 + 消息代理
+           └──────────────────┘
+                    │ 转发给所有 client
+     ┌──────────────┼──────────────┐
+┌────┴─────┐  ┌────┴─────┐  ┌────┴─────┐
+│ 标签页 A  │  │ 标签页 B  │  │ 标签页 C  │
+└──────────┘  └──────────┘  └──────────┘
+```
+
+```javascript
+// main.js
+const reg = await navigator.serviceWorker.register('/sw.js');
+reg.active.postMessage({ type: 'BROADCAST', payload: 'hello from tab A' });
+navigator.serviceWorker.onmessage = (event) => {
+  console.log('来自其他标签页:', event.data);
+};
+
+// sw.js
+self.addEventListener('message', (event) => {
+  self.clients.matchAll({ type: 'window' }).then(clients => {
+    clients.forEach(client => {
+      if (client.id !== event.source.id) {
+        client.postMessage(event.data);
+      }
+    });
+  });
+});
+```
+
+### Service Worker vs BroadcastChannel
+
+| 对比维度 | Service Worker | BroadcastChannel |
+|---------|---------------|-----------------|
+| **独立生命周期** | 有（可存活在标签页关闭后） | 无 |
+| **拦截网络请求** | 支持 | 不支持 |
+| **离线缓存** | 支持 | 不支持 |
+| **复杂度** | 高（需要注册文件） | 低 |
+| **适用场景** | PWA + 消息传递 | 纯消息传递 |
+
+---
+
+## Q6: postMessage 的跨窗口通信
+
+`postMessage` 是跨窗口（包括 iframe、弹窗）通信的标准 API，也是唯一支持跨源通信的方案。
+
+```text
+┌──────────────────┐                    ┌──────────────────┐
+│   父窗口 (A站)    │                    │   iframe (B站)    │
+│                  │                    │                  │
+│  iframe          │                    │                  │
+│  .contentWindow  │ ─── postMessage ─→ │  window          │
+│  .postMessage()  │   （跨源安全）      │  .addEventListener│
+└──────────────────┘                    └──────────────────┘
+```
+
+```javascript
+// 父窗口：向 iframe 发送消息
+const iframe = document.getElementById('my-iframe');
+iframe.contentWindow.postMessage(
+  { type: 'SET_THEME', payload: 'dark' },
+  'https://b.example.com' // 目标源（安全限制）
+);
+
+// iframe：监听消息
+window.addEventListener('message', (event) => {
+  if (event.origin !== 'https://a.example.com') return; // ⚠️ 安全检查
+  console.log(event.data);
+});
+```
+
+<Warning title="⚠️ 核心机制: postMessage 的安全检查">
+
+`postMessage` 是唯一可以跨源通信的 API，但必须做好安全检查：
+
+```javascript
+// ❌ 不检查来源——任何网站都能发消息给你
+window.addEventListener('message', (event) => {
+  handleMessage(event.data); // 危险！
+});
+
+// ✅ 检查来源——只接受可信域名
+window.addEventListener('message', (event) => {
+  if (!['https://trusted.com'].includes(event.origin)) return;
+  handleMessage(event.data); // 安全
+});
+
+// ❌ targetOrigin 为 *——任何网站都能接收你的消息
+otherWindow.postMessage(secretData, '*'); // 危险！
+
+// ✅ 指定目标源
+otherWindow.postMessage(secretData, 'https://trusted.com'); // 安全
+```
+
+
+</Warning>
+
+### postMessage 与其他方案的对比
+
+| 对比维度 | postMessage | BroadcastChannel | localStorage |
+|---------|------------|-----------------|-------------|
+| **跨源** | 支持 | 不支持 | 不支持 |
+| **目标** | 特定窗口 | 所有同源标签页 | 所有同源标签页 |
+| **iframe** | 支持 | 不支持 | 支持（同源） |
+| **弹窗** | 支持 | 不支持 | 支持（同源） |
+| **数据类型** | 结构化克隆 | 结构化克隆 | 只有字符串 |
+
+---
+
+## Q7: 跨标签页登出的实战方案
+
+在实际项目中，跨标签页通信最常见的场景是登录/登出同步。
+
+```javascript
+class CrossTabAuth {
+  constructor() {
+    this.channel = null;
+    this.init();
+  }
+
+  init() {
+    // 方案一：BroadcastChannel（现代浏览器首选）
+    if ('BroadcastChannel' in window) {
+      this.channel = new BroadcastChannel('auth-channel');
+      this.channel.onmessage = (e) => this.handleMessage(e.data);
+    }
+    // 方案二：storage 事件（兼容性降级）
+    window.addEventListener('storage', (e) => {
+      if (e.key === '__auth_event') {
+        this.handleMessage(JSON.parse(e.newValue));
+      }
+    });
+  }
+
+  logout() {
+    const message = { type: 'LOGOUT', timestamp: Date.now() };
+    this.handleMessage(message); // 自己处理
+    if (this.channel) this.channel.postMessage(message); // 通知其他标签页
+    localStorage.setItem('__auth_event', JSON.stringify(message)); // 降级通知
+  }
+
+  handleMessage(message) {
+    if (message.type === 'LOGOUT') {
+      localStorage.removeItem('token');
+      sessionStorage.clear();
+      window.location.href = '/login';
+    }
+  }
+}
+```
+
+---
+
+## Q8: 各方案的选型决策与最佳实践
+
+```text
+┌──────────────────────────────────────────────┐
+│           需要跨标签页通信？                   │
+└─────────────────┬────────────────────────────┘
+                  ▼
+        ┌─────────────────────┐
+        │  需要跨源？          │
+        │  ├─ 是 → postMessage│
+        │  └─ 否 ↓            │
+        └─────────┬───────────┘
+                  ▼
+        ┌─────────────────────┐
+        │  需要持久化？        │
+        │  ├─ 是 → localStorage│
+        │  └─ 否 ↓            │
+        └─────────┬───────────┘
+                  ▼
+        ┌─────────────────────┐
+        │  需要共享状态？      │
+        │  ├─ 是 → SharedWorker│
+        │  └─ 否 ↓            │
+        └─────────┬───────────┘
+                  ▼
+        ┌─────────────────────┐
+        │  需要离线+推送？     │
+        │  ├─ 是 → Service Worker│
+        │  └─ 否 → BroadcastChannel│
+        └─────────────────────┘
+```
+
+| 场景 | 推荐方案 | 备选方案 |
+|------|---------|---------|
+| 登录/登出同步 | BroadcastChannel | localStorage + storage |
+| 主题/语言切换 | BroadcastChannel | localStorage + storage |
+| 购物车同步 | localStorage + storage | BroadcastChannel |
+| 跨域 iframe 通信 | postMessage | 无 |
+| 离线通知 | Service Worker | 无 |
+| 共享实时数据 | SharedWorker | BroadcastChannel |
+
+---
+
+## 🔍 底层源码：浏览器是如何实现跨标签页通信的？
+
+<div class="follow-up">
+BroadcastChannel 在浏览器底层是怎么实现的？
+</div>
+
+Chromium 中，BroadcastChannel 的实现在 Blink 的 `modules/broadcastchannel/` 目录下（详见 [Chromium 源码](https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/modules/broadcastchannel/)）：
+
+```cpp
+// BroadcastChannel 的核心实现（简化）
+class BroadcastChannel : public ScriptWrappable {
+  void postMessage(ScriptState* state, const ScriptValue& message) {
+    // 1. 序列化消息（结构化克隆算法）
+    // 2. 通过浏览器进程（Browser Process）广播给同源的其他渲染进程
+    // 3. 接收方的渲染进程反序列化消息并触发 onmessage
+  }
+};
+```
+
+关键点：BroadcastChannel 的消息传递经过了浏览器进程中转。每个标签页是独立的渲染进程，它们不能直接通信——必须通过浏览器进程转发。这就是为什么 BroadcastChannel 不能跨源。
+
+<div class="follow-up">
+storage 事件在底层是怎么触发的？
+</div>
+
+`localStorage` 的实现在 Blink 的 `modules/storage/` 目录下：
+
+```cpp
+// localStorage 的写入流程（简化）
+void StorageArea::setItem(const String& key, const String& value) {
+  // 1. 写入浏览器进程的 StorageBackend（磁盘）
+  backend_->Put(key, value, origin_);
+  // 2. 通知浏览器进程：这个 origin 的 localStorage 发生了变化
+  // 对于写入方自己的渲染进程：不发 storage 事件
+  // 对于其他同源的渲染进程：发送 storage 事件
+  BrowserProcess::NotifyStorageChanged(origin_, key, old_value, new_value,
+    /* exclude_process = */ current_process);
+}
+```
+
+这解释了 storage 事件的三个核心特性：数据写入磁盘（有同步开销）、通过浏览器进程中转（只能同源）、排除写入方自己（自己收不到）。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说跨标签页通信有哪些方案"
+
+**及格回答（60-70分）：**
+> "可以用 localStorage 的 storage 事件，一个标签页写入，其他标签页能收到。还可以用 BroadcastChannel API，直接广播消息。"
+
+面试官评价：**知道方案但不理解底层机制和选型依据**。
+
+**满分回答（90-100分）：**
+
+> 浏览器的标签页是进程级隔离的——每个标签页运行在独立的渲染进程中，JS 堆、DOM 树完全独立。跨标签页通信的本质就是在这个隔离之上建立消息通道。<sup>[1]</sup>
+
+> 最简单的方案是 localStorage 的 `storage` 事件。当一个标签页修改 localStorage 时，浏览器进程会通知所有同源的其他渲染进程触发事件。但有限制：自己收不到、只能传字符串、数据写入磁盘有同步开销。BroadcastChannel API 通过浏览器进程直接在渲染进程之间传递消息，不经过磁盘，支持结构化克隆。<sup>[2]</sup>
+
+> 对于更复杂的场景，SharedWorker 提供共享后台线程，多个标签页可以维护共享状态。Service Worker 可以作为所有标签页的中心代理，还支持离线缓存和推送通知。跨域场景下只能用 postMessage。<sup>[3]</sup>
+
+> 实际项目中，我会根据需求选择方案：登录/登出同步用 BroadcastChannel + localStorage 降级；购物车同步用 localStorage（需要持久化）；跨域 iframe 用 postMessage。关键是要做好安全检查（验证 origin）和兼容性降级。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title='storage 事件为什么自己收不到？' icon="layer-group">
+
+    **答题要点：**
+    从浏览器的进程架构解释。
+
+    **高分回答：**
+    "从 Chromium 的实现看，当一个标签页调用 `localStorage.setItem()` 时，浏览器进程会将变化通知广播给所有同源的渲染进程——但会排除调用方自己的渲染进程。源码中通过 `exclude_process = current_process` 参数实现。设计上这样做的原因是：修改 localStorage 的标签页已经知道自己做了什么修改，没必要再通过事件通知自己。如果需要在自己修改后也执行某些逻辑，应该直接在 `setItem` 之后调用处理函数。"
+
+  </Accordion>
+
+  <Accordion title='BroadcastChannel 能跨域吗？如果需要跨域通信怎么办？' icon="layer-group">
+
+    **答题要点：**
+    明确同源限制，给出跨域方案。
+
+    **高分回答：**
+    "BroadcastChannel 不能跨域——它通过浏览器进程中转消息，浏览器进程在转发时会检查源是否一致。需要跨域通信时：1. **postMessage**：唯一支持跨域的方案，但需要持有目标窗口的引用。2. **共同的中间页面**：在同源的中间页面中用 BroadcastChannel 转发，跨域页面通过 postMessage 和中间页面通信。3. **Service Worker**：如果两个站点共享同一个 Service Worker 域名，可以通过它转发。"
+
+  </Accordion>
+
+  <Accordion title='页面关闭时如何通知其他标签页？' icon="stopwatch">
+
+    **答题要点：**
+    `beforeunload` 的时机不可靠，心跳机制最可靠。
+
+    **高分回答：**
+    "页面关闭时可以通过 `beforeunload` 或 `pagehide` 事件发送通知。但浏览器不保证 `beforeunload` 能执行完（移动端尤其不可靠）。最可靠的方案是心跳机制：每个标签页定期写入时间戳到 localStorage，其他标签页定期检查，如果某个心跳超过 10 秒没更新，认为已关闭。"
+
+  </Accordion>
+
+  <Accordion title='BroadcastChannel 的消息是同步还是异步的？' icon="stopwatch">
+
+    **答题要点：**
+    异步的，说明消息的传递时机。
+
+    **高分回答：**
+    "BroadcastChannel 的消息传递是异步的。当你调用 `channel.postMessage(data)` 时，消息会被放入接收方的事件队列中，等待接收方的当前执行栈清空后才触发 `onmessage` 回调。这和 `setTimeout(fn, 0)` 类似——消息会在当前宏任务执行完、微任务清空后才被处理。如果需要确保消息被处理后再执行某些逻辑，需要设计确认机制。"
+
+  </Accordion>
+
+  <Accordion title='多标签页同时操作 localStorage 会冲突吗？' icon="node">
+
+    **答题要点：**
+    localStorage 没有锁机制，会冲突。
+
+    **高分回答：**
+    "会！localStorage 没有并发控制机制。如果两个标签页同时修改同一个 key，后写入的会覆盖先写入的。解决方案：1. **乐观锁**：在数据中加版本号，写入前检查版本号是否一致。2. **BroadcastChannel 通知**：一个标签页写入后通知其他标签页重新读取。3. **IndexedDB**：支持事务和并发控制。"
+
+  </Accordion>
+
+  <Accordion title='IndexedDB 能做跨标签页通信吗？' icon="node">
+
+    **答题要点：**
+    可以但不直接，通常配合 BroadcastChannel。
+
+    **高分回答：**
+    "可以，但方式和 localStorage 不同。IndexedDB 没有类似 storage 的变更事件。当一个标签页调用 `deleteDatabase()` 或修改版本号时，其他已连接的标签页会收到 `versionchange` 事件，但这不适合频繁通信。实际做法是用 BroadcastChannel 通知数据变化，用 IndexedDB 存储大量数据——利用 IndexedDB 的大容量（几百 MB）和事务支持，配合 BroadcastChannel 的实时通知能力。"
+
+  </Accordion>
+
+  <Accordion title='🔥 如何实现一个跨标签页的分布式锁？' icon="skull">
+
+    **答题要点：**
+    用 localStorage 实现乐观锁，加过期时间防死锁。
+
+    **高分回答：**
+    "核心思路是用 localStorage 模拟锁，加上过期时间防止死锁：
+
+    ```javascript
+    class DistributedLock {
+      constructor(key, timeout = 5000) {
+        this.key = key; this.timeout = timeout;
+        this.owner = `${Date.now()}_${Math.random()}`;
+      }
+      async acquire() {
+        for (let i = 0; i < 50; i++) {
+          const existing = localStorage.getItem(this.key);
+          if (!existing) {
+            localStorage.setItem(this.key, JSON.stringify({
+              owner: this.owner, expires: Date.now() + this.timeout,
+            }));
+            const verify = JSON.parse(localStorage.getItem(this.key));
+            if (verify.owner === this.owner) return true;
+          } else {
+            const lock = JSON.parse(existing);
+            if (Date.now() > lock.expires) localStorage.removeItem(this.key);
+          }
+          await new Promise(r => setTimeout(r, 100));
+        }
+        return false;
+      }
+      release() {
+        const lock = JSON.parse(localStorage.getItem(this.key));
+        if (lock?.owner === this.owner) localStorage.removeItem(this.key);
+      }
+    }
+    ```
+    关键设计点：每个锁有过期时间防死锁、用随机 ID 标识持有者、释放时只释放自己的锁。"
+
+  </Accordion>
+
+  <Accordion title='🔥 如何实现一个跨标签页的实时通知系统？' icon="skull">
+
+    **答题要点：**
+    结合 WebSocket + BroadcastChannel + Leader 选举。
+
+    **高分回答：**
+    "核心架构是只有一个标签页维护 WebSocket 连接，收到消息后通过 BroadcastChannel 广播给其他标签页。关键设计是 Leader 选举：用 localStorage 存储当前 leader 的心跳时间戳，每个标签页定期检查。如果 leader 超过 10 秒没心跳，其他标签页竞争成为新 leader。这样避免了每个标签页都开 WebSocket 造成资源浪费。leader 挂掉后其他标签页自动接管，保证通知不丢失。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [MDN BroadcastChannel API](https://developer.mozilla.org/en-US/docs/Web/API/BroadcastChannel)：BroadcastChannel 的权威参考文档。<sup>[1]</sup>
+- 📖 [Chrome 团队: Site Isolation 设计文档](https://www.chromium.org/Home/chromium-security/site-isolation/)：解释了浏览器的进程级隔离模型。<sup>[2]</sup>
+- 🟢 [MDN Web Workers API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API)：SharedWorker 和 Service Worker 的完整说明。<sup>[3]</sup>
+- 📖 [MDN Window.postMessage()](https://developer.mozilla.org/en-US/docs/Web/API/Window/postMessage)：跨域通信的标准 API，包含安全最佳实践。<sup>[4]</sup>
+- 🟢 [MDN StorageEvent](https://developer.mozilla.org/en-US/docs/Web/API/StorageEvent)：storage 事件的触发条件和事件属性。<sup>[5]</sup>

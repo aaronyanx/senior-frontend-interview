@@ -1,0 +1,737 @@
+---
+title: "网络请求"
+---
+
+> **面试官为什么问这个？**
+>
+> 网络请求是前端与后端交互的唯一桥梁。面试官问这个，本质上是在考察你：**你发出去的每一个 HTTP 请求，从创建到响应回来，中间到底经历了什么？** 如果你只会 `fetch` 和 `axios`，但说不清缓存策略、跨域原理、请求拦截机制，说明你对前后端协作的理解停留在"能调通"而不是"知道为什么这么设计"。
+
+---
+
+## Q1: 网络请求的历史？从 XMLHttpRequest 到 Fetch API
+
+```text
+┌───────────────┐   ┌───────────────┐   ┌───────────────┐   ┌───────────────┐
+│ XMLHttpRequest│ → │  Ajax 时代    │ → │  Fetch API    │ → │  Axios 封装   │
+│   (2000年)    │   │  (2005年)     │   │   (2015年)    │   │  (2014年)     │
+│  浏览器原生   │   │  jQuery 封装  │   │  Promise 化   │   │  拦截器+封装   │
+└───────────────┘   └───────────────┘   └───────────────┘   └───────────────┘
+```
+
+<Steps>
+
+  <Step title="2000年: XMLHttpRequest 诞生">
+
+    微软在 IE5 中首次引入 `XMLHttpRequest`（XHR），让 JS 可以在不刷新页面的情况下向服务器发送请求并获取数据。从此网页从"整页刷新"时代进入了"局部更新"时代。
+
+  </Step>
+  <Step title="2005年: Ajax 概念普及">
+
+    Jesse James Garrett 提出 Ajax 概念。Google Maps 和 Gmail 让业界意识到网页可以像桌面应用一样流畅。jQuery 的 `$.ajax()` 封装了 XHR 的繁琐 API，成为事实标准。
+
+  </Step>
+  <Step title="2015年: Fetch API 登场">
+
+    Fetch API 基于 Promise 设计，解决了 XHR 回调地狱的问题，同时提供了对 Streams 的原生支持。但 Fetch 没有内置请求取消、超时、拦截器等功能，因此 Axios 仍然广泛使用。
+
+  </Step>
+
+</Steps>
+
+**网络请求技术解决的核心问题：**
+
+```text
+问题：早期网页每次交互都需要整页刷新
+用户点击"加载更多" → 整个页面白屏 → 服务器返回完整 HTML → 页面重新渲染
+
+解决：异步请求 + 局部更新
+用户点击"加载更多" → JS 发起请求 → 服务器返回 JSON → JS 局部更新 DOM
+```
+
+<Note title="💡 一句话总结">
+
+XMLHttpRequest 开启了异步请求时代，Fetch API 用 Promise 重新设计了请求 API，Axios 在其上封装了拦截器、取消请求等企业级能力。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有异步请求">
+
+每次用户操作都要整页刷新。就像你去银行办业务，每次问一个问题都要取号、排队、重新到窗口——问三个问题就要排三次队。
+
+</Card>
+<Card title="✅ 引入异步请求">
+
+有了 XHR/Fetch，用户操作触发局部请求。就像银行大厅有了自助查询机，查余额、查流水都不用排队——只在办理复杂业务时才去窗口。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说 XHR 的痛点（回调地狱、API 反人类），再说 Fetch 的改进（Promise 化、Stream 支持），最后点出 Fetch 的不足以及 Axios 如何补齐。
+
+
+</Tip>
+
+---
+
+## Q2: XMLHttpRequest 的核心机制
+
+XHR 是最早也是最底层的浏览器请求 API，理解它是理解一切上层封装的基础。
+
+```text
+┌───────────────────────────────────────┐
+│         new XMLHttpRequest()          │  ← 创建请求实例
+└─────────────────┬─────────────────────┘
+                  │ .open(method, url)
+                  ▼
+┌───────────────────────────────────────┐
+│         配置请求头、超时等             │  ← setRequestHeader / timeout
+└─────────────────┬─────────────────────┘
+                  │ .send(body)
+                  ▼
+┌───────────────────────────────────────┐
+│         状态变化 onreadystatechange    │  ← 0→1→2→3→4
+└─────────────────┬─────────────────────┘
+                  │ readyState === 4
+                  ▼
+┌───────────────────────────────────────┐
+│         处理响应 responseText          │  ← 回调处理结果
+└───────────────────────────────────────┘
+```
+
+<Warning title="⚠️ 核心机制: readyState 状态码">
+
+| readyState | 状态 | 说明 |
+|-----------|------|------|
+| 0 | UNSENT | `open()` 尚未调用 |
+| 1 | OPENED | `open()` 已调用，`send()` 尚未调用 |
+| 2 | HEADERS_RECEIVED | 已收到响应头 |
+| 3 | LOADING | 正在接收响应体 |
+| 4 | DONE | 响应接收完毕 |
+
+只有 `readyState === 4` 时才能安全读取 `responseText`，否则可能拿到不完整的数据。
+
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 寄快递">
+
+XHR 就像你寄快递：`open()` 是填快递单，`setRequestHeader()` 是在包裹上贴标签，`send()` 是把包裹交给快递员。`onreadystatechange` 就是你不断查看物流状态——从"已揽收"到"已签收"。
+
+
+</Tip>
+
+### XHR 的回调地狱与同步阻塞
+
+```javascript
+// ❌ 回调地狱：请求嵌套层层缩进
+getUser(1, function(user) {
+  getOrders(user.id, function(orders) {
+    getOrderDetail(orders[0].id, function(detail) {
+      getProduct(detail.productId, function(product) {
+        console.log(product); // 嵌套 4 层
+      });
+    });
+  });
+});
+
+// ✅ Promise 化：扁平链式调用
+function getUser(userId) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', `/api/users/${userId}`);
+    xhr.onreadystatechange = function() {
+      if (xhr.readyState === 4) {
+        xhr.status === 200
+          ? resolve(JSON.parse(xhr.responseText))
+          : reject(new Error(xhr.statusText));
+      }
+    };
+    xhr.send();
+  });
+}
+
+// ❌ 同步 XHR——阻塞主线程，页面无响应
+xhr.open('GET', '/api/data', false); // false = 同步
+xhr.send(); // 阻塞直到响应回来
+```
+
+---
+
+## Q3: Fetch API 的设计与 Promise 化
+
+Fetch API 是 XMLHttpRequest 的现代替代品，基于 Promise 设计，提供了更简洁、更强大的 API。
+
+```text
+┌───────────────────────────────────────┐
+│         fetch(url, options)           │  ← 返回 Promise<Response>
+└─────────────────┬─────────────────────┘
+                  │ Promise resolve
+                  ▼
+┌───────────────────────────────────────┐
+│         Response 对象                  │  ← 包含 status, headers, body
+└─────────────────┬─────────────────────┘
+                  │ .json() / .text() / .blob()
+                  ▼
+┌───────────────────────────────────────┐
+│         解析后的数据                   │  ← 返回 Promise
+└───────────────────────────────────────┘
+```
+
+<Warning title="⚠️ 核心机制: Fetch 不会 reject HTTP 错误状态码">
+
+**即使服务器返回 404 或 500，Fetch 的 Promise 也不会 reject。** 只有网络错误才会 reject。你必须手动检查 `response.ok`。
+
+```javascript
+// ❌ 常见错误：以为 catch 能捕获 404
+fetch('/api/not-found')
+  .then(response => response.json()) // 404 也会走到这里
+  .catch(err => console.error(err)); // 只有网络错误才走这里
+
+// ✅ 正确做法：手动检查 response.ok
+fetch('/api/not-found')
+  .then(response => {
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  })
+  .catch(err => console.error(err));
+```
+
+
+</Warning>
+
+### Fetch vs XHR 的核心差异
+
+| 对比维度 | XMLHttpRequest | Fetch API |
+|---------|---------------|-----------|
+| **返回值** | 无（回调模式） | Promise |
+| **请求取消** | `xhr.abort()` | AbortController |
+| **超时控制** | `xhr.timeout` 属性 | 需要自己实现 |
+| **进度监控** | `xhr.onprogress` | 需要 ReadableStream |
+| **HTTP 错误** | `xhr.status` 检查 | 不 reject，需手动检查 |
+
+```javascript
+// ✅ Fetch 实现超时：AbortController
+function fetchWithTimeout(url, options = {}, timeout = 5000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  return fetch(url, { ...options, signal: controller.signal })
+    .finally(() => clearTimeout(timer));
+}
+
+// ✅ Fetch 流式读取大文件
+const response = await fetch('/api/large-file');
+const reader = response.body.getReader();
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  console.log(`收到 ${value.length} 字节`);
+}
+```
+
+---
+
+## Q4: Axios 的封装与拦截器机制
+
+Axios 在 XHR（浏览器端）和 http（Node.js 端）之上提供了统一的 API，是目前最流行的 HTTP 客户端库。
+
+```text
+┌───────────────────────────────────────┐
+│         axios.request(config)         │  ← 用户调用
+└─────────────────┬─────────────────────┘
+                  ▼
+┌───────────────────────────────────────┐
+│     请求拦截器 (interceptors.request) │  ← 添加 token、日志
+└─────────────────┬─────────────────────┘
+                  ▼
+┌───────────────────────────────────────┐
+│         发起 HTTP 请求                │  ← adapter: xhr / http
+└─────────────────┬─────────────────────┘
+                  ▼
+┌───────────────────────────────────────┐
+│    响应拦截器 (interceptors.response) │  ← 统一错误处理、数据转换
+└─────────────────┬─────────────────────┘
+                  ▼
+┌───────────────────────────────────────┐
+│         返回 Promise 给调用方         │
+└───────────────────────────────────────┘
+```
+
+<Warning title="⚠️ 核心机制: 拦截器的执行顺序">
+
+1. **请求拦截器**：后添加的先执行（类似栈，后进先出）
+2. **响应拦截器**：先添加的先执行（类似队列，先进先出）
+
+```javascript
+axios.interceptors.request.use(config => { console.log('请求1'); return config; });
+axios.interceptors.request.use(config => { console.log('请求2'); return config; });
+axios.interceptors.response.use(res => { console.log('响应1'); return res; });
+axios.interceptors.response.use(res => { console.log('响应2'); return res; });
+
+// 执行顺序：请求2 → 请求1 → 发送请求 → 响应1 → 响应2
+```
+
+
+</Warning>
+
+### 请求取消：从 CancelToken 到 AbortController
+
+```javascript
+// ❌ 旧方式：CancelToken（已废弃）
+const source = axios.CancelToken.source();
+axios.get('/api/data', { cancelToken: source.token });
+source.cancel('用户取消了请求');
+
+// ✅ 新方式：AbortController（推荐）
+const controller = new AbortController();
+axios.get('/api/data', { signal: controller.signal });
+controller.abort();
+
+// 实际场景：搜索框防抖——取消上一次未完成的请求
+let controller = null;
+async function search(keyword) {
+  if (controller) controller.abort();
+  controller = new AbortController();
+  try {
+    const res = await axios.get(`/api/search?q=${keyword}`, {
+      signal: controller.signal,
+    });
+    return res.data;
+  } catch (err) {
+    if (err.name === 'CanceledError') return;
+    throw err;
+  }
+}
+```
+
+---
+
+## Q5: 跨域请求与 CORS 原理
+
+浏览器的同源策略限制了跨域请求。CORS 是浏览器与服务器协商跨域访问的标准机制。
+
+```text
+┌──────────────────┐                    ┌──────────────────┐
+│   浏览器 (A站)    │ ─── 预检请求 ───→ │   服务器 (B站)    │
+│                  │   OPTIONS          │                  │
+│                  │ ←── 允许/拒绝 ──── │                  │
+│                  │                    │                  │
+│                  │ ─── 正式请求 ───→ │                  │
+│                  │   GET/POST         │                  │
+│                  │ ←── 响应数据 ──── │                  │
+└──────────────────┘                    └──────────────────┘
+```
+
+<Warning title="⚠️ 核心机制: 简单请求 vs 预检请求">
+
+**简单请求**（满足以下全部条件）：方法为 GET/HEAD/POST，Content-Type 为三种之一，无自定义请求头。
+
+**预检请求**（不满足简单请求条件）：浏览器先发 OPTIONS 请求询问服务器，服务器返回允许的头后才发正式请求。
+
+```javascript
+// 简单请求——直接发送
+fetch('https://api.example.com/data');
+
+// 预检请求——先 OPTIONS 再正式请求
+fetch('https://api.example.com/data', {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json', 'X-Custom-Token': 'abc123' },
+});
+```
+
+
+</Warning>
+
+### 常见的跨域解决方案
+
+| 方案 | 原理 | 适用场景 |
+|------|------|---------|
+| **CORS** | 服务器设置响应头 | 生产环境标准方案 |
+| **代理服务器** | 同源服务器转发请求 | 开发环境 |
+| **Nginx 反向代理** | Nginx 转发请求 | 生产环境 |
+| **JSONP** | 利用 `<script>` 不受同源限制 | 仅 GET（已过时） |
+
+```javascript
+// ❌ JSONP——只支持 GET，有 XSS 风险
+function jsonp(url, callbackName) {
+  const script = document.createElement('script');
+  script.src = `${url}?callback=${callbackName}`;
+  window[callbackName] = function(data) {
+    document.body.removeChild(script);
+    delete window[callbackName];
+  };
+  document.body.appendChild(script);
+}
+
+// ✅ CORS——标准方案，支持所有 HTTP 方法
+fetch('https://api.example.com/data', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ key: 'value' }),
+  credentials: 'include', // 携带 Cookie
+});
+// 服务器必须返回：Access-Control-Allow-Credentials: true
+```
+
+---
+
+## Q6: 请求缓存策略与强缓存/协商缓存
+
+```text
+┌──────────────────┐
+│   发起请求        │
+└────────┬─────────┘
+         ▼
+┌──────────────────────────────────────┐
+│   强缓存命中？                        │
+│   (Cache-Control / Expires)          │
+│   ┌─ 是 → 直接用缓存，不发请求       │
+│   └─ 否 ↓                           │
+└────────┬─────────────────────────────┘
+         ▼
+┌──────────────────────────────────────┐
+│   协商缓存命中？                      │
+│   (ETag / Last-Modified)             │
+│   ┌─ 是 → 304 Not Modified          │
+│   └─ 否 → 200 + 新资源              │
+└──────────────────────────────────────┘
+```
+
+### ETag vs Last-Modified
+
+| 对比维度 | ETag | Last-Modified |
+|---------|------|---------------|
+| **精度** | 字节级别（内容哈希） | 秒级（修改时间） |
+| **优先级** | 高（优先判断） | 低 |
+| **性能** | 需要计算哈希 | 只需读取文件修改时间 |
+
+```javascript
+// ❌ 强缓存设太长——用户看不到更新
+// Cache-Control: max-age=31536000  ← HTML 永远用缓存
+
+// ✅ 正确策略：HTML 用协商缓存，静态资源用强缓存+文件名哈希
+// index.html: Cache-Control: no-cache  （每次协商验证）
+// app.a1b2c3.js: Cache-Control: max-age=31536000  （强缓存一年）
+```
+
+---
+
+## Q7: HTTP/1.1 vs HTTP/2 vs HTTP/3 的演进
+
+```text
+┌───────────────────────────────────────┐
+│         HTTP/1.1 (1997)               │
+│  问题：队头阻塞、连接数限制            │
+└─────────────────┬─────────────────────┘
+                  ▼
+┌───────────────────────────────────────┐
+│         HTTP/2 (2015)                 │
+│  改进：多路复用、头部压缩              │
+│  问题：TCP 层队头阻塞                 │
+└─────────────────┬─────────────────────┘
+                  ▼
+┌───────────────────────────────────────┐
+│         HTTP/3 (2022)                 │
+│  改进：QUIC 协议、0-RTT 建连          │
+└───────────────────────────────────────┘
+```
+
+| 对比维度 | HTTP/1.1 | HTTP/2 | HTTP/3 |
+|---------|----------|--------|--------|
+| **连接模型** | 最多 6 个 TCP 连接 | 多路复用（一个连接） | QUIC（一个连接） |
+| **队头阻塞** | 有（TCP + HTTP 层） | 有（TCP 层） | 无 |
+| **头部压缩** | 无 | HPACK | QPACK |
+| **握手延迟** | 1-RTT | 1-RTT | 0-RTT（首次 1-RTT） |
+| **传输层** | TCP | TCP | UDP（QUIC） |
+
+<Warning title="⚠️ HTTP/2 的多路复用与 TCP 队头阻塞">
+
+HTTP/2 核心概念三层：Connection（TCP 连接）、Stream（逻辑流）、Frame（数据帧）。不同 Stream 的 Frame 可以交错发送，实现了多路复用。但 TCP 层仍然是有序的——如果某个 TCP 包丢了，整个连接都要等待重传。这就是 HTTP/3 用 QUIC（基于 UDP）解决的核心问题。
+
+
+</Warning>
+
+---
+
+## Q8: 请求超时、重试与错误处理的最佳实践
+
+```javascript
+// 企业级请求封装的核心能力
+async function request(url, options = {}) {
+  const { timeout = 10000, retries = 3, retryDelay = 1000, ...fetchOptions } = options;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeout);
+      const response = await fetch(url, { ...fetchOptions, signal: controller.signal });
+      clearTimeout(timer);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (err) {
+      if (attempt === retries) throw err;
+      await new Promise(r => setTimeout(r, retryDelay * (attempt + 1))); // 指数退避
+    }
+  }
+}
+```
+
+<Warning title="⚠️ 重试策略: 幂等性">
+
+只有幂等请求（GET、PUT、DELETE）适合自动重试。POST 请求通常不是幂等的——重试可能导致重复创建资源：
+
+```javascript
+// ❌ POST 重试——可能创建重复订单
+fetch('/api/orders', { method: 'POST', body: JSON.stringify(order) });
+
+// ✅ 加幂等键——服务器根据幂等键去重
+fetch('/api/orders', {
+  method: 'POST',
+  headers: { 'Idempotency-Key': 'order-uuid-123' },
+  body: JSON.stringify(order),
+});
+```
+
+
+</Warning>
+
+---
+
+## 🔍 底层源码：Fetch 与 Axios 是如何实现的？
+
+<div class="follow-up">
+浏览器的 Fetch API 底层是怎么实现的？
+</div>
+
+Chromium 的 Fetch 实现在 Blink 渲染引擎中（详见 [Chromium 源码：third_party/blink/renderer/modules/fetch/](https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/modules/fetch/)）：
+
+```cpp
+// Fetch 的核心调用链（简化）
+// 1. JS 调用 fetch() → FetchManager::Fetch()
+// 2. 创建 FetchRequest → 解析 URL、方法、头
+// 3. 调用 ResourceFetcher::RequestResource() → 进入网络层
+// 4. 网络层通过 URLRequest 发起真正的网络请求
+// 5. 响应数据通过 ReadableStream 返回给 JS
+
+// Response.body 是真正的 ReadableStream，不是一次性加载到内存
+// .json() 内部先读取全部流数据再 JSON.parse
+// 大文件应该直接操作 body 流
+```
+
+<div class="follow-up">
+Axios 的拦截器是怎么实现的？
+</div>
+
+Axios 的核心是 `lib/core/Axios.js` 中的 `request` 方法（详见 [Axios 源码](https://github.com/axios/axios/blob/v1.x/lib/core/Axios.js)）：
+
+```javascript
+// Axios 拦截器的核心实现（简化）
+Axios.prototype.request = function(config) {
+  let promise = Promise.resolve(config);
+
+  // 请求拦截器：后添加的先执行（unshift）
+  this.interceptors.request.forEach(interceptor => {
+    promise = promise.then(interceptor.fulfilled, interceptor.rejected);
+  });
+
+  // 发起真正的 HTTP 请求
+  promise = promise.then(dispatchRequest, undefined);
+
+  // 响应拦截器：先添加的先执行（push）
+  this.interceptors.response.forEach(interceptor => {
+    promise = promise.then(interceptor.fulfilled, interceptor.rejected);
+  });
+
+  return promise;
+};
+```
+
+请求拦截器用 `unshift` 加入数组（后进先出），响应拦截器用 `push` 加入数组（先进先出）。所有拦截器和请求被串成一条 Promise 链。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说前端网络请求的完整体系"
+
+**及格回答（60-70分）：**
+> "前端用 fetch 或 axios 发请求。fetch 是原生 API，基于 Promise。axios 是第三方库，支持拦截器和取消请求。跨域用 CORS，缓存用 Cache-Control。"
+
+面试官评价：**知道有哪些工具，但不理解底层机制和设计取舍**。
+
+**满分回答（90-100分）：**
+
+> 前端网络请求的核心是在单线程环境下非阻塞地与服务器通信。底层是浏览器的网络模块（Chromium 中是 NetworkService），JS 通过 XHR 或 Fetch API 与之交互。XHR 基于回调和状态机（readyState 0-4）；Fetch API 用 Promise 重新设计了请求流程，并原生支持 ReadableStream 实现流式传输。<sup>[1]</sup>
+
+> 跨域是浏览器安全模型的核心限制。CORS 通过预检请求（OPTIONS）让服务器声明哪些跨域访问是允许的。简单请求直接发送，复杂请求先预检再发送。<sup>[2]</sup>
+
+> 缓存策略直接影响用户体验。强缓存（Cache-Control: max-age）直接使用本地缓存不发请求，协商缓存（ETag/If-None-Match）向服务器验证资源是否更新。正确的策略是：HTML 用协商缓存，静态资源用强缓存+文件名哈希。<sup>[3]</sup>
+
+> 生产环境的请求封装需要考虑：超时控制（AbortController）、失败重试（指数退避+幂等键）、全局错误处理（拦截器统一处理 401/403/500）、请求取消（搜索防抖场景）。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title='Fetch 和 Axios 底层的请求是同一批发送的吗？' icon="layer-group">
+
+    **答题要点：**
+    要说明浏览器网络层的请求调度机制。
+
+    **高分回答：**
+    "Fetch 和 XHR/Axios 最终都调用浏览器的网络模块（Chromium 中是 NetworkService）。浏览器对同一域名的并发连接数有限制：HTTP/1.1 下最多 6 个 TCP 连接，HTTP/2 下只有一个连接但支持多路复用。超过并发限制的请求会在浏览器内部排队等待。Axios 基于 XHR，Fetch 是独立的 API，它们的请求队列在 Blink 内部是分开管理的，但最终共享同一个网络栈。"
+
+  </Accordion>
+
+  <Accordion title='CORS 预检请求的结果会被缓存吗？' icon="layer-group">
+
+    **答题要点：**
+    说明 `Access-Control-Max-Age` 的作用和默认行为。
+
+    **高分回答：**
+    "会！服务器可以通过 `Access-Control-Max-Age` 响应头来缓存预检结果。比如设置 `Access-Control-Max-Age: 86400`，浏览器在 24 小时内对相同的跨域请求不再发 OPTIONS 预检。默认值因浏览器而异——Chrome 默认 5 秒，Firefox 默认 24 小时。预检缓存只对相同的方法和请求头组合有效——如果你改了请求方法或新增了自定义头，浏览器会重新发预检请求。"
+
+  </Accordion>
+
+  <Accordion title='如何实现请求的并发控制？' icon="stopwatch">
+
+    **答题要点：**
+    用队列 + 计数器实现信号量模式。
+
+    **高分回答：**
+    "浏览器本身有并发限制（HTTP/1.1 最多 6 个同域连接），但业务层可能需要更严格的控制。核心是信号量（Semaphore）模式：
+
+    ```javascript
+    class RequestQueue {
+      constructor(max = 3) {
+        this.max = max; this.running = 0; this.queue = [];
+      }
+      async add(fn) {
+        if (this.running >= this.max) {
+          await new Promise(r => this.queue.push(r));
+        }
+        this.running++;
+        try { return await fn(); }
+        finally {
+          this.running--;
+          if (this.queue.length) this.queue.shift()();
+        }
+      }
+    }
+    ```
+    通过计数器控制同时运行的请求数，超出的放入等待队列。"
+
+  </Accordion>
+
+  <Accordion title='HTTP/2 的多路复用具体是怎么工作的？' icon="stopwatch">
+
+    **答题要点：**
+    必须说明 Stream、Frame、Connection 三层关系。
+
+    **高分回答：**
+    "HTTP/2 核心概念三层：Connection（TCP 连接）、Stream（逻辑流）、Frame（数据帧）。一个 TCP 连接承载多个 Stream，每个 Stream 有唯一 ID（奇数是客户端发起，偶数是服务端推送）。不同 Stream 的 Frame 可以交错发送——这就是'多路复用'。但 TCP 层仍然是有序的——如果某个 TCP 包丢了，整个连接都要等待重传，这就是 HTTP/3 用 QUIC（基于 UDP）解决的核心问题。"
+
+  </Accordion>
+
+  <Accordion title='Service Worker 能拦截 Fetch 请求吗？和浏览器缓存是什么关系？' icon="node">
+
+    **答题要点：**
+    说明拦截优先级和缓存分层。
+
+    **高分回答：**
+    "可以。Service Worker 拦截的是 Fetch API 发出的请求，它在浏览器缓存之前执行。优先级是：Service Worker → 浏览器缓存（强缓存/协商缓存）→ 网络。Service Worker 的缓存（Cache Storage）和浏览器 HTTP 缓存是独立的两套系统，可以叠加使用。在离线场景下，Service Worker 可以拦截所有请求并返回缓存内容，实现 PWA 的离线访问能力。"
+
+  </Accordion>
+
+  <Accordion title='如何用 Fetch 实现文件上传并监控上传进度？' icon="node">
+
+    **答题要点：**
+    Fetch 原生不支持上传进度，需要用 XMLHttpRequest。
+
+    **高分回答：**
+    "Fetch API 原生不支持上传进度监控——`response.body` 的 ReadableStream 只能监控下载进度。要监控上传进度，最简单的方案是用 XMLHttpRequest：
+
+    ```javascript
+    const xhr = new XMLHttpRequest();
+    xhr.upload.onprogress = (e) => {
+      const percent = Math.round(e.loaded / e.total * 100);
+      console.log(`上传进度: ${percent}%`);
+    };
+    xhr.open('POST', '/api/upload');
+    xhr.send(formData);
+    ```
+    企业项目中通常直接用 XMLHttpRequest 的 upload.onprogress，而不是在 Fetch 上做 hack。"
+
+  </Accordion>
+
+  <Accordion title='🔥 如果一个页面同时发了 100 个请求，会发生什么？' icon="skull">
+
+    **答题要点：**
+    分浏览器并发限制、操作系统、服务器三层分析。
+
+    **高分回答：**
+    "会分三个层面排队：**1. 浏览器层：** HTTP/1.1 下同域最多 6 个 TCP 连接，前 6 个立刻发出，其余 94 个在浏览器内部队列排队。**2. 操作系统层：** 每个 TCP 连接占用一个端口，100 个请求不会耗尽端口，但可能触及文件描述符限制。**3. 服务器层：** 服务器通常有并发连接限制，可能触发限流（429 Too Many Requests）。优化方案：HTTP/2 多路复用解决浏览器并发限制；业务层用请求合并或请求队列。"
+
+  </Accordion>
+
+  <Accordion title='🔥 如何实现一个支持重试、超时、取消、并发限制的完整请求库？' icon="skull">
+
+    **答题要点：**
+    展示架构设计能力，用代码说明各个模块如何组合。
+
+    **高分回答：**
+    "核心思路是用一个 `request` 函数作为基础，在外层包装各种能力：
+
+    ```javascript
+    class HttpClient {
+      constructor({ timeout = 10000, retries = 3, maxConcurrent = 6 } = {}) {
+        this.timeout = timeout; this.retries = retries;
+        this.running = 0; this.maxConcurrent = maxConcurrent;
+        this.queue = []; this.interceptors = { request: [], response: [] };
+      }
+      async request(url, options = {}) {
+        if (this.running >= this.maxConcurrent) {
+          await new Promise(r => this.queue.push(r));
+        }
+        this.running++;
+        try {
+          let config = { url, ...options };
+          for (const fn of this.interceptors.request) config = await fn(config);
+          let response;
+          for (let i = 0; i <= this.retries; i++) {
+            try {
+              const c = new AbortController();
+              const t = setTimeout(() => c.abort(), this.timeout);
+              response = await fetch(config.url, { ...config, signal: c.signal });
+              clearTimeout(t); break;
+            } catch (err) {
+              if (i === this.retries) throw err;
+              await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+            }
+          }
+          for (const fn of this.interceptors.response) response = await fn(response);
+          return response;
+        } finally {
+          this.running--;
+          if (this.queue.length) this.queue.shift()();
+        }
+      }
+    }
+    ```
+    关键设计点：并发控制用信号量、重试用指数退避、超时用 AbortController、拦截器用 Promise 链。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [MDN Fetch API 文档](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API)：Fetch API 的权威参考，包含 Request、Response、Headers 等完整说明。<sup>[1]</sup>
+- 📖 [Jake Archibald: I'm Excited About Fetch!](https://jakearchibald.com/2015/thats-so-fetch/)：深入解释了 Fetch 的设计哲学和 Streams 能力。<sup>[2]</sup>
+- 🟢 [MDN HTTP 缓存](https://developer.mozilla.org/en-US/docs/Web/HTTP/Caching)：强缓存、协商缓存的完整机制说明。<sup>[3]</sup>
+- 📖 [High Performance Browser Networking](https://hpbn.co/)：HTTP/2、HTTP/3、QUIC 的权威技术深度解析。<sup>[4]</sup>
+- 🟢 [Axios 官方文档](https://axios-http.com/docs/intro)：拦截器、取消请求、错误处理的完整 API 说明。<sup>[5]</sup>

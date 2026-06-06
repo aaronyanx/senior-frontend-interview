@@ -1,0 +1,901 @@
+---
+title: "Service Worker"
+---
+
+> **面试官为什么问这个？**
+>
+> Service Worker 是 PWA（渐进式 Web 应用）的核心技术。面试官问这个，本质上是在考察你：**你是否理解浏览器的离线缓存机制、推送通知能力，以及如何让 Web 应用拥有接近原生 App 的体验？** 如果你答不清楚，说明你对现代 Web 应用的离线能力和网络策略停留在"知道有这回事"的层面。
+
+---
+
+## Q1: Service Worker 的历史？为什么要有它？
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  Web 早期    │ → │  移动时代    │ → │  PWA 诞生    │ → │  现代 Web    │
+│  依赖网络    │   │  体验差距    │   │  Service     │   │  离线优先    │
+│  断网即废    │   │  原生 vs Web │   │  Worker      │   │  推送通知    │
+└──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
+```
+
+<Steps>
+
+  <Step title="Web 早期: 网络是生命线">
+
+    传统 Web 应用完全依赖网络——断网就是白屏。HTTP 缓存（Cache-Control、ETag 等）只能优化重复请求，无法让应用在离线状态下工作。浏览器能做的只是缓存静态资源，但"缓存"和"离线可用"是两回事。
+
+  </Step>
+  <Step title="移动时代: Web 体验的致命短板">
+
+    2012 年前后，移动互联网爆发。用户习惯了原生 App 的"随时可用、推送通知"体验，而 Web 应用做不到——没有网络就打不开，没有推送就唤不回用户。Google 意识到 Web 必须进化。
+
+  </Step>
+  <Step title="2014 年: Service Worker 横空出世">
+
+    Google 提出 PWA（Progressive Web App）概念，Service Worker 是其核心技术。它是一个运行在浏览器后台的独立线程，可以拦截网络请求、管理缓存、接收推送通知——即使页面关闭，Service Worker 也能存活。这从根本上解决了 Web 应用的离线问题。
+
+  </Step>
+  <Step title="现代: 离线优先成为标准">
+
+    现代浏览器全面支持 Service Worker。大型应用（如 Twitter Lite、Starbucks PWA）已经证明了 PWA 的商业价值——安装包小、加载快、可离线使用。Service Worker 让 Web 应用第一次在体验上接近了原生 App。
+
+  </Step>
+
+</Steps>
+
+**Service Worker 解决的核心问题：**
+
+```text
+问题：Web 应用完全依赖网络，断网即白屏
+
+用户打开页面 → 发网络请求 → 无网络 → 白屏
+
+解决：Service Worker 拦截请求，从缓存返回
+
+用户打开页面 → Service Worker 拦截请求 → 缓存有数据 → 离线也能用
+```
+
+<Note title="💡 一句话总结">
+
+Service Worker 是浏览器后台的"网络代理"，让 Web 应用实现了离线缓存、推送通知等原生 App 级别的能力。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有 Service Worker">
+
+Web 应用就像一个只能在有 WiFi 的房间里才能打开的冰箱——断网了，门都打不开。用户每次访问都要重新下载所有资源，浪费流量、浪费时间。
+
+</Card>
+<Card title="✅ 引入 Service Worker">
+
+有了 Service Worker，Web 应用变成了一个自带食物的冰箱——即使断电（断网），里面的食物（缓存数据）仍然可以使用。而且它还能在后台帮你接收快递（推送通知），即使你不在家（页面关闭）。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"Web 的离线痛点"（为什么需要），再引入 Service Worker 的机制（怎么解决）。面试官想听的是你理解技术演进的必然性，而不是背生命周期。
+
+</Tip>
+
+---
+
+## Q2: Service Worker 的生命周期（install、activate、fetch）
+
+Service Worker 的本质是一个运行在浏览器后台的 JavaScript 线程，它独立于页面，有自己的生命周期。理解这个生命周期是掌握 Service Worker 的关键。
+
+```text
+┌───────────────────────────────────────┐
+│         注册（register）              │  ← 页面 JS 触发
+└─────────────────┬─────────────────────┘
+                  │
+                  ▼
+┌───────────────────────────────────────┐
+│         安装（install）               │  ← 缓存静态资源
+└─────────────────┬─────────────────────┘
+                  │
+                  ▼
+┌───────────────────────────────────────┐
+│         激活（activate）              │  ← 清理旧缓存
+└─────────────────┬─────────────────────┘
+                  │
+                  ▼
+┌───────────────────────────────────────┐
+│         控制（fetch / message）       │  ← 拦截请求、处理消息
+└───────────────────────────────────────┘
+```
+
+```javascript
+// sw.js —— Service Worker 文件
+const CACHE_NAME = 'v1';
+const ASSETS = ['/', '/index.html', '/style.css', '/app.js'];
+
+// 1. install 事件：缓存静态资源
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(ASSETS); // 预缓存关键资源
+    })
+  );
+});
+
+// 2. activate 事件：清理旧缓存
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) => {
+      return Promise.all(
+        keys.filter(key => key !== CACHE_NAME)
+            .map(key => caches.delete(key))
+      );
+    })
+  );
+});
+
+// 3. fetch 事件：拦截网络请求
+self.addEventListener('fetch', (event) => {
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      return cached || fetch(event.request); // 缓存优先，否则发网络请求
+    })
+  );
+});
+```
+
+<Warning title="⚠️ 核心机制: 生命周期的激活等待">
+
+新版本的 Service Worker 安装后，不会立刻激活——它会等到所有使用旧版本的页面都关闭后才激活。这是为了防止新旧版本同时控制页面导致行为不一致。
+
+- 如果想跳过等待，可以在 install 事件中调用 `self.skipWaiting()`
+- 新激活的 Service Worker 不会立刻控制已打开的页面，需要刷新页面或使用 `clients.claim()`
+
+```javascript
+// 跳过等待，立即激活
+self.addEventListener('install', (event) => {
+  self.skipWaiting(); // 跳过等待阶段
+});
+
+// 立即控制所有页面
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim()); // 立即接管所有客户端
+});
+```
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 便利店换店长">
+
+Service Worker 的生命周期就像便利店换店长。新店长（新版本 SW）先来"安装"——熟悉商品摆放（缓存资源）。然后等老店长的最后一班岗结束（旧版本页面全部关闭），新店长才"激活"接手。激活后，新店长开始处理所有顾客请求（拦截 fetch）。如果新店长不想等，可以要求"立即上岗"（`skipWaiting`）。
+
+</Tip>
+
+### 页面如何注册 Service Worker
+
+```javascript
+// 在页面 JS 中注册 Service Worker
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then((registration) => {
+        console.log('SW registered:', registration.scope);
+      })
+      .catch((error) => {
+        console.log('SW registration failed:', error);
+      });
+  });
+}
+```
+
+### Service Worker 的作用域
+
+Service Worker 的作用域由其文件路径决定。`/sw.js` 的默认作用域是 `/`，`/assets/sw.js` 的默认作用域是 `/assets/`。可以通过注册时的 `scope` 选项修改，但不能超出文件路径的范围。
+
+```javascript
+// /assets/sw.js 的默认作用域是 /assets/
+navigator.serviceWorker.register('/assets/sw.js');
+// 作用域：/assets/
+
+// 可以缩小作用域
+navigator.serviceWorker.register('/assets/sw.js', { scope: '/app/' });
+// 但不能扩大：不能设为 /（超出文件路径范围）
+```
+
+---
+
+## Q3: Cache API 详解（缓存策略、离线支持）
+
+Cache API 是与 Service Worker 配合的核心 API，它提供了一个独立于 HTTP 缓存的键值对存储，可以缓存 Request/Response 对象。
+
+### Cache API 的基本操作
+
+```javascript
+// 打开缓存
+const cache = await caches.open('my-cache');
+
+// 添加缓存
+await cache.add('/api/data'); // 发请求，缓存响应
+await cache.put(request, response); // 直接存入 Request/Response 对象
+
+// 查找缓存
+const response = await cache.match('/api/data'); // 精确匹配
+const responses = await cache.matchAll('/api/data'); // 匹配所有
+
+// 删除缓存
+await cache.delete('/api/data');
+
+// 列出所有缓存键
+const keys = await cache.keys(); // 返回 Request 对象数组
+
+// 删除整个缓存空间
+await caches.delete('my-cache');
+```
+
+### 五种经典缓存策略
+
+| 策略 | 说明 | 适用场景 |
+|------|------|---------|
+| **Cache First** | 缓存优先，缓存没有才走网络 | 静态资源（CSS、JS、图片） |
+| **Network First** | 网络优先，网络失败才走缓存 | 需要最新数据的页面（新闻、API） |
+| **Stale While Revalidate** | 先返回缓存，同时更新缓存 | 频繁更新但允许稍旧的数据 |
+| **Cache Only** | 只走缓存 | 离线资源 |
+| **Network Only** | 只走网络 | 不需要缓存的请求（登录、支付） |
+
+```javascript
+// 1. Cache First（缓存优先）
+async function cacheFirst(request) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+  const response = await fetch(request);
+  const cache = await caches.open('v1');
+  cache.put(request, response.clone());
+  return response;
+}
+
+// 2. Network First（网络优先）
+async function networkFirst(request) {
+  try {
+    const response = await fetch(request);
+    const cache = await caches.open('v1');
+    cache.put(request, response.clone());
+    return response;
+  } catch (e) {
+    return caches.match(request);
+  }
+}
+
+// 3. Stale While Revalidate（先返回缓存，后台更新）
+async function staleWhileRevalidate(request) {
+  const cached = await caches.match(request);
+  const fetchPromise = fetch(request).then((response) => {
+    const cache = caches.open('v1');
+    cache.then(c => c.put(request, response.clone()));
+    return response;
+  });
+  return cached || fetchPromise;
+}
+```
+
+<Warning title="⚠️ 核心机制: Response 只能读取一次">
+
+Cache API 的 `put` 方法需要一个 Response 对象，但 Response 的 body 只能读取一次（ReadableStream 的特性）。所以如果需要同时缓存和返回响应，必须先 `clone()`：
+
+```javascript
+// ❌ Response body 只能读取一次
+const response = await fetch(request);
+cache.put(request, response); // body 被消耗
+return response; // body 已空，客户端收到空响应
+
+// ✅ 先 clone 再缓存
+const response = await fetch(request);
+cache.put(request, response.clone()); // clone 存入缓存
+return response; // 原始响应返回给客户端
+```
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 图书馆借书">
+
+Cache API 就像图书馆的书架。`caches.open` 是打开一间阅览室，`cache.add` 是把新书放到书架上，`cache.match` 是在书架上找书。Stale While Revalidate 策略就像——你先从书架上拿一本旧版书给你看（返回缓存），同时派人去出版社取最新版（发网络请求），取回来后替换掉书架上的旧书（更新缓存）。
+
+</Tip>
+
+---
+
+## Q4: Service Worker 的实际应用（PWA、离线缓存、推送通知）
+
+### 应用一：PWA 离线应用
+
+```javascript
+// sw.js —— 完整的离线缓存策略
+const STATIC_CACHE = 'static-v1';
+const DYNAMIC_CACHE = 'dynamic-v1';
+const STATIC_ASSETS = ['/', '/index.html', '/style.css', '/app.js'];
+
+// 预缓存静态资源
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(STATIC_CACHE).then(cache => cache.addAll(STATIC_ASSETS))
+  );
+});
+
+// 清理旧缓存
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(
+        keys.filter(key => key !== STATIC_CACHE && key !== DYNAMIC_CACHE)
+            .map(key => caches.delete(key))
+      )
+    )
+  );
+});
+
+// 拦截请求：静态资源用 Cache First，API 用 Network First
+self.addEventListener('fetch', (event) => {
+  if (event.request.url.includes('/api/')) {
+    // API 请求：网络优先
+    event.respondWith(networkFirst(event.request));
+  } else {
+    // 静态资源：缓存优先
+    event.respondWith(cacheFirst(event.request, STATIC_CACHE));
+  }
+});
+```
+
+### 应用二：推送通知
+
+```javascript
+// 监听推送事件
+self.addEventListener('push', (event) => {
+  const data = event.data ? event.data.json() : {};
+  const title = data.title || '新消息';
+  const options = {
+    body: data.body || '您有一条新消息',
+    icon: '/icon-192.png',
+    badge: '/badge-72.png',
+    data: data.url || '/',
+    actions: [
+      { action: 'open', title: '查看' },
+      { action: 'close', title: '忽略' }
+    ]
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// 监听通知点击
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  if (event.action === 'open' || !event.action) {
+    event.waitUntil(
+      clients.openWindow(event.notification.data)
+    );
+  }
+});
+```
+
+### 应用三：后台同步
+
+```javascript
+// 页面注册后台同步
+navigator.serviceWorker.ready.then((registration) => {
+  return registration.sync.register('sync-data');
+});
+
+// Service Worker 监听同步事件
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-data') {
+    event.waitUntil(
+      // 从 IndexedDB 读取离线时保存的数据，发送到服务器
+      getDataFromIndexedDB().then(data => {
+        return fetch('/api/sync', {
+          method: 'POST',
+          body: JSON.stringify(data)
+        });
+      })
+    );
+  }
+});
+```
+
+### 应用四：缓存版本管理
+
+```javascript
+// 缓存版本更新策略
+const CACHE_VERSION = 'v2';
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) => {
+      return Promise.all(
+        keys
+          .filter(key => key.startsWith('app-') && key !== `app-${CACHE_VERSION}`)
+          .map(key => {
+            console.log('Deleting old cache:', key);
+            return caches.delete(key);
+          })
+      );
+    })
+  );
+});
+```
+
+---
+
+## Q5: Service Worker 的限制与安全
+
+### 限制一：只能运行在 HTTPS 上
+
+Service Worker 只能在安全上下文（Secure Context）中运行——即 HTTPS 或 localhost。这是因为 Service Worker 拦截的是网络请求，如果通过 HTTP 传输，中间人可以篡改 Service Worker 脚本，从而控制整个应用的所有网络请求。
+
+```javascript
+// 只有以下环境可以注册 Service Worker
+// ✅ https://example.com
+// ✅ http://localhost:3000（开发环境例外）
+// ❌ http://example.com（不安全，无法注册）
+```
+
+### 限制二：无法访问 DOM
+
+Service Worker 运行在独立的 worker 线程中，无法直接访问 DOM。它与页面的通信只能通过 `postMessage` API。
+
+```javascript
+// 页面 → Service Worker
+navigator.serviceWorker.controller.postMessage({
+  type: 'UPDATE_CACHE',
+  url: '/api/data'
+});
+
+// Service Worker 接收消息
+self.addEventListener('message', (event) => {
+  if (event.data.type === 'UPDATE_CACHE') {
+    // 更新缓存
+  }
+});
+
+// Service Worker → 页面
+self.clients.matchAll().then(clients => {
+  clients.forEach(client => {
+    client.postMessage({ type: 'CACHE_UPDATED' });
+  });
+});
+```
+
+### 限制三：无同步 XHR
+
+Service Worker 中不能使用同步 XMLHttpRequest。所有网络请求必须是异步的（使用 Fetch API）。这是为了保证 Service Worker 不会阻塞主线程。
+
+### 限制四：不能访问 localStorage
+
+Service Worker 无法使用 `localStorage`（因为 `localStorage` 与 window 绑定）。可以使用 `IndexedDB` 或 `Cache API` 作为替代。
+
+```javascript
+// ❌ Service Worker 中不能使用
+localStorage.setItem('key', 'value');
+
+// ✅ 使用 IndexedDB 替代
+const db = await openDB('my-db', 1, {
+  upgrade(db) { db.createObjectStore('keyval'); }
+});
+await db.put('keyval', 'value', 'key');
+```
+
+### 限制五：浏览器兼容性与生命周期管理
+
+Service Worker 在某些场景下会被浏览器终止以节省内存（尤其是移动端）。虽然浏览器会在需要时重新启动它，但开发者不能假设 Service Worker 一直在运行。所有状态必须持久化到 IndexedDB 或 Cache API 中。
+
+```text
+┌───────────────────────────────────────┐
+│         Service Worker 安全模型       │
+│                                       │
+│  ✅ HTTPS（必须）                     │
+│  ✅ 独立线程（不阻塞主线程）          │
+│  ✅ 只能通过 postMessage 通信         │
+│  ❌ 不能访问 DOM                      │
+│  ❌ 不能使用同步 XHR                  │
+│  ❌ 不能使用 localStorage             │
+│  ❌ 不能操作 cookie                   │
+└───────────────────────────────────────┘
+```
+
+---
+
+## Q6: 经典面试题：Service Worker 和 Web Worker 的区别？
+
+```javascript
+// Service Worker
+navigator.serviceWorker.register('/sw.js');
+// - 独立于页面，页面关闭后仍可存活
+// - 拦截网络请求
+// - 缓存管理
+// - 推送通知
+// - 有生命周期（install → activate → fetch）
+// - 有作用域限制
+
+// Web Worker
+const worker = new Worker('/worker.js');
+// - 依附于页面，页面关闭后终止
+// - 不能拦截网络请求
+// - 不能缓存资源
+// - 不能接收推送
+// - 无生命周期管理
+// - 无作用域限制
+```
+
+**关键区别：**
+
+| 对比维度 | Service Worker | Web Worker |
+|---------|---------------|------------|
+| **生命周期** | 独立于页面，可后台存活 | 依附于页面，页面关闭即终止 |
+| **网络拦截** | 可以拦截所有 fetch 请求 | 不能 |
+| **缓存能力** | 可以管理 Cache API | 不能 |
+| **推送通知** | 可以接收推送 | 不能 |
+| **作用域** | 有作用域限制（由文件路径决定） | 无作用域限制 |
+| **通信方式** | postMessage | postMessage |
+| **DOM 访问** | 不能 | 不能 |
+
+**❌/✅ 代码对比（通信方式）：**
+
+```javascript
+// Service Worker 通信（需要注册和控制）
+// 页面端
+navigator.serviceWorker.controller.postMessage({ type: 'HELLO' });
+navigator.serviceWorker.addEventListener('message', (event) => {
+  console.log(event.data);
+});
+
+// Service Worker 端
+self.addEventListener('message', (event) => {
+  console.log(event.data);
+  self.clients.matchAll().then(clients => {
+    clients.forEach(client => client.postMessage({ type: 'HI' }));
+  });
+});
+
+// Web Worker 通信（直接 new）
+const worker = new Worker('/worker.js');
+worker.postMessage({ type: 'HELLO' });
+worker.onmessage = (event) => console.log(event.data);
+
+// Web Worker 端
+self.onmessage = (event) => {
+  console.log(event.data);
+  self.postMessage({ type: 'HI' });
+};
+```
+
+<Tip title="最佳实践: ">
+
+Service Worker 用于需要离线能力、推送通知、后台同步的场景（PWA）。Web Worker 用于把计算密集型任务从主线程剥离的场景（大数组排序、图片处理等）。两者解决的是完全不同的问题。
+
+</Tip>
+
+---
+
+## 🔍 底层源码：Chromium 是如何实现 Service Worker 的？
+
+<div class="follow-up">
+Chromium 的 Service Worker 是怎么实现的？
+</div>
+
+Chromium 的 Service Worker 实现在 `content/browser/service_worker/` 目录下。核心类是 `ServiceWorkerVersion`（详见 [Chromium 源码：content/browser/service_worker/service_worker_version.h](https://source.chromium.org/chromium/chromium/src/+/main:content/browser/service_worker/service_worker_version.h)）：
+
+```cpp
+// ServiceWorkerVersion 的核心状态机
+class ServiceWorkerVersion {
+  // 7 种状态，对应生命周期
+  enum Status {
+    NEW,          // 刚创建
+    INSTALLING,   // install 事件执行中
+    INSTALLED,    // 安装完成，等待激活
+    ACTIVATING,   // activate 事件执行中
+    ACTIVATED,    // 已激活，可以拦截请求
+    REDUNDANT,    // 废弃（被新版本替代）
+  };
+
+  // fetch 事件的处理流程：
+  // 1. ServiceWorkerDispatcherHost 收到 fetch 请求
+  // 2. 查找作用域匹配的 ServiceWorkerVersion
+  // 3. 如果版本已激活，转发 fetch 事件到 worker 线程
+  // 4. worker 线程执行 fetch event handler
+  // 5. 返回 Response 给页面
+};
+```
+
+这段代码做了 3 件事：管理 Service Worker 的 7 种生命周期状态、将 fetch 请求路由到正确的 worker 线程、处理 install/activate/fetch 事件的调度。
+
+<div class="follow-up">
+Service Worker 的 fetch 拦截是怎么实现的？
+</div>
+
+Fetch 拦截在 Blink 渲染引擎的 `ServiceWorkerGlobalScope` 中实现（详见 [Chromium 源码：third_party/blink/renderer/modules/service_worker/](https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/modules/service_worker/)）：
+
+```cpp
+// ServiceWorkerGlobalScope::Fetch 的简化逻辑
+// 当页面发出 fetch 请求时：
+// 1. Blink 的 ResourceFetcher 检查是否有 Service Worker 控制该作用域
+// 2. 如果有，将请求转发给 ServiceWorkerVersion
+// 3. ServiceWorkerVersion 在 worker 线程中触发 fetch 事件
+// 4. 开发者的 event.respondWith() 设置响应
+// 5. 响应通过 IPC 回传给页面的 ResourceFetcher
+// 6. 页面的网络层收到响应，就像从网络获取的一样
+```
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 Service Worker 的生命周期"
+
+**及格回答（60-70分）：**
+> "Service Worker 有三个生命周期：install 缓存资源，activate 清理旧缓存，fetch 拦截请求。"
+
+面试官评价：**知道三个事件但不理解激活等待机制**。
+
+**满分回答（90-100分）：**
+
+> Service Worker 的生命周期包含注册（register）、安装（install）、激活（activate）和运行（fetch）四个阶段。注册由页面 JS 触发，浏览器在后台下载并解析 Service Worker 脚本。install 事件用于预缓存关键静态资源——通过 `caches.open()` 和 `cache.addAll()` 将资源存入 Cache API。`event.waitUntil()` 可以延长 install 阶段，确保所有资源缓存完成。<sup>[1]</sup>
+
+> 关键的细节是**激活等待机制**：新版本 Service Worker 安装完成后不会立刻激活，它会等到所有使用旧版本的页面都关闭后才进入 activate 阶段。这是为了防止新旧版本同时控制页面导致行为不一致。如果需要跳过等待，可以在 install 中调用 `self.skipWaiting()`，在 activate 中调用 `self.clients.claim()` 立即接管所有页面。<sup>[2]</sup>
+
+> activate 事件的核心任务是清理旧缓存——通过 `caches.keys()` 获取所有缓存名称，删除不在白名单中的旧缓存。这保证了用户的存储空间不会被无限占用。
+
+> 实际项目中需要注意：Service Worker 的更新不是由浏览器自动触发的——它只在用户导航到新页面或调用 `navigator.serviceWorker.register()` 时才会检查更新。所以很多应用会在 `activate` 事件中通过 `postMessage` 通知用户"有新版本可用"。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="Service Worker 和 Web Worker 的区别?" icon="layer-group">
+
+    **答题要点：**
+    从生命周期、能力范围、使用场景三个维度对比。
+
+    **高分回答：**
+    "Service Worker 和 Web Worker 都是运行在独立线程中的 JS 脚本，但它们的定位完全不同。
+    **生命周期**：Web Worker 依附于页面，页面关闭即终止；Service Worker 独立于页面，可以后台存活（即使页面关闭，SW 仍在运行，直到浏览器决定终止它以节省内存）。
+    **能力范围**：Service Worker 可以拦截网络请求、管理缓存、接收推送通知；Web Worker 只能做计算。
+    **使用场景**：Service Worker 用于 PWA 离线缓存、推送通知、后台同步；Web Worker 用于计算密集型任务（大数组排序、图片处理）。
+    ```javascript
+    // Web Worker——计算密集
+    const worker = new Worker('/compute.js');
+    worker.postMessage(largeArray);
+    worker.onmessage = (e) => updateUI(e.data);
+
+    // Service Worker——离线缓存
+    navigator.serviceWorker.register('/sw.js');
+    // 拦截所有 fetch 请求，返回缓存或网络响应
+    ```"
+
+  </Accordion>
+
+  <Accordion title="Service Worker 的缓存策略有哪些？如何选择?" icon="layer-group">
+
+    **答题要点：**
+    不只是列出策略，要给出选择依据。
+
+    **高分回答：**
+    "五种经典缓存策略：
+    1. **Cache First**：缓存优先，适用于静态资源（CSS、JS、图片）——这些资源更新频率低，缓存命中率高。
+    2. **Network First**：网络优先，适用于需要最新数据的页面（新闻、API）——网络失败时降级到缓存。
+    3. **Stale While Revalidate**：先返回缓存，同时后台更新，适用于频繁更新但允许稍旧的数据（用户头像、评论列表）。
+    4. **Cache Only**：只走缓存，适用于预缓存的离线资源。
+    5. **Network Only**：只走网络，适用于不能缓存的请求（登录、支付、实时数据）。
+
+    选择依据：**数据时效性**和**离线需求**。不常变的用 Cache First，常变的用 Network First 或 Stale While Revalidate。"
+
+  </Accordion>
+
+  <Accordion title="如何更新 Service Worker 的缓存?" icon="stopwatch">
+
+    **答题要点：**
+    缓存版本管理 + 激活清理 + 用户通知。
+
+    **高分回答：**
+    "更新缓存的核心是**版本管理**：
+    ```javascript
+    const CACHE_VERSION = 'v2'; // 每次发版递增
+    const STATIC_ASSETS = ['/', '/index.html', '/style.css?v=2', '/app.js?v=2'];
+    // install 时缓存新资源
+    self.addEventListener('install', (event) => {
+      event.waitUntil(
+        caches.open(`app-${CACHE_VERSION}`)
+          .then(cache => cache.addAll(STATIC_ASSETS))
+      );
+    });
+    // activate 时清理旧缓存
+    self.addEventListener('activate', (event) => {
+      event.waitUntil(
+        caches.keys().then(keys =>
+          Promise.all(
+            keys.filter(key => key.startsWith('app-') && key !== `app-${CACHE_VERSION}`)
+                .map(key => caches.delete(key))
+          )
+        )
+      );
+    });
+    ```
+    浏览器的更新检测：当 SW 文件内容发生字节级变化时，浏览器会触发更新流程。所以很多项目会在构建时给 SW 文件名加 hash。"
+
+  </Accordion>
+
+  <Accordion title="Service Worker 如何处理离线场景?" icon="stopwatch">
+
+    **答题要点：**
+    区分"首次访问"和"二次访问"两种场景。
+
+    **高分回答：**
+    "分两种情况：
+    **1. 首次访问（从未缓存过）**：Service Worker 需要在 install 阶段预缓存关键资源。如果首次访问时就断网，预缓存会失败——所以 PWA 的首次加载仍然需要网络。
+    **2. 二次访问（已有缓存）**：Service Worker 可以从 Cache API 返回缓存的响应，即使网络不可用。这就是离线能力的核心。
+    ```javascript
+    // fetch 事件中处理离线降级
+    self.addEventListener('fetch', (event) => {
+      event.respondWith(
+        fetch(event.request)
+          .then(response => {
+            // 更新缓存
+            const clone = response.clone();
+            caches.open('v1').then(cache => cache.put(event.request, clone));
+            return response;
+          })
+          .catch(() => {
+            // 网络失败，返回缓存
+            return caches.match(event.request)
+              .then(cached => cached || caches.match('/offline.html'));
+          })
+      );
+    });
+    ```
+    关键点：要准备一个 offline.html 作为兜底页面，当请求和缓存都没有时返回给用户。"
+
+  </Accordion>
+
+  <Accordion title="如何用 Service Worker 实现推送通知?" icon="node">
+
+    **答题要点：**
+    推送通知需要三方配合：Push API、Notification API、Service Worker。
+
+    **高分回答：**
+    "推送通知需要三个 API 配合：
+    1. **Push API**（`PushManager`）：订阅推送，获取推送端点（endpoint）
+    2. **Notification API**：显示系统通知
+    3. **Service Worker**：接收推送事件，显示通知
+
+    ```javascript
+    // 1. 页面端：请求通知权限，订阅推送
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
+      });
+      // 把 subscription 发送到服务器保存
+      await fetch('/api/subscribe', {
+        method: 'POST',
+        body: JSON.stringify(subscription)
+      });
+    }
+
+    // 2. Service Worker 端：接收推送，显示通知
+    self.addEventListener('push', (event) => {
+      const data = event.data.json();
+      event.waitUntil(
+        self.registration.showNotification(data.title, {
+          body: data.body,
+          icon: '/icon.png'
+        })
+      );
+    });
+    ```
+    服务器通过 VAPID 协议向浏览器推送端点发送加密消息，浏览器收到后触发 Service Worker 的 push 事件。"
+
+  </Accordion>
+
+  <Accordion title="Service Worker 的作用域是怎么工作的?" icon="node">
+
+    **答题要点：**
+    作用域决定了 SW 能控制哪些页面。
+
+    **高分回答：**
+    "Service Worker 的作用域由其文件路径和注册时的 scope 选项共同决定。默认作用域是 SW 文件所在的目录。例如 `/assets/sw.js` 的默认作用域是 `/assets/`。
+    关键规则：
+    1. scope 不能超出 SW 文件的目录范围——`/assets/sw.js` 不能注册 `/` 的作用域
+    2. 一个页面只能被一个 SW 控制——如果多个 SW 的作用域重叠，最具体的（最长路径匹配的）获胜
+    3. 顶层作用域（`/`）的 SW 可以控制所有页面
+    ```javascript
+    // 控制整个站点
+    navigator.serviceWorker.register('/sw.js', { scope: '/' });
+
+    // 只控制 /app/ 路径下的页面
+    navigator.serviceWorker.register('/app/sw.js');
+    // 作用域自动为 /app/
+    ```
+    最佳实践：把 SW 放在根目录，控制整个站点，通过 fetch 事件中的 URL 判断不同的缓存策略。"
+
+  </Accordion>
+
+  <Accordion title="🔥 Service Worker 的更新机制是什么？如何强制更新?" icon="skull">
+
+    **答题要点：**
+    浏览器的更新检测逻辑 + 强制更新方法。
+
+    **高分回答：**
+    "浏览器检测 Service Worker 更新的条件（满足任一即可）：
+    1. 用户导航到 SW 作用域内的新页面
+    2. 调用 `navigator.serviceWorker.register()`（即使路径相同）
+    3. 距离上次检查超过 24 小时（浏览器自动检查）
+
+    更新检测流程：浏览器重新下载 SW 文件，与当前版本逐字节比较。如果内容不同，触发新版本的 install 流程。
+
+    强制更新的方法：
+    ```javascript
+    // 方法 1：在页面端强制检查更新
+    const registration = await navigator.serviceWorker.ready;
+    registration.update();
+
+    // 方法 2：在 SW 端跳过等待
+    self.addEventListener('install', () => {
+      self.skipWaiting(); // 新版本立即激活
+    });
+    self.addEventListener('activate', () => {
+      self.clients.claim(); // 立即控制所有页面
+    });
+
+    // 方法 3：Cache-Control 头部
+    // 确保 SW 文件不被浏览器 HTTP 缓存
+    // Cache-Control: no-cache 或 max-age=0
+    ```
+    注意：`skipWaiting()` 会导致新旧版本同时控制页面，可能导致状态不一致。建议在 activate 后通知用户刷新页面。"
+
+  </Accordion>
+
+  <Accordion title="🔥 如何用 Service Worker 实现后台同步?" icon="skull">
+
+    **答题要点：**
+    Background Sync API 的使用场景和限制。
+
+    **高分回答：**
+    "后台同步（Background Sync）允许 Service Worker 在网络恢复时自动发送离线期间积累的数据。典型场景：离线表单提交、离线消息发送。
+    ```javascript
+    // 页面端：离线时保存数据到 IndexedDB，注册同步
+    async function submitForm(data) {
+      try {
+        await fetch('/api/submit', { method: 'POST', body: JSON.stringify(data) });
+      } catch {
+        // 离线时保存到 IndexedDB
+        await saveToIndexedDB(data);
+        // 注册后台同步
+        const registration = await navigator.serviceWorker.ready;
+        await registration.sync.register('submit-form');
+      }
+    }
+
+    // Service Worker 端：网络恢复时自动触发
+    self.addEventListener('sync', (event) => {
+      if (event.tag === 'submit-form') {
+        event.waitUntil(
+          getAllFromIndexedDB().then(dataArray =>
+            Promise.all(dataArray.map(data =>
+              fetch('/api/submit', { method: 'POST', body: JSON.stringify(data) })
+                .then(() => removeFromIndexedDB(data.id))
+            ))
+          )
+        );
+      }
+    });
+    ```
+    限制：后台同步不保证精确时间——浏览器会根据电量、网络状况等决定何时触发。不要用它做定时任务。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [MDN Service Worker API](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API)：Service Worker 的完整 API 文档和生命周期说明。<sup>[1]</sup>
+- 📖 [The Offline Cookbook](https://jakearchibald.com/2014/offline-cookbook/)：Jake Archibald 的离线缓存策略圣经，详细介绍了五种缓存策略的实现。<sup>[2]</sup>
+- 🟢 [Chromium Service Worker 源码](https://source.chromium.org/chromium/chromium/src/+/main:content/browser/service_worker/)：Chromium 中 Service Worker 的内部实现，包括生命周期管理和 fetch 拦截逻辑。<sup>[3]</sup>

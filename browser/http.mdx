@@ -1,0 +1,327 @@
+---
+title: "HTTP 协议"
+---
+
+> **面试官为什么问这个？**
+>
+> HTTP 是前后端通信的基石。面试官问这个，本质上是在考察你：**你对网络通信的理解是否深入到协议层面？** 如果你只能说出"GET 和 POST 的区别"，说明你对 HTTP 的理解停留在"会发请求"而不是"知道浏览器和服务器之间到底发生了什么"。
+
+---
+
+## Q1: HTTP/1.1 vs HTTP/2 vs HTTP/3 有什么区别？
+
+<Steps>
+
+  <Step title="HTTP/0.9 与 HTTP/1.0: 文本协议的诞生">
+
+1991 年 HTTP/0.9 只支持 GET 请求和纯文本响应。1996 年 HTTP/1.0 引入了状态码、头部字段和 Content-Type，但每个请求都需要建立新的 TCP 连接。
+
+  </Step>
+  <Step title="HTTP/1.1 的致命痛点: 队头阻塞">
+
+HTTP/1.1 引入了持久连接（Keep-Alive），但同一连接中请求必须串行——前一个请求的响应没回来，后一个请求只能等着。浏览器对同一域名限制 6-8 个并发连接，多资源页面加载效率低下。
+
+  </Step>
+  <Step title="HTTP/2 的革命: 多路复用">
+
+HTTP/2 引入了二进制分帧和多路复用——单个 TCP 连接上可以并行传输多个请求/响应。数据被拆分为帧（Frame），不同流的帧交错传输。还引入了 HPACK 头部压缩和服务器推送。
+
+  </Step>
+  <Step title="HTTP/2 的遗留问题: TCP 层队头阻塞">
+
+虽然 HTTP 层的多路复用解决了 HTTP 队头阻塞，但 TCP 是字节流协议——一个 TCP 包丢失，所有流都得等重传。在高丢包率网络下，HTTP/2 的性能可能反而不如 HTTP/1.1 的多连接策略。
+
+  </Step>
+  <Step title="HTTP/3 的终极方案: QUIC">
+
+HTTP/3 用 QUIC（基于 UDP）替代 TCP。QUIC 的流是独立的——Stream 2 的包丢失只阻塞 Stream 2，Stream 1 和 3 正常交付。QUIC 还内置了 TLS 1.3（1-RTT 握手），支持 0-RTT 恢复和连接迁移。
+
+  </Step>
+
+</Steps>
+
+**HTTP 版本演进解决的核心问题：**
+
+```text
+问题：HTTP/1.1 的队头阻塞
+
+请求1 → [========] → 响应1
+请求2 → [========] → 响应2（必须等请求1完成）
+请求3 → [========] → 响应3
+
+解决：HTTP/2 多路复用 + HTTP/3 独立流
+
+HTTP/2：一个 TCP 连接上交错传输（但 TCP 包丢失仍阻塞所有流）
+HTTP/3：QUIC 的独立流（一个流丢包不影响其他流）
+```
+
+**一句话总结：HTTP 协议的演进核心是解决队头阻塞——从 HTTP/1.1 的串行、到 HTTP/2 的多路复用、再到 HTTP/3 的独立流。**
+
+<CardGroup cols={2}>
+
+<Card title="🚫 HTTP/1.1 的队头阻塞">
+
+就像一条单车道公路，前面的车抛锚了，后面的车全部堵死。HTTP/1.1 中一个慢请求会阻塞同连接上的所有后续请求，浏览器只能开 6 条车道（并发连接）来缓解。
+
+</Card>
+</CardGroup>
+<CardGroup cols={2}>
+
+<Card title="✅ HTTP/3 的独立流">
+
+HTTP/3 就像一条多车道高速公路，每条车道完全独立。一辆车抛锚只堵自己那条道，其他车道畅通无阻。QUIC 基于 UDP 实现了流级别的独立性，彻底解决了队头阻塞。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答 HTTP 版本演进时，核心叙事是"解决队头阻塞"：HTTP/1.1 串行 → HTTP/2 多路复用但有 TCP 队头阻塞 → HTTP/3 用 QUIC 的独立流彻底解决。不要只罗列特性，要说清楚"为什么要改"。
+
+</Tip>
+
+---
+
+## Q2: HTTPS 的握手过程是什么？
+
+HTTPS = HTTP + TLS，提供三个保障：机密性（数据加密）、完整性（不可篡改）、身份认证（确认服务器身份）。核心流程如下：
+
+```text
+TLS 1.2 握手（2-RTT）：
+
+Client                                          Server
+  │── ClientHello ──────────────────────────────>│  支持的密码套件列表 + 客户端随机数
+  │<── ServerHello ──────────────────────────────│  选定的密码套件 + 服务器随机数
+  │<── Certificate ──────────────────────────────│  服务器证书（含公钥）
+  │<── ServerHelloDone ──────────────────────────│
+  │── ClientKeyExchange ────────────────────────>│  预主密钥（用服务器公钥加密）
+  │── ChangeCipherSpec + Finished ──────────────>│
+  │<── ChangeCipherSpec + Finished ──────────────│
+  │                                              │
+  │←──────── 加密通信开始（会话密钥）────────→│
+```
+
+```javascript
+// TLS 1.3 的改进（1-RTT）：
+// 客户端在 ClientHello 中直接发送密钥共享（Key Share）
+// 不用等服务器回复再生成密钥，减少了一次往返
+// 还支持 0-RTT：后续连接直接发送加密数据（有重放攻击风险，只适用于幂等请求）
+```
+
+<Warning title="⚠️ 核心机制: 证书信任链">
+
+浏览器验证服务器身份依赖证书信任链，不是直接信任服务器证书：
+
+- 根证书（预装在操作系统/浏览器中）→ 签发中间证书
+- 中间证书 → 签发服务器证书
+- 浏览器从服务器证书向上追溯到根证书，逐级验证签名
+
+如果链条中任何一环过期、被吊销或签名不匹配，浏览器会显示安全警告。Certificate Transparency（CT）日志让所有签发的证书都可公开审计，防止 CA 被攻破后签发伪造证书。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 特工接头">
+
+TLS 握手就像两个特工在公共场所接头。ClientHello 是暗号（"我支持哪些加密方式"），ServerHello 是回应（"我选这个方式"）。Certificate 是工作证（"这是我的身份证明，你可以查一下"）。ClientKeyExchange 是交换密码本（"我用你的公钥加密了密码本的种子"）。双方各自用种子生成相同的密码本（会话密钥），之后所有通信都用密码本加密。
+
+TLS 1.3 的改进就像特工提前把密码本的种子附在暗号里发出（Key Share），省掉了一次来回确认。0-RTT 更激进——如果之前接过头，下次直接用旧密码本发加密消息，连暗号都省了（但有被录音重放的风险）。
+
+</Tip>
+
+---
+
+## Q3: HTTP 缓存策略是什么？
+
+### 基础梳理
+
+| 缓存类型 | 机制 | 是否请求服务器 | 优先级 | 典型场景 |
+|---------|------|:---:|:---:|---------|
+| 强缓存 | `Cache-Control: max-age` | ❌ | 最高 | 静态资源（带 hash 文件名） |
+| 强缓存 | `Expires`（绝对时间） | ❌ | 低 | 已过时，受客户端时钟影响 |
+| 协商缓存 | `ETag` / `If-None-Match` | ✅（304） | 中 | HTML 文件 |
+| 协商缓存 | `Last-Modified` / `If-Modified-Since` | ✅（304） | 低 | 精度只到秒 |
+
+### 专家视角深度剖析
+
+很多候选人能背出"强缓存和协商缓存"，但大厂面试官真正在意的是：**在实际工程中，不同资源应该用什么缓存策略？为什么？**
+
+缓存策略的核心原则是：**不变的资源用强缓存，会变的资源用协商缓存。** 具体来说：
+
+HTML 文件是入口文件，内容会随版本更新，应该用 `Cache-Control: no-cache`（每次都协商缓存），配合 `ETag` 让服务器判断是否有变化。JS/CSS/图片等静态资源应该用 `Cache-Control: max-age=31536000`（强缓存 1 年），配合构建工具生成的 hash 文件名（如 `app.a1b2c3.js`）——内容变了文件名就变了，自动失效。API 响应通常用 `Cache-Control: no-store`（完全不缓存）。
+
+```javascript
+// 服务端缓存配置示例
+// HTML：每次协商缓存
+res.setHeader('Cache-Control', 'no-cache');
+res.setHeader('ETag', generateETag(htmlContent));
+
+// 静态资源：强缓存 1 年 + hash 文件名
+res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+
+// API 响应：不缓存
+res.setHeader('Cache-Control', 'no-store');
+```
+
+---
+
+## Q4: 跨域有哪些解决方案？
+
+**CORS 的原理：**
+浏览器的同源策略限制了跨域请求。CORS（Cross-Origin Resource Sharing）通过在响应头中声明允许的来源，让浏览器放行跨域请求。非简单请求（自定义 Header、PUT/DELETE 方法、非 form-data 的 Content-Type）会触发 preflight——浏览器先发 OPTIONS 请求询问服务器是否允许。
+
+**同源策略的限制：**
+
+| 方案 | 原理 | 限制 | 适用场景 |
+|------|------|------|---------|
+| CORS | 服务端设置 `Access-Control-Allow-Origin` | 需要服务端配合 | 生产环境首选 |
+| 代理 | 开发服务器转发请求到目标服务器 | 仅限开发环境 | Vite/Webpack 开发 |
+| JSONP | 利用 `<script>` 不受同源策略限制 | 只支持 GET，有 XSS 风险 | 已过时 |
+| WebSocket | WebSocket 协议不受同源策略限制 | 需要服务端支持 WS | 实时通信 |
+
+<Tip title="最佳实践: ">
+
+生产环境用 CORS（服务端配置 `Access-Control-Allow-Origin`），开发环境用 Vite/Webpack 的 proxy 代理。JSONP 已经过时，不要在新项目中使用。CORS preflight 请求（OPTIONS）会增加一次网络往返，对于频繁的跨域 API 调用，可以考虑在 Nginx 层做反向代理消除跨域。
+
+</Tip>
+
+---
+
+## 🔍 底层源码：Chromium 是如何实现的？
+
+<div class="follow-up">
+Chromium 的网络栈是怎么分层的？
+</div>
+
+Chromium 的网络栈分层实现在 `net/` 目录中（详见 [Chromium 源码：net/http/http_network_transaction.cc](https://source.chromium.org/chromium/chromium/src/+/main/net/http/http_network_transaction.cc)）：
+
+```cpp
+// Chromium 网络栈的分层架构：
+// net/http/      → HTTP 协议实现（HTTP/1.1、HTTP/2）
+// net/quic/      → QUIC 协议实现（HTTP/3），基于 Google 的 quiche 库
+// net/socket/    → TCP/UDP socket 管理
+// net/ssl/       → TLS 实现
+// net/dns/       → DNS 解析
+
+// HTTP/2 的实现在 net/spdy/ 中（SPDY 是 HTTP/2 的前身）
+// 每个 TCP 连接对应一个 SpdySession
+// 每个 HTTP 请求对应一个 SpdyStream
+// SpdySession 管理所有 SpdyStream 的帧调度和流控
+```
+
+网络栈采用分层设计：最底层是 socket（TCP/UDP），之上是 TLS 加密层，再之上是 HTTP 协议层。HTTP/2 通过 `SpdySession` 管理单个 TCP 连接上的多个流，HTTP/3 通过 `QuicSession` 管理 QUIC 连接。
+
+<div class="follow-up">
+QUIC 的连接迁移是怎么实现的？
+</div>
+
+详见 [Chromium 源码：net/quic/quic_session.cc](https://source.chromium.org/chromium/chromium/src/+/main/net/quic/quic_session.cc)：
+
+```cpp
+// 传统 TCP 连接由四元组标识：
+// (srcIP, srcPort, dstIP, dstPort)
+// IP 变化 → 连接断开
+
+// QUIC 用 Connection ID 标识连接，不依赖 IP:Port
+// Wi-Fi 切换到 4G → IP 变了 → Connection ID 不变 → 连接不断
+
+// QUIC 的 0-RTT 恢复：
+// 客户端缓存服务器的传输参数
+// 下次连接时直接发送加密数据，省掉一次握手
+// 但 0-RTT 数据有重放攻击风险，只适用于幂等请求（GET）
+```
+
+QUIC 的连接迁移依赖 Connection ID 机制：每个连接有一个不依赖网络地址的唯一标识，当客户端 IP 变化时（如 Wi-Fi 切换到 4G），只需将新地址和 Connection ID 关联即可恢复连接。这解决了 TCP 连接在 IP 变化时必须重新握手的问题。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 HTTP/2 和 HTTP/3 的区别"
+
+**及格回答（60-70分）：**
+> "HTTP/2 有多路复用、头部压缩、二进制分帧。HTTP/3 用 QUIC 替代 TCP，解决了 TCP 层的队头阻塞。"
+
+面试官评价：**知道特性但不理解设计权衡**。
+
+**满分回答（90-100分）：**
+
+> HTTP/2 的核心改进是多路复用——单个 TCP 连接上并行传输多个请求/响应，用流 ID 标识每个请求。配合 HPACK 头部压缩（静态表 + 动态表 + Huffman 编码），重复头部只传索引号。但 TCP 是字节流协议，一个 TCP 包丢失会阻塞所有流——这是 TCP 层的队头阻塞。<sup>[1]</sup>
+
+> HTTP/3 用 QUIC（基于 UDP）彻底解决这个问题。QUIC 的流是独立的——Stream 2 的包丢失只阻塞 Stream 2，Stream 1 和 3 正常交付。QUIC 还内置了 TLS 1.3（1-RTT 握手），支持 0-RTT 恢复和连接迁移。连接迁移通过 Connection ID 实现——不依赖 IP:Port，Wi-Fi 切换到 4G 时连接不断开。<sup>[2]</sup>
+
+> 在 Chromium 中，HTTP/2 实现在 `net/spdy/` 目录（SPDY 是 HTTP/2 的前身），HTTP/3 实现在 `net/quic/` 目录（基于 Google 的 quiche 库）。两者的上层接口统一在 `net/http/` 中，对应用层透明。
+
+> HTTP/2 不一定比 HTTP/1.1 快。在单个请求的简单场景（二进制解析开销）、高丢包率网络（TCP 队头阻塞更严重）、服务器配置不当等情况下，HTTP/2 可能更慢。选择协议要结合实际场景。
+
+### 大厂高频连环拷问
+
+> 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。
+
+<AccordionGroup>
+
+  <Accordion title="HTTP 缓存的优先级是什么?ETag 和 Last-Modified 有什么区别?" icon="layer-group">
+
+**答题要点：**
+不能只答"强缓存优先"，要说清楚 `Cache-Control` 和 `Expires` 的优先级差异。
+
+**高分回答：**
+"缓存判断的优先级是：强缓存 > 协商缓存。强缓存中，`Cache-Control` 的优先级高于 `Expires`——因为 `Expires` 是绝对时间，受客户端时钟影响（用户改系统时间就会出问题），而 `Cache-Control` 是相对时间（`max-age=3600` 表示从响应开始算 3600 秒）。
+    
+协商缓存中，`ETag` 的优先级高于 `Last-Modified`。`Last-Modified` 精度只到秒——如果文件在 1 秒内修改了多次，或者文件内容没变但修改时间变了（如重新部署），`Last-Modified` 会误判。`ETag` 是内容哈希，内容不变就不失效。但 `ETag` 计算有性能开销（需要读取文件内容生成哈希），所以通常两者配合使用。"
+
+  </Accordion>
+
+  <Accordion title="CORS 的 preflight 请求是什么?什么时候会触发?" icon="stopwatch">
+
+**答题要点：**
+结合"简单请求"的定义和 preflight 的保护目的解释。
+
+**高分回答：**
+"CORS 将请求分为简单请求和非简单请求。简单请求满足三个条件：1）方法是 GET/HEAD/POST；2）头部只有安全字段（Accept、Content-Type 等）；3）Content-Type 只限 `text/plain`、`multipart/form-data`、`application/x-www-form-urlencoded`。简单请求直接发送，浏览器检查响应头的 `Access-Control-Allow-Origin`。
+    
+非简单请求（如 PUT/DELETE、自定义 Header、`application/json` 的 Content-Type）会触发 preflight——浏览器先发一个 OPTIONS 请求，询问服务器是否允许该跨域请求。服务器响应允许后，浏览器才发真正的请求。Preflight 的设计初衷是保护旧服务器——旧服务器不理解 CORS，但也不会执行副作用操作（OPTIONS 是安全的）。
+    
+减少 preflight 的方式：1）用简单请求的 Content-Type；2）服务器配置 `Access-Control-Max-Age` 缓存 preflight 结果；3）对于频繁的跨域 API 调用，用 Nginx 反向代理消除跨域。"
+
+  </Accordion>
+
+  <Accordion title="HTTPS 能防止中间人攻击吗?什么情况下 HTTPS 也会被破解?" icon="node">
+
+**答题要点：**
+必须分场景讨论——HTTPS 的保护范围和边界。
+
+**高分回答：**
+"HTTPS 能有效防止中间人攻击，但有几个边界场景需要注意：
+    
+1）**证书伪造**：如果攻击者在用户设备上安装了自签名根证书（如企业代理），就能解密所有 HTTPS 流量。这就是为什么企业抓包工具（如 Charles）需要先安装根证书。
+2）**降级攻击**：攻击者拦截 TLS 握手，强制降级到不安全的协议版本。防御方式是服务器配置 HSTS（HTTP Strict Transport Security），强制浏览器只用 HTTPS。
+3）**证书吊销延迟**：CA 吊销证书后，浏览器需要通过 OCSP 或 CRL 查询证书状态。如果浏览器没有及时更新（软失败策略），可能仍然信任已吊销的证书。
+    
+TLS 1.3 移除了所有不安全的加密算法（如 RSA 密钥交换、CBC 模式），只保留 AEAD 加密（如 AES-GCM），大幅提升了安全性。"
+
+  </Accordion>
+
+  <Accordion title="🔥 HTTP/2 的服务器推送 (Server Push) 为什么被弃用了?" icon="skull">
+
+**答题要点：**
+对比常见认知，点出 Server Push 的实际问题。
+
+**高分回答：**
+"HTTP/2 的 Server Push 理论上很美好——服务器预测客户端需要的资源，在客户端请求前就推送过去，省掉一次往返。但实际使用中发现了严重问题：
+    
+1）**缓存浪费**：服务器不知道客户端是否已经缓存了该资源。如果客户端已有缓存，推送就是浪费带宽。HTTP/2 没有好的机制让客户端告知服务器'我已经有了'。
+2）**优先级冲突**：推送的资源和客户端主动请求的资源竞争带宽。如果推送了不重要的资源，可能阻塞了客户端真正需要的关键资源。
+3）**实现复杂**：服务器需要精确预测客户端需要什么资源，这在动态页面中几乎不可能。
+    
+Chrome 在 v106 中默认禁用了 HTTP/2 Server Push。替代方案是 103 Early Hints——服务器在最终响应前先返回一个 103 状态码，告诉客户端'你可能需要这些资源，先预加载'。客户端可以根据自己的缓存状态决定是否请求，避免了 Server Push 的缓存浪费问题。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [HTTP/2 官方规范 (RFC 7540)](https://httpwg.org/specs/rfc7540.html)：HTTP/2 多路复用、流控、HPACK 头部压缩的权威定义。<sup>[1]</sup>
+- 📖 [QUIC 协议设计文档](https://www.chromium.org/quic/)：Google 对 QUIC 协议的设计哲学和实现细节的深度剖析。<sup>[2]</sup>
+- 🟢 [MDN: HTTP 缓存](https://developer.mozilla.org/en-US/docs/Web/HTTP/Caching)：Mozilla 对 HTTP 缓存机制的最权威解释，含完整的缓存决策流程图。<sup>[3]</sup>

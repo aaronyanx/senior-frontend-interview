@@ -1,0 +1,386 @@
+---
+title: "React 进阶"
+---
+
+> **面试官为什么问这个？**
+>
+> React 进阶话题（Error Boundaries、Context、Server Components、代码分割）考察的是你对 React 生态的全面理解。面试官问这些，本质上是在考察你是否具备从"会写组件"到"能设计完整应用架构"的能力。如果你对这些进阶机制一无所知，说明你的 React 水平还停留在入门阶段。
+
+---
+
+## Q1: Error Boundaries 是什么？怎么实现？
+
+### Error Boundaries 的捕获范围
+
+Error Boundaries 能捕获：子组件树的渲染错误（render 方法中的同步错误）、生命周期方法中的错误、构造函数中的错误。不能捕获：事件处理函数中的错误（需要 try/catch）、异步代码中的错误（setTimeout/Promise）、服务端渲染的错误、Error Boundary 自身的错误。
+
+### 生产环境的分层策略
+
+大型应用通常在三个层级设置 Error Boundary：页面级（捕获页面级错误，展示全屏错误页）、功能模块级（捕获某个功能区域的错误，降级该区域）、组件级（捕获关键组件的错误，展示骨架屏）。配合 Sentry 等错误监控平台，实现错误上报和告警。
+
+<Steps>
+
+  <Step title="组件树的错误传播问题">
+
+在 React 16 之前，组件树内部抛出的 JavaScript 错误会导致整个页面崩溃白屏。一个小组件的渲染错误，会让整个应用变得不可用，用户体验极差。
+
+  </Step>
+  <Step title="Error Boundaries 的引入">
+
+React 16 引入了错误边界机制，通过 `componentDidCatch` 生命周期和 `getDerivedStateFromError` 静态方法，允许开发者捕获子组件树中的渲染错误，展示一个降级的备用 UI。
+
+  </Step>
+  <Step title="错误边界的局限性">
+
+Error Boundaries 只能捕获子组件树的渲染错误，无法捕获事件处理函数、异步代码（setTimeout/Promise）、服务端渲染和 Error Boundary 自身的错误。
+
+  </Step>
+  <Step title="函数组件的替代方案">
+
+目前 React 没有内置的函数组件 Error Boundary。社区通过 `react-error-boundary` 库提供了函数式 API，支持 `fallback` 属性和 `onReset` 回调。
+
+  </Step>
+  <Step title="生产环境的最佳实践">
+
+在生产环境中，通常会在页面级和功能模块级分别设置 Error Boundary，配合错误监控平台（如 Sentry）实现优雅降级和错误上报。
+
+  </Step>
+
+</Steps>
+
+**Error Boundaries 解决的核心问题：**
+
+```text
+问题：一个组件的渲染错误导致整个页面崩溃
+
+用户操作 → 某个子组件抛出错误 → 整个组件树卸载 → 白屏
+
+解决：Error Boundary 捕获错误，只卸载出错的子树，其余部分正常运行
+
+用户操作 → 某个子组件抛出错误 → Error Boundary 捕获 → 显示降级 UI → 其余组件正常
+```
+
+<Note title="💡 一句话总结">
+
+Error Boundaries 让 React 应用从"一错全崩"变成了"局部降级"。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有 Error Boundaries">
+
+一个小组件的渲染错误导致整个页面白屏。就像一栋大楼里一间房着火了，整栋楼的所有住户都被强制撤离。
+
+</Card>
+<Card title="✅ 引入 Error Boundaries">
+
+出错的房间被隔离，显示"维修中"的提示，其他住户正常生活。就像大楼装了防火门，火势不会蔓延。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么需要"（组件错误导致全页面崩溃），再说"怎么实现"（getDerivedStateFromError + componentDidCatch）。最后一定要主动说出它的局限性（不能捕获异步错误），这是加分项。
+
+</Tip>
+
+---
+
+## Q2: Context 的性能问题怎么解决？
+
+Context 是 React 内置的跨组件数据传递机制，避免了层层传递 Props（Prop Drilling）的问题。但它的更新机制是粗粒度的——只要 Provider 的 value 发生变化，所有消费该 Context 的组件都会强制 re-render。
+
+### Context 的弊端总结
+
+Context 的核心问题有三个：第一，粗粒度更新——Provider 的 value 变化时，所有 Consumer 强制 re-render，无法按需订阅；第二，绕过 React.memo——即使子组件被 `React.memo` 包裹，只要它通过 `useContext` 消费了变化的 Context，就会强制 re-render；第三，组合困难——多个 Context 嵌套时，组件需要层层嵌套 Provider，代码可读性差。
+
+### 状态管理方案技术选型
+
+| 方案 | 原理 | 适用场景 | 学习成本 |
+|------|------|---------|---------|
+| **Context** | Provider/Consumer 广播 | 低频变化的全局数据（主题、语言） | 低 |
+| **Redux** | 单一 Store + 纯函数 Reducer | 复杂业务逻辑、需要时间旅行调试 | 高 |
+| **Zustand** | 原子化 Store + 自动订阅 | 中小型应用、精准订阅 | 低 |
+| **MobX** | 响应式数据 + 自动追踪依赖 | 复杂对象图、需要细粒度响应 | 中 |
+| **Jotai** | 原子化状态 + 底层 Context | 独立的、细粒度的状态单元 | 低 |
+
+```text
+┌───────────────────────────────────────┐
+│         ThemeProvider (Context)        │  ← value 变了
+└─────────────────┬─────────────────────┘
+                  │
+      ┌───────────┼───────────┐
+      ▼           ▼           ▼
+  ┌──────┐   ┌──────┐   ┌──────┐
+  │Comp A│   │Comp B│   │Comp C│   ← 全部 re-render，即使只用了部分数据
+  └──────┘   └──────┘   └──────┘
+```
+
+```javascript
+// 问题：Context 值变化时，所有 Consumer 都会 re-render
+const ThemeContext = createContext({ theme: 'light', lang: 'zh' });
+
+// CompA 只用了 theme，CompB 只用了 lang
+// 但 theme 变化时，CompB 也会 re-render（即使 lang 没变）
+
+// 解决方案 1：拆分 Context
+const ThemeContext = createContext('light');
+const LangContext = createContext('zh');
+// theme 变化时，只有 ThemeContext 的 Consumer re-render
+
+// 解决方案 2：用 useMemo 稳定 Context 值
+function App() {
+  const [theme, setTheme] = useState('light');
+  const value = useMemo(() => ({ theme, setTheme }), [theme]);
+  return <ThemeContext.Provider value={value}>...</ThemeContext.Provider>;
+}
+
+// 解决方案 3：使用原子化状态库（Jotai、Zustand）
+// 精准订阅，只有用到的组件 re-render
+```
+
+<Warning title="⚠️ Context 的性能陷阱">
+
+Context 的 value 变化时，会绕过 `React.memo` 的优化。即使子组件被 `React.memo` 包裹，只要它通过 `useContext` 消费了变化的 Context，就会强制 re-render。这是很多开发者在优化列表性能时忽略的"隐性更新源"。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 公司群发邮件">
+
+Context 就像公司的全员邮件。你改了公司 logo（theme 变了），系统给所有员工（Consumer）都发了一封通知邮件，即使有些员工根本不关心 logo。拆分 Context 就像把邮件按部门分组——设计部收到 logo 变更通知，财务部只收到报销规则变更通知，互不干扰。
+
+</Tip>
+
+---
+
+## Q3: React Server Components 和 SSR 有什么区别？
+
+### SSR 的 Hydration 成本
+
+SSR 的根本问题是 Hydration 成本。服务端渲染出 HTML 后，客户端必须下载完整的组件代码，在本地重新执行一遍来"激活"交互（Hydration）。这意味着组件代码被执行了两次——服务端一次生成 HTML，客户端一次绑定事件。对于大型应用，Hydration 可能需要数百毫秒，阻塞了页面的可交互时间（TTI）。
+
+### RSC 的流式传输协议
+
+RSC 使用一种特殊的序列化格式（RSC Payload）流式传输渲染结果。协议中包含模块引用（Module References），告诉客户端需要下载哪些客户端组件的代码。服务端组件的代码完全不发送到客户端，从根本上减少了客户端 JS 体积。
+
+### 基础梳理
+
+| 维度 | SSR | Server Components |
+|------|-----|-------------------|
+| **渲染产物** | HTML 字符串 | RSC Payload（序列化格式） |
+| **客户端需要的 JS** | 需要完整组件代码进行 Hydration | 服务端组件的代码不发送到客户端 |
+| **运行时机** | 请求时在服务端渲染 HTML | 组件在服务端运行，结果流式传输 |
+| **交互能力** | Hydration 后完全可交互 | 服务端组件不可交互，客户端组件可交互 |
+| **数据获取** | 在 getServerSideProps 中获取 | 直接在组件中 async/await |
+
+### 专家视角深度剖析
+
+很多候选人只能说出"RSC 减少了客户端 JS 体积"，但大厂面试官真正在意的是：**RSC 的核心设计理念是什么？它解决了 SSR 的什么根本性问题？**
+
+SSR 的根本问题是**Hydration 成本**。服务端渲染出 HTML 后，客户端必须下载完整的组件代码，在本地重新执行一遍来"激活"交互（Hydration）。这意味着组件代码会被执行两次——服务端一次生成 HTML，客户端一次绑定事件。对于大型应用，Hydration 可能需要数百毫秒，阻塞了页面的可交互时间。
+
+RSC 的设计理念是**组件级别的服务端/客户端分离**。服务端组件只在服务端运行，客户端收到的是渲染结果（RSC Payload），不需要重新执行组件函数。只有标记了 `'use client'` 的客户端组件才需要发送 JS 到客户端并进行 Hydration。
+
+```javascript
+// 服务端组件：只在服务端运行，不发送 JS 到客户端
+async function UserProfile({ userId }) {
+  const user = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+  return <div>{user.name}</div>;
+  // 客户端只收到渲染结果，不需要这个组件的代码
+}
+
+// 客户端组件：发送到客户端，需要 Hydration
+'use client';
+function LikeButton() {
+  const [liked, setLiked] = useState(false);
+  return <button onClick={() => setLiked(!liked)}>{liked ? 'Liked' : 'Like'}</button>;
+}
+
+// 关键规则：服务端组件可以导入客户端组件，但客户端组件不能导入服务端组件
+// 客户端组件可以接收服务端组件作为 children prop
+```
+
+---
+
+## Q4: 受控组件和非受控组件的区别是什么？
+
+**受控组件的表单值由 React state 管理，非受控组件的表单值由 DOM 自身管理。** 这是两者最根本的区别。
+
+### 受控组件的实现原理
+
+受控组件的核心是"单一数据源"——React state 是表单值的唯一真实来源。每次用户输入都触发 `onChange` 事件，事件处理器调用 `setState` 更新 state，React 重新渲染并将新的 `value` 传回 input。这形成了一个单向数据流：用户输入 → onChange → setState → re-render → input.value 更新。
+
+### 非受控组件的适用场景
+
+非受控组件适合以下场景：文件上传（`<input type="file">` 的值只能由用户设置，不能由程序设置）、集成非 React 第三方库（如地图、富文本编辑器）、性能敏感场景（避免每次输入都触发 re-render）。使用 `ref` 直接访问 DOM 节点获取值，或者用 `defaultValue` 设置初始值。
+
+```javascript
+// 受控组件：React 是"单一数据源"
+function ControlledInput() {
+  const [value, setValue] = useState('');
+  return (
+    <input
+      value={value}                    // React 控制值
+      onChange={(e) => setValue(e.target.value)} // 每次输入都更新 state
+    />
+  );
+}
+// 优势：实时验证、动态禁用、格式化输入
+
+// 非受控组件：DOM 自己管理值
+function UncontrolledInput() {
+  const inputRef = useRef();
+  const handleSubmit = () => {
+    console.log(inputRef.current.value); // 提交时才从 DOM 读取值
+  };
+  return <input ref={inputRef} defaultValue="初始值" />;
+}
+// 优势：集成非 React 代码、文件上传、性能敏感场景
+```
+
+**关键区别：**
+
+| 场景 | 受控组件 | 非受控组件 |
+|------|---------|-----------|
+| 值的来源 | React state | DOM 自身 |
+| 获取值的方式 | 读 state | 读 ref.current.value |
+| 适用场景 | 实时验证、格式化、动态禁用 | 文件上传、集成第三方库 |
+| 性能 | 每次输入触发 re-render | 不触发 re-render |
+
+<Tip title="最佳实践: ">
+
+默认使用受控组件（符合 React "单一数据源"的理念）。只在文件上传、集成非 React 第三方库等场景下使用非受控组件。
+
+</Tip>
+
+---
+
+> **Redux / Zustand / MobX 的原理详解和对比选型**，请参见 [状态管理](/state-management/state-management) 章节。该模块覆盖了 Redux 三大原则、Zustand 极简实现、MobX 响应式原理、以及三者的技术选型对比。
+
+---
+
+## 🔍 底层源码：Suspense 是怎么工作的？
+
+<div class="follow-up">
+Suspense 在源码中是怎么实现的？
+</div>
+
+当子组件"抛出"一个 Promise（通过 `throw`，不是 `return`），React 的 Fiber 协调器会捕获它并渲染最近的 Suspense boundary 的 fallback。Promise resolve 后，React 重新尝试渲染子组件。详见 [React 源码 packages/react-reconciler/src/ReactFiberWorkLoop.js](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/ReactFiberWorkLoop.js)。
+
+```javascript
+// Suspense 的核心机制（简化版）
+function renderRoot(root) {
+  try {
+    // 尝试渲染组件树
+    workLoopSync();
+  } catch (thrownValue) {
+    // 如果组件 throw 了一个 Promise
+    if (isPromise(thrownValue)) {
+      // 找到最近的 Suspense boundary
+      const suspenseBoundary = findNearestSuspense();
+      // 将 boundary 的状态标记为 Suspended
+      suspenseBoundary.memoizedState = { dehydrated: null };
+      // 渲染 fallback UI
+      renderFallback(suspenseBoundary);
+      // 等待 Promise resolve 后重新渲染
+      thrownValue.then(() => {
+        suspenseBoundary.memoizedState = null;
+        scheduleUpdateOnFiber(suspenseBoundary);
+      });
+    }
+  }
+}
+```
+
+这段代码做了 2 件事：第一，通过 try/catch 捕获组件 throw 的 Promise，找到最近的 Suspense boundary；第二，将 boundary 状态标记为 Suspended 并渲染 fallback，Promise resolve 后触发重新渲染。
+
+<div class="follow-up">
+React 19 的 use() hook 是怎么配合 Suspense 的？
+</div>
+
+`use()` hook 是 React 19 引入的新 API，它可以在渲染过程中"读取" Promise 或 Context。当 Promise 未 resolve 时，`use()` 会 throw 一个 Promise，触发最近的 Suspense boundary 渲染 fallback。与 `useEffect` + `useState` 的数据获取方式不同，`use()` 可以在条件语句和循环中使用，打破了 Hooks 的"顶层调用"规则。详见 [React 官方文档 use()](https://react.dev/reference/react/use)。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 React Server Components"
+
+**及格回答（60-70分）：**
+> "RSC 在服务端渲染组件，不发送 JS 到客户端。减少客户端 JS 体积。"
+
+面试官评价：**知道结论但不理解设计**。
+
+**满分回答（90-100分）：**
+
+> RSC 的核心思想是**组件级别的服务端/客户端分离**。SSR 是把整个页面在服务端渲染为 HTML 字符串，客户端下载完整组件代码后进行 Hydration（重新执行一遍绑定事件）。这意味着组件代码被执行了两次。RSC 不同——服务端组件只在服务端运行，客户端收到的是 RSC Payload（一种特殊的序列化格式），不需要重新执行组件函数。
+
+> RSC 的关键设计约束是：服务端组件不能用 useState/useEffect 等 Hooks，不能用浏览器 API。但它可以直接访问数据库、文件系统，不需要 API 层。客户端组件通过 `'use client'` 指令标记，需要发送到客户端并进行 Hydration。服务端组件可以导入客户端组件，但客户端组件不能导入服务端组件（因为客户端无法执行服务端代码）。客户端组件可以接收服务端组件作为 children prop。
+
+> RSC 解决了 SSR 的根本问题——Hydration 成本。对于大型应用，Hydration 可能阻塞数百毫秒的可交互时间。RSC 通过减少需要发送到客户端的 JS 代码量（服务端组件的代码完全不发送），从根本上降低了 Hydration 的工作量。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="Error Boundary 能捕获异步错误吗?" icon="layer-group">
+
+**答题要点：**
+明确 Error Boundary 的捕获范围。
+
+**高分回答：**
+"不能。Error Boundary 只能捕获子组件树在**渲染过程**中的同步错误。异步错误（如 setTimeout、Promise 中的错误）、事件处理函数中的错误、服务端渲染的错误、Error Boundary 自身的错误都无法捕获。异步错误需要在回调中用 try/catch 或 .catch() 处理，然后通过 setState 更新状态触发重新渲染。事件处理函数中的错误需要用普通的 try/catch 捕获。"
+
+  </Accordion>
+
+  <Accordion title="Context 的 value 变化时, 为什么 React.memo 会被绕过?" icon="stopwatch">
+
+**答题要点：**
+从 React 的更新传播机制解释。
+
+**高分回答：**
+"React 的更新传播有两条路径：一条是通过 Props 从父组件向下传递（受 React.memo 优化），另一条是通过 Context 的 Provider 直接通知所有 Consumer。当 Context 的 value 变化时，React 会强制标记所有消费该 Context 的 Fiber 节点需要重新渲染，这个标记发生在 `readContext` 函数中，它会将 Consumer 注册到 Context 的订阅列表。由于这个标记是在 Fiber 的 `lanes` 层面设置的，`React.memo` 的 Props 浅比较根本不会被触发——更新已经在更底层被标记了。"
+
+  </Accordion>
+
+  <Accordion title="Hydration 失败会怎样?" icon="node">
+
+**答题要点：**
+从用户体验和性能两个角度分析后果。
+
+**高分回答：**
+"当服务端和客户端的渲染结果不一致时，React 会报 'Hydration failed' 错误，然后**客户端重新渲染整个页面**——丢弃服务端的 HTML，从头用客户端代码渲染。这会导致：第一，用户看到页面闪烁（旧 HTML 被替换为新渲染的结果）；第二，完全丢失服务端渲染的性能优势（白屏时间等于客户端完整渲染时间）。常见原因包括：使用了 Date.now()、Math.random()（服务端和客户端结果不同）、使用了 window/document（服务端不存在）。解决方案是用 `suppressHydrationWarning` 或 `useEffect` 延迟执行客户端特有的逻辑。"
+
+  </Accordion>
+
+  <Accordion title="🔥 React 19 的 use() hook 打破了 Hooks 规则, 为什么可以这样做?" icon="skull">
+
+**答题要点：**
+从实现机制和设计动机两个角度分析。
+
+**高分回答：**
+"传统的 Hooks（如 useState）必须在函数顶层调用，因为它们依赖链表的顺序读取机制——React 按调用顺序从 memoizedState 链表中取值。但 `use()` 的实现不依赖链表顺序：它不是从 Fiber 节点上读取缓存状态，而是直接在渲染过程中同步读取 Promise 或 Context 的当前值。如果 Promise 未 resolve，它 throw 一个 Promise 触发 Suspense；如果已 resolve，它返回值。这种实现方式不依赖调用顺序，所以可以在条件语句和循环中使用。设计动机是简化数据获取——不再需要 useEffect + useState + loading 三件套，一行 `use(fetchData())` 就能配合 Suspense 实现加载状态。"
+
+  </Accordion>
+
+  <Accordion title="🔥 受控组件和非受控组件该怎么选?" icon="skull">
+
+**答题要点：**
+从 React 设计理念和实际场景两个角度分析。
+
+**高分回答：**
+"默认使用受控组件——它符合 React '单一数据源'的理念，React state 是表单值的唯一真实来源，便于实时验证、格式化输入、动态禁用。非受控组件适用于三种场景：文件上传（`<input type='file'>` 的值只能由用户设置，不能由程序设置）、集成非 React 第三方库（如地图、富文本编辑器）、性能敏感场景（避免每次输入都触发 re-render）。非受控组件用 `ref` 直接访问 DOM 节点获取值，用 `defaultValue` 设置初始值。注意不要混用——同一个表单中，部分字段受控、部分非受控，会导致状态管理混乱。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🟢 [React 官方文档：Error Boundaries](https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary)：官方对错误边界的权威解释和使用示例。<sup>[1]</sup>
+- 🟢 [React 官方文档：Server Components](https://react.dev/reference/rsc/server-components)：官方对 RSC 设计理念和使用方式的完整文档。<sup>[2]</sup>
+- 📖 [Dan Abramov: Suspense for Data Fetching](https://react.dev/blog/2022/03/29/react-v18.html)：深入理解 Suspense 的工作原理和未来方向。<sup>[3]</sup>
+- 📖 [react-error-boundary 库](https://github.com/bvaughn/react-error-boundary)：函数组件的 Error Boundary 实现，支持 fallback 和 onReset。<sup>[4]</sup>

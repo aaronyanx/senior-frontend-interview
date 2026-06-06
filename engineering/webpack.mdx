@@ -1,0 +1,520 @@
+---
+title: "Webpack"
+---
+
+> **面试官为什么问这个？**
+>
+> Webpack 是前端工程化的核心基础设施。面试官问这个，本质上是在考察你：**是否理解从源码到产物的完整编译流水线，以及 Loader 和 Plugin 的本质区别。** 如果你答不清楚，说明你对构建工具的使用停留在"会抄配置"而不是"知道为什么这么配"。
+
+---
+
+## Q1: Webpack 的编译流程？从入口到产物经历了什么？
+
+<Steps>
+
+  <Step title="1990年代末: 前端资源的野蛮生长">
+
+早期 Web 开发中，JS、CSS、图片各自独立加载。随着项目膨胀，文件数量暴涨，手动管理 `script` 标签的顺序和依赖关系成为噩梦。
+
+  </Step>
+  <Step title="致命痛点: 模块化缺失">
+
+没有统一的模块系统，变量全局污染、依赖加载顺序错误、重复代码无法复用。开发者需要一种工具来自动分析依赖、合并文件、优化加载。
+
+  </Step>
+  <Step title="2012年: Webpack 诞生">
+
+Tobias Koppers 创建了 Webpack，提出了"一切皆模块"的理念——不仅 JS，连 CSS、图片、字体都可以作为模块被 `import`。核心创新是**代码分割（Code Splitting）**，允许按需加载。
+
+  </Step>
+  <Step title="核心机制: 从入口递归构建模块图">
+
+Webpack 从 entry 出发，递归解析每个模块的 `import`/`require`，经过 Loader 转换后生成 AST，提取依赖，形成完整的**模块依赖图（Module Graph）**。
+
+  </Step>
+  <Step title="关键设计哲学: Plugin 驱动的可扩展架构">
+
+Webpack 的所有编译步骤都暴露为 Hook（基于 Tapable），Plugin 可以介入任意阶段。这种"骨架 + 插件"的设计让 Webpack 从一个打包器变成了一个可编程的构建平台。
+
+  </Step>
+
+</Steps>
+
+**Webpack 解决的核心问题：**
+
+```text
+问题：前端资源碎片化，依赖关系手动管理
+
+手动管理：index.html 里写 20 个 script 标签，顺序错了就报错，
+         重复引入导致全局变量冲突，无法按需加载
+
+解决：自动分析依赖 + 模块化打包 + 代码分割
+
+Webpack：从 entry 递归构建模块图 → Loader 转换 → Plugin 优化 → 输出 bundle
+```
+
+<Note title="💡 一句话总结">
+
+Webpack 把散落的前端资源自动分析、转换、打包成浏览器可运行的 bundle。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有 Webpack">
+
+你在 HTML 里手动维护 30 个 script 标签的加载顺序。某天同事加了一个新文件，插在了错误的位置，导致 `$` 未定义报错。你花了两小时才发现是加载顺序问题。
+
+</Card>
+<Card title="✅ 引入 Webpack">
+
+你只需声明一个 `entry`，Webpack 自动递归分析所有 `import`，按依赖顺序打包成一个文件。代码分割还能让首屏只加载必要的代码，其余的按需懒加载。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么"（模块化缺失 + 依赖管理混乱），再说"怎么解决"（递归构建模块图 + Loader 转换 + Plugin 优化）。面试官想听的是你理解构建流程的本质，而不是背配置项。
+
+</Tip>
+
+---
+
+## Q2: Loader 和 Plugin 的本质区别是什么？
+
+Loader 的本质是**文件转换器**，Plugin 的本质是**生命周期钩子**。核心逻辑只有 2 步：
+
+```text
+┌───────────────────────────────────────┐
+│           Loader（文件转换）            │  ← 把非 JS 文件转成 Webpack 能理解的模块
+└─────────────────┬─────────────────────┘
+                  │ 从右往左，管道式执行
+                  ▼
+┌───────────────────────────────────────┐
+│         Plugin（生命周期介入）           │  ← 在编译的任意阶段执行自定义逻辑
+└───────────────────────────────────────┘
+```
+
+```javascript
+// Loader：文件级别的转换
+module: {
+  rules: [{
+    test: /\.scss$/,
+    use: ['style-loader', 'css-loader', 'sass-loader']
+    // 执行顺序：sass-loader → css-loader → style-loader（从右往左）
+  }]
+}
+
+// Plugin：构建生命周期级别的介入
+class MyPlugin {
+  apply(compiler) {
+    compiler.hooks.emit.tapAsync('MyPlugin', (compilation, callback) => {
+      // 在资源输出前做一些处理
+      callback();
+    });
+  }
+}
+```
+
+<Warning title="⚠️ 核心机制: Loader 的 Pitch 机制">
+
+每个 Loader 都有 `pitch` 和 `normal` 两个阶段。Pitch 从前往后执行，Normal 从后往前执行。
+
+- 如果某个 Loader 的 `pitch` 返回了值，会**跳过后续所有 Loader**，直接从当前 Loader 往回执行 normal。
+- `style-loader` 利用这个机制把 CSS 代码内联到 JS 中。
+- Loader 的本质是函数，接收源码字符串，返回转换后的字符串。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 流水线工厂">
+
+Loader 就像工厂流水线上的工人，每个人负责一道工序。原料（源文件）从右边进入，经过 sass-loader（打磨）、css-loader（抛光）、style-loader（包装），从左边出来变成成品。Plugin 则像工厂的质检经理，他不碰原料，但在流水线的各个关键节点（开始、中间、结束）插手检查和干预。
+
+</Tip>
+
+### Loader 的 Pitch 机制详解
+
+每个 Loader 都有 `pitch` 和 `normal` 两个阶段。Pitch 从前往后执行，Normal 从后往前执行。如果某个 Loader 的 `pitch` 返回了值，会跳过后续所有 Loader，直接从当前 Loader 往回执行 normal。
+
+```javascript
+// Loader 的执行流程
+// pitch1 → pitch2 → pitch3 → 读取资源 → normal3 → normal2 → normal1
+
+// 如果 pitch2 返回了值：
+// pitch1 → pitch2（返回值）→ normal1
+// 跳过了 pitch3 和 normal3，也不读取资源
+
+// style-loader 利用 pitch 机制把 CSS 代码内联到 JS 中
+```
+
+### 常用 Loader 分类
+
+| Loader | 作用 | 阶段 |
+|--------|------|------|
+| **babel-loader** | ES6+ → ES5 | 编译 |
+| **ts-loader** | TypeScript → JavaScript | 编译 |
+| **css-loader** | 解析 CSS 的 `@import` 和 `url()` | 解析 |
+| **style-loader** | 把 CSS 注入 DOM（`<style>` 标签） | 注入 |
+| **sass-loader** | SCSS → CSS | 编译 |
+| **file-loader / url-loader** | 处理静态资源 | 资源 |
+
+### 常用 Plugin 分类
+
+| Plugin | 作用 | 阶段 |
+|--------|------|------|
+| **HtmlWebpackPlugin** | 自动生成 HTML 文件 | emit |
+| **MiniCssExtractPlugin** | CSS 提取为独立文件 | emit |
+| **DefinePlugin** | 定义全局常量 | compile |
+| **HotModuleReplacementPlugin** | 启用 HMR | compile |
+| **TerserPlugin** | 压缩 JS | optimize |
+| **CopyWebpackPlugin** | 复制静态资源 | emit |
+
+---
+
+## Q3: Compiler 和 Compilation 有什么区别？
+
+### 基础梳理
+
+| 概念 | Compiler | Compilation |
+|------|----------|-------------|
+| **实例数量** | 整个生命周期只有一个 | 每次编译创建一个新实例 |
+| **职责** | 管理全局配置、文件系统、生命周期钩子 | 管理模块构建、依赖解析、Chunk 生成 |
+| **创建时机** | `new Webpack(config)` 时 | `compiler.run()` 时 |
+| **适用场景** | 全局性操作（如初始化插件） | 单次编译操作（如处理模块、生成资源） |
+
+### 专家视角深度剖析
+
+很多候选人能说出"Compiler 是全局的，Compilation 是单次编译的"，但大厂面试官真正在意的是：**为什么需要两个类？一个不够吗？**
+
+答案在于 **watch 模式**。当开发者开启 `watch: true` 后，Compiler 是持久的——它持有配置、文件系统监听器和全局插件。但每次文件变更触发重新编译时，需要一个全新的"编译上下文"来隔离本次编译的模块列表、Chunk 列表和依赖图。如果复用同一个对象，上次编译的残留数据会污染本次编译。
+
+```javascript
+// Compiler 管理不变的东西
+class Compiler {
+  constructor(context) {
+    this.options = config;
+    this.hooks = { run, compile, emit, done /* ... */ };
+    this.watchFileSystem = null;
+  }
+}
+
+// Compilation 管理每次编译特有的东西
+class Compilation {
+  constructor(compiler) {
+    this.modules = new Set();      // 本次编译的模块
+    this.chunks = new Set();       // 本次编译的 Chunk
+    this.assets = {};              // 本次编译的输出资源
+    this.moduleGraph = new ModuleGraph();
+  }
+}
+```
+
+### Webpack 的构建流程详解
+
+Webpack 的完整编译流程分为五个阶段：
+
+```text
+初始化 → 编译 → 构建 → seal → 输出
+
+1. 初始化：创建 Compiler 实例，注册所有 Plugin
+2. 编译：触发 compile 钩子，创建新的 Compilation 实例
+3. 构建：从 entry 递归处理每个模块（Loader 转换 → Parser 解析 → 生成 Dependency）
+4. seal：核心优化阶段（模块优化 → Chunk 分组 → Chunk 优化 → 代码生成）
+5. 输出：遍历所有 assets 写入文件系统
+```
+
+### Watch 模式的工作原理
+
+当开启 `watch: true` 后，Webpack 用 chokidar 监听文件变化。每次文件变更触发重新编译时，会创建一个全新的 Compilation 实例来隔离本次编译的模块列表和依赖图。这就是为什么需要 Compiler 和 Compilation 两个类——Compiler 持久不变，Compilation 每次重建。
+
+---
+
+## Q4: Tree-shaking 的原理？为什么 CommonJS 不能 Tree-shaking？
+
+**Tree-shaking 是两阶段协作：Webpack 负责标记（marking），Terser 负责清除（sweeping）。**
+
+**为什么 CommonJS 不能 Tree-shaking？**
+
+```javascript
+// CommonJS：require() 是运行时调用，编译时无法确定导出了什么
+const utils = require('./utils');
+// utils.a? utils.b? 编译器不知道
+
+// ES Module：import/export 是静态声明，编译时就能确定依赖关系
+import { a, b } from './utils';
+// 编译器明确知道只用了 a 和 b
+```
+
+**标记阶段的完整流程：**
+
+```javascript
+// 1. 解析：HarmonyImportDependencyParserPlugin 解析 import/export
+//    → 生成 Dependency 对象，记录引用的 exports
+
+// 2. 标记：FlagDependencyUsagePlugin 从入口遍历模块图
+//    → 调用 getReferencedExports 标记每个模块的 usedExports
+
+// 3. SideEffects 分析：SideEffectsFlagPlugin 检查 package.json
+//    → sideEffects: false 的模块，未使用的 export 可以整个删除
+
+// 4. 代码生成：根据 usedExports 决定保留哪些 export
+//    → 输出注释标记 /* unused harmony export xxx */
+
+// 5. 压缩：Terser 删除 dead code
+//    → 最终清除未使用的代码
+```
+
+**关键区别：**
+
+| 场景 | 能否 Tree-shaking | 原因 |
+|------|-------------------|------|
+| ES Module `import/export` | ✅ | 静态声明，编译时可分析 |
+| CommonJS `require/module.exports` | ❌ | 运行时调用，编译时无法确定 |
+| `sideEffects: false` | ✅ 更激进 | 整个模块可删除 |
+| `sideEffects: ['*.css']` | ✅ 保留副作用文件 | CSS 等有副作用的文件不删 |
+
+<Tip title="最佳实践: ">
+
+Tree-shaking 需要三个条件同时满足：1) 使用 ES Module 语法（`import/export`）；2) 在 `package.json` 中声明 `"sideEffects": false`；3) 确保 Terser 的 `compress.dead_code` 设为 true（Webpack 默认开启）。三者缺一不可。
+
+</Tip>
+
+### sideEffects 的深度理解
+
+`sideEffects` 不仅仅是 `true`/`false`，还可以是文件列表：
+
+```json
+{
+  "sideEffects": ["*.css", "*.global.js"]
+}
+```
+
+这意味着 CSS 文件和 `.global.js` 文件不会被 Tree-shaking 删除（它们有副作用），其他文件如果未被使用则可以安全删除。
+
+### Webpack 5 vs Webpack 4 的 Tree-shaking 改进
+
+Webpack 5 在 Tree-shaking 方面有三个改进：
+1. **嵌套 Tree-shaking**：可以分析嵌套的属性访问（`a.b.c`）
+2. **内部模块 Tree-shaking**：可以分析模块内部的导出是否被使用
+3. **CommonJS Tree-shaking**：对部分 CommonJS 模式（如静态 `module.exports`）也支持 Tree-shaking
+
+### 持久化缓存的配置策略
+
+Webpack 5 的持久化缓存是最重要的性能优化：
+
+```javascript
+// 缓存配置
+cache: {
+  type: 'filesystem',
+  cacheDirectory: path.resolve(__dirname, '.cache'),
+  buildDependencies: {
+    config: [__filename]  // 配置文件变更时缓存失效
+  }
+}
+// 缓存失效策略：文件 ETag 变更 / webpack.config.js 变更 / package.json 变更
+// 第二次构建提速 80%+
+```
+
+---
+
+## 🔍 底层源码：Tapable 的动态代码生成
+
+<div class="follow-up">
+Tapable 的 Hook 是怎么做到比普通事件快的？
+</div>
+
+Tapable 最精妙的设计是**动态代码生成**：每次注册或注销回调后，都会重新编译生成一个全新的调用函数，用字符串拼接的方式生成最优代码，避免运行时循环判断（详见 [Tapable 源码：lib/HookCodeFactory.js](https://github.com/webpack/tapable/blob/master/lib/HookCodeFactory.js)）：
+
+```javascript
+// 注册了两个 tap 后，Tapable 动态生成的函数（等价于）：
+function(arg0, arg1) {
+  var _x = this._x;           // [fn0, fn1]
+  var _fn0 = _x[0];
+  var _result0 = _fn0(arg0, arg1);
+  var _fn1 = _x[1];
+  var _result1 = _fn1(arg0, arg1);
+}
+```
+
+这消除了运行时的 `for` 循环和 `if` 条件判断开销。代价是首次注册较慢（需要编译生成函数），但后续每次调用都是 O(1) 的直接索引访问。
+
+<div class="follow-up">
+Webpack 5 的持久化缓存是怎么实现的？
+</div>
+
+Webpack 5 引入了 `IdleFileCachePlugin`，在构建结束后不立即写入磁盘，而是等空闲超时后才写入（详见 [Webpack 源码：lib/cache/IdleFileCachePlugin.js](https://github.com/webpack/webpack/blob/main/lib/cache/IdleFileCachePlugin.js)）：
+
+```javascript
+// 缓存配置
+cache: {
+  type: 'filesystem',
+  cacheDirectory: path.resolve(__dirname, '.cache'),
+  buildDependencies: {
+    config: [__filename]  // 配置文件变更时缓存失效
+  }
+}
+// 缓存失效策略：文件 ETag 变更 / webpack.config.js 变更 / package.json 变更
+// 第二次构建提速 80%+，这是 Webpack 5 最重要的性能优化
+```
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 Webpack 的编译流程"
+
+**及格回答（60-70分）：**
+> "Webpack 从 entry 开始，递归分析依赖，用 Loader 转换文件，用 Plugin 做优化，最后输出 bundle。Loader 从右往左执行，Plugin 通过 apply 方法注册。"
+
+面试官评价：**知道流程但不理解机制**。
+
+**满分回答（90-100分）：**
+
+> "Webpack 的编译流程分为五个阶段：初始化、编译、构建、seal、输出。初始化阶段创建 Compiler 实例并注册所有 Plugin。编译阶段触发 `compile` 钩子，创建新的 Compilation 实例。构建阶段从 entry 递归处理每个模块——经过 Loader 转换后，Parser 解析 AST 提取 `import`/`require` 生成 Dependency 对象，形成模块依赖图。<sup>[1]</sup>"
+
+> "seal 阶段是核心优化阶段，依次执行：模块优化、Chunk 分组（SplitChunksPlugin 按条件提取共享模块）、Chunk 优化、依赖优化（FlagDependencyUsagePlugin 标记 usedExports 用于 Tree-shaking）、代码生成。输出阶段遍历所有 assets 写入文件系统。<sup>[2]</sup>"
+
+> "Loader 和 Plugin 的本质区别：Loader 是文件级别的管道转换（`pitch` 机制实现从右往左），Plugin 是构建生命周期级别的钩子介入（基于 Tapable 的动态代码生成）。理解 Compiler vs Compilation 的分离设计，是理解 watch 模式和增量编译的关键。"
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="seal 阶段具体做了什么?" icon="layer-group">
+
+**答题要点：**
+不能只回答"优化"两个字，至少要说五个子阶段。
+
+**高分回答：**
+"seal 是整个编译过程的核心优化入口。它依次执行五个子阶段：
+1. **模块优化**（`optimizeModules`）：合并相同模块、标记 sideEffects
+2. **Chunk 分组**（`optimizeChunks`）：SplitChunksPlugin 根据 `minSize`、`minChunks`、`cacheGroups` 把共享模块提取到独立 chunk
+3. **Chunk 优化**：合并可合并的 chunk、移除空 chunk
+4. **依赖优化**（`optimizeDependencies`）：FlagDependencyUsagePlugin 标记 `usedExports`，SideEffectsFlagPlugin 分析 `sideEffects`
+5. **代码生成**（`codeGeneration`）：根据标记生成最终代码，Terser 删除 dead code"
+
+  </Accordion>
+
+  <Accordion title="HMR 的完整链路是什么?" icon="stopwatch">
+
+**答题要点：**
+说出从文件变更到模块替换的完整链路。
+
+**高分回答：**
+"HMR 的链路是：chokidar 监听文件变更 → 增量编译（只重建变更模块及其依赖链）→ 生成 update chunk（只包含变更模块的新代码 + manifest JSON）→ dev server 通过 WebSocket 发送新 hash 给客户端 → 客户端发现 hash 变了触发 `hotCheck()` → 下载 update chunk → 用新代码替换旧模块缓存 → 执行 `module.hot.accept()` 回调。
+    
+关键点：`accept()` 告诉 Webpack 这个模块可以自己处理更新，不需要通知父模块。如果没有 `accept()`，更新会沿着依赖链向上传播，最终等同于全量刷新。React 的 Fast Refresh 就是利用 `accept()` 实现组件热替换的。"
+
+  </Accordion>
+
+  <Accordion title="SplitChunksPlugin 的核心算法是什么?" icon="node">
+
+**答题要点：**
+说出分组、检查、提取三步。
+
+**高分回答：**
+"SplitChunksPlugin 的核心算法分三步：
+1. **收集**：遍历所有模块，记录每个模块被哪些 chunk 引用（Module → [Chunk, ...]）
+2. **分组**：根据 `cacheGroups` 的条件（如 `test: /[\\/]node_modules[\\/]/`）把模块分成不同的组
+3. **检查并提取**：对每组检查是否满足 `minSize`（最小体积）和 `minChunks`（最小引用次数），满足则创建新 chunk，把模块从原 chunk 移到新 chunk
+    
+`chunks: 'all'` 表示同时处理同步和异步 chunk，`maxAsyncRequests` 和 `maxInitialRequests` 限制请求数量防止碎片化。"
+
+  </Accordion>
+
+  <Accordion title="Webpack 5 的 Module Federation 是什么?解决了什么问题?" icon="skull">
+
+**答题要点：**
+对比传统 npm 包共享，点出"运行时共享"的本质。
+
+**高分回答：**
+"Module Federation 是 Webpack 5 引入的**运行时模块共享**机制。传统方式共享依赖（如 React）需要通过 npm 包，版本锁定在构建时。Module Federation 允许多个独立构建的应用在**运行时**共享模块——一个应用可以动态加载另一个应用暴露的模块，而不需要重新构建。
+
+核心配置是 `ModuleFederationPlugin` 的 `exposes`（暴露模块）和 `remotes`（远程模块）。共享的依赖（如 React）通过 `shared` 配置声明，Webpack 会在运行时选择已加载的版本，避免重复加载。这是微前端架构的重要基础设施。"
+
+  </Accordion>
+
+  <Accordion title="Loader 和 Plugin 的本质区别是什么?" icon="layer-group">
+
+**答题要点：**
+不能只说"Loader 转换文件，Plugin 做优化"，必须说出本质差异。
+
+**高分回答：**
+"Loader 是**文件级别的管道转换器**，本质是函数，接收源码字符串，返回转换后的字符串。执行顺序从右往左（先执行右边的 Loader）。每个 Loader 有 pitch 和 normal 两个阶段。
+
+Plugin 是**构建生命周期级别的钩子**，基于 Tapable 的动态代码生成。Plugin 通过 `apply(compiler)` 方法注册，可以介入编译的任意阶段（compile、make、seal、emit 等）。
+
+本质区别：Loader 处理单个文件的转换，Plugin 处理整个构建流程的优化。Loader 像流水线工人，Plugin 像质检经理。"
+
+  </Accordion>
+
+  <Accordion title="Webpack 的持久化缓存是怎么工作的?" icon="stopwatch">
+
+**答题要点：**
+说出缓存的类型、失效策略和性能提升。
+
+**高分回答：**
+"Webpack 5 的持久化缓存通过 `cache: { type: 'filesystem' }` 配置。缓存内容存储在 `node_modules/.cache` 目录中，包括模块的编译结果、依赖图、Chunk 信息等。
+
+缓存失效策略有三种：1) 文件内容变更（通过 ETag 检测）；2) 配置文件变更（webpack.config.js）；3) package.json 变更。
+
+性能提升：第二次构建提速 80% 以上。在 CI/CD 中，可以通过 `actions/cache` 把 `.cache` 目录缓存起来，跨 CI 复用构建产物。"
+
+  </Accordion>
+
+  <Accordion title="什么是代码分割（Code Splitting）?" icon="node">
+
+**答题要点：**
+说出代码分割的三种方式和适用场景。
+
+**高分回答：**
+"代码分割有三种方式：
+1. **入口分割**：通过 `entry` 配置多个入口，每个入口生成独立的 bundle。适合多页面应用。
+2. **动态导入**：通过 `import()` 语法按需加载模块，Webpack 自动把动态导入的模块分割为独立的 chunk。适合路由级别的懒加载。
+3. **SplitChunksPlugin**：自动提取共享模块到独立 chunk。配置 `minSize`（最小体积）、`minChunks`（最小引用次数）控制分割策略。
+
+代码分割的核心价值：减少首屏加载时间，只加载当前页面需要的代码。"
+
+  </Accordion>
+
+  <Accordion title="🔥 Webpack 构建性能怎么优化?" icon="skull">
+
+**答题要点：**
+从缓存、并行、减少范围三个维度回答。
+
+**高分回答：**
+"Webpack 构建性能优化有三个维度：
+1. **缓存**：开启 `cache: { type: 'filesystem' }` 持久化缓存，第二次构建提速 80%+。用 `babel-loader` 的 `cacheDirectory: true` 缓存 Babel 编译结果。
+2. **并行**：用 `thread-loader` 把 Loader 的工作放到多线程并行执行。用 `TerserPlugin` 的 `parallel: true` 并行压缩。
+3. **减少范围**：用 `include`/`exclude` 限制 Loader 只处理必要的文件。用 `resolve.extensions` 减少文件查找范围。用 `module.noParse` 跳过已打包的库。
+
+优化后，大型项目（1000+ 模块）的构建时间可以从 30 秒降到 5 秒。"
+
+  </Accordion>
+
+  <Accordion title="🔥 Webpack 和 Vite 怎么选?" icon="skull">
+
+**答题要点：**
+从项目规模、团队习惯、生态需求三个维度回答。
+
+**高分回答：**
+"选择标准：
+1. **新项目 + 现代浏览器**：优先 Vite，启动快、HMR 快、开发体验好。
+2. **老项目迁移**：继续用 Webpack，迁移成本高、风险大。
+3. **需要复杂配置**：Webpack 的 Plugin 生态更成熟，配置更灵活。
+4. **SSR 需求**：两者都支持，但 Vite 的 SSR 更简洁。
+5. **团队习惯**：团队熟悉 Webpack 就继续用，不要为了用新工具而用新工具。
+
+核心原则：工具是为项目服务的，不是为了追新。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [Webpack 官方文档：Concepts](https://webpack.js.org/concepts/)：*Webpack 核心概念的权威解释，包含 Entry、Output、Loader、Plugin、Mode 的完整说明。* <sup>[1]</sup>
+- 📖 [Tapable 源码](https://github.com/webpack/tapable)：*Webpack 的事件系统底层实现，理解 Hook 的动态代码生成机制。* <sup>[2]</sup>
+- 🟢 [Webpack 源码解析（zhailuxu）](https://github.com/zhailuxu/webpack-source-code-analysis)：*中文社区最详细的 Webpack 源码逐行解析，覆盖编译流程、Tree-shaking、HMR 的底层实现。* <sup>[3]</sup>

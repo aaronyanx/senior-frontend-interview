@@ -1,0 +1,918 @@
+---
+title: "组件与通信"
+---
+
+> **面试官为什么问这个？**
+>
+> 组件是 Vue 应用的基本单位。面试官问这个，是在考察你是否理解：组件的生命周期钩子在什么时候执行？父子组件之间怎么通信？跨层级组件怎么传递数据？如果你只会用 `$emit` 和 `props`，说明你对 Vue 的组件体系理解太浅。
+
+---
+
+## Q1: Vue 2 和 Vue 3 的生命周期有什么区别？
+
+<Steps>
+
+  <Step title="Vue 2 的 Options API 生命周期">
+
+  Vue 2 用 Options API 的钩子函数：`beforeCreate`、`created`、`beforeMount`、`mounted`、`beforeUpdate`、`updated`、`beforeDestroy`、`destroyed`。这些钩子绑定在组件实例上，通过 `this` 访问组件状态。
+
+  </Step>
+  <Step title='Vue 3 的 Composition API 生命周期'>
+
+  Vue 3 保留了 Options API 的钩子（改名 `beforeUnmount`/`unmounted`），同时引入了 Composition API 的钩子：`onBeforeMount`、`onMounted`、`onBeforeUpdate`、`onUpdated`、`onBeforeUnmount`、`onUnmounted`。这些钩子在 `setup()` 中调用。
+
+  </Step>
+  <Step title="执行时机不变, 调用方式变了">
+
+  生命周期的**执行时机**在 Vue 2 和 Vue 3 中完全一样--区别只是调用方式：Options API 用 `this`，Composition API 用 `onXxx()` 函数。
+
+  </Step>
+  <Step title='组合式 API 的钩子注册灵活性'>
+
+  Composition API 的生命周期钩子可以在 `setup()` 中**多次调用**--你可以在不同的 Composable 函数中分别注册 `onMounted`，它们会按注册顺序依次执行。这比 Options API 的"一个组件只能有一个 mounted"更灵活，让逻辑复用时可以带上自己的生命周期逻辑。
+
+  </Step>
+  <Step title="关键启示: 生命周期是组件与外部世界交互的入口">
+
+  理解生命周期不只是背诵钩子名字，而是要清楚每个阶段能做什么、不能做什么--比如 `onMounted` 中才能访问 DOM，`onBeforeUnmount` 中必须清理副作用。面试中回答时结合实际场景（获取数据、绑定事件、清理定时器）说明使用方式，比单纯罗列钩子名称更能体现你的工程经验。
+
+  </Step>
+
+</Steps>
+
+**生命周期解决的核心问题：**
+
+```text
+问题：组件在创建、更新、销毁的不同阶段，需要执行不同的逻辑
+
+创建时：需要获取初始数据、绑定事件监听器
+更新时：需要响应数据变化、操作 DOM
+销毁时：需要清理定时器、移除事件监听器
+
+解决：生命周期钩子让开发者在组件的特定阶段插入自定义逻辑
+
+beforeCreate → created → beforeMount → mounted → beforeUpdate → updated → beforeUnmount → unmounted
+```
+
+**一句话总结：生命周期钩子让开发者在组件的"出生、成长、死亡'各阶段插入自定义逻辑，是组件和外部世界交互的入口。**
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有生命周期">
+
+你不知道组件什么时候挂载完成、什么时候被销毁。就像养了一只宠物，但不知道它什么时候出生、什么时候生病、什么时候老去--你无法在正确的时机喂药、体检、送终。
+
+</Card>
+<Card title='✅ 有生命周期'>
+
+`onMounted` 中获取初始数据，`onUpdated` 中响应数据变化，`onUnmounted` 中清理定时器。就像有了宠物的健康档案--出生时打疫苗（mounted）、生病时喂药（updated）、老去时安葬（unmounted）。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时重点说**执行时机**（什么时候触发）和**典型用途**（每个钩子用来做什么），不要只背钩子名字。面试官想听的是你在实际项目中怎么用这些钩子。
+
+</Tip>
+
+---
+
+## Q2: 父子组件的生命周期执行顺序
+
+<Steps>
+
+  <Step title="父组件先开始挂载">
+
+  Vue 的组件挂载是递归的。父组件先进入 `beforeCreate → created → beforeMount`，然后遇到子组件标签，暂停父组件的挂载，开始子组件的挂载流程。
+
+  </Step>
+  <Step title="子组件先完成挂载">
+
+  子组件走完 `beforeCreate → created → beforeMount → mounted` 后，控制权返回父组件，父组件继续执行 `mounted`。
+
+  </Step>
+  <Step title="销毁顺序: 父先开始，子先完成">
+
+  销毁也是递归的。父组件进入 `beforeUnmount`，然后递归销毁子组件（子走完 `beforeUnmount → unmounted`），父组件最后执行 `unmounted`。
+
+  </Step>
+  <Step title="更新顺序: 父先 beforeUpdate，子先 updated">
+
+  数据变化触发更新时，父组件先执行 `beforeUpdate`，然后递归更新子组件（子走完 `beforeUpdate → updated`），父组件最后执行 `updated`。
+
+  </Step>
+  <Step title="关键洞察: 父子嵌套决定顺序">
+
+  所有顺序都遵循同一个规律：**父先开始，子先完成**。这是因为 Vue 的渲染是深度优先递归——遇到子组件就递归进去，子组件处理完才返回父组件继续。
+
+  </Step>
+
+</Steps>
+
+**父子组件生命周期的完整执行顺序：**
+
+```text
+挂载阶段：
+  父 beforeCreate → 父 created → 父 beforeMount
+      → 子 beforeCreate → 子 created → 子 beforeMount → 子 mounted
+  父 mounted
+
+更新阶段：
+  父 beforeUpdate
+      → 子 beforeUpdate → 子 updated
+  父 updated
+
+销毁阶段：
+  父 beforeUnmount
+      → 子 beforeUnmount → 子 unmounted
+  父 unmounted
+```
+
+**一句话总结：父子组件的生命周期遵循"父先开始、子先完成"的规律，这是 Vue 深度优先递归渲染的自然结果。**
+
+<CardGroup cols={2}>
+
+<Card title="🚫 不理解执行顺序">
+
+在父组件的 `mounted` 中访问子组件的 DOM，以为子组件还没挂载完——实际上子组件的 `mounted` 先于父组件执行，此时子组件 DOM 已经就绪。
+
+</Card>
+<Card title="✅ 理解执行顺序">
+
+知道子组件先 mounted，就能在父组件的 `mounted` 中安全地访问子组件 DOM。知道父组件先 beforeUnmount，就能在子组件的 `onBeforeUnmount` 中访问父组件提供的数据。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时画出嵌套的执行顺序图（用缩进表示父子层级），比口头描述更清晰。面试官最常问的是"子组件的 mounted 和父组件的 mounted 谁先执行"——答案是子组件先。记住这个就够了。
+
+</Tip>
+
+---
+
+## Q3: 组件通信有哪些方式？
+
+Vue 提供了多种组件通信方式，适用于不同的场景：
+
+```text
+┌───────────────────────────────────────┐
+│        父组件                          │
+│  <Child :msg="data' @event="handler" />│
+└─────────────────┬─────────────────────┘
+                  │ props ↓ / $emit ↑
+                  ▼
+┌───────────────────────────────────────┐
+│        子组件                          │
+│  defineProps(['msg'])                  │
+│  defineEmits(['event'])                │
+└───────────────────────────────────────┘
+```
+
+**Vue 3 的通信方式：**
+
+| 方式 | 适用场景 | 数据流向 |
+|------|---------|---------|
+| **props / emit** | 父子组件 | 父 → 子（props）、子 → 父（emit） |
+| **v-model** | 父子组件双向绑定 | 父 ↔ 子 |
+| **refs / defineExpose** | 父访问子组件实例 | 父 → 子 |
+| **provide / inject** | 跨层级通信 | 祖先 → 后代 |
+| **Pinia / Vuex** | 全局状态管理 | 任意组件 |
+| **Event Bus**（Vue 3 已移除） | 兄弟组件 | 任意方向 |
+
+<Warning title="⚠️ Vue 3 移除了 $on / $off / $emit (实例方法) ">
+
+Vue 2 中可以用 `new Vue()` 作为 Event Bus 来实现任意组件间通信。Vue 3 移除了这些实例方法，因为 Event Bus 在大型应用中会导致数据流难以追踪。
+
+替代方案：
+- 简单场景：用 `provide / inject`
+- 复杂场景：用 Pinia 状态管理
+
+</Warning>
+
+<Tip title='🎢 通俗比喻：公司内部通信'>
+
+组件通信的核心是"数据流向的可追踪性"--props/emit 是父子直接通信，provide/inject 是跨层级注入，Pinia 是全局共享。
+就像公司内部通信。props/emit 就像上下级之间的汇报--上级给下级分配任务（props），下级向上级汇报结果（emit）。provide/inject 就像公司公告--老板发公告（provide），所有员工都能看到（inject），不管隔了几层。Pinia 就像公司的共享文档--所有人都能读写，谁改了都有记录。
+
+</Tip>
+
+---
+
+## Q4: provide / inject 和 props 有什么区别？
+
+### 基础梳理
+
+| 对比维度 | props / emit | provide / inject |
+|---------|-------------|-----------------|
+| **数据流向** | 父 → 子 / 子 → 父 | 祖先 → 后代（任意层级） |
+| **层级限制** | 只能一层 | 不限层级 |
+| **类型检查** | ✅ 支持 | ❌ 不支持（需要手动类型） |
+| **响应式** | ✅ 自动 | ⚠️ 默认不响应（需要 ref/reactive） |
+| **适用场景** | 父子直接通信 | 跨多层组件通信 |
+
+### 专家视角深度剖析
+
+很多候选人知道 provide/inject，但不知道**怎么让它保持响应式**。
+
+```javascript
+// 祖先组件
+import { provide, ref } from 'vue';
+
+const theme = ref('light');
+provide('theme', theme);  // 提供响应式 ref
+
+// 后代组件（任意层级）
+import { inject } from 'vue';
+
+const theme = inject('theme');  // 拿到的是 ref，自动响应
+```
+
+如果 provide 的是普通值（不是 ref/reactive），后代组件拿到的是**值的快照**--祖先组件修改时，后代不会更新。
+
+```javascript
+// ❌ 不响应
+provide('theme', 'light');  // 后代拿到的是字符串 'light'，不会变
+
+// ✅ 响应
+const theme = ref('light');
+provide('theme', theme);  // 后代拿到的是 ref，会响应变化
+```
+
+---
+
+## Q5: provide/inject 原理详解
+
+### provide/inject 的实现机制
+
+provide/inject 是 Vue 的依赖注入机制，允许祖先组件向后代组件传递数据，不管隔了多少层。
+
+```text
+provide/inject 的工作流程：
+
+祖先组件 provide('theme', ref('dark'))
+  │
+  ├─ 把数据存入当前组件实例的 provides 对象
+  │
+  ▼
+中间组件（不需要任何代码）
+  │
+  ▼
+后代组件 inject('theme')
+  │
+  ├─ 沿着父组件链向上查找 provides 对象
+  │   ├─ 当前组件的 provides → 没找到
+  │   ├─ 父组件的 provides → 没找到
+  │   └─ 祖先组件的 provides → 找到！返回 ref('dark')
+  │
+  ▼
+拿到的是 ref 对象，自动响应变化
+```
+
+```javascript
+// packages/runtime-core/src/apiInject.ts（简化）
+function provide(key, value) {
+  // 获取当前组件实例
+  const currentInstance = getCurrentInstance()
+  if (!currentInstance) return
+
+  // 获取父组件的 provides
+  let provides = currentInstance.provides
+
+  // 首次 provide 时，创建新的 provides 对象（原型继承父组件的 provides）
+  if (provides === currentInstance.parent?.provides) {
+    provides = currentInstance.provides = Object.create(provides)
+  }
+
+  // 存储
+  provides[key] = value
+}
+
+function inject(key, defaultValue) {
+  // 获取当前组件实例
+  const currentInstance = getCurrentInstance()
+  if (!currentInstance) return
+
+  // 沿着父组件链向上查找
+  const parentProvides = currentInstance.parent?.provides
+  if (parentProvides && key in parentProvides) {
+    return parentProvides[key]
+  }
+
+  // 没找到，返回默认值
+  return defaultValue
+}
+```
+
+### provide/inject 的响应式问题
+
+```javascript
+// ❌ 不响应：provide 普通值
+provide('count', 0)  // 后代拿到的是数字 0 的快照
+
+// ✅ 响应：provide ref 对象
+const count = ref(0)
+provide('count', count)  // 后代拿到的是 ref，会响应变化
+
+// ✅ 响应：provide reactive 对象
+const config = reactive({ theme: 'dark' })
+provide('config', config)  // 后代拿到的是 reactive，会响应变化
+
+// ✅ 响应：provide 函数（工厂模式）
+provide('count', () => count.value)  // 后代每次调用都获取最新值
+```
+
+### provide/inject vs props 的区别
+
+| 对比维度 | props | provide/inject |
+|---------|-------|----------------|
+| **数据流向** | 父→子（一层） | 祖先→后代（任意层） |
+| **类型检查** | ✅ defineProps | ❌ 需手动 |
+| **响应式** | ✅ 自动 | ⚠️ 需 ref/reactive |
+| **DevTools** | ✅ 可追踪 | ❌ 不可追踪 |
+| **适用场景** | 父子直接通信 | 框架级注入（主题、国际化） |
+
+<Warning title="⚠️ provide/inject 的陷阱">
+
+1. **provide 普通值不响应**：必须 provide ref 或 reactive 对象
+2. **数据流不透明**：你不知道数据是从哪个祖先提供的，调试困难
+3. **不要滥用**：如果数据只在父子两层间传递，用 props 更清晰
+
+</Warning>
+
+---
+
+## Q6: keep-alive 的原理？缓存了什么？
+
+**keep-alive 是什么？**
+
+`<keep-alive>` 是 Vue 的内置组件，用于**缓存不活跃的组件实例**，避免重复渲染和销毁。
+
+```vue
+<keep-alive>
+  <component :is="currentComponent" />
+</keep-alive>
+```
+
+**缓存了什么？**
+
+keep-alive 缓存的是组件的**虚拟 DOM 树**（VNode）和**组件实例**（包含状态）。当组件被切换走时，keep-alive 不会销毁它，而是把它从 DOM 中移除但保留实例；当组件被切换回来时，直接复用缓存的实例，不需要重新创建。
+
+**keep-alive 的钩子：**
+
+| 钩子 | 触发时机 |
+|------|---------|
+| `onActivated` | 组件被激活时（从缓存中恢复） |
+| `onDeactivated` | 组件被停用时（进入缓存） |
+
+<Warning title="⚠️ keep-alive 的内存问题">
+
+keep-alive 会占用内存来存储缓存的组件实例。如果缓存了大量组件或组件内部有大量数据，可能导致内存占用过高。可以通过 `max` 属性限制缓存数量：
+
+```vue
+<keep-alive :max="10'>
+  <component :is="currentComponent" />
+</keep-alive>
+```
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 浏览器标签页">
+
+keep-alive 的本质是"缓存组件实例，避免重复创建和销毁'--切换组件时不销毁，而是存入缓存；切回来时直接复用。
+就像浏览器的标签页。你切换到其他标签页时，当前标签页不会关闭（组件不会销毁），它的状态（滚动位置、输入内容）都保留着。你切回来时，一切都在。但如果你打开了太多标签页，电脑会变卡（内存占用过高）。
+
+</Tip>
+
+---
+
+## Q7: keep-alive 的 LRU 缓存是怎么实现的？
+
+<Steps>
+
+  <Step title="问题: 组件切换导致重复创建和销毁">
+
+  在 Tab 切换、路由切换等场景中，每次切换都会销毁旧组件、创建新组件。如果组件内部有大量数据（如列表页的滚动位置、表单的填写内容），销毁意味着这些状态全部丢失。
+
+  </Step>
+  <Step title="keep-alive 的缓存策略">
+
+  keep-alive 用一个 Map 缓存组件的 VNode，用一个数组记录组件的 key 顺序（实现 LRU）。当缓存数量超过 `max` 时，淘汰最久未使用的组件。
+
+  </Step>
+  <Step title="LRU 的核心: 最近使用的放最前面">
+
+  每次访问缓存的组件时，把它的 key 移到数组最前面。淘汰时从数组末尾移除——末尾的就是最久未使用的。
+
+  </Step>
+  <Step title="源码实现: pruneCacheEntry">
+
+  Vue 3 的 KeepAlive 组件内部用 `Map` 存缓存、`keys` 数组记录顺序。`pruneCacheEntry` 函数负责淘汰最久未使用的缓存（详见 [KeepAlive.ts#L187](https://github.com/vuejs/core/blob/main/packages/runtime-core/src/components/KeepAlive.ts#L187)）。
+
+  </Step>
+  <Step title="关键洞察: 缓存的是 VNode 不是 DOM">
+
+  keep-alive 缓存的是虚拟 DOM 树（VNode），不是真实 DOM。恢复时需要重新 patch 到真实 DOM 上，但因为 VNode 中包含了组件实例和状态，所以状态不会丢失。
+
+  </Step>
+
+</Steps>
+
+**keep-alive 的 LRU 缓存机制：**
+
+```text
+缓存结构：
+  cache = Map<vnode.key, VNode>    ← 存储缓存的 VNode
+  keys = [key3, key2, key1]        ← LRU 顺序（最久未用在末尾）
+
+访问 key2 时：
+  keys = [key2, key3, key1]        ← key2 移到最前面
+
+新增 key4 且 max=3 时：
+  淘汰 key1（末尾，最久未用）
+  keys = [key4, key2, key3]
+```
+
+**一句话总结：keep-alive 用 Map + 数组实现 LRU 缓存，淘汰最久未使用的组件，保留最近使用的组件状态。**
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有 keep-alive">
+
+每次 Tab 切换都销毁重建组件。就像你每次离开办公室都把桌上的文件全部扔掉，回来后重新打印一份——之前的进度全部丢失。
+
+</Card>
+<Card title="✅ 有 keep-alive">
+
+切换时把组件存入缓存，切回复用。就像你离开办公室时把文件放进抽屉（缓存），回来后从抽屉里拿出来继续用——进度都在。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"缓存了什么"（VNode + 组件实例），再说"怎么淘汰"（LRU 策略），最后说"钩子"（onActivated/onDeactivated）。面试官想听的是你理解 LRU 的实现而不是只背 API。
+
+</Tip>
+
+---
+
+## Q8: 组件通信方案的完整选型指南
+
+组件通信不只是知道有哪些方式，更关键的是**在什么场景下选什么方案**。
+
+```text
+┌─────────────────────────────────────────────────┐
+│                组件通信选型决策树                  │
+│                                                   │
+│  数据需要跨组件共享吗？                             │
+│  ├── 否 → props / emit（父子直接通信）              │
+│  └── 是 → 共享的范围是什么？                        │
+│      ├── 祖先 ↔ 后代（跨层级）→ provide / inject    │
+│      ├── 兄弟 / 任意组件 → Pinia（全局状态管理）      │
+│      └── 框架级注入（主题/国际化）→ provide / inject  │
+└─────────────────────────────────────────────────┘
+```
+
+### 各方案的深度对比
+
+| 方案 | 数据流向 | 响应式 | TypeScript | DevTools | 适用场景 |
+|------|---------|--------|------------|----------|---------|
+| **props/emit** | 父→子 / 子→父 | ✅ 自动 | ✅ 完美 | ✅ | 80% 的场景 |
+| **v-model** | 父↔子 | ✅ 自动 | ✅ | ✅ | 表单组件 |
+| **refs/defineExpose** | 父→子 | - | ✅ | ✅ | 调用子组件方法 |
+| **provide/inject** | 祖先→后代 | ⚠️ 需 ref | ⚠️ 需手动 | ❌ | 框架级注入 |
+| **Pinia** | 任意方向 | ✅ 自动 | ✅ 完美 | ✅ | 跨组件共享状态 |
+
+### provide/inject 的陷阱
+
+provide/inject 看起来很方便，但有三个常见陷阱：
+
+```javascript
+// 陷阱1：provide 普通值不响应
+provide('count', 0)  // ❌ 后代拿到的是快照，不会更新
+
+// 陷阱2：provide 对象不响应（除非用 reactive）
+provide('config', { theme: 'dark' })  // ❌ 对象的属性变化不触发更新
+
+// 陷阱3：正确的做法
+const count = ref(0)
+provide('count', count)  // ✅ 提供 ref，后代自动响应
+
+const config = reactive({ theme: 'dark' })
+provide('config', config)  // ✅ 提供 reactive，后代自动响应
+```
+
+<Tip title="🎢 通俗比喻: 公司的三种沟通方式">
+
+props/emit 就像直属上下级的汇报——上级给下级分配任务（props），下级向上级汇报结果（emit），关系清晰但只能跨一级。provide/inject 就像公司公告板——老板贴公告（provide），所有员工都能看到（inject），但你不知道谁贴的、什么时候贴的。Pinia 就像公司的共享文档系统——所有人都能读写，有版本历史记录（DevTools），谁改了都有记录。
+
+</Tip>
+
+---
+
+## 🔍 底层源码：组件的挂载流程是什么？
+
+<div class="follow-up">
+Vue 3 的组件挂载流程是什么？
+</div>
+
+Vue 3 的组件挂载流程在 `mountComponent` 函数中（详见 [Vue 3 源码 packages/runtime-core/src/renderer.ts](https://github.com/vuejs/core/blob/main/packages/runtime-core/src/renderer.ts)）：
+
+```javascript
+// 简化的挂载流程
+function mountComponent(vnode, container) {
+  // 1. 创建组件实例
+  const instance = createComponentInstance(vnode);
+
+  // 2. 初始化 props、slots、setup()
+  setupComponent(instance);
+
+  // 3. 设置渲染 effect（响应式副作用）
+  setupRenderEffect(instance, container);
+}
+
+function setupRenderEffect(instance, container) {
+  effect(() => {
+    // 执行渲染函数，得到虚拟 DOM 树
+    const subTree = instance.render.call(instance.proxy);
+
+    // 挂载：把虚拟 DOM 变成真实 DOM
+    patch(null, subTree, container);
+
+    // 触发 onMounted 钩子
+    invokeArrayFns(instance.mounted);
+  });
+}
+```
+
+这段代码做了三件事：
+
+1. **createComponentInstance**：创建组件实例，初始化 props、slots、attrs 等。
+2. **setupComponent**：执行 `setup()` 函数（如果有的话），收集响应式依赖。
+3. **setupRenderEffect**：创建一个响应式副作用（effect），在其中执行渲染函数。当依赖的响应式数据变化时，effect 重新执行，触发组件更新。
+
+<div class="follow-up">
+keep-alive 在源码中是怎么实现的？
+</div>
+
+keep-alive 是一个特殊的抽象组件，它的 `render` 函数会缓存子组件的 VNode（详见 [Vue 3 源码 packages/runtime-core/src/components/KeepAlive.ts](https://github.com/vuejs/core/blob/main/packages/runtime-core/src/components/KeepAlive.ts)）。当子组件被切换走时，keep-alive 把它的 VNode 存入缓存（Map 或 LRU 缓存）；当子组件被切换回来时，直接从缓存中取出 VNode，跳过创建和挂载流程。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："Vue 的组件通信有哪些方式？"
+
+**及格回答（60-70分）：**
+> "父子通信用 props 和 emit，跨层级用 provide/inject，全局用 Vuex/Pinia。"
+
+面试官评价：**知道方式但不理解选型**。
+
+**满分回答（90-100分）：**
+
+> Vue 的组件通信方式按数据流向分三类：**父子通信**（props/emit、v-model、refs）、**跨层级通信**（provide/inject）、**全局通信**（Pinia）。选型的关键是数据流的可追踪性--props/emit 的数据流最清晰（父→子、子→父），provide/inject 的数据流不直观（你不知道数据是从哪个祖先提供的），Pinia 的数据流有 DevTools 支持（可以追踪每个状态的变化来源）。<sup>[1]</sup>
+
+> props/emit 在源码中的实现是：父组件通过 `props` 选项声明要传给子组件的数据，Vue 在 `initProps`（`packages/runtime-core/src/componentProps.ts`）中把 props 解析并挂载到组件实例上。子组件通过 `emit` 触发事件，Vue 在 `emit`（`packages/runtime-core/src/componentEmits.ts`）中查找对应的事件处理函数并执行。provide/inject 的实现更简单--provide 把数据存入当前组件实例的 `provides` 对象，inject 沿着父组件链向上查找，直到找到对应的 key。<sup>[2]</sup>
+
+> Vue 3 移除了 Event Bus（`$on`/`$off`），因为 Event Bus 在大型应用中会导致数据流变成"蜘蛛网"--你不知道谁在监听、谁在触发，调试极其困难。在 Vue 2 的源码中，`$on`/`$off` 实现在 `src/core/instance/events.js` 中，用一个简单的对象存储事件名到回调数组的映射。Vue 3 移除了这些实例方法，替代方案是 Pinia：它用 `reactive` 包装 state，用 `computed` 实现 getters，DevTools 可以追踪每个状态的变化历史和来源。<sup>[3]</sup>
+
+> 实际项目中的最佳实践是：**80% 的场景用 props/emit**（父子通信），**15% 的场景用 Pinia**（跨组件共享状态），**5% 的场景用 provide/inject**（框架级注入，如主题、国际化）。不要滥用 provide/inject--如果一个数据需要在 10 个组件中使用，用 Pinia 比 provide/inject 更好维护，因为 Pinia 有 DevTools 支持和 TypeScript 类型推断。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="生命周期钩子的执行顺序?父子组件的 mounted 谁先?" icon="layer-group">
+
+  **答题要点：** 父组件先开始挂载，子组件先完成挂载。
+
+  **高分回答：**
+  "父组件先开始挂载，子组件先完成挂载。执行顺序：
+  ```text
+  父 beforeCreate → 父 created → 父 beforeMount
+      → 子 beforeCreate → 子 created → 子 beforeMount → 子 mounted
+  父 mounted
+```
+  所以**子组件的 mounted 先于父组件的 mounted**。销毁顺序相反：
+  ```text
+  父 beforeUnmount
+      → 子 beforeUnmount → 子 unmounted
+  父 unmounted
+```
+  在 Vue 3 源码中，组件挂载在 `mountComponent`（`packages/runtime-core/src/renderer.ts`）中执行。遇到子组件时递归调用 `mountComponent`，子组件先完成挂载，返回后父组件继续。"
+
+  </Accordion>
+
+  <Accordion title="provide/inject 怎么保持响应式?" icon="stopwatch">
+
+  **答题要点：** provide 的是 ref/reactive 对象，而不是普通值。
+
+  **高分回答：**
+  "如果 provide 的是普通值（如字符串），后代组件拿到的是值的快照，不会响应变化。要保持响应式，provide 的必须是 ref 或 reactive 对象。后代组件 inject 后拿到的是 ref，访问 `.value` 时自动追踪依赖。"
+
+  </Accordion>
+
+  <Accordion title="keep-alive 缓存了什么?LRU 是怎么实现的?" icon="node">
+
+  **答题要点：** 缓存组件实例和虚拟 DOM，用 Map + 数组实现 LRU 策略。
+
+  **高分回答：**
+  "keep-alive 缓存的是组件的虚拟 DOM 树和组件实例（包含状态）。源码中（`packages/runtime-core/src/components/KeepAlive.ts`）用一个 `Map` 存储 vnode.key → VNode 的映射，用一个 `keys` 数组记录访问顺序。
+
+  LRU 的实现：每次访问缓存的组件时，把它的 key 从数组中移到最前面。淘汰时从数组末尾移除——末尾的就是最久未使用的。通过 `<keep-alive :max="10">` 限制缓存数量，超出时调用 `pruneCacheEntry` 淘汰最久未使用的组件。
+
+  还支持 `include` 和 `exclude` 属性，用正则匹配组件名称来控制哪些组件需要缓存。`onActivated` 和 `onDeactivated` 钩子分别在组件从缓存中恢复和进入缓存时触发。"
+
+  </Accordion>
+
+  <Accordion title="keep-alive 的 include/exclude 怎么匹配组件名?" icon="layer-group">
+
+  **答题要点：** 用组件的 name 选项匹配，支持字符串、正则、数组。
+
+  **高分回答：**
+  "keep-alive 的 `include` 和 `exclude` 属性通过匹配组件的 `name` 选项来决定是否缓存。支持三种格式：字符串（精确匹配）、正则表达式、数组（多个名称）。
+
+  源码中用 `matches` 函数（`KeepAlive.ts`）来判断：如果是字符串，直接比较组件名称；如果是正则，用 `regex.test(name)` 匹配；如果是数组，遍历数组逐一比较。
+
+  常见的坑：`<script setup>` 中没有显式 name，Vue 3.3+ 支持 `defineOptions({ name: 'MyComponent' })` 来定义组件名。如果没有定义，编译器会用文件名作为组件名。"
+
+  </Accordion>
+
+  <Accordion title="🔥 Vue 3 为什么移除了 Event Bus?" icon="skull">
+
+  **答题要点：** Event Bus 导致数据流难以追踪，大型应用中变成"蜘蛛网"。
+
+  **高分回答：**
+  "Event Bus 的问题是数据流不透明--你不知道谁在监听、谁在触发。在大型应用中，Event Bus 会变成'蜘蛛网'：A 组件触发事件，B 组件监听，但你不知道还有 C、D、E 也在监听同一个事件。调试时你必须全局搜索事件名，极其痛苦。Vue 3 移除了 `$on`/`$off`，强制开发者用 props/emit（父子）或 Pinia（全局），让数据流变得可追踪。Pinia 有 DevTools 支持，可以查看每个状态的变化历史和来源。"
+
+  </Accordion>
+
+  <Accordion title="🔥 全局注册和局部注册的区别?对 Tree-shaking 有什么影响?" icon="skull">
+
+  **答题要点：** 全局注册的组件无法 Tree-shaking，局部注册可以。
+
+  **高分回答：**
+  "全局注册（`app.component('MyButton', MyButton)`）的组件会被注册到全局组件映射表中。即使你在模板中没有使用 `<MyButton>`，它也会被打包到最终的 bundle 中--因为编译器不知道你是否会在运行时动态使用它（如 `<component :is='xxx'>`）。
+  局部注册（在 `setup` 中 import）的组件，编译器可以静态分析哪些组件被使用了，未使用的可以被 Tree-shaking 删除。
+  ```javascript
+    // 全局注册：无法 Tree-shaking
+    app.component('MyButton', MyButton);
+    app.component('MyInput', MyInput);  // 即使没用也会打包
+
+    // 局部注册：可以 Tree-shaking
+    import MyButton from './MyButton.vue';  // 只打包用到的
+```
+  Vue 3 的 `<script setup>` 默认就是局部注册--import 的组件只在当前模板中可用。"
+
+  </Accordion>
+
+  <Accordion title="父子组件的 updated 钩子谁先执行?" icon="layer-group">
+
+  **答题要点：** 父组件先 beforeUpdate，子组件先 updated。
+
+  **高分回答：**
+  "更新阶段的顺序和挂载阶段类似，遵循'父先开始、子先完成'的规律：
+  ```text
+  父 beforeUpdate
+      → 子 beforeUpdate → 子 updated
+  父 updated
+  ```
+  在 Vue 3 源码中，组件更新在 `updateComponent`（`packages/runtime-core/src/renderer.ts`）中执行。父组件的 effect 触发更新时，先执行父组件的 beforeUpdate 钩子，然后重新执行渲染函数生成新的 VNode 树。diff 算法发现子组件的 props 变化时，递归更新子组件。子组件更新完成后，父组件执行 updated 钩子。
+
+  如果子组件的 props 没有变化（用 `defineProps` 声明且值未变），子组件不会重新渲染——Vue 3 的 diff 算法会跳过 props 未变的组件。"
+
+  </Accordion>
+
+  <Accordion title="setup() 和 created 谁先执行?为什么 setup 中没有 this?" icon="stopwatch">
+
+  **答题要点：** setup() 在 beforeCreate 之前执行，此时组件实例还未创建。
+
+  **高分回答：**
+  "`setup()` 在 `beforeCreate` 之前执行，比 `created` 更早。执行顺序是：`setup() → beforeCreate → created → ...`
+
+  为什么 setup 中没有 `this`？因为 `setup()` 执行时，组件实例（`this`）还没有创建。Vue 3 在 `setupStatefulComponent`（`packages/runtime-core/src/component.ts`）中先执行 `setup()`，然后才创建组件实例并挂载返回值。
+
+  这也是为什么 Composition API 用 `ref()`、`reactive()` 声明状态，而不是用 `data()` 返回对象——`data()` 需要通过 `this` 访问组件实例，而 `setup()` 中没有 `this`。"
+
+  </Accordion>
+
+  <Accordion title="props 的单向数据流是什么意思?为什么不能直接修改 props?" icon="skull">
+
+  **答题要点：** props 是父组件数据的引用，直接修改会导致数据流不可追踪。
+
+  **高分回答：**
+  "Vue 的 props 遵循**单向数据流**原则：数据只能从父组件流向子组件，子组件不能直接修改 props。
+
+  原因有三个：
+  1）**数据流可追踪**：如果子组件能直接修改 props，你就无法确定数据是在哪里被修改的——父组件还是子组件？调试时必须全局搜索。
+  2）**父组件覆盖**：父组件重新渲染时会把新的 props 传给子组件，子组件的修改会被覆盖——导致'改了又没改'的诡异 bug。
+  3）**源码限制**：Vue 3 在开发模式下，props 是只读的 Proxy（`packages/runtime-core/src/componentProps.ts`），直接修改会报警告。
+
+  正确做法：子组件通过 `emit` 通知父组件修改，或者用 `v-model` 实现双向绑定。如果确实需要在子组件中修改，用 `const localCopy = ref(props.xxx)` 创建本地副本。"
+
+  </Accordion>
+</AccordionGroup>
+
+### Vue 全局注册和局部注册的区别
+
+面试中偶尔会遇到这道冷门题，考察的是你对 Vue 组件注册机制与构建工具 Tree Shaking 关系的理解。
+
+```javascript
+// 全局注册：注册到 app 的全局组件映射表
+app.component('MyButton', MyButton)
+app.component('MyInput', MyInput)
+
+// 局部注册：在组件内部 import
+<script setup>
+import MyButton from './MyButton.vue'  // 只在当前组件可用
+</script>
+```
+
+**核心区别：**
+
+| 对比维度 | 全局注册 | 局部注册 |
+|---------|---------|---------|
+| **作用范围** | 所有组件可用 | 只在当前组件可用 |
+| **Tree Shaking** | ❌ 无法 Tree Shaking | ✅ 可以 Tree Shaking |
+| **打包体积** | 即使未使用也会打包 | 未使用会被删除 |
+| **注册方式** | `app.component()` | `import` + `<script setup>` |
+| **命名冲突** | 可能全局冲突 | 作用域隔离 |
+| **类型推断** | ❌ 无法自动推断 | ✅ 自动推断 |
+
+**为什么全局注册无法 Tree Shaking？**
+
+```javascript
+// 全局注册
+app.component('MyButton', MyButton)
+
+// 编译器不知道你在模板中是否用了 <MyButton />
+// 因为运行时可能动态使用：<component :is="动态组件名" />
+// 所以编译器必须保留所有全局注册的组件
+
+// 局部注册
+import MyButton from './MyButton.vue'
+// 编译器在编译时就知道模板中用了 <MyButton />
+// 未使用的 import 可以被 Tree Shaking 删除
+```
+
+```javascript
+// 全局注册的源码实现（简化）
+// packages/runtime-core/src/apiCreateApp.ts
+function createAppAPI(render) {
+  return function createApp(rootComponent) {
+    const app = {
+      _context: { components: {}, directives: {} },
+      component(name, component) {
+        // 注册到全局组件映射表
+        app._context.components[name] = component
+        return app
+      }
+    }
+    return app
+  }
+}
+
+// 模板中使用 <MyButton /> 时，运行时从 context.components 中查找
+// 这就是为什么编译器无法静态分析——组件名可能是动态的
+```
+
+<Warning title="⚠️ 全局注册的隐藏成本">
+
+全局注册不只是 Tree Shaking 的问题，还有三个隐藏成本：
+
+1. **命名冲突**：全局组件名是扁平的命名空间，大型项目中容易冲突
+2. **隐式依赖**：你不知道一个组件依赖了哪些全局组件，代码可读性差
+3. **IDE 支持弱**：全局注册的组件在模板中没有自动补全和类型检查
+
+Vue 3 的 `<script setup>` 天然就是局部注册——import 的组件只在当前模板中可用，编译器可以精确分析依赖关系。
+
+</Warning>
+
+<Tip title="最佳实践: ">
+
+永远优先使用局部注册（`<script setup>` + `import`）。只有极少数真正全局通用的组件（如图标库、通用按钮）才考虑全局注册。如果必须全局注册，用 `app.component()` 在入口文件中统一注册，不要散落在各个文件中。
+
+</Tip>
+
+---
+
+## Q9: 插槽原理详解
+
+### 插槽的本质：函数
+
+Vue 3 的插槽编译为函数。父组件传入的插槽内容是函数，子组件调用这些函数来渲染插槽内容。
+
+```text
+插槽的编译过程：
+
+父组件：
+  <MyComponent>
+    <template #header>
+      <h1>{{ title }}</h1>
+    </template>
+    <template #default="{ data }">
+      <p>{{ data }}</p>
+    </template>
+  </MyComponent>
+
+编译后（简化）：
+  h(MyComponent, {
+    header: () => h('h1', title),           // 具名插槽：函数
+    default: (data) => h('p', data.default) // 作用域插槽：带参数的函数
+  })
+```
+
+### 默认插槽
+
+```javascript
+// 子组件
+// <slot /> 编译为 renderSlot($slots, 'default')
+
+// 父组件
+// <MyComp>内容</MyComp> 编译为
+h(MyComp, {
+  default: () => [h('span', '内容')]
+})
+
+// 子组件内部
+function render() {
+  return h('div', [
+    renderSlot($slots, 'default')  // 调用父组件传入的函数
+  ])
+}
+```
+
+### 具名插槽
+
+```javascript
+// 父组件
+// <template #header>标题</template> 编译为
+h(MyComp, {
+  header: () => [h('h1', '标题')]
+})
+
+// 子组件内部
+function render() {
+  return h('div', [
+    renderSlot($slots, 'header'),  // 渲染 header 插槽
+    renderSlot($slots, 'default')  // 渲染默认插槽
+  ])
+}
+```
+
+### 作用域插槽
+
+```javascript
+// 子组件
+// <slot :data="items" /> 编译为
+renderSlot($slots, 'default', { data: items })
+
+// 父组件
+// <template #default="{ data }">{{ data }}</template> 编译为
+h(MyComp, {
+  default: (data) => [h('span', data)]
+})
+```
+
+### 插槽的惰性渲染
+
+插槽的内容是函数，只有当子组件实际调用 `renderSlot` 时，函数才会执行，VNode 才会被创建。如果子组件有条件地渲染插槽（`v-if` 控制），不满足条件时插槽的 VNode 不会被创建。
+
+```javascript
+// 子组件
+// <slot v-if="show" /> 编译为
+show ? renderSlot($slots, 'default') : createCommentVNode('v-if')
+
+// 如果 show 为 false，插槽函数不会执行，节省性能
+```
+
+### v-slot 的编译产物
+
+```javascript
+// <template v-slot:header="{ item }"> 编译为
+{ header: (item) => [...] }
+
+// <template #header> 编译为
+{ header: () => [...] }
+
+// <template #default> 编译为
+{ default: () => [...] }
+```
+
+<Tip title="💡 面试技巧">
+
+回答插槽问题时，重点说"插槽是函数"这个核心概念。具名插槽是带名字的函数，作用域插槽是带参数的函数。子组件调用函数来渲染插槽内容。这个理解能回答所有插槽相关的问题。
+
+</Tip>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [Vue 3 官方文档 - 组件基础](https://vuejs.org/guide/essentials/component-basics.html)：Vue 官方对组件基础的权威教程。<sup>[1]</sup>
+- 📖 [Vue 3 源码 packages/runtime-core/src/renderer.ts](https://github.com/vuejs/core/blob/main/packages/runtime-core/src/renderer.ts)：组件挂载和更新流程的核心实现。<sup>[2]</sup>
+- 📖 [Vue 3 源码 packages/runtime-core/src/components/KeepAlive.ts](https://github.com/vuejs/core/blob/main/packages/runtime-core/src/components/KeepAlive.ts)：keep-alive 的缓存实现。<sup>[3]</sup>
+- 🟢 [Vue 3 官方文档 - Provide/Inject](https://vuejs.org/guide/components/provide-inject.html)：跨层级通信的官方教程。

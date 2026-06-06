@@ -1,0 +1,1094 @@
+---
+title: "性能优化"
+---
+
+> **面试官为什么问这个？**
+>
+> 性能优化是区分初级和高级工程师的关键分水岭。面试官问这个，本质上是在考察你：**你是否有数据驱动的优化思维？** 如果你只能说出"加懒加载、用 WebP"这些碎片知识，说明你对性能优化的理解停留在"背方案"而不是"发现瓶颈、量化结果"。
+
+---
+
+## Q1: Core Web Vitals 是什么？为什么重要？
+
+```text
+┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐
+│  FCP    │ → │  LCP    │ → │  CLS    │ → │  INP    │
+│ 首次内容│   │ 最大内容│   │ 布局偏移│   │ 交互响应│
+└─────────┘   └─────────┘   └─────────┘   └─────────┘
+  加载感知      主体可见      视觉稳定      交互跟手
+```
+
+<Steps>
+
+  <Step title="指标体系概述：从碎片化到统一标准">
+
+早期浏览器性能指标有十几个（FCP、TTI、TBT、FID、LCP、CLS 等），开发者不知道该关注哪个。2020 年 Google 提出 Core Web Vitals，将性能指标精简为三个维度：加载性能（LCP）、交互响应（INP）、视觉稳定性（CLS）。
+
+除了这三个核心指标，FCP（First Contentful Paint，首次内容绘制）也是一个重要的辅助指标——它衡量用户何时看到第一个有意义的内容，是感知加载速度的起点。
+
+  </Step>
+  <Step title="与 SEO 的关系：直接影响搜索排名">
+
+Google 从 2021 年起将 Core Web Vitals 作为搜索排名因子。这意味着 LCP、INP、CLS 不仅是用户体验指标，更是直接影响网站流量的 SEO 指标。PageSpeed Insights 和 Search Console 都会展示这些指标的达标情况。
+
+  </Step>
+  <Step title="Chrome DevTools Performance 面板怎么用">
+
+在 Chrome DevTools 中，Performance 面板是分析 Core Web Vitals 的核心工具。录制一段页面加载或用户操作后，面板会展示 FPS（帧率）、Main（主线程任务）、Network（网络请求瀑布图）等关键信息。LCP 会以竖线标记在时间轴上，Layout Shift 会在 Experience 行中高亮显示。
+
+  </Step>
+
+</Steps>
+
+**Core Web Vitals 解决的核心问题：**
+
+```text
+问题：性能指标太多，开发者不知道该优化什么
+
+十几个指标（FCP、TTI、TBT、FID、LCP、CLS、SI...）
+→ 不知道哪个重要
+→ 优化了一个反而恶化了另一个
+
+解决：精简为四个核心指标，直接对应用户体验
+
+FCP（感知）：用户何时看到第一个内容？    目标 ≤ 1.8s
+LCP（加载）：页面主要内容多久能看到？    目标 ≤ 2.5s
+CLS（稳定）：加载过程中元素会不会跳？    目标 ≤ 0.1
+INP（交互）：用户操作后多久有反馈？      目标 ≤ 200ms
+```
+
+<Note title="一句话总结">
+
+Core Web Vitals 把性能优化从"指标堆砌"简化为"四个维度、一组阈值"，让优化有明确的目标，且直接影响 SEO 排名。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="没有 Core Web Vitals">
+
+就像一个学生不知道考试考什么，语文数学英语物理化学都要复习，精力分散且没有重点。优化了 FCP 但 LCP 变差了，优化了 TTI 但 CLS 变差了，顾此失彼。
+
+</Card>
+<Card title="引入 Core Web Vitals">
+
+就像考试大纲明确告诉你只考四门，每门有明确的及格线。你只需要集中精力把这四门考好：FCP ≤ 1.8s、LCP ≤ 2.5s、CLS ≤ 0.1、INP ≤ 200ms。目标清晰，优化有方向。
+
+</Card>
+</CardGroup>
+
+<Tip title="面试技巧">
+
+回答时先说四个指标分别衡量什么（感知/加载/稳定/交互），再说它们与 SEO 的关系。面试官想听的是你理解指标背后的设计意图——它们直接对应用户体验的四个维度，而不是 Google 随便选的四个数字。
+
+</Tip>
+
+---
+
+## Q2: FCP（First Contentful Paint）怎么优化？
+
+FCP（First Contentful Paint，首次内容绘制）衡量从页面开始加载到浏览器渲染出第一个 DOM 内容（文本、图片、SVG、非空白 Canvas）的时间。它是用户感知"页面开始有东西了"的起点。
+
+### 定义与阈值
+
+| 指标 | 定义 | 良好 | 需改进 | 差 |
+|------|------|------|--------|-----|
+| FCP | 首次内容绘制时间 | ≤ 1.8s | 1.8s ~ 3.0s | &gt; 3.0s |
+
+### 采集方式
+
+```javascript
+// 使用 PerformanceObserver 采集 FCP
+const observer = new PerformanceObserver((list) => {
+  const entries = list.getEntriesByName('first-contentful-paint');
+  if (entries.length > 0) {
+    const fcp = entries[0];
+    console.log('FCP:', fcp.startTime.toFixed(2), 'ms');
+    // 上报到监控平台
+    reportMetric('FCP', fcp.startTime);
+  }
+});
+observer.observe({ type: 'paint', buffered: true });
+```
+
+### 分析方法
+
+在 Chrome DevTools 的 Performance 面板中，FCP 会以绿色竖线标记在时间轴上。点击 Lighthouse 的 Performance 审计，可以看到 FCP 的细分时间：TTFB（服务器响应时间）、DOM 解析时间、关键资源加载时间。
+
+### 优化策略
+
+| 优化手段 | 原理 | 预期收益 |
+|---------|------|---------|
+| 内联关键 CSS | 首屏 CSS 直接内联到 `<head>`，避免阻塞渲染 | FCP 减少 0.3 ~ 0.8s |
+| 减少 render-blocking 资源 | 非关键 CSS 用 `media` 属性或 `preload` 异步加载 | FCP 减少 0.2 ~ 0.5s |
+| 字体优化 | 使用 `font-display: swap` 避免字体加载阻塞渲染 | 避免 FOIT（不可见文本闪烁） |
+| 预加载关键资源 | `<link rel="preload">` 提前发现关键资源 | FCP 减少 0.1 ~ 0.3s |
+| 减少服务器响应时间 | CDN、HTTP/2、服务端缓存降低 TTFB | TTFB 减少 0.2 ~ 1.0s |
+
+```javascript
+// 优化 1：内联关键 CSS（控制在 14KB 以内，一次 TCP 往返就能送达）
+<head>
+  <style>
+    /* 首屏关键 CSS 直接内联 */
+    .header { background: #fff; padding: 16px; }
+    .hero { height: 100vh; display: flex; align-items: center; }
+  </style>
+  <!-- 非关键 CSS 异步加载 -->
+  <link rel="preload" href="/non-critical.css" as="style"
+        onload="this.rel='stylesheet'">
+</head>
+
+// 优化 2：字体优化
+@font-face {
+  font-family: 'MyFont';
+  src: url('/fonts/myfont.woff2') format('woff2');
+  font-display: swap; /* 字体加载期间用后备字体，加载完成后替换 */
+}
+
+// 优化 3：预加载关键资源
+<link rel="preload" href="/critical.js" as="script">
+<link rel="preload" href="/hero.webp" as="image">
+```
+
+---
+
+## Q3: LCP（Largest Contentful Paint）怎么优化？
+
+LCP（Largest Contentful Paint，最大内容绘制）衡量页面主要内容的加载速度，本质是**从导航开始到最大内容元素渲染完成的时间**。
+
+### 定义与阈值
+
+| 指标 | 定义 | 良好 | 需改进 | 差 |
+|------|------|------|--------|-----|
+| LCP | 最大内容绘制时间 | ≤ 2.5s | 2.5s ~ 4.0s | &gt; 4.0s |
+
+核心优化逻辑只有 4 步：
+
+```text
+┌───────────────────────────────────────┐
+│       1. 优化资源发现时机              │  ← preload、SSR 直出
+└─────────────────┬─────────────────────┘
+                  ▼
+┌───────────────────────────────────────┐
+│       2. 降低 TTFB                     │  ← CDN、减少重定向、HTTP/2
+└─────────────────┬─────────────────────┘
+                  ▼
+┌───────────────────────────────────────┐
+│       3. 减少关键资源字节数            │  ← WebP/AVIF、Brotli 压缩
+└─────────────────┬─────────────────────┘
+                  ▼
+┌───────────────────────────────────────┐
+│       4. 优化渲染路径                  │  ← 内联关键 CSS、defer JS
+└───────────────────────────────────────┘
+```
+
+### 采集方式
+
+```javascript
+// 使用 PerformanceObserver 采集 LCP
+const observer = new PerformanceObserver((list) => {
+  const entries = list.getEntries();
+  const lastEntry = entries[entries.length - 1];
+  console.log('LCP:', lastEntry.startTime.toFixed(2), 'ms');
+  console.log('LCP 元素:', lastEntry.element);
+  console.log('LCP URL:', lastEntry.url);
+  // 上报到监控平台
+  reportMetric('LCP', lastEntry.startTime);
+});
+observer.observe({ type: 'largest-contentful-paint', buffered: true });
+```
+
+### 分析方法
+
+Lighthouse 会自动识别 LCP 元素并给出优化建议。Chrome DevTools 的 Performance 面板中，LCP 会以蓝色竖线标记。点击该标记可以看到 LCP 元素的具体信息（类型、URL、尺寸）。
+
+### 优化策略
+
+| 优化手段 | 原理 | 预期收益 |
+|---------|------|---------|
+| 预加载关键资源 | `<link rel="preload">` 让浏览器提前发现 LCP 资源 | LCP 减少 0.2 ~ 1.0s |
+| WebP/AVIF 格式 | 同一张照片：JPEG 180KB → WebP 95KB → AVIF 62KB | 资源体积减少 47% ~ 66% |
+| `fetchpriority="high"` | 告诉浏览器优先加载 LCP 资源 | LCP 减少 0.1 ~ 0.5s |
+| 减少 TTFB | CDN 就近分发、减少重定向、HTTP/2 多路复用 | TTFB 减少 0.2 ~ 1.0s |
+| SSR 直出 HTML | 服务端渲染让浏览器立即开始解析，不需要等 JS 执行 | LCP 减少 0.5 ~ 2.0s |
+
+```javascript
+// 优化 1：预加载 LCP 资源 + fetchpriority
+<link rel="preload" as="image" href="/hero.webp" fetchpriority="high">
+
+// 优化 2：图片格式降级
+<picture>
+  <source srcset="/hero.avif" type="image/avif" />
+  <source srcset="/hero.webp" type="image/webp" />
+  <img src="/hero.jpg" alt="首屏大图" width="1200" height="800" />
+</picture>
+
+// 优化 3：关键 CSS 内联（控制在 14KB 以内）
+<head>
+  <style>/* 首屏关键 CSS */</style>
+  <link rel="preload" href="/non-critical.css" as="style"
+        onload="this.rel='stylesheet'">
+</head>
+```
+
+<Warning title="核心机制: LCP 的候选元素">
+
+LCP 的候选元素类型有严格定义：`<img />` 标签、`<svg>` 中的 `<image>`、`<video>` 的封面图、通过 `background-image` 加载的元素、包含文本节点的块级元素。
+
+最常见的 LCP 瓶颈是**图片发现时机**——图片在 CSS background 中（浏览器要先解析 CSS 才能发现）、被 JS 动态创建（浏览器要先执行 JS）、或者被 `loading="lazy"` 误伤（首屏图片不应该 lazy load）。
+
+</Warning>
+
+<Tip title="通俗比喻: 快递发货流程">
+
+LCP 就像网购到货的速度。优化 LCP 不仅仅是把包裹压得更小（压缩图片），更重要的是让仓库尽早发现你要的货（资源发现时机）。如果你下单后仓库 3 小时才发现你的订单（浏览器 3 秒后才发现首屏图片），即使快递再快（图片已经压缩到最小），到货时间也不会快。所以 `preload` 就像"预售提醒"——在你正式下单前，仓库就已经开始备货了。
+
+</Tip>
+
+### LCP 的候选元素详解
+
+| 候选元素类型 | 示例 | 常见瓶颈 |
+|-------------|------|---------|
+| `<img />` 标签 | `<img src="/hero.jpg" />` | `loading="lazy"` 误加在首屏图片上 |
+| `<svg>` 中的 `<image>` | `<svg><image href="..." /></svg>` | SVG 内嵌图片的加载时机 |
+| `<video>` 封面图 | `<video poster="/cover.jpg" />` | poster 图片未预加载 |
+| `background-image` | `background: url(bg.jpg)` | 浏览器要先解析 CSS 才能发现 |
+| 文本块级元素 | `<h1>`, `<p>` | Web Font 加载阻塞文本渲染 |
+
+---
+
+## Q4: CLS（Cumulative Layout Shift）怎么优化？
+
+CLS（Cumulative Layout Shift，累积布局偏移）衡量页面加载过程中元素发生意外位移的程度。它是唯一一个"越小越好"的指标——0 表示没有布局偏移。
+
+### 定义与阈值
+
+| 指标 | 定义 | 良好 | 需改进 | 差 |
+|------|------|------|--------|-----|
+| CLS | 累积布局偏移分数 | ≤ 0.1 | 0.1 ~ 0.25 | &gt; 0.25 |
+
+CLS 的计算公式：
+
+```text
+布局偏移分数 = 影响分数（Impact Fraction）× 距离分数（Distance Fraction）
+
+影响分数：不稳定元素影响的可视区域比例
+距离分数：元素移动的最大距离占视口的比例
+
+例：一个 50% 宽度的元素向下移动了 25%
+CLS = 0.5 × 0.25 = 0.125（超过阈值！）
+```
+
+### 采集方式
+
+```javascript
+// 使用 PerformanceObserver 采集 CLS（Session Window 方案）
+let clsValue = 0;
+let sessionEntries = [];
+let sessionStartTime = 0;
+
+const observer = new PerformanceObserver((list) => {
+  for (const entry of list.getEntries()) {
+    // 只统计非用户交互引起的布局偏移
+    if (!entry.hadRecentInput) {
+      // Session Window：5 秒内连续的布局偏移算一个 session
+      const isSameSession = entry.startTime - sessionStartTime < 1000
+        && entry.startTime - (sessionEntries[sessionEntries.length - 1]?.startTime || 0) < 5000;
+      if (isSameSession) {
+        sessionEntries.push(entry);
+      } else {
+        sessionEntries = [entry];
+        sessionStartTime = entry.startTime;
+      }
+      // 取当前 session 的最大 CLS 值
+      const sessionCLS = sessionEntries.reduce((sum, e) => sum + e.value, 0);
+      clsValue = Math.max(clsValue, sessionCLS);
+    }
+  }
+  console.log('CLS:', clsValue.toFixed(4));
+  reportMetric('CLS', clsValue);
+});
+observer.observe({ type: 'layout-shift', buffered: true });
+```
+
+### 分析方法
+
+Chrome DevTools 的 Performance 面板中，Layout Shift 会在 Experience 行中以红色方块高亮显示。点击方块可以看到具体的偏移元素和偏移距离。Lighthouse 也会列出所有 CLS 来源。
+
+### 优化策略
+
+| 优化手段 | 原理 | 适用场景 |
+|---------|------|---------|
+| 图片设置宽高比 | `width`/`height` 属性或 CSS `aspect-ratio` 预留空间 | 所有 `<img />` 标签 |
+| 骨架屏 | 用占位元素预留内容空间 | 列表页、详情页 |
+| `contain` 属性 | `contain: layout` 限制重排范围 | 独立组件区域 |
+| 字体加载策略 | `font-display: optional` 或 `size-adjust` | Web Font 场景 |
+| 避免动态插入 | 广告、Cookie Banner 用 `position: fixed` 或预留 `min-height` | 第三方内容 |
+
+```javascript
+// 优化 1：图片设置宽高比（最常见也最有效的 CLS 优化）
+// ❌ 错误：没有宽高比，图片加载前高度为 0
+<img src="/photo.jpg" alt="照片" />
+
+// ✅ 正确：设置 width/height，浏览器自动计算宽高比
+<img src="/photo.jpg" alt="照片" width="800" height="600" />
+
+// ✅ 或者用 CSS aspect-ratio
+<img src="/photo.jpg" alt="照片" style="aspect-ratio: 4/3; width: 100%;" />
+
+// 优化 2：骨架屏预留空间
+<div class="skeleton" style="min-height: 200px;">
+  <!-- 内容加载前显示骨架屏 -->
+</div>
+
+// 优化 3：字体加载策略
+@font-face {
+  font-family: 'MyFont';
+  src: url('/fonts/myfont.woff2') format('woff2');
+  font-display: optional; /* 加载太慢就不用，避免文字重排 */
+}
+
+// 优化 4：动态内容用 fixed 定位
+// ❌ Cookie Banner 推挤页面内容
+<div class="cookie-banner">...</div>
+
+// ✅ Cookie Banner 固定在底部，不影响布局
+<div class="cookie-banner" style="position: fixed; bottom: 0;">...</div>
+```
+
+<Warning title="Session Window 机制">
+
+CLS 使用 Session Window 算法：5 秒内连续发生的布局偏移算一个 session，取所有 session 中的最大值。这意味着：
+- 短时间内多次小偏移会被合并计算
+- 超过 5 秒间隔的偏移会被分开计算
+- 用户交互（点击、滚动）引起的偏移不计入 CLS
+
+</Warning>
+
+---
+
+## Q5: INP（Interaction to Next Paint）怎么优化？
+
+INP（Interaction to Next Paint，交互到下一帧绘制）在 2024 年正式替代了 FID（First Input Delay），衡量页面对用户交互的整体响应能力。
+
+### 为什么用 INP 替代 FID？
+
+```text
+FID 的问题：只测量第一次交互的输入延迟
+
+用户首次点击 → 测量延迟（只看"从输入到回调开始"）
+                不看回调执行时间
+                不看后续交互
+
+INP 的改进：测量所有交互的完整耗时
+
+用户每次交互 → 测量完整耗时（从输入到下一帧视觉更新）
+              取 P95（去除 5% 异常值）
+              更准确反映整体交互体验
+```
+
+### 定义与阈值
+
+| 指标 | 定义 | 良好 | 需改进 | 差 |
+|------|------|------|--------|-----|
+| INP | 交互到下一帧绘制时间（P95） | ≤ 200ms | 200ms ~ 500ms | &gt; 500ms |
+
+### 采集方式
+
+```javascript
+// 使用 PerformanceObserver 采集 INP
+const interactions = [];
+
+const observer = new PerformanceObserver((list) => {
+  for (const entry of list.getEntries()) {
+    if (entry.interactionId) {
+      interactions.push({
+        interactionId: entry.interactionId,
+        duration: entry.duration,
+        name: entry.name,
+        startTime: entry.startTime,
+      });
+    }
+  }
+
+  // 取 P95（去除 5% 的最大值）
+  if (interactions.length > 0) {
+    interactions.sort((a, b) => b.duration - a.duration);
+    const p95Index = Math.floor(interactions.length * 0.05);
+    const inp = interactions[p95Index].duration;
+    console.log('INP:', inp.toFixed(2), 'ms');
+    console.log('最慢交互:', interactions[0].name, interactions[0].duration.toFixed(2), 'ms');
+    reportMetric('INP', inp);
+  }
+});
+observer.observe({ type: 'event', buffered: true });
+```
+
+### 分析方法
+
+Chrome DevTools 的 Performance 面板录制用户操作后，Interactions 行会显示每次交互的耗时。点击具体的交互条目，可以看到事件处理函数的耗时分解：Input Delay（输入延迟）、Processing Time（处理时间）、Presentation Delay（渲染延迟）。
+
+### 优化策略
+
+| 优化手段 | 原理 | 预期收益 |
+|---------|------|---------|
+| `scheduler.yield()` | 在长任务中主动让出主线程，让浏览器有机会渲染 | INP 减少 50%+ |
+| 拆分长任务 | 把 &gt; 50ms 的任务拆成多个小任务 | 避免主线程阻塞 |
+| Web Worker | 把计算密集型任务移到 Worker 线程 | 主线程完全不阻塞 |
+| 减少 DOM 操作 | 批量 DOM 更新、使用 DocumentFragment | 减少重排重绘 |
+| 事件委托 | 减少事件监听器数量，降低内存开销 | 减少事件处理耗时 |
+
+```javascript
+// 优化 1：scheduler.yield() 主动让出主线程
+async function handleClick() {
+  // 第一部分计算
+  heavyComputation1();
+  // 主动让出主线程，让浏览器有机会渲染和响应用户输入
+  await scheduler.yield();
+  // 第二部分计算
+  heavyComputation2();
+  // 再次让出
+  await scheduler.yield();
+  // 第三部分计算
+  heavyComputation3();
+}
+
+// 优化 2：拆分长任务
+function processLargeList(items) {
+  let index = 0;
+  function processChunk() {
+    const end = Math.min(index + 100, items.length);
+    for (; index < end; index++) {
+      processItem(items[index]);
+    }
+    if (index < items.length) {
+      // 用 setTimeout 让出主线程
+      setTimeout(processChunk, 0);
+    }
+  }
+  processChunk();
+}
+
+// 优化 3：Web Worker 处理计算密集型任务
+// main.js
+const worker = new Worker('/worker.js');
+worker.postMessage({ data: largeArray });
+worker.onmessage = (e) => {
+  updateUI(e.data); // 主线程只做 UI 更新
+};
+
+// worker.js
+self.onmessage = (e) => {
+  const result = heavyComputation(e.data);
+  self.postMessage(result);
+};
+```
+
+<Warning title="INP 与 FID 的本质区别">
+
+FID 只测量第一次交互的**输入延迟**（从用户输入到回调开始执行），不算回调执行时间。INP 测量所有交互中从输入到下一帧视觉更新的**完整耗时**（包括事件处理、DOM 更新、浏览器绘制），取 P95。所以一个页面可能 FID 很好（第一次交互快），但 INP 很差（后续交互卡顿）。
+
+</Warning>
+
+---
+
+## Q6: 性能优化的系统性思维
+
+**这就是回答"你做过哪些性能优化"的完整框架。** 性能优化不是堆砌技术，而是数据驱动的决策过程。
+
+### 系统性优化框架
+
+```text
+┌─────────────────────────────────────────────────┐
+│              性能优化的完整框架                    │
+├─────────────┬─────────────┬─────────────────────┤
+│  构建优化   │  网络优化   │     渲染优化          │
+│             │             │  (Core Web Vitals)   │
+│ Tree Shaking│ HTTP/2      │  FCP / LCP / CLS    │
+│ Code Split  │ CDN         │  INP                 │
+│ 压缩混淆    │ gzip/brotli │                      │
+├─────────────┼─────────────┼─────────────────────┤
+│  缓存策略   │  框架优化   │     监控度量          │
+│             │             │                      │
+│ 强缓存      │ SSR/SSG/ISR │  Lighthouse          │
+│ 协商缓存    │ 懒加载      │  web-vitals          │
+│ Service Wkr │ 虚拟列表    │  Performance API     │
+└─────────────┴─────────────┴─────────────────────┘
+```
+
+### 构建优化
+
+| 优化手段 | 原理 | 工具 |
+|---------|------|------|
+| Tree Shaking | 移除未使用的代码 | Webpack / Vite / Rollup |
+| Code Splitting | 按路由/组件分割代码，按需加载 | `React.lazy` / `import()` |
+| 压缩混淆 | 减少 JS/CSS/HTML 体积 | Terser / cssnano / html-minifier |
+
+### 网络优化
+
+| 优化手段 | 原理 | 预期收益 |
+|---------|------|---------|
+| HTTP/2 | 多路复用，一个 TCP 连接并行传输多个资源 | 减少连接建立时间 |
+| CDN | 就近分发静态资源 | TTFB 减少 0.2 ~ 1.0s |
+| gzip / Brotli | 传输层压缩，Brotli 比 gzip 小 15% ~ 25% | 资源体积减少 60% ~ 80% |
+
+### 渲染优化（Core Web Vitals）
+
+| 指标 | 优化重点 | 核心手段 |
+|------|---------|---------|
+| FCP | 首次内容可见 | 内联关键 CSS、减少 render-blocking |
+| LCP | 主体内容可见 | 预加载资源、WebP/AVIF、SSR |
+| CLS | 布局不跳动 | 图片宽高比、骨架屏、字体策略 |
+| INP | 交互响应快 | scheduler.yield()、拆分长任务、Web Worker |
+
+### 缓存策略
+
+| 缓存类型 | 机制 | 适用场景 |
+|---------|------|---------|
+| 强缓存 | `Cache-Control: max-age=31536000` | 带 hash 的静态资源 |
+| 协商缓存 | `ETag` / `Last-Modified` | HTML 文件、API 响应 |
+| Service Worker | 离线缓存 + 网络策略 | PWA、离线访问 |
+
+### 框架优化
+
+| 优化手段 | 原理 | 适用场景 |
+|---------|------|---------|
+| SSR（服务端渲染） | 服务端直出 HTML，首屏快 | SEO 要求高的页面 |
+| SSG（静态生成） | 构建时生成 HTML，CDN 分发 | 博客、文档站 |
+| ISR（增量静态再生） | 静态页面按需重新生成 | 内容更新频繁的页面 |
+| 懒加载 | 非首屏内容延迟加载 | 长列表、图片密集页面 |
+| 虚拟列表 | 只渲染可视区域的 DOM 节点 | 万级数据列表 |
+
+<Tip title="最佳实践">
+
+用"发现什么问题 → 分析原因 → 选择方案 → 量化结果"的叙事框架。先用 Lighthouse 和 web-vitals 采集真实用户数据，按 Core Web Vitals 指标定位瓶颈，然后优先做 ROI 最高的优化：图片优化（投入小收益大）&gt; 代码分割 &gt; SSR。Google 的研究表明，LCP 每快 100ms，转化率提升约 1% ~ 2%。
+
+</Tip>
+
+### CDN 加速原理
+
+CDN（Content Delivery Network，内容分发网络）是网络优化中最核心的一环。理解 CDN 的工作原理，能帮你从"知道要用 CDN"提升到"知道怎么配置 CDN 才最有效"。
+
+```text
+用户请求流程（无 CDN）：
+
+浏览器 → DNS 解析 → 源站（可能在美国）→ 返回资源
+                      ↑
+                  延迟 200-500ms（跨洋网络）
+
+用户请求流程（有 CDN）：
+
+浏览器 → DNS 智能解析 → 最近的边缘节点（北京）→ 命中缓存直接返回
+                                              ↓ 未命中
+                                          回源到源站 → 缓存到边缘节点
+```
+
+**CDN 的三大核心机制：**
+
+| 机制 | 原理 | 效果 |
+|------|------|------|
+| DNS 智能解析 | 根据用户 IP 返回距离最近的边缘节点 IP | 用户始终访问最近的服务器 |
+| 边缘节点缓存 | 静态资源缓存在全球分布的 CDN 节点上 | 避免每次请求都回源 |
+| 回源策略 | 缓存未命中时，边缘节点向源站请求资源 | 保证数据新鲜度 |
+
+**CDN 的配置策略：**
+
+```nginx
+# Nginx CDN 缓存配置示例
+
+# 带 hash 的静态资源：强缓存 1 年（文件名变了就是新资源）
+location ~* \.(js|css|woff2)$ {
+    add_header Cache-Control "public, max-age=31536000, immutable";
+}
+
+# 图片资源：缓存 30 天，支持 WebP/AVIF 协商
+location ~* \.(jpg|png|webp|avif)$ {
+    add_header Cache-Control "public, max-age=2592000";
+    add_header Vary "Accept";
+}
+
+# HTML 文件：不缓存或短缓存 + 协商缓存（保证用户总是拿到最新版本）
+location ~* \.html$ {
+    add_header Cache-Control "no-cache";
+    add_header ETag "";
+}
+```
+
+```html
+<!-- 前端资源引用：用版本号或 hash 控制缓存更新 -->
+<!-- Webpack/Vite 构建自动加 hash，文件内容变了 hash 就变 -->
+<link rel="stylesheet" href="/assets/main.a1b2c3d4.css">
+<script src="/assets/vendor.e5f6g7h8.js"></script>
+
+<!-- CDN 域名收敛：静态资源用独立域名，避免 Cookie 污染 -->
+<!-- ❌ Cookie 会随请求发送到所有同域资源 -->
+<img src="https://www.example.com/photo.jpg">
+
+<!-- ✅ 静态资源用独立域名，无 Cookie 开销 -->
+<img src="https://cdn.example.com/photo.jpg">
+```
+
+<Tip title="面试技巧">
+
+回答 CDN 时不要只说"用 CDN 加速"，要说出三个层次：**DNS 智能解析**（怎么找到最近的节点）、**缓存策略**（强缓存 vs 协商缓存怎么选）、**版本控制**（hash 命名 vs 查询参数的区别）。面试官想听到你理解"CDN 不是配了就完事，缓存策略配错了反而会导致用户拿到旧资源"。
+
+</Tip>
+
+### 接口预热
+
+接口预热（API Pre-warming）是指在用户实际请求之前，提前触发接口调用，让服务器缓存或 CDN 边缘缓存进入"热"状态，从而在真实用户请求时直接命中缓存、快速响应。
+
+```text
+冷启动问题：
+
+用户首次请求 → 缓存为空 → 回源/查询数据库 → 响应慢（500ms+）
+                                            ↓
+                                     缓存写入（后续请求才快）
+
+接口预热方案：
+
+定时任务/用户预测 → 提前请求接口 → 缓存预热完成
+                                    ↓
+用户首次请求 → 命中缓存 → 响应快（50ms 内）
+```
+
+**适用场景：**
+
+| 场景 | 问题 | 预热方案 |
+|------|------|---------|
+| 首页关键接口 | 服务重启或缓存过期后首次请求慢 | 部署后自动触发预热请求 |
+| 大促活动 | 活动开始瞬间流量涌入，缓存未就绪 | 活动前 5-10 分钟预热核心接口 |
+| Serverless 冷启动 | 无服务器函数首次调用需要初始化运行时 | 定时 ping 保持函数实例活跃 |
+| CDN 回源 | 边缘节点缓存过期后首次请求回源慢 | 主动推送资源到边缘节点 |
+
+```javascript
+// 方案 1：Service Worker 预请求（利用浏览器空闲时间预热缓存）
+// sw.js
+const PRE_WARM_URLS = [
+  '/api/user/info',
+  '/api/home/recommend',
+  '/api/home/banners',
+];
+
+self.addEventListener('install', (event) => {
+  // Service Worker 安装时预热关键接口
+  event.waitUntil(
+    caches.open('api-cache').then((cache) => {
+      return Promise.all(
+        PRE_WARM_URLS.map((url) =>
+          fetch(url)
+            .then((response) => cache.put(url, response))
+            .catch(() => {/* 预热失败不影响安装 */})
+        )
+      );
+    })
+  );
+});
+
+// 方案 2：页面空闲时预请求（利用 requestIdleCallback）
+function preWarmAPIs() {
+  const criticalAPIs = [
+    '/api/user/info',
+    '/api/notifications/unread',
+  ];
+
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(() => {
+      criticalAPIs.forEach((url) => {
+        fetch(url, { priority: 'low' }).then((res) => {
+          // 将响应存入缓存或状态管理
+          res.json().then((data) => apiCache.set(url, data));
+        });
+      });
+    });
+  }
+}
+
+// 方案 3：部署后自动预热脚本（Node.js）
+// pre-warm.js
+const https = require('https');
+
+const ENDPOINTS = [
+  'https://api.example.com/home/recommend',
+  'https://api.example.com/home/banners',
+  'https://api.example.com/config/app',
+];
+
+async function preWarm() {
+  console.log('Starting API pre-warming...');
+  for (const url of ENDPOINTS) {
+    const start = Date.now();
+    try {
+      await new Promise((resolve, reject) => {
+        https.get(url, (res) => {
+          res.on('data', () => {});
+          res.on('end', resolve);
+        }).on('error', reject);
+      });
+      console.log(`  ${url} - ${Date.now() - start}ms`);
+    } catch (err) {
+      console.error(`  ${url} - FAILED: ${err.message}`);
+    }
+  }
+  console.log('Pre-warming complete.');
+}
+
+preWarm();
+```
+
+<Note title="一句话总结">
+
+接口预热的核心思想是"把慢的第一次请求提前到用户来之前完成"——通过定时任务、Service Worker 或部署脚本，在用户到达前把缓存填满，让每一次真实请求都命中缓存。
+
+</Note>
+
+### HTTP/2 和 HTTP/3 的优化原理
+
+HTTP 协议的演进直接影响网络优化的上限。HTTP/1.1 的队头阻塞问题催生了 HTTP/2 的多路复用，而 TCP 层的队头阻塞又催生了 HTTP/3 基于 QUIC 的全新传输层。
+
+```text
+HTTP 协议演进：
+
+HTTP/1.1 (1997)          HTTP/2 (2015)           HTTP/3 (2022)
+┌──────────────┐    ┌──────────────────┐    ┌──────────────────┐
+│ 一个请求一个  │    │  一个 TCP 连接    │    │  基于 QUIC/UDP   │
+│ TCP 连接      │    │  多路复用多个流   │    │  独立流无队头阻塞│
+│ 6 个并发限制  │    │  二进制帧         │    │  0-RTT 连接建立  │
+│ 队头阻塞严重  │    │  TCP 队头阻塞     │    │  内置加密        │
+└──────────────┘    └──────────────────┘    └──────────────────┘
+```
+
+**HTTP/2 多路复用原理：**
+
+HTTP/1.1 的核心问题是**应用层队头阻塞**——同一个 TCP 连接上，请求必须排队，第一个请求没完成，后面的请求全部阻塞。浏览器被迫开 6 个 TCP 连接来并行加载资源。
+
+HTTP/2 引入了**流（Stream）**的概念：一个 TCP 连接被分成多个独立的流，每个流可以独立传输请求和响应。资源被拆成**帧（Frame）**，不同流的帧可以在同一个连接上交错发送，到达后重组。
+
+| 特性 | HTTP/1.1 | HTTP/2 | HTTP/3 |
+|------|---------|--------|--------|
+| 连接数 | 6-8 个 TCP 连接 | 1 个 TCP 连接 | 1 个 QUIC 连接 |
+| 传输单位 | 文本（完整请求/响应） | 二进制帧 | QUIC 帧 |
+| 多路复用 | 不支持（队头阻塞） | 支持（但 TCP 层阻塞） | 支持（无队头阻塞） |
+| 头部压缩 | 无 | HPACK | QPACK |
+| 连接建立 | TCP 3 次握手 + TLS | 同左 | 0-RTT / 1-RTT |
+| 队头阻塞 | 应用层阻塞 | TCP 层阻塞 | 无 |
+
+**HTTP/3 QUIC 原理：**
+
+HTTP/2 虽然解决了应用层的队头阻塞，但底层 TCP 仍然存在队头阻塞——TCP 保证字节流的有序交付，一个包丢失会阻塞整个连接上的所有流。
+
+HTTP/3 用 QUIC（Quick UDP Internet Connections）替代了 TCP。QUIC 基于 UDP，在传输层实现了独立的流控制：每个流的包丢失只影响该流，不影响其他流。同时 QUIC 将 TLS 1.3 内置到握手中，首次连接只需 1-RTT，后续连接支持 0-RTT。
+
+```text
+TCP 队头阻塞问题：
+
+HTTP/2 流 A: [帧1] [帧2] [帧3]    ← 流 A 的帧2 丢失
+HTTP/2 流 B: [帧1] [帧2] [帧3]    ← 流 B 的帧2、3 也被阻塞！
+
+QUIC 无队头阻塞：
+
+QUIC 流 A: [帧1] [帧2] [帧3]    ← 流 A 的帧2 丢失，只等帧2 重传
+QUIC 流 B: [帧1] [帧2] [帧3]    ← 流 B 正常交付，不受影响！
+```
+
+<Tip title="面试技巧">
+
+回答 HTTP 协议演进时，抓住一条主线：**每一版都在解决"队头阻塞"**。HTTP/1.1 有应用层队头阻塞（请求排队），HTTP/2 解决了应用层但还有 TCP 层队头阻塞（丢包阻塞整个连接），HTTP/3 用 QUIC 在传输层彻底消除了队头阻塞。同时指出：HTTP/2 的 Server Push 已被废弃，现代最佳实践是用 `103 Early Hints` 预加载资源。
+
+</Tip>
+
+---
+
+## Q7: 高频面试题
+
+### 面试官视角：满分回答 vs 及格回答
+
+**问题："说说你做过的性能优化"**
+
+**及格回答（60-70分）：**
+> "图片压缩、代码分割、懒加载、CDN、缓存。"
+
+面试官评价：**列举技术点但缺乏数据和框架**。
+
+**满分回答（90-100分）：**
+
+> 我用数据驱动的方式做性能优化。首先用 Lighthouse 和 web-vitals 采集真实用户数据，发现 LCP 是 4.2s（阈值 2.5s），主要瓶颈是首屏图片和关键 CSS。然后按 ROI 排序制定优化方案。<sup>[1]</sup>
+
+> 图片优化：从 PNG 转 WebP（体积减少 60%），加 `<link rel=preload>` 提前发现资源，用 `<picture>` 提供 AVIF/WebP/JPEG 三级降级。非首屏图片用 `loading="lazy"` 延迟加载。LCP 从 4.2s 降到 2.1s。关键 CSS 内联到 `<head>`（控制在 14KB 以内），非关键 CSS 异步加载。FCP 从 2.8s 降到 1.5s。<sup>[2]</sup>
+
+> JS 优化：路由级代码分割 + `React.lazy`，首屏 JS 从 800KB 降到 200KB。长任务用 `scheduler.yield()` 拆分，INP 从 350ms 降到 120ms。最终 LCP 2.1s（良好）、FCP 1.5s（良好）、CLS 0.05（良好）、INP 120ms（良好），转化率提升了 8%。
+
+> CLS 优化方面，排查发现两个主要来源：首屏大图没有设置宽高比（加了 `width`/`height` 属性），Web Font 加载导致文字重排（改用 `font-display: optional`）。CLS 从 0.25 降到 0.05。
+
+### 大厂高频连环拷问
+
+> 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。
+
+<AccordionGroup>
+
+  <Accordion title="Core Web Vitals 有哪些? INP 和 FID 有什么区别?" icon="layer-group">
+
+**答题要点：**
+必须说出 INP 已经替代了 FID，以及两者测量方式的本质差异。
+
+**高分回答：**
+"Core Web Vitals 有三个：LCP（Largest Contentful Paint，最大内容绘制，衡量加载速度，目标 ≤ 2.5s）、INP（Interaction to Next Paint，交互到下一帧，衡量交互响应，目标 ≤ 200ms）、CLS（Cumulative Layout Shift，累积布局偏移，衡量视觉稳定性，目标 ≤ 0.1）。
+
+INP 在 2024 年正式替代了 FID（First Input Delay）。核心区别：FID 只测量第一次交互的输入延迟（从用户输入到回调开始执行），不算回调执行时间。INP 测量所有交互中从输入到下一帧视觉更新的完整耗时（包括事件处理、DOM 更新、浏览器绘制），取 P95。所以 INP 更准确地反映了页面的整体交互响应能力——一个页面可能 FID 很好（第一次交互快），但 INP 很差（后续交互卡顿）。"
+
+  </Accordion>
+
+  <Accordion title="FCP 和 LCP 有什么区别? 分别怎么优化?" icon="layer-group">
+
+**答题要点：**
+区分"首次内容"和"最大内容"，说明两者优化策略的差异。
+
+**高分回答：**
+"FCP 衡量浏览器渲染出第一个 DOM 内容的时间（文本、图片、SVG），是用户感知'页面开始有东西了'的起点。LCP 衡量页面最大内容元素渲染完成的时间，是用户感知'主要内容加载完了'的标志。
+
+优化 FCP 的重点是减少阻塞：内联关键 CSS（控制在 14KB 以内）、非关键 CSS 异步加载、字体用 `font-display: swap`。优化 LCP 的重点是资源发现时机：`<link rel=preload>` 提前发现首屏资源、`fetchpriority='high'` 优先加载、WebP/AVIF 减少体积、SSR 直出 HTML。
+
+最常见的坑：`loading='lazy'` 误加在首屏图片上——lazy load 会延迟图片加载，严重影响 LCP。"
+
+  </Accordion>
+
+  <Accordion title="CLS 的 Session Window 算法是怎么算的?" icon="stopwatch">
+
+**答题要点：**
+解释 Session Window 的时间窗口和最大值选取逻辑。
+
+**高分回答：**
+"CLS 使用 Session Window 算法计算。规则是：5 秒内连续发生的布局偏移算一个 session，session 内所有偏移值累加。如果两次偏移间隔超过 5 秒，就开启一个新的 session。最终 CLS 值取所有 session 中的最大值。
+
+关键细节：
+1. 用户交互（点击、滚动）引起的偏移不计入 CLS（`hadRecentInput` 属性）
+2. session 的最大持续时间是 5 秒——即使偏移一直持续，超过 5 秒也会被截断
+3. 这个算法避免了'页面加载完成后持续微小偏移'被无限累加的问题"
+
+  </Accordion>
+
+  <Accordion title="INP 的三个阶段分别是什么? 怎么分别优化?" icon="stopwatch">
+
+**答题要点：**
+拆解 INP 的 Input Delay、Processing Time、Presentation Delay。
+
+**高分回答：**
+"INP 的完整耗时分为三个阶段：
+
+1. **Input Delay（输入延迟）**：从用户交互到事件回调开始执行的等待时间。瓶颈通常是主线程被其他任务占用。优化：用 `scheduler.yield()` 在长任务中让出主线程。
+
+2. **Processing Time（处理时间）**：事件回调的执行时间。优化：拆分长任务、减少 DOM 操作、用 Web Worker 处理计算密集型逻辑。
+
+3. **Presentation Delay（渲染延迟）**：从 DOM 更新到浏览器绘制下一帧的等待时间。优化：减少 DOM 节点数（虚拟列表）、避免强制同步布局（读写分离）。
+
+在 Chrome DevTools 的 Interactions 面板中，可以清楚看到每个交互的三段时间分解。"
+
+  </Accordion>
+
+  <Accordion title="PerformanceObserver 和 getEntries 有什么区别?" icon="node">
+
+**答题要点：**
+对比两种 API 的使用场景和优缺点。
+
+**高分回答：**
+"两者都能获取性能数据，但使用方式不同：
+
+`performance.getEntries()` 是拉取模式——需要主动调用获取当前已有的性能条目。适合一次性查询，但可能遗漏后续产生的条目。
+
+`PerformanceObserver` 是推送模式——注册回调后，新的性能条目产生时自动通知。适合持续监控，不会遗漏数据。而且可以用 `buffered: true` 参数获取注册前已经产生的条目。
+
+```javascript
+// 拉取模式：一次性查询
+const entries = performance.getEntriesByType('paint');
+
+// 推送模式：持续监控
+const observer = new PerformanceObserver((list) => {
+  for (const entry of list.getEntries()) {
+    console.log(entry.name, entry.startTime);
+  }
+});
+observer.observe({ type: 'paint', buffered: true });
+```
+
+生产环境推荐用 PerformanceObserver，因为它不会遗漏数据，且不会阻塞主线程。"
+
+  </Accordion>
+
+  <Accordion title="怎么用 Lighthouse 做性能审计? 结果怎么看?" icon="node">
+
+**答题要点：**
+给出具体的操作步骤和结果解读方法。
+
+**高分回答：**
+"Lighthouse 的使用步骤：
+
+1. 打开 Chrome DevTools → Lighthouse 面板
+2. 选择设备（Mobile/Desktop）和审计类别（Performance）
+3. 点击 Analyze page load
+4. 用无痕模式录制（排除扩展干扰）
+
+结果解读重点：
+- **Performance Score**：0-100 分，90+ 为良好
+- **Core Web Vitals**：FCP、LCP、CLS、INP 的具体数值和达标情况
+- **Opportunities**：可优化的建议，按预期收益排序
+- **Diagnostics**：诊断信息，如未使用的 JS/CSS 体积
+
+常见误区：Lighthouse 是实验室数据（Lab Data），不代表真实用户体验。要结合 Chrome UX Report（CrUX）的现场数据（Field Data）一起看。"
+
+  </Accordion>
+
+  <Accordion title="首屏白屏时间太长怎么排查?" icon="skull">
+
+**答题要点：**
+给出系统性的排查流程，从网络到渲染逐层定位。
+
+**高分回答：**
+"排查首屏白屏，按以下流程逐层定位：
+
+1. **Network 面板看瀑布图**：TTFB 是否过长（&gt; 600ms）？是否有串行请求阻塞？是否有 301/302 重定向？
+
+2. **Performance 面板看时间轴**：JS 执行是否阻塞渲染（Long Task &gt; 50ms）？CSS 是否阻塞 DOM 解析？LCP 元素是什么？什么时候渲染出来的？
+
+3. **Lighthouse 审计**：看 Opportunities 中的建议，按影响排序。
+
+4. **具体场景**：
+   - TTFB 长 → 服务端慢，加 CDN、优化接口
+   - JS 阻塞 → 代码分割、defer/async
+   - CSS 阻塞 → 内联关键 CSS、preload 非关键 CSS
+   - 图片阻塞 → preload、WebP/AVIF、fetchpriority
+
+关键技巧：用无痕模式（排除扩展干扰），清空缓存模拟首次访问。"
+
+  </Accordion>
+
+  <Accordion title="虚拟列表的实现原理是什么? 什么时候该用?" icon="skull">
+
+**答题要点：**
+解释可视区域渲染的核心机制，以及适用场景。
+
+**高分回答：**
+"虚拟列表（Virtual List）的核心原理是：只渲染可视区域内的 DOM 节点，滚动时动态替换内容。
+
+实现步骤：
+1. 计算可视区域能容纳多少个列表项（`containerHeight / itemHeight`）
+2. 根据滚动偏移量计算当前应该显示哪些项（`startIndex = scrollTop / itemHeight`）
+3. 用一个占位元素撑开总高度（`totalHeight = itemCount * itemHeight`）
+4. 只渲染 `startIndex` 到 `startIndex + visibleCount` 的 DOM 节点
+
+```javascript
+// 虚拟列表核心逻辑
+const visibleCount = Math.ceil(containerHeight / itemHeight);
+const startIndex = Math.floor(scrollTop / itemHeight);
+const endIndex = startIndex + visibleCount;
+const offsetY = startIndex * itemHeight;
+
+// 只渲染可视区域的项
+renderItems(items.slice(startIndex, endIndex), offsetY);
+```
+
+适用场景：万级数据列表、聊天记录、日志查看器。不适用：列表项高度不固定、需要搜索/筛选的场景。"
+
+  </Accordion>
+
+  <Accordion title="CDN 的缓存策略怎么配置? 带 hash 和不带 hash 的资源有什么区别?" icon="node">
+
+**答题要点：**
+区分强缓存和协商缓存的适用场景，说明 hash 命名的作用。
+
+**高分回答：**
+"CDN 缓存策略的核心原则是：**内容变了就换 URL，没变就用缓存**。
+
+带 hash 的静态资源（如 `main.a1b2c3d4.js`）：文件内容变化时 hash 变化，URL 随之改变。这类资源应该配置强缓存 `Cache-Control: max-age=31536000, immutable`——缓存 1 年都没问题，因为新版本会生成新的 URL。
+
+不带 hash 的资源（如 `index.html`）：URL 不变但内容可能更新。这类资源应该配置 `Cache-Control: no-cache`（不是 no-store）——每次使用前向服务器验证是否最新。
+
+常见误区：
+1. 用查询参数做版本号（`style.css?v=1.2`）——部分 CDN 不缓存带查询参数的请求
+2. HTML 设置了强缓存——用户永远看不到新版本
+3. 不同资源的缓存时间没有差异化——频繁更新的资源和几乎不变的资源应该用不同的缓存策略"
+
+  </Accordion>
+
+  <Accordion title="HTTP/2 的多路复用和 HTTP/1.1 的 Keep-Alive 有什么区别?" icon="layer-group">
+
+**答题要点：**
+区分应用层并行和传输层多路复用，指出 Keep-Alive 仍然有队头阻塞。
+
+**高分回答：**
+"HTTP/1.1 的 Keep-Alive 只是复用 TCP 连接——多个请求共享一个连接，但必须排队（FIFO），第一个响应没回来，后面的请求全部阻塞。这就是应用层队头阻塞。浏览器被迫开 6 个 TCP 连接来并行加载，但每个连接内仍然是串行的。
+
+HTTP/2 的多路复用是真正的并行——一个 TCP 连接被分成多个流（Stream），不同流的帧（Frame）可以交错发送。请求 A 的响应慢，不影响请求 B 的帧传输。
+
+还有一个关键区别：HTTP/1.1 的 Keep-Alive 连接有空闲超时（通常 60-120 秒），超时后连接关闭需要重新建立。HTTP/2 的连接更加持久，且支持服务端主动推送（Server Push，虽然已被废弃）。
+
+HTTP/3 进一步解决了 TCP 层的队头阻塞：基于 QUIC/UDP，每个流独立控制丢包重传，一个流的丢包不影响其他流。"
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## 底层源码：Chrome 是如何测量性能指标的？
+
+<div class="follow-up">
+Chrome 的 LCP 观测是怎么实现的？
+</div>
+
+Chrome 的 LCP 观测实现在 `LargestContentfulPaint` 类中（详见 [Blink 源码：largest_contentful_paint.cc](https://source.chromium.org/chromium/chromium/src/+/main/third_party/blink/renderer/core/timing/largest_contentful_paint.cc)）：
+
+```cpp
+// LCP 的核心逻辑：
+// 1. 监听所有资源加载和 DOM 变化
+// 2. 维护一个"候选元素"列表
+// 3. 每次有新元素进入视口且尺寸大于当前最大元素时，更新候选
+// 4. 在用户交互（点击、按键）后停止观测
+
+// 候选元素类型：
+// - <img> 标签
+// - <svg> 中的 <image>
+// - <video> 的封面图
+// - background-image 加载的元素
+// - 包含文本节点的块级元素
+
+void LargestContentfulPaint::OnPaintFinished() {
+  // 检查是否有新的最大内容元素
+  if (candidate.size > current_largest.size) {
+    current_largest = candidate;
+    // 记录 LCP 时间点
+  }
+}
+```
+
+LCP 的观测器在每一帧渲染后检查是否有新的最大内容元素出现。它维护一个候选列表，每次有更大的元素进入视口时更新。用户交互后停止观测——因为交互后的渲染属于"用户驱动"而非"加载"。
+
+<div class="follow-up">
+INP 是怎么测量的？
+</div>
+
+详见 [Blink 源码：event_timing.cc](https://source.chromium.org/chromium/chromium/src/+/main/third_party/blink/renderer/core/timing/event_timing.cc)：
+
+```cpp
+// INP（Interaction to Next Paint）的测量：
+// 记录每个用户交互的完整耗时
+// 从事件触发 → 事件处理 → DOM 更新 → 浏览器绘制
+// 取最差交互的延迟（去除异常值后取 P95）
+
+// EventTiming 模块在每个交互事件开始时记录时间戳
+// 在下一帧渲染完成后计算耗时
+void EventTiming::OnNextPaintAfterInteraction() {
+  duration = paint_time - interaction_start_time;
+  // 记录到 INP 观测器
+}
+```
+
+INP 测量的是从用户输入到下一帧视觉更新的完整耗时，包括事件处理、DOM 更新和浏览器绘制。与 FID 只测量第一次交互的输入延迟不同，INP 测量所有交互，取 P95（去除 5% 的异常值），更准确地反映了页面的整体交互响应能力。
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- [Web Vitals 官方文档](https://web.dev/vitals/)：Google 对 Core Web Vitals 指标的权威定义和优化建议。<sup>[1]</sup>
+- [Lighthouse 性能审计指南](https://developer.chrome.com/docs/lighthouse/)：Chrome 官方对 Lighthouse 工具的使用方法和指标解读。<sup>[2]</sup>
+- [Chrome DevTools Performance 面板文档](https://developer.chrome.com/docs/devtools/performance/)：Chrome 官方对性能面板的使用方法和指标解读。<sup>[3]</sup>
+- [web-vitals 库](https://github.com/GoogleChrome/web-vitals)：Google 官方的 Core Web Vitals 采集库，生产环境推荐使用。<sup>[4]</sup>

@@ -1,0 +1,606 @@
+---
+title: "执行上下文与作用域"
+---
+
+> **面试官为什么问这个？**
+>
+> 执行上下文是 JavaScript 运转的"出厂设置"。面试官问这个，本质上是在考察你：**是否真正理解代码在引擎中是如何被解析和运行的。** 遇到离奇的 `undefined` 报错、难以理解的闭包遮蔽、或者看似玄学的变量提升，只要你能在大脑中重构出当前的执行上下文，一切灵异现象都会迎刃而解。
+
+---
+
+## Q1: 执行上下文的生命周期
+
+<Steps>
+
+  <Step title="JS 的代码不是逐行无脑执行的">
+
+    在执行任何代码前，引擎都会为其创建一个**执行上下文（Execution Context, 简称 EC）**。JS 中主要有三种上下文：全局执行上下文、函数执行上下文、eval 上下文。
+
+  </Step>
+  <Step title="创建阶段: 代码执行前的一瞬间">
+
+    引擎会"扫视"当前作用域的全部代码，完成三件事：绑定 `this`、创建词法环境（存放 let/const/函数声明）、创建变量环境（存放 var 声明）。
+
+  </Step>
+  <Step title="执行阶段: 逐行执行">
+
+    引擎开始从上到下逐行执行代码，完成变量的赋值、函数的调用。
+
+  </Step>
+  <Step title="销毁阶段: 函数执行完毕">
+
+    函数执行上下文会从**执行上下文栈**中弹出，等待垃圾回收（闭包除外）。
+
+  </Step>
+  <Step title="关键洞察: 变量提升是创建阶段的副产品">
+
+    所谓变量提升，是引擎在创建阶段扫描 AST 并在内存中提前注册变量的必然现象。
+
+  </Step>
+
+</Steps>
+
+**执行上下文解决的核心问题：**
+
+```text
+问题：JS 引擎如何知道一个变量在哪里、值是什么？
+
+代码执行前，引擎需要先"准备环境"——绑定 this、注册变量、划分作用域。
+如果不做这一步，变量提升、闭包捕获、块级作用域隔离全部无法工作。
+
+解决：创建阶段扫描代码，建立执行上下文
+
+执行上下文 = this 绑定 + 词法环境（let/const）+ 变量环境（var）
+```
+
+<Tip title="🎢 通俗比喻: 考试前的准备工作">
+
+执行上下文就像考试前老师发卷子的过程。创建阶段相当于老师先把卷子翻一遍：把姓名栏（this）填好，把每道题的分数区域（变量）标出来，把填空题区（var）和简答题区（let/const）分开放好。真正开考（执行阶段）时，学生只需要按区域填答案。如果卷子没准备好就让学生开始写（不创建执行上下文），学生根本不知道该在哪里写什么。
+
+
+</Tip>
+
+**执行上下文的核心结构：**
+
+```text
+┌───────────────────────────────────────┐
+│         执行上下文（EC）                │
+├───────────────────────────────────────┤
+│  1. this 绑定                         │
+│  2. 词法环境（let/const/函数声明）       │  ← 块级作用域
+│  3. 变量环境（var 声明）                │  ← 函数作用域
+└───────────────────────────────────────┘
+```
+
+<Note title="💡 一句话总结">
+
+执行上下文是代码执行前的"准备环境"，变量提升是创建阶段扫描代码的副产品。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="⚠️ var 的半吊子提升">
+
+`var` 声明会被提升，并且在创建阶段就被强行初始化为 `undefined`。
+```javascript
+console.log(a); // undefined（不会报错！）
+var a = 10;
+```
+这种设计极易掩盖 Bug。
+
+</Card>
+<Card title="✅ let/const 与 TDZ">
+
+`let` 和 `const` 同样会被提升！但在执行到声明行之前，它们处于**未初始化状态**（TDZ）。
+```javascript
+console.log(b); // ReferenceError
+let b = 20;
+```
+报错比静默失败更安全。
+
+</Card>
+</CardGroup>
+
+<Warning title="⚠️ 致命踩坑: 函数提升优先级极高">
+
+**函数声明的提升，优先级高于变量声明！** 并且在创建阶段，函数不仅被提升，它的内部逻辑也被完整加载到了内存中。而如果是函数表达式（`var fn = function(){}`），则按照 `var` 的规则只提升一个 `undefined`。
+
+
+</Warning>
+
+---
+
+## Q2: 变量提升（Hoisting）与 TDZ 陷阱
+
+"提升"是 JS 中最经典的坑。它的本质就是**在创建阶段，引擎已经把变量和函数注册进了内存中，但还没运行到赋值的那一行**。
+
+```javascript
+// 代码推演 1：同名函数与变量的世纪大战
+console.log(foo);    // [Function: foo]（函数声明优先级最高）
+var foo = 1;
+function foo() {}
+console.log(foo);    // 1（var 赋值覆盖了函数）
+
+// 代码推演 2：隐蔽的块级作用域 TDZ
+let x = 1;
+function test() {
+  console.log(x);   // ReferenceError（不是 1！）
+  let x = 2;        // let 提升到顶部，锁入 TDZ
+}
+test();
+```
+
+**为什么 test() 中的 console.log(x) 不去找外层的 x = 1？**
+
+在 `test` 的创建阶段，引擎扫描到里面有 `let x = 2`，于是把局部的 `x` 提升到了顶部并锁入 TDZ。执行时，由于还没执行到赋值语句，`x` 还在死区里，直接报错。这完美证明了 **`let` 也是会提升的**。
+
+### TDZ 的底层实现：the_hole 值
+
+V8 引擎用特殊的 `the_hole` 值来实现暂时性死区：
+
+```javascript
+// V8 内部的 TDZ 实现原理
+function test() {
+  // 进入块级作用域时，x 被初始化为 the_hole
+  console.log(x); // 检测到 the_hole → 抛出 ReferenceError
+  let x = 2;      // 遇到声明语句，x 被赋值为 2
+}
+```
+
+当引擎在 TDZ 期间访问变量时，检测到 `the_hole` 值即抛出 `ReferenceError`。这比 `var` 的 `undefined` 更安全——至少你知道变量还没初始化。
+
+### 函数提升与变量提升的优先级
+
+函数声明的提升优先级高于变量声明，这是引擎在创建阶段的处理顺序：
+
+```javascript
+console.log(foo);    // [Function: foo]
+var foo = 1;
+function foo() {}
+console.log(foo);    // 1
+
+// 等价于：
+function foo() {}    // 函数声明先提升
+var foo;             // 变量声明后提升（但不覆盖已有的函数）
+console.log(foo);    // [Function: foo]
+foo = 1;             // 赋值发生在执行阶段
+console.log(foo);    // 1
+```
+
+---
+
+## Q3: V8 引擎视角的 ES6 上下文分离
+
+在早期的 ES3 中，执行上下文只有一个古老的 `Variable Object (VO)`。但到了 ES6，规范做出了一个极其巧妙的双轨设计：
+
+```text
+┌───────────────────────────────────────┐
+│         执行上下文（ES6+）              │
+├───────────────────────────────────────┤
+│  词法环境（Lexical Environment）        │  ← 存放 let/const/块级函数
+│    └── 栈结构：进入 {} 压栈，离开弹栈    │
+│  变量环境（Variable Environment）       │  ← 存放 var
+│    └── 只绑定在函数级别上下文中          │
+└───────────────────────────────────────┘
+```
+
+**查询变量时的底层逻辑：**
+V8 会首先在**词法环境**的栈顶开始向下查找（找 `let/const`），如果整个词法环境栈都找遍了没找到，才会去**变量环境**里找（找 `var`）。如果还没找到，顺着 `outer` 指针去上一层执行上下文找（作用域链）。
+
+### 词法环境的栈结构
+
+词法环境是一个栈结构，进入 `{}` 块时压栈，离开时弹栈：
+
+```javascript
+let x = 1;
+{ // 进入块级作用域，压栈
+  let y = 2;
+  { // 再次压栈
+    let z = 3;
+    console.log(x + y + z); // 6
+  } // 弹栈，z 被销毁
+  console.log(y); // 2
+} // 弹栈，y 被销毁
+console.log(x); // 1
+```
+
+### 作用域链的 outer 指针
+
+每个词法环境都有一个 `outer` 指针，指向父级词法环境：
+
+```javascript
+let global = 'global';
+function outer() {
+  let outerVar = 'outer';
+  function inner() {
+    let innerVar = 'inner';
+    // 查找变量的路径：
+    // 1. 当前词法环境（inner）→ 找到 innerVar
+    // 2. outer 指针 → 找到 outerVar
+    // 3. outer 指针 → 找到 global
+    console.log(innerVar + outerVar + global);
+  }
+  inner();
+}
+outer();
+```
+
+---
+
+## Q4: 无限递归一定会溢栈吗？
+
+大多数候选人只知道"无限递归会栈溢出"，但大厂面试官真正想考察的是：**你是否了解尾调用优化（TCO）以及 V8 的实际行为？** 答案是：不一定。在支持尾调用优化的引擎中，尾递归可以无限执行而不溢栈。但 V8 目前**默认不启用 TCO**（仅在严格模式下的特定条件下支持），所以实际项目中无限递归几乎一定会溢栈。
+
+```javascript
+/**
+ * ❌ 普通递归：每次调用都保留当前栈帧，栈深度随递归层数线性增长
+ * 问题在于 return n * factorial(n-1) 中，乘法操作在递归调用之后
+ * 引擎必须保留当前栈帧等待递归返回后才能执行乘法，无法复用栈帧
+ * @param {number} n - 阶乘数
+ * @returns {number} n 的阶乘
+ */
+function factorial(n) {
+  if (n <= 1) return 1;                   // 递归终止条件
+  return n * factorial(n - 1);            // 乘法在递归之后→无法尾调用优化→栈帧不断累积
+}
+factorial(100000); // RangeError: Maximum call stack size exceeded
+
+/**
+ * ✅ 尾递归形式：递归调用是函数的最后一步操作
+ * 通过累加器 acc 将中间结果传递下去，不需要保留当前栈帧
+ * 在支持 TCO（尾调用优化）的引擎中，可以复用栈帧，不会溢栈
+ * 但 V8 默认不启用 TCO，所以实际项目中仍然会溢栈
+ * @param {number} n - 阶乘数
+ * @param {number} acc - 累加器，存储中间计算结果
+ * @returns {number} n 的阶乘
+ */
+function factorialTail(n, acc = 1) {
+  if (n <= 1) return acc;                 // 递归终止，返回累加结果
+  return factorialTail(n - 1, n * acc);   // 递归调用是最后一步→理论上可尾调用优化
+}
+// 在支持 TCO 的引擎中：factorialTail(100000) 不会溢栈
+// 在 V8 中：仍然会溢栈（V8 默认不启用 TCO）
+```
+
+### 尾调用优化（TCO）的原理
+
+尾调用优化的核心思想是：**如果一个函数的最后一步是调用另一个函数（或自身），引擎可以复用当前栈帧，而不是新建一个。** 这意味着栈深度不会随着递归层数增加而增长。
+
+```text
+普通递归的调用栈：
+┌─────────────────┐
+│ factorial(1)    │  ← 最后返回
+├─────────────────┤
+│ factorial(2)    │
+├─────────────────┤
+│ factorial(3)    │
+├─────────────────┤
+│ ...             │
+├─────────────────┤
+│ factorial(100000)│  ← 最先调用，栈帧一直保留
+└─────────────────┘
+栈深度 = n → 必然溢栈
+
+尾递归优化后的调用栈（理论上）：
+┌─────────────────┐
+│ factorialTail(n) │  ← 只有一个栈帧，不断被复用
+└─────────────────┘
+栈深度 = 1 → 不会溢栈
+```
+
+### V8 为什么不默认启用 TCO？
+
+TCO 在 ES6 规范中被正式引入（ECMAScript 2015 Section 14.6.1），但 V8 团队出于以下原因选择默认不启用：
+
+1. **调试困难**：TCO 会消除栈帧，导致错误堆栈信息不完整，开发者无法看到完整的调用链
+2. **性能争议**：TCO 需要引擎在调用时判断是否为尾调用，这个判断本身有开销
+3. **隐式行为**：TCO 是隐式的优化，开发者可能无意中写出尾递归代码，导致行为在不同引擎间不一致
+
+```javascript
+// TCO 支持情况：Safari/JavaScriptCore 支持，Chrome/V8 和 Firefox 默认不支持
+
+/**
+ * 手动 trampoline（蹦床函数）：V8 不支持 TCO 时的替代方案
+ * 核心思想：把递归调用转为返回一个 thunk 函数，用 while 循环驱动执行
+ * 这样栈深度始终为 1，不会溢栈
+ * @param {Function} fn - 返回 thunk 函数的递归函数
+ * @returns {Function} 用循环驱动的版本
+ */
+function trampoline(fn) {
+  return function(...args) {
+    let result = fn(...args);              // 执行一次，返回的可能是函数或值
+    while (typeof result === 'function') {
+      result = result();                   // 返回函数则继续执行（模拟递归，但栈深度不变）
+    }
+    return result;                         // 返回最终结果
+  };
+}
+
+/**
+ * 用 trampoline 改造阶乘函数
+ * 关键变化：return () => f(n-1, n*acc) 而非直接递归调用
+ * 返回 thunk 函数让 trampoline 的 while 循环来驱动，避免栈帧累积
+ */
+const factorialTrampoline = trampoline(function f(n, acc = 1) {
+  if (n <= 1) return acc;                  // 终止条件：返回累加结果（非函数）
+  return () => f(n - 1, n * acc);          // 返回 thunk，延迟执行，不占用新栈帧
+});
+
+factorialTrampoline(100000); // 不会溢栈——栈深度始终为 1
+```
+
+<Warning title="⚠️ V8 的栈大小限制">
+
+V8 默认的调用栈大小约为：
+- **64 位系统**：主线程约 984KB（~10000-15000 帧），Worker 线程约 512KB
+- **32 位系统**：约 492KB
+
+每个栈帧的大小取决于函数的局部变量数量和复杂度。简单函数的栈帧约 64-128 字节，复杂函数可能更大。这意味着即使是非无限递归，深度超过几千层也可能溢栈。
+
+```javascript
+/**
+ * 测试 V8 的实际调用栈深度
+ * 原理：递归调用自身，直到栈溢出被 catch 捕获，返回当前递归层数
+ * @param {number} n - 当前递归深度
+ * @returns {number} 最大栈深度
+ */
+function countDepth(n) {
+  try {
+    return countDepth(n + 1);             // 不断递归，增加栈深度
+  } catch (e) {
+    return n;                              // 栈溢出时捕获异常，返回当前深度
+  }
+}
+console.log(countDepth(0)); // 通常在 10000-15000 左右（取决于栈帧大小和系统配置）
+```
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 接力赛 vs 传送带">
+
+普通递归就像接力赛——每一棒（栈帧）都要有自己的运动员站在跑道上等着，人多了跑道就站不下了。尾调用优化就像传送带——只有一个位置，每个箱子（计算）处理完后直接传送走，下一个箱子占据同一个位置，永远不会"站满"。但 V8 目前没有给 JavaScript 装上传送带，所以我们还是得自己用 trampoline 手动改造。
+
+</Tip>
+
+---
+
+## 🔍 底层源码：V8 的 LexicalEnvironment 实现
+
+<div class="follow-up">
+为什么 ES6 既要支持老旧的 var，又要引入严谨的 let？引擎底层是如何把它们区分开的？
+</div>
+
+在 V8 引擎中，一个 Execution Context 被硬生生劈成了两半（详见 [ECMAScript 规范：Lexical Environments](https://tc39.es/ecma262/#sec-lexical-environments)）：
+
+1. **词法环境（Lexical Environment）**：这是一个栈结构！专门用来存放 `let`、`const` 和块级函数。当代码执行进入一个 `{}` 块时，V8 会在词法环境的栈顶压入一个新的环境记录；块执行完，直接弹栈销毁。这就是**块级作用域**的底层实现原理。
+2. **变量环境（Variable Environment）**：专门用来存放 `var` 声明。它不关心块级 `{}`，只绑定在当前函数级别的上下文中。
+
+这套双环境设计，完美解释了 `let` 不能重复声明、能形成块级作用域，而 `var` 会穿透代码块且能重复声明的底层真相。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："请谈谈你对执行上下文和变量提升的理解？"
+
+**及格回答（60-70分）：**
+> "代码在执行前会有个提升过程。用 var 声明的变量和普通 function 声明会被提升到作用域最顶部。var 提升后是 undefined，let 不会提升。"
+
+面试官评价：**知识陈旧，且有硬伤。** 以为 `let` 不提升是最大的错误。
+
+**满分回答（90-100分）：**
+
+> "执行上下文严格分为'创建阶段'与'执行阶段'。所谓变量提升，是引擎在创建阶段扫描 AST 并在内存中提前注册变量的必然现象。<sup>[1]</sup>"
+
+> "对于 `var`，引擎会在提升阶段强行塞入 `undefined`；而对于 `let/const`，引擎虽然做了提升，但会将其标记为 uninitialized（未初始化），形成暂时性死区（TDZ），强行访问则抛出 ReferenceError。<sup>[2]</sup>"
+
+> "为兼容旧规并引入块级作用域，ES6 后 V8 将上下文拆分为'词法环境'与'变量环境'。`let` 受控于词法环境栈的推入与弹出，完美隔绝块级作用域；`var` 则驻留于变量环境。作用域链的本质，正是这两个环境内部的 `outer` 引用指针不断向上回溯的过程。<sup>[3]</sup>"
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title='VO (变量对象) 和 AO (活动对象) 的区别是什么?' icon="layer-group">
+
+    **答题要点：**
+    区分老旧标准与引擎实现状态。
+
+    **高分回答：**
+    "VO 和 AO 是非常古老的 ES3 规范名词了（现在的规范统称 Environment Record）。VO 指的是在创建阶段，引擎收集到的所有变量和函数声明的集合。当函数正式进入执行阶段时，这个 VO 就被激活了，内部属性可以被访问和修改，这时候它就被叫做 AO（活动对象）。它们本质上是同一个结构在不同生命周期阶段的名字。"
+
+  </Accordion>
+
+  <Accordion title='闭包中的变量存放在哪里?堆还是栈?' icon="stopwatch">
+
+    **答题要点：**
+    逃逸分析与堆内存。
+
+    **高分回答：**
+    "通常我们认为基础数据类型存放在执行上下文栈中。但 JS 引擎（如 V8）极其聪明，它在编译阶段会做**词法逃逸分析**。如果发现一个局部变量被内部函数（闭包）引用并作为返回值抛出，说明它的生命周期超越了当前函数的执行上下文栈。此时，V8 会硬生生地把这个变量从栈上'拔'出来，强行分配到堆内存（Heap）中去。这就是为什么即使外层函数执行完毕弹出（pop），闭包依然能访问到那个变量的原因。"
+
+  </Accordion>
+
+  <Accordion title='let 和 const 有变量提升吗?' icon="stopwatch">
+
+    **答题要点：**
+    点出 TDZ 的本质。
+
+    **高分回答：**
+    "有。`let` 和 `const` 也会提升，但**不会初始化**。在声明语句之前访问会进入'暂时性死区'（TDZ），抛出 ReferenceError。TDZ 的本质是 V8 在进入块级作用域时，将变量初始化为特殊的 `the_hole`（空洞）值，在遇到赋值语句前访问它，V8 检测到 `the_hole` 即抛出 ReferenceError。"
+
+  </Accordion>
+
+  <Accordion title='🔥 作用域链的本质是什么?' icon="skull">
+
+    **答题要点：**
+    说出 outer 指针链。
+
+    **高分回答：**
+    "作用域链的本质是词法环境和变量环境内部的 `outer` 引用指针不断向上回溯的过程。每个执行上下文都有自己的词法环境，每个词法环境都有一个 `outer` 指向上一层的词法环境。查找变量时，从当前词法环境开始，沿着 `outer` 链逐层向上查找，直到找到或者到达全局环境（`outer` 为 `null`）。这就是为什么内部函数能访问外部变量——不是因为变量被'复制'了，而是因为 `outer` 指针链把所有层级的环境串联起来了。"
+
+  </Accordion>
+
+  <Accordion title='eval 和 with 对执行上下文有什么影响?' icon="layer-group">
+
+    **答题要点：**
+    说明 eval 和 with 如何破坏作用域链。
+
+    **高分回答：**
+    "`eval` 和 `with` 都会动态修改作用域链，导致 V8 无法进行编译期优化：
+    
+    **eval**：在当前执行上下文中动态执行代码，可以访问和修改局部变量。
+    ```javascript
+    function test() {
+      let x = 1;
+      eval('let y = 2; console.log(x + y);'); // 3
+    }
+    ```
+    
+    **with**：将对象属性添加到作用域链的前端。
+    ```javascript
+    let obj = { a: 1, b: 2 };
+    with (obj) {
+      console.log(a + b); // 3
+    }
+    ```
+    
+    这两个特性会导致 V8 无法在编译期确定变量绑定，被迫在运行时动态查找，性能极差。这也是它们被严格模式禁用的原因。"
+
+  </Accordion>
+
+  <Accordion title='箭头函数的执行上下文有什么特殊之处?' icon="node">
+
+    **答题要点：**
+    说明箭头函数没有自己的 this 和 arguments。
+
+    **高分回答：**
+    "箭头函数的执行上下文有两个特殊之处：
+    
+    **1. 没有自己的 this 绑定**
+    箭头函数不会创建自己的 `this`，它会捕获外层执行上下文的 `this`：
+    ```javascript
+    const obj = {
+      name: '张三',
+      greet: () => {
+        console.log(this.name); // undefined（this 指向外层全局）
+      }
+    };
+    ```
+    
+    **2. 没有自己的 arguments 对象**
+    箭头函数访问 `arguments` 会沿着作用域链查找外层的 `arguments`：
+    ```javascript
+    function outer() {
+      const inner = () => {
+        console.log(arguments); // 访问 outer 的 arguments
+      };
+      inner(1, 2, 3);
+    }
+    outer('a', 'b'); // ['a', 'b']
+    ```
+    
+    这是因为箭头函数的执行上下文中没有 `this` 绑定和 `arguments` 对象，它们会通过 `outer` 指针链查找外层环境。"
+
+  </Accordion>
+
+  <Accordion title='🔥 如何手动创建一个新的执行上下文?' icon="skull">
+
+    **答题要点：**
+    说明 Function 构造函数和 eval 的区别。
+
+    **高分回答：**
+    "在 JavaScript 中，有三种方式可以创建新的执行上下文：
+    
+    **1. 函数调用（最常见）**
+    ```javascript
+    function foo() {
+      // 这里是新的执行上下文
+    }
+    foo();
+    ```
+    
+    **2. Function 构造函数**
+    ```javascript
+    const fn = new Function('a', 'b', 'return a + b');
+    fn(1, 2); // 3
+    // 创建的函数总是运行在全局作用域中
+    ```
+    
+    **3. eval（不推荐）**
+    ```javascript
+    eval('let x = 1; console.log(x);'); // 1
+    // eval 在当前执行上下文中执行代码
+    ```
+    
+    **关键区别：**
+    - 函数调用：创建独立的执行上下文，有自己的词法环境和变量环境
+    - Function 构造函数：创建的函数总是运行在全局作用域中，无法访问外层变量
+    - eval：在当前执行上下文中执行代码，可以访问和修改局部变量（非严格模式）
+    
+    ```javascript
+    let x = 1;
+    function test() {
+      let x = 2;
+      const fn = new Function('return x');
+      console.log(fn()); // 1（访问全局的 x，不是局部的 x）
+    }
+    test();
+    ```"
+
+  </Accordion>
+
+  <Accordion title='🔥 执行上下文与调用栈的关系是什么?' icon="node">
+
+    **答题要点：**
+    说明执行上下文如何在调用栈中管理。
+
+    **高分回答：**
+    "执行上下文与调用栈（Call Stack）的关系是：**调用栈是管理执行上下文的数据结构**。
+    
+    **调用栈的工作原理：**
+    ```javascript
+    function first() {
+      console.log('first');
+      second();
+    }
+    function second() {
+      console.log('second');
+      third();
+    }
+    function third() {
+      console.log('third');
+    }
+    first();
+    
+    // 调用栈变化：
+    // 1. [全局执行上下文]
+    // 2. [全局执行上下文, first 执行上下文]
+    // 3. [全局执行上下文, first 执行上下文, second 执行上下文]
+    // 4. [全局执行上下文, first 执行上下文, second 执行上下文, third 执行上下文]
+    // 5. third 执行完毕，弹出 [全局执行上下文, first 执行上下文, second 执行上下文]
+    // 6. second 执行完毕，弹出 [全局执行上下文, first 执行上下文]
+    // 7. first 执行完毕，弹出 [全局执行上下文]
+    ```
+    
+    **栈溢出（Stack Overflow）：**
+    ```javascript
+    // ❌ 无限递归导致栈溢出
+    function recursive() {
+      recursive();
+    }
+    recursive(); // RangeError: Maximum call stack size exceeded
+    ```
+    
+    每次函数调用都会创建新的执行上下文并压入调用栈。如果递归层数过深，调用栈会超出内存限制，导致栈溢出。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [ECMAScript 规范：Lexical Environments](https://tc39.es/ecma262/#sec-lexical-environments)：*ECMA 官方规范中对词法环境和变量环境的严谨定义。* <sup>[1]</sup>
+- 📖 [V8 Blog: Understanding V8's Bytecode](https://v8.dev/docs/ignition)：*了解 V8 Ignition 解释器是如何在底层处理变量提升与作用域逃逸的。* <sup>[2]</sup>
+- 🟢 [MDN Web Docs: Closures](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Closures)：*MDN 对闭包和作用域链的权威解释。* <sup>[3]</sup>

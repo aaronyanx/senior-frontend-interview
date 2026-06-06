@@ -1,0 +1,379 @@
+---
+title: "Flex 弹性布局"
+---
+
+> **面试官为什么问这个？**
+>
+> 面试官问这个，本质上是在考察你是否真正跨越了古典"浮动流"的泥沼，掌握了现代 CSS 引擎处理一维动态空间的算法。如果你在使用 Flex 布局时只会凭感觉乱试 `align-items` 和 `justify-content`，甚至连 `flex: 1` 内部包含了凶险的缩放博弈都不知道，那你在面对复杂自适应表单或溢出截断场景时一定会束手无策。
+
+---
+
+## Q1: Flexbox 颠覆了什么？
+
+<Steps>
+
+  <Step title="古典 CSS 时代的苦力活">
+
+  在 Flex 诞生之前（2009年），我们排版就像在用砖头砌墙：块级元素只能从上往下死板堆叠（Block 流），如果想让他们横向排列，只能使用充满副作用的 `float`（浮动）魔法，或者用极难控制的 `display: inline-block`（还要解决幽灵空白符）。而要实现"垂直居中'，更是需要写出各种反人类的 absolute 与负 margin 黑客代码。
+
+  </Step>
+  <Step title="致命痛点: 一维空间的失控">
+
+  面对动态数量的导航栏按钮，你需要用 JS 动态计算容器宽度并除以 N，然后把每个按钮的 `width` 设置成精确的百分比。如果增加一个按钮，整个布局可能就会崩溃断行。垂直居中更是需要 `position: absolute; top: 50%; transform: translateY(-50%)` 这种三行代码才能勉强实现。
+
+  </Step>
+  <Step title='一维突破：轴线系统的确立'>
+
+  Flexbox 放弃了"上下左右"这种死板的物理直觉，引入了一套极度抽象且强大的**主轴（Main Axis）与交叉轴（Cross Axis）系统**。不管元素是横排还是竖排，你只需要告诉引擎：顺着主轴怎么对齐（justify），垂直于主轴怎么对齐（align）。这是一种排版思想上的突破。
+
+  </Step>
+  <Step title="弹性算法的三重博弈">
+
+    `flex` 复合属性由三个参数组成：`flex-basis` 申报基准占位体积（优先级高于 width），`flex-grow` 在剩余空间出现时按比例贪婪膨胀瓜分，`flex-shrink` 在溢出时按比例自我裁剪求生。`flex: 1` 的本质是 `flex: 1 1 0%`--所有元素从零开始绝对平均瓜分容器空间，这才是实现等分布局的底层杀招。
+
+  </Step>
+  <Step title='关键洞察：min-width: auto 的隐藏陷阱'>
+
+  根据 CSS 规范，Flex Item 的隐式最小宽度默认是 `auto`（不可小于内部文本的固有尺寸）。当 `flex-basis: 0%` 试图将元素压缩到零时，`min-width: auto` 会像一堵墙阻止收缩，导致 `flex: 1` 表面上"失效"。架构级防御补丁是配合 `min-width: 0` 或 `overflow: hidden`，强行打破内容的物理极限界限，让收缩算法彻底贯穿执行。
+
+  </Step>
+
+</Steps>
+
+**Flex 解决的核心问题：**
+
+```text
+问题：古典布局中，一维空间的对齐、分布、自适应复杂
+
+导航栏 5 个按钮要等宽分布 → JS 动态计算宽度 → 增删按钮时布局崩溃
+垂直居中 → absolute + 负 margin 或 line-height hack → 代码丑陋且脆弱
+
+解决：Flex 弹性布局引擎自动处理空间分配与对齐
+
+display: flex; + flex: 1 → 引擎毫秒级将容器空间公平等分给每个子元素
+align-items: center; justify-content: center → 两行代码实现完美居中
+```
+
+<Note title="💡 一句话总结">
+
+Flex 让一维空间的对齐与分配从"手动计算"变成了"声明式指令"，是 CSS 布局史上最大的思想革命。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 古典流体布局">
+
+面对动态数量的导航栏按钮，你需要用 JS 动态计算容器宽度并除以 N，然后把每个按钮的 `width` 设置成精确的百分比。如果增加一个按钮，整个布局可能就会崩溃断行。
+
+</Card>
+<Card title='✅ 现代 Flex 弹性布局'>
+
+只需一句 `display: flex;`，所有子元素设定 `flex: 1;`。不管来几个按钮，引擎的伸缩算法会在毫秒级瞬间将容器的剩余空间公平地等分给每一个子元素。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么'（古典布局的痛点），再说"怎么解决"（Flex 的轴线系统与弹性算法）。重点是理解 Flex 的设计哲学，而不是背诵那十几个 align 属性。
+
+</Tip>
+
+---
+
+## Q2: flex: 1 的底层深渊（Grow / Shrink / Basis）
+
+面试中致命的连环坑，就是 `flex` 复合属性。很多开发者天天写 `flex: 1`，却根本不知道它其实是由三个暴烈的物理算法参数组成的怪兽！
+
+`flex` 的全写是：`flex: flex-grow | flex-shrink | flex-basis`
+
+```text
+┌───────────────────────────────────────┐
+│        flex-basis（底线基准）           │  ← 申报的基准占位体积，优先级高于 width
+└─────────────────┬─────────────────────┘
+                  │ 容器空间减去所有 basis 后
+                  ▼
+┌───────────────────────────────────────┐
+│        flex-grow（贪婪膨胀）           │  ← 有剩余空间时，按比例抢夺瓜分
+└─────────────────┬─────────────────────┘
+                  │ 空间不够时
+                  ▼
+┌───────────────────────────────────────┐
+│        flex-shrink（求生收缩）          │  ← 溢出时，按比例自我裁剪
+└───────────────────────────────────────┘
+```
+
+1. **`flex-basis` (底线基准)**：它在分配剩余空间之前，向引擎申报的**基准占位体积**。它拥有极高的优先级，会直接暴风级覆盖掉你写的 `width` 属性！
+2. **`flex-grow` (贪婪膨胀)**：当容器的宽度减去所有元素的 `basis` 之后，如果**还有剩余空间**，大家就按照 `grow` 的比例系数，去抢夺并瓜分剩下的领土。
+3. **`flex-shrink` (求生收缩)**：当容器的空间不够，**发生溢出挤压时**，大家按照 `shrink` 的系数进行痛苦的自我裁剪。（默认值是 1，意思是大家一起等比缩小；如果设为 0，这块石头就死活不缩小，哪怕撑爆父容器）。
+
+<Warning title="⚠️ 机制: flex: 1 究竟等于什么?">
+
+`flex: 1` 不是 `flex: 1 1 auto`！在 W3C 严格的规范中，`flex: 1` 是 `flex: 1 1 0%` 的绝对缩写！
+
+- 所有声明了 `flex: 1` 的元素，无论它们原本的内容是长是短，它们申报的 `flex-basis`（基准占位）都是 **0**。
+- 它们在起跑线上被强制清零，然后完全依据 `flex-grow` 来**绝对平均地瓜分整个容器的所有空间**。
+- 这才是实现等分布局的底层杀招。
+
+</Warning>
+
+<Tip title='🎢 通俗比喻：分蛋糕'>
+
+flex-basis 就像每个人先声明"我要多大的一块"（基准）。flex-grow 就像"蛋糕切完后还有剩的，大家按权重抢"。flex-shrink 就像"蛋糕不够了，声明要最多的人被砍掉最多"。而 `flex: 1 1 0%` 意味着所有人先声明"我一口都不要"，然后把整个蛋糕绝对平分--这才是真正的公平。
+
+</Tip>
+
+---
+
+## Q3: Flex 与 Grid 有什么区别？
+
+### 基础梳理
+
+| 对比维度 | Flex（一维布局） | Grid（二维布局） |
+|---------|---------------|----------------|
+| **布局维度** | 一维（行或列） | 二维（行+列同时控制） |
+| **布局思想** | 从内向外（内容驱动） | 从外向内（容器驱动） |
+| **适合场景** | 导航栏、卡片列表、线性排列 | 页面骨架、九宫格、复杂矩阵 |
+| **换行对齐** | `flex-wrap` 后新行对上行无感知 | 行列天然对齐 |
+| **空间分配** | `flex-grow/shrink` 弹性缩放 | `fr` 单位瓜分剩余空间 |
+
+### 专家视角深度剖析
+
+很多候选人只能背诵上面的表格，但大厂面试官真正在意的是：**Flex 和 Grid 的算法思想有什么主要区别？为什么有了 Grid 还需要 Flex？**
+
+两者的主要区别是**"内容驱动的空间妥协"与"容器驱动的绝对统治"**的排版思想对立。
+
+在 Blink 的 `FlexLayoutAlgorithm` 中，子元素就像充气气球，容器的最终形态往往受到内部内容尺寸（Content Size）的剧烈影响与反向推演（由内向外）。而在 `GridLayoutAlgorithm` 中，父容器在第一阶段就会构建严密的拓扑轨道网络（Explicit Tracks），子元素只是被无情塞入预先划定好尺寸的物理牢笼之中（由外向内），哪怕内容极度膨胀溢出，网格的钢铁骨架也绝不轻易变形。
+
+所以两者不能互相替代--Flex 处理的是"内容自适应"的流式场景，Grid 处理的是"骨架固定"的矩阵场景。
+
+```css
+/* Flex：由内向外，内容驱动 */
+.flex-container { display: flex; }
+/* 子元素的内容尺寸会影响容器最终形态 */
+
+/* Grid：由外向内，容器驱动 */
+.grid-container { display: grid; grid-template-columns: repeat(3, 1fr); }
+/* 子元素被塞入预先划定的钢铁骨架，内容溢出也不破坏网格 */
+/* 关键点：Flex 是"协商"，Grid 是"命令" */
+```
+
+---
+
+## Q4: 经典面试题：flex: 1 失效的陷阱
+
+**flex: 1 为什么有时会失效？**
+根据 CSS 规范，Flex Item 的隐式最小宽度（`min-width`）默认是 `auto`（即不可小于其内部文本的硬性尺寸）。当 `flex-basis: 0%` 试图将元素压缩到零时，`min-width: auto` 会像一堵墙一样阻止收缩，导致 `flex: 1` 看起来"失效"了。
+
+**flex-shrink: 0 的陷阱：**
+如果给某个子元素设置了 `flex-shrink: 0`，它就变成了一块"硬石头"--空间再怎么不够，它也死活不缩小，哪怕撑爆父容器。
+
+**关键区别：**
+
+| 场景 | flex: 1 的行为 | 是否需要额外处理 |
+|------|-------------|-------------|
+| 内容较短 | 正常等分 | 不需要 |
+| 内容超长（无换行） | 被 min-width: auto 阻止收缩 | 需要 `min-width: 0` |
+| 子元素有 flex-shrink: 0 | 该元素不参与收缩 | 需要移除或改为 1 |
+| 容器有固定高度 | 交叉轴默认 stretch 拉伸 | 需要 `align-items: flex-start` |
+
+<Tip title="建议: ">
+
+在开发复杂的中后台表格时，如果 `flex: 1` 的内容把容器撑破，架构级防御补丁是：配合 `min-width: 0;` 或 `overflow: hidden;`，强行打破内容的物理极限界限，让收缩算法彻底贯穿执行。
+
+</Tip>
+
+---
+
+## 🔍 源码：Blink 引擎是如何实现的？
+
+<div class="follow-up">
+flex-grow 的空间分配算法是怎么实现的？
+</div>
+
+在 Chrome 的 Blink 渲染引擎中，Flex 布局是一套精密、甚至带有四舍五入补偿机制的动态分配算法（详见 [Blink 源码 src/core/layout/flex_layout_algorithm.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/layout/flex_layout_algorithm.cc)）：
+
+```cpp
+// 详见：Blink 源码 src/core/layout/flex_layout_algorithm.cc
+// flex-grow 的瓜分战利品算法
+
+// 1. 引擎首先计算出蛋糕有多大：
+// 剩余可用空间 (Remaining Space) = 容器总宽 - 所有的 flex-basis 之和
+
+// 2. 遍历所有参与抢夺的子元素
+for (FlexItem& item : flex_items) {
+  // 如果当前项参与膨胀（grow > 0）
+  if (item.Style().FlexGrow() > 0) {
+    // 核心数学公式：
+    // 你分到的肉 = 剩余可用空间 * (你的 flex-grow / 所有人加起来的 total_flex_grow)
+    float extra_space = remaining_space * (item.Style().FlexGrow() / total_flex_grow);
+
+    // 你的最终宽度 = 你的原始基准(basis) + 抢到的肉(extra_space)
+    item.SetFlexedContentSize(item.FlexBaseContentSize() + extra_space);
+  }
+}
+```
+
+<div class="follow-up">
+flex-shrink 的收缩算法和 grow 有什么不同？
+</div>
+
+收缩（Shrink）被挤压的惩罚算法比膨胀算法复杂十倍！因为它不仅仅看 `flex-shrink` 系数，还会把**基础尺寸体积（flex-basis）**作为加权系数乘进去：
+
+```cpp
+// shrink 的惩罚算法（简化）
+for (FlexItem& item : flex_items) {
+  if (item.Style().FlexShrink() > 0) {
+    // 你的惩罚系数 = 你的 shrink * 你的 basis（体积越大，砍得越多）
+    float shrink_factor = item.Style().FlexShrink() * item.FlexBaseContentSize();
+    // 你被砍掉的肉 = 溢出空间 * (你的惩罚系数 / 所有人的惩罚系数之和)
+    float reduction = overflow_space * (shrink_factor / total_shrink_factor);
+    item.SetFlexedContentSize(item.FlexBaseContentSize() - reduction);
+  }
+}
+// 为什么要乘以 basis？因为体积越庞大的胖子（basis大），在被挤压时掉的肉就越多
+// 这样保证极小体积的元素不至于被瞬间挤压成负数灰飞烟灭
+```
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："请详细说一下你对 flex: 1 的理解，它是由哪几个属性组成的？"
+
+**及格回答（60-70分）：**
+> "flex: 1 是三个属性的简写。分别是 flex-grow, flex-shrink 和 flex-basis。默认值是 1。通常写个 flex: 1 就能让子元素自动填满剩下的空间，非常好用。"
+
+面试官评价：**知道规则但不理解设计**。
+
+**满分回答（90-100分）：**
+
+> `flex: 1` 的本质是浏览器在 Flex 弹性算法中，赋予子元素的一种**"起点清零，绝对平均瓜分"**的极限空间分配指令。Flex 布局引入了一套极度抽象且强大的主轴（Main Axis）与交叉轴（Cross Axis）系统，不管元素是横排还是竖排，你只需要告诉引擎：顺着主轴怎么对齐、垂直于主轴怎么对齐。这种排版思想彻底解决了古典布局中一维空间对齐、分布、自适应的复杂问题。<sup>[1]</sup>
+
+> `flex: 1` 实际上是 `flex-grow: 1; flex-shrink: 1; flex-basis: 0%;` 这三个严苛参数的缩写。`grow: 1` 赋予了它贪婪膨胀抢夺剩余空间的权利；`shrink: 1` 赋予了它在空间不足时主动收缩求生的义务；**致命的 `basis: 0%`**：它向 Blink 引擎宣告，完全无视当前 DOM 节点里文本内容的固有长度，直接将其基础占位清零。这就迫使引擎将整个容器的 100% 宽度全部视为"剩余可用空间"，随后所有设置了 `flex: 1` 的兄弟节点将公平地进行绝对等分。在 Blink 的 `FlexLayoutAlgorithm` 中，`flex-grow` 的空间分配公式是：你分到的空间 = 剩余可用空间 * (你的 grow / 所有人的 grow 之和)。<sup>[2]</sup>
+
+> 在开发复杂的中后台表格（比如文字超长需要出现 `...` 省略号）时，我们经常会发现 `flex: 1` 突然失效，内容把容器疯狂撑破。这是因为根据 CSS 规范，Flex Item 的隐式最小宽度（`min-width`）默认是 `auto`——不可小于内部文本的固有尺寸。当 `flex-basis: 0%` 试图将元素压缩到零时，`min-width: auto` 会像一堵墙阻止收缩。架构级防御补丁是：必须配合补上一句 `min-width: 0;` 或 `overflow: hidden;`，强行打破内容的物理极限界限，让收缩算法彻底贯穿执行。<sup>[3]</sup>
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="第一层: 如何让某个子元素单独靠右对齐, 不影响其他靠左的元素?" icon="layer-group">
+
+  **答题要点：**
+  不能答 `justify-self: flex-end`（Flex 不支持），必须提到 `margin-left: auto`。
+
+  **高分回答：**
+  "在纯 Flex 环境下，规范的解法就是利用**自动外边距吸附机制**，即给最右侧元素设置 `margin-left: auto;`。当在 Flex 容器中存在 `margin: auto` 时，引擎会将其优先级提到最高，它会如同黑洞一般瞬间吞噬掉主轴上所有的剩余空间，从而物理层面优雅地将元素强行推挤到了容器的最右侧边缘。"
+
+  </Accordion>
+
+  <Accordion title="第二层: 为什么有些子元素会自动拉满和父元素一样高, 而有些不会?" icon="layer-group">
+
+  **答题要点：**
+  结合 W3C 规范解释 `align-items` 的默认值是 `stretch`。
+
+  **高分回答：**
+  "根据 W3C 规范，Flex 容器的交叉轴默认对齐方式（`align-items`）不是 `flex-start` 或 `center`，而是强势的 **`stretch`（拉伸填满）**！因此，一旦父容器被某一个极高的子元素撑开，其他所有的子元素如果没有写死固定高度（即 `height: auto`），引擎会暴力地将它们在交叉轴方向上拉伸到与父容器等高。如果想打破这种强制拉伸结界，必须显式在容器上修改为 `align-items: flex-start`。"
+
+  </Accordion>
+
+  <Accordion title="第三层: flex-wrap: wrap 后, 如何让每一行的元素等高?" icon="stopwatch">
+
+  **答题要点：**
+  必须分场景讨论！Flex 换行后默认各行独立，不等高。
+
+  **高分回答：**
+  "分两种情况：
+  **1. 默认行为**：`flex-wrap: wrap` 后，每一行是一个独立的 flex line，各行的高度由该行中最高的元素决定，行与行之间**互不影响**。
+  **2. 强制等高**：如果需要所有行等高，最简单的方案是给容器设置 `align-items: stretch`（默认值），但这只能让同一行内等高。要让跨行等高，必须放弃 Flex，改用 Grid 布局--Grid 的 `grid-template-rows` 可以强制所有行共享同一高度。"
+
+  </Accordion>
+
+  <Accordion title="第四层: order 属性对无障碍访问和屏幕阅读器有什么影响?" icon="stopwatch">
+
+  **答题要点：**
+  结合无障碍访问（A11y）解释 order 的潜在问题。
+
+  **高分回答：**
+  "`order` 属性只改变视觉顺序，不改变 DOM 顺序。这对屏幕阅读器（Screen Reader）有重要影响：
+  **1. Tab 顺序**：Tab 键导航仍然按照 DOM 顺序，而不是 `order` 顺序。用户按 Tab 键时，焦点会按照 DOM 中的顺序跳转，可能跳到视觉上不相邻的元素。
+  **2. 屏幕阅读器**：屏幕阅读器按照 DOM 顺序朗读内容，`order` 的视觉重排不会影响朗读顺序。
+  **3. 最佳实践**：如果需要同时改变视觉和语义顺序，应该修改 DOM 结构而不是依赖 `order`。`order` 只用于视觉微调，不应用于改变内容的逻辑顺序。"
+
+  </Accordion>
+
+  <Accordion title="第五层: Flex 和 Grid 在响应式设计中如何选择?" icon="node">
+
+  **答题要点：**
+  必须分场景讨论！两者在响应式设计中的适用场景。
+
+  **高分回答：**
+  "在响应式设计中，Flex 和 Grid 的选择取决于布局复杂度：
+  **1. 简单线性布局**：使用 Flex。导航栏、卡片列表、按钮组等简单线性排列用 Flex 最简单。
+  **2. 复杂网格布局**：使用 Grid。页面骨架、九宫格、Dashboard 等需要行列对齐的布局用 Grid。
+  **3. 混合使用**：在同一个页面中，可以同时使用 Flex 和 Grid。例如，页面整体用 Grid 做骨架，每个 Grid 格子内部用 Flex 做内容排列。
+  **4. 响应式降级**：Grid 的 `repeat(auto-fill, minmax(200px, 1fr))` 可以实现无媒体查询的响应式列数调整，这是 Grid 在响应式设计中的独特优势。"
+
+  </Accordion>
+
+  <Accordion title="🔥 杀手锏追问: 如果 Flex 容器内同时有 flex: 1 和 flex: 2 的元素, 容器宽度为 300px, 每个元素最终宽度是多少?" icon="skull">
+
+  **答题要点：**
+  必须手算数学公式，不能含糊。
+
+  **高分回答：**
+  "假设容器内有 3 个元素：A 是 `flex: 1`，B 是 `flex: 2`，C 是 `flex: 1`。
+    1. 所有元素的 `flex-basis` 都是 `0%`（因为 `flex: N` 等价于 `flex: N 1 0%`）。
+    2. 剩余可用空间 = 300px - 0 - 0 - 0 = 300px。
+    3. 总 grow 系数 = 1 + 2 + 1 = 4。
+    4. A 分到 = 300 × (1/4) = 75px；B 分到 = 300 × (2/4) = 150px；C 分到 = 300 × (1/4) = 75px。
+
+  所以最终宽度是 A: 75px, B: 150px, C: 75px。这就是 `flex: 1 1 0%` 的数学本质--从零开始，按比例瓜分。"
+
+  </Accordion>
+
+  <Accordion title="🔥 杀手锏追问: Flex 布局中, align-self 和 align-items 有什么区别?在什么场景下用 align-self?" icon="skull">
+
+  **答题要点：**
+  对比容器级和元素级的对齐控制。
+
+  **高分回答：**
+  "`align-items` 设置在容器上，控制所有子元素的交叉轴对齐方式。`align-self` 设置在单个子元素上，覆盖容器的 `align-items` 设置。
+  **使用场景**：
+  **1. 特殊元素对齐**：大多数子元素居中对齐，但某个特殊元素需要顶部对齐。
+  ```css
+  .container { display: flex; align-items: center; }
+  .special-item { align-self: flex-start; }
+  ```
+  **2. 表单布局**：标签和输入框高度不同时，用 `align-self` 让标签顶部对齐。
+  **3. 注意事项**：`align-self: auto` 表示继承容器的 `align-items` 值。`align-self` 不能设置为 `baseline` 以外的值时，需要容器有明确的高度。"
+
+  </Accordion>
+
+  <Accordion title="🔥 杀手锏追问: Flex 布局中, flex-basis 和 width 有什么区别?什么场景下用哪个?" icon="skull">
+
+  **答题要点：**
+  对比两个属性的优先级和适用场景。
+
+  **高分回答：**
+  "`flex-basis` 和 `width` 都可以设置元素的初始宽度，但有重要区别：
+  **1. 优先级**：`flex-basis` 的优先级高于 `width`。如果同时设置了 `flex-basis` 和 `width`，`flex-basis` 会覆盖 `width`。
+  **2. 默认值**：`flex-basis` 的默认值是 `auto`，表示使用 `width` 的值。如果 `width` 也是 `auto`，则由内容决定。
+  **3. 百分比计算**：`flex-basis` 的百分比基于容器的主轴尺寸计算，`width` 的百分比基于容器的宽度计算。
+  **使用场景**：
+  - 使用 `flex-basis`：需要精确控制 Flex 元素的初始宽度。
+  - 使用 `width`：需要设置元素的最小/最大宽度，或者在非 Flex 布局中使用。
+  **最佳实践**：在 Flex 布局中，优先使用 `flex-basis` 设置初始宽度，使用 `width` 设置约束条件。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [CSS Flexible Box Layout Module Level 1 - W3C 规范](https://www.w3.org/TR/css-flexbox-1/)：W3C 官方对 Flex 布局的权威定义，包含 flex-grow/shrink/basis 的完整数学算法。<sup>[1]</sup>
+- 📖 [Blink 源码 flex_layout_algorithm.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/layout/flex_layout_algorithm.cc)：Chrome Blink 引擎中 Flex 布局的实现，包含空间分配与收缩的完整算法。<sup>[2]</sup>
+- 🟢 [MDN Web Docs - flex](https://developer.mozilla.org/en-US/docs/Web/CSS/flex)：MDN 对 `flex` 简写属性的权威解释，包含 `flex: 1` 与 `flex: 1 1 auto` 的关键区别。<sup>[3]</sup>

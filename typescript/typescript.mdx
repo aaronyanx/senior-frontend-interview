@@ -1,0 +1,1260 @@
+---
+title: "TypeScript"
+---
+
+> **面试官为什么问这个？**
+>
+> TypeScript 是大型前端项目的标配。面试官问这个，本质上是在考察你：**是否理解类型系统的设计哲学，以及能否用类型系统写出可维护的代码。** 如果你答不清楚，说明你对 TypeScript 的理解停留在"加类型注解"而不是"用类型系统设计 API"。
+
+---
+
+## Q1: TypeScript 的类型系统是怎么工作的？
+
+<Steps>
+
+  <Step title="JavaScript 的类型问题">
+
+JavaScript 是动态类型语言，变量的类型在运行时才确定。这导致很多错误只能在运行时发现（如 `undefined is not a function`），而不是在编码时。
+
+  </Step>
+  <Step title="TypeScript 的解决方案">
+
+TypeScript 在 JavaScript 的基础上增加了**静态类型检查**。在编码时就能发现类型错误，而不是等到运行时。TypeScript 的类型系统是**结构化类型**（鸭子类型）——只要形状兼容，就认为类型兼容。
+
+  </Step>
+  <Step title="类型系统的层次">
+
+TypeScript 的类型系统分为三层：
+1. **基础类型**：`string`、`number`、`boolean`、`null`、`undefined`、`void`、`never`
+2. **复合类型**：`array`、`tuple`、`enum`、`union`、`intersection`
+3. **高级类型**：`generic`、`conditional`、`mapped`、`template literal`
+
+  </Step>
+  <Step title="类型推断">
+
+TypeScript 有强大的类型推断能力。大多数情况下不需要手动标注类型，编译器会自动推断：
+
+```typescript
+let x = 10;           // TypeScript 推断 x 为 number
+const y = 'hello';    // TypeScript 推断 y 为 'hello'（字面量类型）
+function add(a: number, b: number) { return a + b; }
+const result = add(1, 2);  // TypeScript 推断 result 为 number
+```
+
+  </Step>
+  <Step title="类型检查的本质">
+
+TypeScript 的类型检查发生在**编译时**，不是运行时。编译后的 JavaScript 代码没有任何类型信息。这意味着：
+1. 类型注解不会影响运行时性能
+2. 运行时的类型检查需要自己实现（如 `typeof`、`instanceof`）
+3. 类型断言（`as`）是告诉编译器"我比你更了解类型"，不会做任何检查
+
+  </Step>
+
+</Steps>
+
+**TypeScript 解决的核心问题：**
+
+```text
+问题：JavaScript 是动态类型，类型错误只能在运行时发现
+
+const user = { name: 'Tom' };
+console.log(user.age);  // undefined（运行时才发现）
+
+解决：TypeScript 在编译时检查类型错误
+
+const user: { name: string; age: number } = { name: 'Tom' };
+// 编译时报错：缺少 age 属性
+```
+
+<Note title="💡 一句话总结">
+
+TypeScript 在 JavaScript 的基础上增加了静态类型检查，让类型错误在编译时就能发现，而不是运行时。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有 TypeScript">
+
+你写了一个函数 `getUser()`，返回一个对象。三个月后你忘了返回值的结构，调用时访问了一个不存在的属性，运行时才发现 `undefined`。
+
+</Card>
+<Card title="✅ 引入 TypeScript">
+
+你给函数加了返回类型 `User`，编译器会检查你访问的属性是否存在。如果属性不存在，编码时就报错，不需要等到运行时。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么"（动态类型的痛点），再说"怎么解决"（静态类型检查）。面试官想听的是你理解类型系统的设计哲学，而不是背语法。
+
+</Tip>
+
+---
+
+## Q2: type 和 interface 的区别？
+
+`type` 和 `interface` 都可以定义对象类型，但有本质区别：
+
+```text
+┌───────────────────────────────────────┐
+│         interface（接口）               │  ← 定义对象形状，支持声明合并
+└─────────────────┬─────────────────────┘
+                  │ 可以 extends
+                  ▼
+┌───────────────────────────────────────┐
+│         type（类型别名）               │  ← 定义类型别名，支持联合/交叉/映射
+└───────────────────────────────────────┘
+```
+
+```typescript
+// interface：定义对象形状
+interface User {
+  name: string;
+  age: number;
+}
+
+// type：定义类型别名
+type User = {
+  name: string;
+  age: number;
+};
+
+// 区别 1：interface 可以声明合并
+interface User { email: string; } // 自动合并到上面的 User
+
+// type 不能声明合并
+// type User = { email: string; } // ❌ 重复定义报错
+
+// 区别 2：type 可以定义联合类型、交叉类型、元组
+type ID = string | number; // 联合
+type Named = { name: string } & { age: number }; // 交叉
+type Point = [number, number]; // 元组
+
+// interface 只能定义对象形状
+
+// 推荐：定义对象用 interface，其他用 type
+```
+
+<Warning title="⚠️ 核心机制: 声明合并">
+
+interface 的声明合并是 TypeScript 的独特特性。当你定义两个同名 interface 时，TypeScript 会自动把它们合并成一个。这在扩展第三方库类型时非常有用：
+
+```typescript
+// 扩展 Window 类型
+interface Window {
+  myCustomProperty: string;
+}
+
+// 扩展 Express 的 Request 类型
+declare namespace Express {
+  interface Request {
+    user?: {
+      id: string;
+      email: string;
+    };
+  }
+}
+```
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 接口 vs 类型别名">
+
+interface 就像一份**合同**——你可以签多份合同（声明合并），最后所有条款都会生效。type 就像一个**昵称**——你只能有一个昵称，但这个昵称可以代表任何东西（联合类型、交叉类型等）。
+
+</Tip>
+
+### 什么场景用 interface，什么场景用 type？
+
+| 场景 | 推荐 | 原因 |
+|------|------|------|
+| 定义对象形状 | `interface` | 支持声明合并，性能更好 |
+| 定义联合类型 | `type` | interface 不支持 |
+| 定义元组 | `type` | interface 不支持 |
+| 定义函数类型 | `type` | 写法更简洁 |
+| 扩展第三方库类型 | `interface` | 支持声明合并 |
+| 映射类型 | `type` | interface 不支持 |
+
+### TypeScript 的结构化类型
+
+TypeScript 的类型系统是**结构化类型**（鸭子类型）——只要形状兼容，就认为类型兼容，不关心名字：
+
+```typescript
+interface Point {
+  x: number;
+  y: number;
+}
+
+function logPoint(p: Point) {
+  console.log(`${p.x}, ${p.y}`);
+}
+
+const point = { x: 12, y: 26, z: 10 };
+logPoint(point); // ✅ OK！point 有 x 和 y，形状兼容
+
+const rect = { x: 33, y: 3, width: 10, height: 20 };
+logPoint(rect); // ✅ OK！rect 也有 x 和 y
+```
+
+---
+
+## Q3: 泛型是什么？怎么用？
+
+泛型的本质是**参数化类型**——定义函数/类时不确定类型，使用时再指定：
+
+```text
+┌───────────────────────────────────────┐
+│         泛型函数                       │  ← 定义时不确定类型
+│         function identity<T>(value: T): T
+└─────────────────┬─────────────────────┘
+                  │ 调用时指定类型
+                  ▼
+┌───────────────────────────────────────┐
+│         具体类型                       │  ← identity<number>(1)
+└───────────────────────────────────────┘
+```
+
+```typescript
+// 函数泛型
+function identity<T>(value: T): T {
+  return value;
+}
+identity<number>(1);     // T = number
+identity<string>('hi');  // T = string
+identity(1);             // 类型推断，T = number
+
+// 泛型约束
+function getLength<T extends { length: number }>(value: T): number {
+  return value.length;
+}
+getLength('hello');    // ✅
+getLength([1, 2, 3]); // ✅
+// getLength(123);     // ❌ number 没有 length
+
+// 泛型接口
+interface ApiResponse<T> {
+  code: number;
+  data: T;
+  message: string;
+}
+
+const userRes: ApiResponse<User> = await fetch('/api/user');
+const listRes: ApiResponse<User[]> = await fetch('/api/users');
+```
+
+<Warning title="⚠️ 核心机制: 泛型约束">
+
+泛型约束通过 `extends` 关键字实现。它限制了泛型参数必须满足的条件：
+
+```typescript
+// ❌ 错误：T 可能是任何类型，不一定有 length
+function getLength<T>(value: T): number {
+  return value.length; // 编译报错
+}
+
+// ✅ 正确：约束 T 必须有 length 属性
+function getLength<T extends { length: number }>(value: T): number {
+  return value.length;
+}
+```
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 泛型">
+
+泛型就像**快递箱上的标签**。快递箱（函数）本身不知道里面装的是什么，但标签（泛型参数）告诉你是"易碎品"还是"普通物品"。收到快递时，你根据标签知道该怎么处理。
+
+</Tip>
+
+### 泛型工具类型
+
+TypeScript 内置了很多泛型工具类型：
+
+```typescript
+type Partial<T> = { [P in keyof T]?: T[P] };   // 所有属性可选
+type Required<T> = { [P in keyof T]-?: T[P] }; // 所有属性必选
+type Readonly<T> = { readonly [P in keyof T]: T[P] }; // 所有属性只读
+type Pick<T, K extends keyof T> = { [P in K]: T[P] }; // 选取部分属性
+type Omit<T, K extends keyof T> = Pick<T, Exclude<keyof T, K>>; // 排除部分属性
+```
+
+### 泛型的实际应用场景
+
+```typescript
+// 1. API 响应类型
+interface ApiResponse<T> {
+  code: number;
+  data: T;
+  message: string;
+}
+const userRes: ApiResponse<User> = await fetch('/api/user');
+
+// 2. 容器类型
+class Stack<T> {
+  private items: T[] = [];
+  push(item: T) { this.items.push(item); }
+  pop(): T | undefined { return this.items.pop(); }
+}
+
+// 3. 函数重载
+function createElement(tag: 'a'): HTMLAnchorElement;
+function createElement(tag: 'div'): HTMLDivElement;
+function createElement(tag: string): HTMLElement;
+
+// 4. 条件类型
+type IsString<T> = T extends string ? true : false;
+```
+
+---
+
+## Q4: 类型守卫是什么？
+
+类型守卫是在运行时缩小类型范围的技术：
+
+```typescript
+// typeof 守卫
+function process(value: string | number) {
+  if (typeof value === 'string') {
+    value.toUpperCase(); // TypeScript 知道这里是 string
+  } else {
+    value.toFixed(2);    // TypeScript 知道这里是 number
+  }
+}
+
+// instanceof 守卫
+function log(value: Date | string) {
+  if (value instanceof Date) {
+    value.getFullYear(); // TypeScript 知道这里是 Date
+  } else {
+    value.toUpperCase(); // TypeScript 知道这里是 string
+  }
+}
+
+// in 守卫
+interface Dog { bark(): void; }
+interface Cat { meow(): void; }
+function makeSound(animal: Dog | Cat) {
+  if ('bark' in animal) {
+    animal.bark(); // TypeScript 知道这里是 Dog
+  }
+}
+
+// 自定义类型守卫
+function isDog(animal: Dog | Cat): animal is Dog {
+  return 'bark' in animal;
+}
+function makeSound(animal: Dog | Cat) {
+  if (isDog(animal)) {
+    animal.bark(); // TypeScript 知道这里是 Dog
+  }
+}
+```
+
+<Warning title="⚠️ 核心机制: 类型收窄">
+
+类型守卫的本质是**类型收窄**（Type Narrowing）。TypeScript 通过控制流分析，在 `if`/`else` 分支中自动收窄类型：
+
+```typescript
+function example(x: string | number | boolean) {
+  if (typeof x === 'string') {
+    // 这里 x 是 string
+    x.toUpperCase();
+  } else if (typeof x === 'number') {
+    // 这里 x 是 number
+    x.toFixed(2);
+  } else {
+    // 这里 x 是 boolean
+    x.valueOf();
+  }
+}
+```
+
+</Warning>
+
+### 自定义类型守卫的实现
+
+```typescript
+// 自定义类型守卫：返回类型是 animal is Dog
+function isDog(animal: Dog | Cat): animal is Dog {
+  return 'bark' in animal;
+}
+
+// 使用
+function makeSound(animal: Dog | Cat) {
+  if (isDog(animal)) {
+    animal.bark(); // TypeScript 知道这里是 Dog
+  } else {
+    animal.meow(); // TypeScript 知道这里是 Cat
+  }
+}
+```
+
+---
+
+## Q5: 条件类型和 infer 是什么？
+
+条件类型的语法是 `T extends U ? X : Y`——如果 T 可以赋值给 U，结果是 X，否则是 Y：
+
+```typescript
+// 基础条件类型
+type IsString<T> = T extends string ? true : false;
+type A = IsString<string>;  // true
+type B = IsString<number>;  // false
+
+// 条件类型 + 联合类型分发
+type ToArray<T> = T extends any ? T[] : never;
+type C = ToArray<string | number>; // string[] | number[]
+
+// infer 关键字：推断类型变量
+type ReturnType<T> = T extends (...args: any[]) => infer R ? R : never;
+type D = ReturnType<() => string>; // string
+type E = ReturnType<() => number>; // number
+
+// infer 推断函数参数
+type Parameters<T> = T extends (...args: infer P) => any ? P : never;
+type F = Parameters<(a: string, b: number) => void>; // [string, number]
+
+// infer 推断数组元素
+type ElementType<T> = T extends (infer E)[] ? E : never;
+type G = ElementType<string[]>; // string
+```
+
+<Warning title="⚠️ 核心机制: 条件类型的分发">
+
+条件类型在联合类型上会**分发**（Distribute）——对联合类型的每个成员分别应用条件类型：
+
+```typescript
+type ToArray<T> = T extends any ? T[] : never;
+
+// 分发过程：
+// ToArray<string | number>
+// = ToArray<string> | ToArray<number>
+// = string[] | number[]
+```
+
+</Warning>
+
+### 条件类型的实际应用
+
+```typescript
+// 1. 排除 null 和 undefined
+type NonNullable<T> = T extends null | undefined ? never : T;
+type A = NonNullable<string | null | undefined>; // string
+
+// 2. 提取函数返回类型
+type ReturnType<T> = T extends (...args: any[]) => infer R ? R : never;
+
+// 3. 提取 Promise 的值类型
+type UnwrapPromise<T> = T extends Promise<infer U> ? U : T;
+type B = UnwrapPromise<Promise<string>>; // string
+
+// 4. 递归条件类型
+type DeepReadonly<T> = {
+  readonly [P in keyof T]: T[P] extends object ? DeepReadonly<T[P]> : T[P];
+};
+```
+
+---
+
+## Q6: 映射类型是什么？
+
+映射类型通过遍历联合类型的每个成员来生成新的类型：
+
+```typescript
+// 基础映射类型
+type OptionsFlags<T> = {
+  [K in keyof T]: boolean;
+};
+
+type Features = {
+  darkMode: () => void;
+  notifications: () => void;
+};
+
+type FeatureFlags = OptionsFlags<Features>;
+// { darkMode: boolean; notifications: boolean }
+
+// 内置映射类型
+type Partial<T> = { [P in keyof T]?: T[P] };   // 所有属性可选
+type Required<T> = { [P in keyof T]-?: T[P] }; // 所有属性必选
+type Readonly<T> = { readonly [P in keyof T]: T[P] }; // 所有属性只读
+```
+
+<Warning title="⚠️ 核心机制: 映射类型的语法">
+
+映射类型的完整语法是 `[K in Keys]: Type`，其中：
+- `K` 是遍历变量
+- `Keys` 是要遍历的联合类型
+- `Type` 是生成的类型
+
+可以配合 `+` 和 `-` 修饰符添加或移除 `readonly` 和 `?`：
+
+```typescript
+// 添加 readonly
+type MutableToReadonly<T> = {
+  +readonly [P in keyof T]: T[P];
+};
+
+// 移除 ?
+type PartialToRequired<T> = {
+  [P in keyof T]-?: T[P];
+};
+```
+
+</Warning>
+
+### 映射类型的实际应用
+
+```typescript
+// 1. 批量修改属性类型
+type Stringify<T> = {
+  [K in keyof T]: string;
+};
+
+// 2. 过滤属性
+type PickByType<T, U> = {
+  [K in keyof T as T[K] extends U ? K : never]: T[K];
+};
+
+// 3. 重映射键名（as 子句）
+type Getters<T> = {
+  [K in keyof T as `get${Capitalize<string & K>}`]: () => T[K];
+};
+
+type UserGetters = Getters<{ name: string; age: number }>;
+// { getName: () => string; getAge: () => number }
+```
+
+---
+
+## Q7: never 和 void 的区别？
+
+```typescript
+// void：函数没有返回值
+function log(msg: string): void {
+  console.log(msg);
+  // 函数正常结束，不返回值
+}
+
+// never：函数永远不会结束
+function throwError(msg: string): never {
+  throw new Error(msg); // 抛出异常，函数不会正常结束
+}
+
+function infiniteLoop(): never {
+  while (true) {} // 无限循环，函数不会正常结束
+}
+
+// 区别：
+// void 函数可以正常结束（隐式返回 undefined）
+// never 函数永远不会结束（抛异常或无限循环）
+```
+
+<Warning title="⚠️ 核心机制: never 的应用场景">
+
+`never` 的核心应用场景是**穷举检查**（Exhaustive Checking）：
+
+```typescript
+type Shape = 'circle' | 'square' | 'triangle';
+
+function getArea(shape: Shape): number {
+  switch (shape) {
+    case 'circle': return Math.PI * 10;
+    case 'square': return 100;
+    case 'triangle': return 50;
+    default:
+      // 如果 Shape 新增了类型，这里会报错
+      const _exhaustive: never = shape;
+      return _exhaustive;
+  }
+}
+```
+
+如果将来 `Shape` 新增了 `'rectangle'`，TypeScript 会在 `default` 分支报错，提醒你处理新类型。
+
+</Warning>
+
+### never 的其他应用
+
+```typescript
+// 1. 类型断言
+function assertNever(value: never): never {
+  throw new Error(`Unexpected value: ${value}`);
+}
+
+// 2. 条件类型中的排除
+type Exclude<T, U> = T extends U ? never : T;
+type A = Exclude<'a' | 'b' | 'c', 'a'>; // 'b' | 'c'
+
+// 3. 联合类型中的吸收
+type B = string | never; // string（never 被吸收）
+type C = never[];        // never[]（空数组类型）
+```
+
+---
+
+## 🔍 底层源码：TypeScript 编译器是怎么工作的？
+
+<div class="follow-up">
+TypeScript 编译器的内部流程是什么？
+</div>
+
+TypeScript 编译器（tsc）的内部流程分为四个阶段（详见 [TypeScript 源码：src/compiler/](https://github.com/microsoft/TypeScript/tree/main/src/compiler)）：
+
+```text
+1. 扫描（Scanner）：把源码拆成 token（关键字、标识符、运算符等）
+2. 解析（Parser）：把 token 构建成 AST（抽象语法树）
+3. 绑定（Binder）：把 AST 中的声明和引用关联起来（生成 Symbol）
+4. 检查（Checker）：遍历 AST，检查类型是否正确
+5. 发射（Emitter）：把 AST 转换成 JavaScript 代码
+```
+
+<div class="follow-up">
+TypeScript 的类型检查是怎么实现的？
+</div>
+
+TypeScript 的类型检查器（Checker）通过**结构化类型**实现（详见 [TypeScript 源码：src/compiler/checker.ts](https://github.com/microsoft/TypeScript/blob/main/src/compiler/checker.ts)）：
+
+```typescript
+// 类型兼容性检查的核心逻辑（简化）
+function isTypeAssignableTo(source: Type, target: Type): boolean {
+  // 1. 如果 source 和 target 是同一个类型，直接返回 true
+  if (source === target) return true;
+
+  // 2. 如果 target 是 any，直接返回 true
+  if (target.flags & TypeFlags.Any) return true;
+
+  // 3. 如果 source 是 never，直接返回 true
+  if (source.flags & TypeFlags.Never) return true;
+
+  // 4. 结构化类型检查：检查 source 的所有属性是否在 target 中存在且兼容
+  for (const prop of target.properties) {
+    const sourceProp = getPropertyOfType(source, prop.name);
+    if (!sourceProp) return false;
+    if (!isTypeAssignableTo(sourceProp.type, prop.type)) return false;
+  }
+
+  return true;
+}
+```
+
+---
+
+## Q8: TypeScript 的争议性话题
+
+TypeScript 并非银弹。了解它的局限性，比盲目推崇更能体现你的工程素养。
+
+<Warning title="⚠️ 争议 1: TypeScript 真的能减少 bug 吗？">
+
+**正面证据：** Airbnb 内部数据显示，TypeScript 能预防约 38% 的 bug。Microsoft 的研究表明，TypeScript 能在编译时捕获 15% 的生产 bug。
+
+**反面证据：**
+- **类型体操消耗时间**：开发者花大量时间与编译器斗争，尤其是复杂泛型场景，实际业务逻辑反而被忽略
+- **any 泛滥**：项目压力大时，开发者倾向于用 `any` 绕过类型检查，导致类型系统形同虚设
+- **错误的安全感**：类型检查只覆盖编译时，运行时的异步错误、第三方库的类型不准确等问题仍然存在
+
+**结论：** TypeScript 减少的是"低级类型错误"，但不能替代单元测试和代码审查。它的价值更多体现在 IDE 智能提示和重构安全性上。
+
+</Warning>
+
+<Warning title="⚠️ 争议 2: TypeScript 打包太大怎么办？">
+
+**问题表现：**
+- **tsc 编译慢**：大型项目（1000+ 文件）首次编译可能需要 30 秒以上
+- **类型声明体积**：`.d.ts` 文件不参与运行时，但会占用 node_modules 空间（`@types/*` 包）
+- **monorepo 放大效应**：每个子包都引用 `@types/*`，安装时间和磁盘空间成倍增长
+
+**优化方案：**
+```text
+1. skipLibCheck: true        ← 跳过 .d.ts 检查，编译速度提升 50%+
+2. incremental: true         ← 增量编译，只检查变更文件
+3. project references        ← monorepo 中分包编译
+4. swc/esbuild 替代 tsc     ← 用 Rust/Go 编译器做转译，tsc 只做类型检查
+```
+
+**结论：** 编译性能问题可以通过工具链优化解决，不应该成为拒绝 TypeScript 的理由。
+
+</Warning>
+
+<Warning title="⚠️ 争议 3: TypeScript 类型系统的设计缺陷">
+
+**缺陷 1：协变/逆变的坑**
+```typescript
+// 数组是协变的，这在类型系统上是"不安全的"
+const dogs: Dog[] = [new Dog()];
+const animals: Animal[] = dogs;  // ✅ 编译通过
+animals.push(new Cat());         // ✅ 编译通过，但 dogs 数组里混入了 Cat！
+```
+
+**缺陷 2：类型断言滥用**
+```typescript
+// as any 是"逃生舱口"，但团队中很难控制
+const data = response as any;     // 绕过所有类型检查
+data.foo.bar.baz;                 // 运行时可能崩溃
+```
+
+**缺陷 3：structural typing 的过度宽松**
+```typescript
+// 结构化类型允许"意外兼容"
+interface Point { x: number; y: number }
+interface Vector { x: number; y: number }
+const p: Point = { x: 1, y: 2 };
+const v: Vector = p;  // ✅ 编译通过，但语义上可能不是同一个概念
+```
+
+**缺陷 4：类型推断的"惊喜"**
+```typescript
+// 函数返回类型推断可能过于宽泛
+function parse(input: string) {
+  if (input === 'true') return true;
+  if (input === 'false') return false;
+  return input;
+}
+// 返回类型被推断为 string | boolean，而不是 'true' | 'false' | string
+```
+
+</Warning>
+
+---
+
+## Q9: 类型体操——TypeScript 高级类型技巧
+
+类型体操（Type Gymnastics）是 TypeScript 社区对复杂类型操作的戏称。面试中经常出现，它考察你对类型系统的深层理解。
+
+### Partial / Required / Pick / Omit 原理
+
+这四个内置工具类型都是基于**映射类型**实现的：
+
+```typescript
+// Partial<T>：所有属性变为可选
+type Partial<T> = { [P in keyof T]?: T[P] };
+
+// Required<T>：所有属性变为必选（-? 移除可选修饰符）
+type Required<T> = { [P in keyof T]-?: T[P] };
+
+// Pick<T, K>：从 T 中选取部分属性
+type Pick<T, K extends keyof T> = { [P in K]: T[P] };
+
+// Omit<T, K>：从 T 中排除部分属性（底层用 Pick + Exclude）
+type Omit<T, K extends keyof T> = Pick<T, Exclude<keyof T, K>>;
+```
+
+```text
+┌───────────────────────────────────────┐
+│  keyof T = 'name' | 'age' | 'email'  │  ← 获取所有键
+└─────────────────┬─────────────────────┘
+                  │ [P in keyof T]?: T[P]
+                  ▼
+┌───────────────────────────────────────┐
+│  { name?: string; age?: number; ... } │  ← Partial 结果
+└───────────────────────────────────────┘
+```
+
+### infer 关键字
+
+`infer` 用于在条件类型中**推断**（捕获）类型变量。它只能用在 `extends` 子句中：
+
+```typescript
+// 推断函数返回类型
+type ReturnType<T> = T extends (...args: any[]) => infer R ? R : never;
+
+// 推断函数参数类型
+type Parameters<T> = T extends (...args: infer P) => any ? P : never;
+
+// 推断 Promise 内部类型
+type Awaited<T> = T extends Promise<infer U> ? Awaited<U> : T;
+
+// 推断数组元素类型
+type ElementOf<T> = T extends Array<infer E> ? E : never;
+
+// 推断元组第一个元素
+type Head<T extends any[]> = T extends [infer H, ...any[]] ? H : never;
+```
+
+<Warning title="⚠️ infer 的位置决定了推断结果">
+
+`infer` 可以出现在多个位置，TypeScript 会根据位置推断不同的类型：
+
+```typescript
+// 出现在协变位置：推断为联合类型
+type Covariant<T> = T extends { a: infer U; b: infer U } ? U : never;
+type R1 = Covariant<{ a: string; b: number }>; // string | number
+
+// 出现在逆变位置：推断为交叉类型
+type Contravariant<T> = T extends {
+  a: (x: infer U) => void;
+  b: (x: infer U) => void;
+} ? U : never;
+type R2 = Contravariant<{
+  a: (x: string) => void;
+  b: (x: number) => void;
+}>; // string & number = never
+```
+
+</Warning>
+
+### 递归类型
+
+TypeScript 的类型系统支持递归，可以处理深层嵌套结构：
+
+```typescript
+// 深度只读
+type DeepReadonly<T> = {
+  readonly [P in keyof T]: T[P] extends object ? DeepReadonly<T[P]> : T[P];
+};
+
+// 深度可选
+type DeepPartial<T> = {
+  [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
+};
+
+// 递归展平嵌套数组
+type Flatten<T> = T extends Array<infer U> ? Flatten<U> : T;
+type F = Flatten<number[][][]>; // number
+
+// 递归提取 Promise 值类型（处理 Promise<Promise<string>>）
+type DeepAwaited<T> = T extends Promise<infer U> ? DeepAwaited<U> : T;
+```
+
+<Note title="💡 递归深度限制">
+
+TypeScript 对递归类型有深度限制（默认约 50 层）。TypeScript 4.5 引入了尾递归优化，但仍然建议控制递归深度，避免类型检查性能问题。
+
+</Note>
+
+### 模板字面量类型
+
+TypeScript 4.1 引入了模板字面量类型，可以在类型层面操作字符串：
+
+```typescript
+// 基础用法
+type EventName = 'click' | 'scroll' | 'mousemove';
+type HandlerName = `on${Capitalize<EventName>}`;
+// 'onClick' | 'onScroll' | 'onMousemove'
+
+// 结合映射类型批量生成
+type Getters<T> = {
+  [K in keyof T as `get${Capitalize<string & K>}`]: () => T[K];
+};
+type UserGetters = Getters<{ name: string; age: number }>;
+// { getName: () => string; getAge: () => number }
+
+// 字符串拆分
+type Split<S extends string, D extends string> =
+  S extends `${infer T}${D}${infer U}` ? [T, ...Split<U, D>] : [S];
+type R = Split<'a-b-c', '-'>; // ['a', 'b', 'c']
+```
+
+### 类型体操经典题
+
+```typescript
+// 1. DeepPartial（深度可选）
+type DeepPartial<T> = {
+  [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
+};
+
+// 2. DeepRequired（深度必选）
+type DeepRequired<T> = {
+  [P in keyof T]-?: T[P] extends object ? DeepRequired<T[P]> : T[P];
+};
+
+// 3. DeepReadonly（深度只读）
+type DeepReadonly<T> = {
+  readonly [P in keyof T]: T[P] extends object ? DeepReadonly<T[P]> : T[P];
+};
+
+// 4. 自定义 ReturnType
+type MyReturnType<T> = T extends (...args: any[]) => infer R ? R : never;
+
+// 5. 自定义 Parameters
+type MyParameters<T> = T extends (...args: infer P) => any ? P : never;
+
+// 6. UnionToIntersection（联合转交叉）
+type UnionToIntersection<U> =
+  (U extends any ? (k: U) => void : never) extends (k: infer I) => void
+    ? I
+    : never;
+type R = UnionToIntersection<{ a: 1 } | { b: 2 }>; // { a: 1 } & { b: 2 }
+
+// 7. TupleToUnion（元组转联合）
+type TupleToUnion<T extends any[]> = T[number];
+type R2 = TupleToUnion<[string, number, boolean]>; // string | number | boolean
+
+// 8. Length（元组长度）
+type Length<T extends any[]> = T['length'];
+type R3 = Length<[1, 2, 3]>; // 3
+```
+
+---
+
+## Q10: Zod——TypeScript 的运行时校验方案
+
+### Zod 是什么？为什么需要运行时校验？
+
+TypeScript 的类型检查只在**编译时**生效。一旦数据从外部进入（API 响应、用户输入、localStorage、URL 参数），类型信息就丢失了：
+
+```typescript
+// 编译时：TypeScript 认为 response 是 User 类型
+const response = await fetch('/api/user');
+const user: User = await response.json();  // ⚠️ 实际可能是任何东西
+
+// 运行时：API 返回了 { name: 123 }，类型系统无法捕获
+console.log(user.name.toUpperCase());  // 💥 运行时崩溃
+```
+
+**Zod 是一个 TypeScript-first 的运行时数据校验库。** 它的核心价值是：**一次定义，同时获得类型和校验逻辑。**
+
+```typescript
+import { z } from 'zod';
+
+// 定义 schema（一次定义）
+const UserSchema = z.object({
+  name: z.string(),
+  age: z.number().min(0),
+  email: z.string().email(),
+});
+
+// 从 schema 推断 TypeScript 类型（自动同步）
+type User = z.infer<typeof UserSchema>;
+// { name: string; age: number; email: string }
+
+// 运行时校验
+const result = UserSchema.safeParse(unknownData);
+if (result.success) {
+  console.log(result.data.name);  // ✅ 类型安全 + 运行时安全
+} else {
+  console.error(result.error);    // ✅ 详细的校验错误信息
+}
+```
+
+### Zod 核心 API
+
+```typescript
+import { z } from 'zod';
+
+// 基础类型
+z.string();
+z.number();
+z.boolean();
+z.null();
+z.undefined();
+z.date();
+z.bigint();
+
+// 复合类型
+z.array(z.string());                    // string[]
+z.tuple([z.string(), z.number()]);      // [string, number]
+z.union([z.string(), z.number()]);      // string | number
+z.intersection(z.object({ a: z.string() }), z.object({ b: z.number() })); // { a: string } & { b: number }
+
+// 对象
+const schema = z.object({
+  name: z.string().min(1).max(100),     // 带校验规则的字符串
+  age: z.number().int().positive(),     // 正整数
+  email: z.string().email(),            // 邮箱格式
+  role: z.enum(['admin', 'user']),      // 枚举
+  tags: z.array(z.string()).default([]), // 带默认值
+  bio: z.string().optional(),           // 可选字段
+});
+
+// 校验方法
+schema.parse(data);            // 校验成功返回数据，失败抛异常
+schema.safeParse(data);        // 返回 { success, data } | { success, error }
+schema.parseAsync(data);       // 异步校验（支持自定义异步校验）
+```
+
+<Warning title="⚠️ Zod 的性能注意事项">
+
+Zod 的校验是同步的（除非使用 `.refine()` 或 `.transform()` 中的异步操作），对于高频调用的场景（如实时搜索），需要注意性能：
+
+```typescript
+// ❌ 每次输入都校验
+input.addEventListener('input', (e) => {
+  const result = schema.safeParse(e.target.value); // 可能影响性能
+});
+
+// ✅ 防抖后校验
+input.addEventListener('input', debounce((e) => {
+  const result = schema.safeParse(e.target.value);
+}, 300));
+```
+
+</Warning>
+
+### Zod + TypeScript 集成
+
+Zod 最强大的特性是能从 schema 自动推断 TypeScript 类型，实现**类型定义的单一来源**（Single Source of Truth）：
+
+```typescript
+import { z } from 'zod';
+
+// 1. 定义 schema
+const ConfigSchema = z.object({
+  apiUrl: z.string().url(),
+  timeout: z.number().positive().default(5000),
+  retries: z.number().int().nonnegative().default(3),
+  features: z.object({
+    darkMode: z.boolean().default(false),
+    beta: z.boolean().default(false),
+  }),
+});
+
+// 2. 自动推断类型（类型和校验逻辑永远同步）
+type Config = z.infer<typeof ConfigSchema>;
+// {
+//   apiUrl: string;
+//   timeout: number;
+//   retries: number;
+//   features: { darkMode: boolean; beta: boolean };
+// }
+
+// 3. 在 API 边界校验
+async function fetchConfig(): Promise<Config> {
+  const res = await fetch('/api/config');
+  const data = await res.json();
+  return ConfigSchema.parse(data);  // 校验 + 类型收窄
+}
+
+// 4. 与 React Hook Form 集成
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+
+const form = useForm<Config>({
+  resolver: zodResolver(ConfigSchema),
+});
+```
+
+### Zod vs Yup vs io-ts 对比
+
+| 特性 | Zod | Yup | io-ts |
+|------|-----|-----|-------|
+| **TypeScript 集成** | 从 schema 推断类型 | 需要手动定义类型 | 从 schema 推断类型 |
+| **API 风格** | 链式、直观 | 链式、类似 Joi | 函数式、学习曲线陡 |
+| **运行时体积** | 约 13KB (gzip) | 约 19KB (gzip) | 约 8KB (gzip) |
+| **校验性能** | 快 | 中等 | 快 |
+| **错误信息** | 详细、结构化 | 详细 | 技术性强 |
+| **社区活跃度** | 非常活跃 | 成熟但更新慢 | 活跃但小众 |
+| **框架集成** | React Hook Form、tRPC、Next.js | React Hook Form、Formik | fp-ts 生态 |
+| **学习曲线** | 低 | 低 | 高（需要 fp-ts 基础） |
+
+**选型建议：**
+- **新项目首选 Zod**：TypeScript 集成最好，社区最活跃，API 最直观
+- **已有 Yup 的项目**：不需要迁移，Yup 功能足够
+- **函数式编程团队**：io-ts 更符合 fp-ts 生态，但学习成本高
+- **追求极致性能**：考虑 `valibot`（Zod 的轻量替代，约 1KB gzip）
+
+<Note title="💡 一句话总结">
+
+Zod 的核心价值是"一次定义，类型和校验同步"——从 schema 自动推断 TypeScript 类型，让编译时类型检查和运行时数据校验保持一致，消除外部数据的类型不安全问题。
+
+</Note>
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："type 和 interface 的区别？"
+
+**及格回答（60-70分）：**
+> "interface 可以 extends 和 merge，type 可以表示联合类型和交叉类型。对象类型优先用 interface。"
+
+面试官评价：**知道区别但不理解设计**。
+
+**满分回答（90-100分）：**
+
+> "核心区别在于**声明合并**和**类型表达能力**。interface 支持声明合并——同名 interface 会自动合并。这在扩展第三方库类型时很有用（如给 `Window` 添加自定义属性）。type 不支持合并，同名 type 会报错。<sup>[1]</sup>"
+
+> "type 的表达能力更强——可以定义联合类型（`A | B`）、交叉类型（`A & B`）、映射类型（`{ [K in keyof T]: ... }`）、条件类型（`T extends U ? X : Y`）。interface 只能描述对象形状。<sup>[2]</sup>"
+
+> "TypeScript 的类型系统是**结构化类型**（鸭子类型）——只要形状兼容，就认为类型兼容，不关心名字。这和 Java 的名义类型不同。编译器层面：interface 的类型检查更快（可以缓存），type 的某些操作（如条件类型）需要递归求值，可能更慢。<sup>[3]</sup>"
+
+> "对于大型项目，优先用 interface 描述对象形状，用 type 做类型运算。"
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="泛型（Generics）的使用场景?" icon="layer-group">
+
+**答题要点：**
+说出泛型的核心价值和常见场景。
+
+**高分回答：**
+"泛型的核心价值是**参数化类型**——定义函数/类时不确定类型，使用时再指定。常见场景：
+1. **API 响应类型**：`ApiResponse<T>` 中的 `T` 是数据的具体类型
+2. **容器类型**：`Array<T>`、`Map<K, V>` 中的泛型参数
+3. **工具类型**：`Partial<T>`、`Pick<T, K>` 等内置工具类型
+4. **函数重载**：用泛型替代多个重载签名
+
+泛型约束通过 `extends` 关键字实现，限制泛型参数必须满足的条件。"
+
+  </Accordion>
+
+  <Accordion title="条件类型（Conditional Types）怎么工作?" icon="layer-group">
+
+**答题要点：**
+说出条件类型的语法和分发机制。
+
+**高分回答：**
+"条件类型的语法是 `T extends U ? X : Y`——如果 T 可以赋值给 U，结果是 X，否则是 Y。
+
+条件类型在联合类型上会**分发**（Distribute）——对联合类型的每个成员分别应用条件类型：
+```typescript
+type ToArray<T> = T extends any ? T[] : never;
+type A = ToArray<string | number>; // string[] | number[]
+```
+
+`infer` 关键字用于推断类型变量：
+```typescript
+type ReturnType<T> = T extends (...args: any[]) => infer R ? R : never;
+```
+
+条件类型的实际应用：排除 null、提取函数返回类型、递归类型等。"
+
+  </Accordion>
+
+  <Accordion title="TypeScript 的类型系统是图灵完备的吗?" icon="stopwatch">
+
+**答题要点：**
+说出图灵完备的含义和实际影响。
+
+**高分回答：**
+"是的。TypeScript 的类型系统可以做递归、条件判断、模式匹配，理论上可以实现任何计算。有人用类型系统实现了斐波那契数列、JSON 解析器、甚至俄罗斯方块。
+
+但这只是理论——实际项目中不应该滥用类型系统的计算能力，会导致类型检查极慢。TypeScript 4.5 引入了尾递归优化，但仍然建议限制递归深度。"
+
+  </Accordion>
+
+  <Accordion title="类型断言（as）和类型守卫的区别?" icon="stopwatch">
+
+**答题要点：**
+说出两者的本质差异和使用场景。
+
+**高分回答：**
+"类型断言（`as`）是**编译时**的操作，告诉编译器"我比你更了解类型"，不会做任何运行时检查。类型守卫是**运行时**的操作，通过 `typeof`、`instanceof`、`in` 等操作符在运行时缩小类型范围。
+
+```typescript
+// 类型断言：编译时，无运行时检查
+const value = someValue as string;
+
+// 类型守卫：运行时，有检查
+if (typeof someValue === 'string') {
+  // 这里 someValue 是 string
+}
+```
+
+建议：优先用类型守卫，类型断言只在确定类型时使用。"
+
+  </Accordion>
+
+  <Accordion title="TypeScript 的枚举（enum）有什么坑?" icon="node">
+
+**答题要点：**
+说出枚举的反直觉行为和替代方案。
+
+**高分回答：**
+"TypeScript 的枚举有几个坑：
+1. **数字枚举是反向映射**：`enum Direction { Up, Down }` 中，`Direction[0]` 是 `'Up'`，`Direction['Up']` 是 `0`
+2. **字符串枚举不支持反向映射**
+3. **枚举是运行时对象**：编译后会生成 JavaScript 对象，增加包体积
+4. **枚举不支持 Tree-shaking**
+
+替代方案：用 `as const` + 联合类型：
+```typescript
+const Direction = { Up: 0, Down: 1 } as const;
+type Direction = typeof Direction[keyof typeof Direction]; // 0 | 1
+```
+
+这种方式是纯类型操作，编译后没有运行时代码，支持 Tree-shaking。"
+
+  </Accordion>
+
+  <Accordion title="怎么处理第三方库的类型?" icon="node">
+
+**答题要点：**
+说出类型声明文件的三种来源和自定义方法。
+
+**高分回答：**
+"第三方库的类型有三种来源：
+1. **库自带类型**：库的 `package.json` 中有 `types` 字段，或有 `.d.ts` 文件
+2. **@types 包**：DefinitelyTyped 社区维护的类型包，如 `@types/react`
+3. **自己声明**：如果库没有类型，可以在 `*.d.ts` 文件中声明
+
+```typescript
+// 声明没有类型的库
+declare module 'some-library' {
+  export function doSomething(input: string): number;
+}
+
+// 扩展已有类型
+declare module 'express' {
+  interface Request {
+    user?: {
+      id: string;
+      email: string;
+    };
+  }
+}
+```
+
+"
+
+  </Accordion>
+
+  <Accordion title="🔥 TypeScript 的编译性能怎么优化?" icon="skull">
+
+**答题要点：**
+从配置、代码、工具三个维度回答。
+
+**高分回答：**
+"TypeScript 编译性能优化：
+1. **配置优化**：开启 `skipLibCheck`（跳过 .d.ts 文件检查）、`incremental`（增量编译）
+2. **代码优化**：避免深层嵌套的条件类型、减少泛型的递归深度、用 `interface` 替代 `type`（interface 可以缓存）
+3. **工具优化**：用 `tsc --noEmit` 只做类型检查（不生成 JS），用 `fork-ts-checker-webpack-plugin` 在单独进程中做类型检查
+
+```json
+// tsconfig.json
+{
+  "compilerOptions": {
+    "skipLibCheck": true,
+    "incremental": true,
+    "tsBuildInfoFile": ".tsbuildinfo"
+  }
+}
+```
+
+大型项目（1000+ 文件）的编译时间可以从 30 秒降到 5 秒。"
+
+  </Accordion>
+
+  <Accordion title="🔥 TypeScript 和 JavaScript 怎么选?" icon="skull">
+
+**答题要点：**
+从项目规模、团队习惯、维护成本三个维度回答。
+
+**高分回答：**
+"选择标准：
+1. **新项目**：优先 TypeScript，类型检查能减少 30%+ 的运行时错误
+2. **老项目迁移**：渐进式迁移，TypeScript 支持 `allowJs` 和 `checkJs`
+3. **小项目/脚本**：JavaScript 够了，不需要类型系统的开销
+4. **团队习惯**：团队熟悉 TypeScript 就用，不熟悉就先用 JavaScript + JSDoc
+
+TypeScript 的价值：1) 编码时的类型检查；2) IDE 的智能提示和重构；3) 代码即文档（类型注解就是最好的文档）。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [TypeScript 官方文档](https://www.typescriptlang.org/docs/)：TypeScript 的权威文档，包含所有类型的详细说明。<sup>[1]</sup>
+- 📖 [TypeScript Deep Dive](https://basarat.gitbook.io/typescript/)：免费的 TypeScript 深度教程，覆盖从基础到高级的所有内容。<sup>[2]</sup>
+- 🟢 [TypeScript 源码](https://github.com/microsoft/TypeScript)：TypeScript 编译器的完整源码，理解类型检查的底层实现。<sup>[3]</sup>
+- 🔗 [Zod 官方文档](https://zod.dev/)：TypeScript-first 的运行时数据校验库，API 文档清晰完整。<sup>[4]</sup>
+- 📖 [Type Challenges](https://github.com/type-challenges/type-challenges)：TypeScript 类型体操练习题库，从入门到地狱级别，面试必备。<sup>[5]</sup>
+- 🔗 [TypeScript 类型系统深度解析](https://type-level-typescript.com/)：深入理解 TypeScript 类型系统的高级特性。<sup>[6]</sup>

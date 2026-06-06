@@ -1,0 +1,844 @@
+---
+title: "Memory Leak"
+---
+
+> **面试官为什么问这个？**
+>
+> 内存泄漏是前端性能问题中最隐蔽也最致命的一类。面试官问这个，本质上是在考察你：**你是否理解 JavaScript 的垃圾回收机制，以及你写的代码是否会随着时间推移悄悄吃掉用户设备的内存？** 如果你答不清楚，说明你对 JS 运行时的理解停留在"能跑"而不是"能长期稳定地跑"。
+
+---
+
+## Q1: 内存泄漏的历史？为什么会有它？
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│ 手动管理内存 │ → │ 引用计数     │ → │ 标记清理     │ → │ 分代回收     │
+│ (C/C++)      │   │ (早期 JS)    │   │ (现代 JS)    │   │ (V8 优化)    │
+└──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
+       ↑                                                         │
+       └─────────────────────────────────────────────────────────┘
+                    泄漏从未消失，只是形态在变
+```
+
+<Steps>
+
+  <Step title="1970s: 手动管理内存的年代">
+
+    C/C++ 时代，程序员用 `malloc` / `free` 手动分配和释放内存。忘记 `free` 就是泄漏——简单粗暴，责任全在开发者。这个时代的泄漏是"忘了还"。
+
+  </Step>
+  <Step title="1995年: JavaScript 引入自动垃圾回收">
+
+    Brendan Eich 设计 JavaScript 时，为了让开发者不用操心内存管理，引入了**垃圾回收（Garbage Collection）**机制。引擎自动判断哪些内存不再需要，然后回收。
+
+  </Step>
+  <Step title="问题: 自动回收不等于不会泄漏">
+
+    自动垃圾回收只能回收"不可达"的对象。如果一个对象你不再需要了，但代码中仍然存在对它的引用，垃圾回收器就认为它"还活着"——这就是内存泄漏。泄漏的本质是：**你认为没用了，但引擎认为还有用。**
+
+  </Step>
+
+</Steps>
+
+**内存泄漏的核心矛盾：**
+
+```text
+问题：开发者认为"不用了" ≠ 引擎认为"不可达"
+
+开发者视角：这个回调函数执行完了，它应该被回收
+引擎视角：但这个回调被闭包引用，闭包被 DOM 元素引用，DOM 元素还在页面上
+结果：回调函数永远无法被回收，内存持续增长
+
+解决：理解垃圾回收的"可达性"规则，主动切断不需要的引用
+```
+
+<Note title="💡 一句话总结">
+
+内存泄漏的本质是：你不再需要的对象，因为仍被引用而无法被垃圾回收器回收。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 手动管理内存">
+
+像自己做饭后不洗碗——用过的碗（分配的内存）堆在水池里，直到水池满了（内存溢出）才发现问题。C/C++ 开发者每天都在和这个搏斗。
+
+</Card>
+<Card title="✅ 自动垃圾回收">
+
+像请了一个保洁阿姨（垃圾回收器），她会定期清理你看不见的垃圾。但如果你把一件旧衣服塞在柜子深处（被引用），保洁阿姨永远不会扔掉它——因为看起来你还在用。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答内存泄漏问题时，先说垃圾回收的基本原理（可达性分析），再列举具体泄漏场景。面试官想听的不是"闭包会导致泄漏"这个结论，而是你理解"为什么闭包会导致泄漏"——因为它持有了外部变量的引用。
+
+</Tip>
+
+---
+
+## Q2: JavaScript 内存管理机制（栈内存 vs 堆内存）
+
+JavaScript 的内存分为两个区域：**栈内存（Stack）** 和 **堆内存（Heap）**。栈内存由操作系统自动分配和回收，堆内存由 JavaScript 引擎的垃圾回收器管理。
+
+```text
+┌───────────────────────────────────────┐
+│           Stack（栈内存）              │  ← 存储基本类型和引用地址
+│  ┌─────────────────────────────────┐  │
+│  │ number: 42                      │  │
+│  │ string: 'hello'                 │  │
+│  │ boolean: true                   │  │
+│  │ reference: 0x7f3a (→ 堆地址)    │  │
+│  └─────────────────────────────────┘  │
+└───────────────────────────────────────┘
+
+┌───────────────────────────────────────┐
+│           Heap（堆内存）               │  ← 存储对象、数组、函数等引用类型
+│  ┌─────────────────────────────────┐  │
+│  │ { name: 'Alice', age: 25 }      │  │
+│  │ [1, 2, 3, 4, 5]                 │  │
+│  │ function() { ... }              │  │
+│  └─────────────────────────────────┘  │
+└───────────────────────────────────────┘
+```
+
+```javascript
+// 栈内存：基本类型直接存储值
+let age = 25;          // number → 栈
+let name = 'Alice';    // string → 栈
+let isActive = true;   // boolean → 栈
+
+// 堆内存：引用类型存储指针
+let user = {           // 对象 → 堆，栈中只存指针
+  name: 'Alice',
+  age: 25
+};
+
+let arr = [1, 2, 3];   // 数组 → 堆，栈中只存指针
+```
+
+<Warning title="⚠️ 核心机制: 垃圾回收的两种算法">
+
+JavaScript 引擎使用两种垃圾回收算法：
+
+- **引用计数（Reference Counting）**：早期 IE 使用。每个对象有一个引用计数器，计数为 0 时回收。致命缺陷：循环引用时计数永远不为 0，导致泄漏。
+- **标记清理（Mark-and-Sweep）**：现代引擎的主流方案。从根对象（`window`）出发，遍历所有可达对象并标记，然后清除未标记的对象。解决了循环引用问题。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 图书馆管理">
+
+栈内存就像图书馆的索引卡——每张卡上直接写着书的内容（值），读者还书后卡片立刻被回收。堆内存就像图书馆的书架——索引卡上只写着书的位置（指针），书在书架上。垃圾回收器就是图书管理员，定期巡视书架，把"没有任何索引卡指向的书"清理掉。如果两张索引卡互相指向对方的书（循环引用），但读者都不再需要这些书了，管理员仍会清理它们（标记清理算法从根出发，发现读者不可达）。
+
+</Tip>
+
+### 垃圾回收的代际策略（V8）
+
+V8 引擎将堆内存分为两代：
+
+| 代际 | 名称 | 大小 | 存储内容 | 回收算法 |
+|------|------|------|---------|---------|
+| 新生代 | Young Generation | 1-8 MB | 新创建的对象 | Scavenge（复制算法） |
+| 老生代 | Old Generation | 较大 | 存活时间长的对象 | Mark-Sweep + Mark-Compact |
+
+新生代的对象如果经过两次 Scavenge 仍然存活，就会被"晋升"到老生代。老生代使用标记清理（Mark-Sweep）和标记整理（Mark-Compact）来回收内存。
+
+### WeakRef 和 FinalizationRegistry（ES2021）
+
+ES2021 引入了 `WeakRef` 和 `FinalizationRegistry`，提供了更精细的内存控制：
+
+```javascript
+// WeakRef：弱引用，不阻止垃圾回收
+let user = { name: 'Alice' };
+let weakRef = new WeakRef(user);
+user = null; // 切断强引用
+
+// 下次 GC 后，weakRef.deref() 可能返回 undefined
+console.log(weakRef.deref()); // { name: 'Alice' } 或 undefined
+
+// FinalizationRegistry：对象被回收时执行回调
+const registry = new FinalizationRegistry((heldValue) => {
+  console.log(`${heldValue} 被回收了`);
+});
+registry.register(user, 'user 对象');
+```
+
+---
+
+## Q3: 常见内存泄漏场景
+
+### 场景一：闭包（Closure）持有外部引用
+
+闭包是最经典的泄漏场景。当内部函数引用了外部函数的变量，即使外部函数执行完毕，这些变量也不会被回收。
+
+```javascript
+// ❌ 泄漏：闭包持有大数组的引用
+function createHeavyClosure() {
+  const largeArray = new Array(1000000).fill('*'); // 100万个元素
+  return function() {
+    console.log(largeArray.length); // 闭包引用了 largeArray
+  };
+}
+const fn = createHeavyClosure(); // largeArray 永远不会被回收
+
+// ✅ 修复：只引用需要的值
+function createLightClosure() {
+  const largeArray = new Array(1000000).fill('*');
+  const length = largeArray.length; // 只取需要的值
+  return function() {
+    console.log(length); // 只引用 length，largeArray 可被回收
+  };
+}
+```
+
+### 场景二：DOM 引用未清理
+
+JavaScript 中保留了对已移除 DOM 元素的引用，导致 DOM 元素无法被回收。
+
+```javascript
+// ❌ 泄漏：全局变量持有 DOM 引用
+let detachedElement = document.getElementById('my-element');
+document.body.removeChild(detachedElement);
+// detachedElement 仍然指向已移除的 DOM 节点，无法被回收
+
+// ✅ 修复：移除后清除引用
+let element = document.getElementById('my-element');
+document.body.removeChild(element);
+element = null; // 切断引用
+```
+
+### 场景三：定时器未清理
+
+`setInterval` 和忘记清理的 `setTimeout` 会持续持有回调函数及其闭包的引用。
+
+```javascript
+// ❌ 泄漏：setInterval 未清理
+function startPolling() {
+  const largeData = new Array(100000).fill('data');
+  setInterval(() => {
+    console.log(largeData.length); // 闭包持有 largeData
+  }, 1000);
+}
+startPolling(); // largeData 永远不会被回收
+
+// ✅ 修复：保存 timer ID 并在合适时机清理
+let timerId = null;
+function startPolling() {
+  const largeData = new Array(100000).fill('data');
+  timerId = setInterval(() => {
+    console.log(largeData.length);
+  }, 1000);
+}
+function stopPolling() {
+  clearInterval(timerId);
+  timerId = null;
+}
+```
+
+### 场景四：事件监听器未移除
+
+添加了事件监听器但忘记移除，监听器回调函数及其闭包会一直存在。
+
+```javascript
+// ❌ 泄漏：全局元素上的事件监听器未移除
+function setup() {
+  const handler = () => console.log('clicked');
+  window.addEventListener('scroll', handler);
+  // 组件销毁时忘记 removeEventListener
+}
+
+// ✅ 修复：在组件销毁时移除
+function setup() {
+  const handler = () => console.log('clicked');
+  window.addEventListener('scroll', handler);
+  return function cleanup() {
+    window.removeEventListener('scroll', handler);
+  };
+}
+```
+
+### 场景五：Map / Set 未清理
+
+`Map` 和 `Set` 对其键和值持有强引用。如果不再需要，必须手动清除。
+
+```javascript
+// ❌ 泄漏：全局 Map 持续增长
+const cache = new Map();
+function processItem(item) {
+  cache.set(item.id, item); // 永远不会被回收
+}
+
+// ✅ 修复方案一：使用 WeakMap（键为对象时自动回收）
+const cache = new WeakMap();
+function processItem(item) {
+  cache.set(item, item.data); // item 被回收后，缓存自动清除
+}
+
+// ✅ 修复方案二：定期清理
+function cleanupCache() {
+  cache.clear();
+}
+```
+
+<Warning title="⚠️ Map vs WeakMap 的本质区别">
+
+`Map` 对键持有强引用——只要 Map 存在，键就不会被回收。`WeakMap` 对键持有弱引用——如果没有其他引用指向键，键可以被垃圾回收，对应的值也会被自动清除。
+
+关键限制：`WeakMap` 的键必须是对象（不能是基本类型），且不可遍历（没有 `forEach`、`keys`、`values` 方法）。
+
+</Warning>
+
+---
+
+## Q4: 如何排查内存泄漏
+
+### Chrome DevTools Memory 面板
+
+Chrome DevTools 提供了三种内存分析工具：
+
+| 工具 | 用途 | 适用场景 |
+|------|------|---------|
+| **Heap Snapshot（堆快照）** | 拍摄内存快照，分析对象分布 | 已知存在泄漏，定位泄漏对象 |
+| **Allocation Timeline（分配时间线）** | 实时监控内存分配 | 观察内存是否持续增长 |
+| **Allocation Sampling（分配采样）** | 采样分析内存分配 | 找出分配内存最多的函数 |
+
+### 堆快照分析步骤
+
+```text
+步骤一：打开 Chrome DevTools → Memory 面板
+步骤二：选择 "Heap snapshot"，拍摄第一张快照
+步骤三：执行可疑操作（如反复打开/关闭弹窗）
+步骤四：拍摄第二张快照
+步骤五：选择 "Comparison" 视图，对比两次快照
+步骤六：按 "Delta" 排序，找到新增最多且未释放的对象
+```
+
+```javascript
+// 配合 DevTools 使用的代码示例
+// 在控制台执行，观察 Memory 面板中的内存变化
+
+// 1. 拍摄快照前，先执行一次垃圾回收
+// （点击 Memory 面板左上角的垃圾桶图标）
+
+// 2. 创建泄漏场景
+const leakedClosures = [];
+function createLeak() {
+  const largeData = new Array(10000).fill('x');
+  leakedClosures.push(function() {
+    return largeData.length;
+  });
+}
+
+// 3. 反复调用 createLeak()，然后拍摄快照对比
+for (let i = 0; i < 100; i++) {
+  createLeak();
+}
+```
+
+### Allocation Timeline 定位持续增长
+
+```text
+使用 Allocation Timeline 的步骤：
+
+1. 打开 Chrome DevTools → Memory → Allocation instrumentation on timeline
+2. 点击 "Start"，执行可疑操作
+3. 点击 "Stop"
+4. 观察时间线中蓝色竖条（分配的内存）是否有持续增长的区域
+5. 点击蓝色区域，查看该时间段内分配了哪些对象
+```
+
+<Tip title="💡 排查技巧: 三次快照法">
+
+最可靠的泄漏排查方法是**三次快照法**：
+1. 执行操作前拍摄快照 A
+2. 执行操作一次后拍摄快照 B
+3. 执行操作一次后拍摄快照 C（理论上应该和 B 一样）
+4. 对比 B 和 C——如果 C 比 B 多出的对象没有在操作结束时被释放，就说明存在泄漏
+
+</Tip>
+
+### Performance Monitor 实时监控
+
+Chrome DevTools 的 Performance Monitor 可以实时查看 JS 堆大小：
+
+```text
+打开方式：DevTools → More tools → Performance Monitor
+
+关注指标：
+- JS heap size：JS 堆大小（如果持续增长不回落，说明有泄漏）
+- DOM Nodes：DOM 节点数（如果持续增长，说明 DOM 未被正确移除）
+- JS event listeners：事件监听器数量（如果持续增长，说明监听器未移除）
+```
+
+---
+
+## Q5: 内存泄漏的修复方案
+
+### 原则一：及时解除引用
+
+```javascript
+// 在不需要时将变量设为 null
+let largeData = fetchData();
+processData(largeData);
+largeData = null; // 帮助 GC 更早回收
+```
+
+### 原则二：使用 WeakRef / WeakMap / WeakSet
+
+```javascript
+// WeakMap：缓存场景，键被回收后缓存自动清除
+const imageCache = new WeakMap();
+
+function loadImage(imgElement, url) {
+  if (imageCache.has(imgElement)) {
+    return imageCache.get(imgElement);
+  }
+  const promise = fetch(url).then(res => res.blob());
+  imageCache.set(imgElement, promise);
+  return promise;
+}
+// 当 imgElement 从 DOM 移除后，缓存自动清除
+```
+
+### 原则三：组件生命周期中清理资源
+
+```javascript
+// React 示例
+useEffect(() => {
+  const controller = new AbortController();
+  const timerId = setInterval(() => { /* ... */ }, 1000);
+  window.addEventListener('resize', handleResize);
+
+  return function cleanup() {
+    controller.abort();          // 取消未完成的请求
+    clearInterval(timerId);      // 清理定时器
+    window.removeEventListener('resize', handleResize); // 移除事件监听
+  };
+}, []);
+```
+
+### 原则四：避免意外的全局变量
+
+```javascript
+// ❌ 意外的全局变量（忘记 var/let/const）
+function createUser() {
+  name = 'Alice'; // 挂到了 window.name 上，永远不会被回收
+}
+
+// ✅ 使用严格模式避免
+'use strict';
+function createUser() {
+  name = 'Alice'; // ReferenceError: name is not defined
+}
+```
+
+### 原则五：虚拟列表处理大数据
+
+```javascript
+// 当需要渲染大量列表项时，使用虚拟列表只渲染可见区域
+// 避免创建数万个 DOM 节点导致内存暴涨
+
+// 核心思路：
+// 1. 只创建可视区域内的 DOM 节点（如 20 个）
+// 2. 滚动时复用已有节点，替换其内容
+// 3. 总 DOM 节点数 = 可视区能显示的数量 + 少量缓冲
+```
+
+<Note title="💡 一句话总结">
+
+修复内存泄漏的核心是：理解可达性规则，及时切断不需要的引用，使用 Weak 系列数据结构，在组件销毁时清理所有副作用。
+
+</Note>
+
+---
+
+## Q6: 经典面试题：如何排查一个 SPA 应用的内存泄漏？
+
+一个典型的 SPA 应用中，页面在多个路由之间切换。用户反馈"用久了页面越来越卡"。请排查并修复。
+
+**排查步骤：**
+
+```text
+第一步：确认问题
+  打开 Chrome DevTools → Performance Monitor
+  反复切换路由，观察 JS heap size 是否持续增长
+
+第二步：定位泄漏对象
+  打开 Memory 面板，拍摄堆快照
+  切换路由 3 次，拍摄第二次快照
+  切换路由 3 次，拍摄第三次快照
+  对比第二次和第三次快照，找到新增且未释放的对象
+
+第三步：找到引用链
+  在堆快照中点击泄漏对象
+  查看 "Retainers" 面板，找到阻止 GC 的引用链
+
+第四步：修复
+  根据引用链定位代码，添加清理逻辑
+```
+
+**常见泄漏模式：**
+
+```javascript
+// 模式一：未清理的事件监听
+// 全局对象（window、document）上的监听器在路由切换时不会自动清理
+useEffect(() => {
+  const handler = () => { /* ... */ };
+  window.addEventListener('scroll', handler);
+  return () => window.removeEventListener('scroll', handler);
+}, []);
+
+// 模式二：未取消的网络请求
+useEffect(() => {
+  const controller = new AbortController();
+  fetch('/api/data', { signal: controller.signal })
+    .then(res => res.json())
+    .then(data => setState(data));
+  return () => controller.abort();
+}, []);
+
+// 模式三：未清理的第三方库实例
+useEffect(() => {
+  const chart = new Chart(canvasRef.current, config);
+  return () => chart.destroy(); // 第三方库通常提供 destroy 方法
+}, []);
+```
+
+---
+
+## 🔍 底层源码：V8 是如何实现垃圾回收的？
+
+<div class="follow-up">
+V8 的新生代回收（Scavenge）是怎么实现的？
+</div>
+
+V8 新生代使用 **Cheney 算法**（半区复制算法），详见 [V8 源码：src/heap/spaces.cc](https://github.com/v8/v8/blob/main/src/heap/spaces.cc)：
+
+```cpp
+// 新生代分为两个半区：From-Space 和 To-Space
+// 新对象分配在 From-Space
+// GC 时，将存活对象复制到 To-Space，然后交换两个半区
+
+// Scavenge 的核心逻辑（极度简化）：
+void Scavenge() {
+  // 1. 遍历 From-Space 中的对象
+  // 2. 从根对象出发，标记所有可达对象
+  // 3. 将可达对象复制到 To-Space
+  // 4. 清空 From-Space
+  // 5. 交换 From-Space 和 To-Space
+}
+```
+
+优点：速度快，适合新生代（大部分对象短命）。缺点：浪费一半内存空间。
+
+<div class="follow-up">
+老生代的 Mark-Sweep 和 Mark-Compact 是怎么实现的？
+</div>
+
+老生代使用标记清理和标记整理，详见 [V8 源码：src/heap/mark-compact.cc](https://github.com/v8/v8/blob/main/src/heap/mark-compact.cc)：
+
+```cpp
+// Mark-Sweep（标记清理）：
+// 1. Mark 阶段：从根对象出发，遍历所有可达对象并标记
+// 2. Sweep 阶段：遍历整个堆，清除未标记的对象
+// 问题：会产生内存碎片
+
+// Mark-Compact（标记整理）：
+// 1. Mark 阶段：同上
+// 2. Compact 阶段：将存活对象向一端移动，消除碎片
+// 代价：比 Mark-Sweep 慢，但不会产生碎片
+
+// V8 的策略：平时用 Mark-Sweep，内存碎片严重时用 Mark-Compact
+// 同时使用 "增量标记"（Incremental Marking）避免长时间阻塞主线程
+```
+
+---
+
+## 七、面试官视角：满分回答 vs 及格回答
+
+### 问题："什么是内存泄漏？如何排查和修复？"
+
+**及格回答（60-70分）：**
+> "内存泄漏就是内存用完了没有释放。常见原因有闭包、定时器、事件监听器。可以用 Chrome DevTools 的 Memory 面板排查。"
+
+面试官评价：**知道概念但缺乏系统性理解**。
+
+**满分回答（90-100分）：**
+
+> 内存泄漏的本质是：**你不再需要的对象，因为仍被引用而无法被垃圾回收器回收。** JavaScript 使用标记清理（Mark-and-Sweep）算法从根对象出发遍历可达对象，只有不可达的对象才会被回收。所以泄漏的关键不是"你是否还需要"，而是"是否还有引用指向它"。<sup>[1]</sup>
+
+> 常见泄漏场景有五类：闭包持有外部大对象的引用、保留已移除 DOM 元素的引用、`setInterval` / `setTimeout` 未清理、全局对象上的事件监听器未移除、`Map` / `Set` 持续增长。修复的核心原则是及时切断引用（设为 `null`），使用 `WeakMap` / `WeakRef` 替代强引用，在组件生命周期中清理副作用。
+
+> 排查方法是三次快照法：操作前拍快照 A，操作后拍快照 B，再操作一次拍快照 C。对比 B 和 C，如果 C 比 B 多出的对象在操作结束时仍未释放，就是泄漏。在堆快照中点击泄漏对象，查看 Retainers 面板可以找到完整的引用链，从而定位到具体代码。<sup>[2]</sup>
+
+> V8 引擎将堆分为新生代和老生代。新生代使用 Cheney 算法（半区复制），速度快但浪费一半空间；老生代使用 Mark-Sweep + Mark-Compact，同时用增量标记（Incremental Marking）避免长时间阻塞主线程。理解这些底层机制有助于判断哪些操作代价高、如何配合引擎优化。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title='闭包一定会导致内存泄漏吗？' icon="layer-group">
+
+    **答题要点：**
+    闭包本身不是泄漏，只有当闭包持有了你不再需要的大量数据时才是泄漏。
+
+    **高分回答：**
+    "闭包（Closure）本身不会导致内存泄漏。闭包是 JavaScript 的核心特性——函数记住了它被创建时的词法环境。只有当闭包持有了**你不再需要的大量数据**时，才会构成泄漏。
+    ```javascript
+    // 闭包持有大数组 → 泄漏
+    function createHeavy() {
+      const big = new Array(1000000).fill('*');
+      return () => console.log(big.length);
+    }
+    // 闭包只持有需要的值 → 不泄漏
+    function createLight() {
+      const big = new Array(1000000).fill('*');
+      const len = big.length;
+      return () => console.log(len);
+    }
+    ```
+    关键是：闭包闭包持有的是**引用**而不是**值的拷贝**。如果你只需要一个属性，就把它提取出来，让大对象可以被回收。"
+
+  </Accordion>
+
+  <Accordion title='WeakMap 和 Map 的区别？WeakMap 有什么限制？' icon="layer-group">
+
+    **答题要点：**
+    从垃圾回收的角度解释强引用 vs 弱引用。
+
+    **高分回答：**
+    "`Map` 对键持有**强引用**——只要 Map 存在，键对象就永远不会被垃圾回收。`WeakMap` 对键持有**弱引用**——如果没有其他引用指向键对象，键可以被 GC 回收，对应的值也会被自动清除。
+
+    ```javascript
+    // Map：键永远不被回收
+    const map = new Map();
+    let obj = { data: 'large' };
+    map.set(obj, 'value');
+    obj = null; // obj 仍然存在，因为 Map 持有它
+
+    // WeakMap：键可被回收
+    const weakMap = new WeakMap();
+    let obj = { data: 'large' };
+    weakMap.set(obj, 'value');
+    obj = null; // obj 可以被 GC 回收
+    ```
+
+    WeakMap 的限制：
+    1. 键必须是对象（不能是 string、number 等基本类型）
+    2. 不可遍历（没有 `forEach`、`keys`、`values`、`entries` 方法）
+    3. 没有 `size` 属性
+
+    最佳使用场景：给对象关联额外数据（如 DOM 元素的缓存），当 DOM 元素被移除后，关联数据自动清除。"
+
+  </Accordion>
+
+  <Accordion title='标记清理算法是如何解决循环引用的？' icon="stopwatch">
+
+    **答题要点：**
+    对比引用计数的缺陷，解释标记清理的可达性分析。
+
+    **高分回答：**
+    "早期 IE 使用**引用计数（Reference Counting）**算法——每个对象有一个引用计数器，当计数为 0 时回收。这个算法的致命缺陷是**循环引用**：
+    ```javascript
+    function leak() {
+      let objA = {};
+      let objB = {};
+      objA.ref = objB; // objA 引用 objB
+      objB.ref = objA; // objB 引用 objA
+      // 函数执行完，objA 和 objB 的引用计数都是 1，永远不会被回收
+    }
+    ```
+
+    现代引擎使用**标记清理（Mark-and-Sweep）**算法：从根对象（`window` / `globalThis`）出发，遍历所有可达对象并标记，然后清除未标记的对象。在上面的例子中，`leak()` 执行完后，`objA` 和 `objB` 从根对象不可达，即使它们互相引用，也会被清除。"
+
+  </Accordion>
+
+  <Accordion title='如何用 Performance Monitor 快速判断是否存在泄漏？' icon="stopwatch">
+
+    **答题要点：**
+    关注三个指标的趋势变化。
+
+    **高分回答：**
+    "打开 Chrome DevTools → More tools → Performance Monitor，关注三个指标：
+
+    1. **JS heap size**：正常情况应该在操作后回落。如果反复操作后 JS heap 只增不减，说明有泄漏。
+    2. **DOM Nodes**：如果反复切换页面/弹窗后 DOM 节点数只增不减，说明 DOM 节点未被正确移除。
+    3. **JS event listeners**：如果反复操作后监听器数量只增不减，说明事件监听器未移除。
+
+    操作步骤：
+    1. 打开 Performance Monitor
+    2. 执行一次可疑操作（如打开弹窗再关闭）
+    3. 手动点击垃圾回收按钮（Memory 面板左上角的垃圾桶图标）
+    4. 观察指标是否回落
+    5. 重复操作 5-10 次，如果指标持续增长，确认存在泄漏"
+
+  </Accordion>
+
+  <Accordion title='React 中如何避免内存泄漏？' icon="node">
+
+    **答题要点：**
+    结合 useEffect cleanup、AbortController、事件清理。
+
+    **高分回答：**
+    "React 中的内存泄漏主要来自 `useEffect` 中的副作用未清理。常见场景和修复：
+
+    ```javascript
+    // 1. 未取消的网络请求
+    useEffect(() => {
+      const controller = new AbortController();
+      fetch('/api/data', { signal: controller.signal })
+        .then(res => res.json())
+        .then(data => setState(data))
+        .catch(err => {
+          if (err.name !== 'AbortError') throw err;
+        });
+      return () => controller.abort();
+    }, []);
+
+    // 2. 未清理的定时器
+    useEffect(() => {
+      const id = setInterval(() => { /* ... */ }, 1000);
+      return () => clearInterval(id);
+    }, []);
+
+    // 3. 未移除的全局事件监听
+    useEffect(() => {
+      const handler = () => { /* ... */ };
+      window.addEventListener('resize', handler);
+      return () => window.removeEventListener('resize', handler);
+    }, []);
+
+    // 4. 未销毁的第三方库实例
+    useEffect(() => {
+      const map = new AMap.Map(container, config);
+      return () => map.destroy();
+    }, []);
+    ```
+
+    核心原则：每个 `useEffect` 都必须返回清理函数，清理所有在 effect 中创建的资源。"
+
+  </Accordion>
+
+  <Accordion title='WeakRef 和 FinalizationRegistry 的使用场景？' icon="node">
+
+    **答题要点：**
+    说明 WeakRef 解决了什么问题，以及 FinalizationRegistry 的注意事项。
+
+    **高分回答：**
+    "`WeakRef` 创建一个不阻止垃圾回收的弱引用。典型使用场景是**缓存**：
+    ```javascript
+    const imageCache = new Map();
+    function getCachedImage(url) {
+      const ref = imageCache.get(url);
+      if (ref) {
+        const img = ref.deref();
+        if (img) return img; // 缓存命中
+      }
+      const img = loadImage(url);
+      imageCache.set(url, new WeakRef(img));
+      return img;
+    }
+    ```
+
+    `FinalizationRegistry` 在对象被 GC 回收后执行回调，适合清理外部资源：
+    ```javascript
+    const registry = new FinalizationRegistry((key) => {
+      imageCache.delete(key); // 清理缓存条目
+    });
+    function cacheImage(url, img) {
+      imageCache.set(url, new WeakRef(img));
+      registry.register(img, url);
+    }
+    ```
+
+    注意：`FinalizationRegistry` 的回调执行时机**不确定**——可能在 GC 后很久才执行，甚至不执行。**永远不要用它来做关键业务逻辑**，只适合做资源清理。"
+
+  </Accordion>
+
+  <Accordion title='如何排查 Node.js 服务端的内存泄漏？' icon="skull">
+
+    **答题要点：**
+    对比浏览器端，介绍 Node.js 特有的排查工具。
+
+    **高分回答：**
+    "Node.js 排查内存泄漏的工具和浏览器端有所不同：
+
+    **1. heapdump 模块**
+    ```javascript
+    const v8 = require('v8');
+    const fs = require('fs');
+
+    // 手动触发堆快照
+    const snapshot = v8.writeHeapSnapshot();
+    console.log('Heap snapshot written to', snapshot);
+    // 用 Chrome DevTools 打开 .heapsnapshot 文件分析
+    ```
+
+    **2. --inspect 远程调试**
+    ```bash
+    node --inspect server.js
+    # 打开 chrome://inspect，连接到 Node.js 进程
+    # 使用 Chrome DevTools 的 Memory 面板分析
+    ```
+
+    **3. process.memoryUsage() 监控**
+    ```javascript
+    setInterval(() => {
+      const { heapUsed, heapTotal, rss } = process.memoryUsage();
+      console.log(`Heap: ${heapUsed / 1024 / 1024}MB / ${heapTotal / 1024 / 1024}MB`);
+      console.log(`RSS: ${rss / 1024 / 1024}MB`);
+    }, 5000);
+    ```
+
+    Node.js 特有的泄漏场景：
+    - 未清理的 Event Emitter 监听器（超过 11 个监听器会触发警告）
+    - 未关闭的数据库连接池
+    - 未销毁的 Express 中间件持有的引用"
+
+  </Accordion>
+
+  <Accordion title='为什么说全局变量是最隐蔽的内存泄漏？' icon="skull">
+
+    **答题要点：**
+    从可达性分析的角度解释，全局变量永远不会被 GC。
+
+    **高分回答：**
+    "从垃圾回收的角度看，全局对象（`window` / `globalThis`）是标记清理算法的**根对象**。所有挂载到全局对象上的变量都是从根可达的——这意味着**它们永远不会被垃圾回收**。
+
+    ```javascript
+    // 最隐蔽的泄漏：意外的全局变量
+    function processData() {
+      result = heavyComputation(); // 忘记 let/const，变成 window.result
+    }
+
+    // 第二隐蔽的泄漏：全局缓存无限增长
+    const cache = {};
+    function addToCache(key, value) {
+      cache[key] = value; // 永远不会被回收
+    }
+
+    // 第三隐蔽的泄漏：全局事件监听器累积
+    function setupListener() {
+      window.addEventListener('click', handleClick);
+      // 每次调用都会添加一个新的监听器
+    }
+    ```
+
+    修复方案：
+    1. 使用 `'use strict'` 模式，意外的全局变量会抛出 ReferenceError
+    2. 用 `WeakMap` 替代普通对象做缓存
+    3. 每次添加监听器前先移除旧的（或使用 `{ once: true }`）"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🟢 [MDN: Memory Management](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Memory_Management)：Mozilla 官方对 JavaScript 内存管理机制的权威解释。<sup>[1]</sup>
+- 🔗 [Chrome DevTools: Memory Profiling](https://developer.chrome.com/docs/devtools/memory-problems/)：Google 官方的内存排查指南，包含堆快照和 Allocation Timeline 的详细使用方法。<sup>[2]</sup>
+- 📖 [V8 Blog: Trash Talk](https://v8.dev/blog/trash-talk)：V8 引擎团队对 Orinoco 垃圾回收器的深度解析，包含增量标记、并发清理等优化策略。

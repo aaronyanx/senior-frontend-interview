@@ -1,0 +1,362 @@
+---
+title: "原型与原型链"
+---
+
+> **面试官为什么问这个？**
+>
+> 即使在 ES6 Class 满天飞的今天，JavaScript 依然是一门基于原型的动态语言。面试官问这个，本质上是在考察你：**是否理解 JS 对象之间复用方法和继承属性的底层纽带？** 不理解原型链，你就无法读懂 Vue/React 源码中的对象劫持，更无法理解 V8 引擎是如何通过 Inline Cache 优化对象属性访问性能的。
+
+---
+
+## Q1: 原型链的查找机制
+
+<Steps>
+
+  <Step title="1995年: JS 的原型继承设计">
+
+    JavaScript 没有采用传统的类继承，而是采用了**原型继承**——每个对象都有一个内部链接指向另一个对象（它的原型），形成一条链。
+
+  </Step>
+  <Step title="致命痛点: 方法复用">
+
+    如果每个实例都独立拥有一份方法的拷贝，内存消耗会爆炸。原型链让所有实例共享原型上的方法，只存一份。
+
+  </Step>
+  <Step title="核心机制: 沿 __proto__ 向上攀升">
+
+    当访问一个对象的属性时，如果对象自身没有，引擎就会沿着它的 `__proto__` 链条一直往上找，直到找到目标属性或者到达 `null` 为止。
+
+  </Step>
+  <Step title="V8 的极致优化: Inline Cache">
+
+    V8 并没有把对象当成哈希表，而是为每个对象生成了 Hidden Class（Map）。第一次访问 `obj.foo` 沿原型链找到后，V8 会缓存结果（Inline Cache）。下次同一行代码再访问时，直接根据缓存的偏移量取值，O(1) 复杂度。
+
+  </Step>
+  <Step title="关键洞察: 动态修改原型是致命的">
+
+    给 `Object.prototype` 加属性会导致所有对象的 Map 失效，Inline Cache 瞬间破产，性能暴跌百倍。
+
+  </Step>
+
+</Steps>
+
+**原型链解决的核心问题：**
+
+```text
+问题：每个实例都存一份方法，内存爆炸
+
+如果每个 new 出来的对象都独立拥有一份 sayHello 方法的拷贝，
+1000 个对象就是 1000 份相同的函数——内存浪费严重。
+
+解决：原型链让所有实例共享原型上的方法
+
+实例自身没有的属性，沿着 __proto__ 去原型上找。
+1000 个对象只存一份 sayHello，挂在 Constructor.prototype 上。
+```
+
+<Tip title="🎢 通俗比喻: 家族祠堂">
+
+原型链就像一个家族的祠堂。每个族人（实例）自己身上没有的技能（属性/方法），就去祠堂（原型对象）里找。祠堂里挂了一块牌匾写着"会做饭"（`sayHello`），所有族人都会做饭——不是每个人都学了一遍，而是大家共享同一个祠堂的资源。如果祠堂里找不到，就去上级祠堂（`Object.prototype`）找，一直往上追溯到始祖（`null`）。给祠堂乱加东西（修改 `Object.prototype`）会影响所有族人，所以千万别这么干。
+
+
+</Tip>
+
+**原型链的核心机制：**
+
+```text
+┌───────────────────────────────────────┐
+│    obj 自身查找                         │  ← 先在自己的属性中找
+└─────────────────┬─────────────────────┘
+                  │ 没找到
+                  ▼
+┌───────────────────────────────────────┐
+│    obj.__proto__（即 Constructor.prototype）│  ← 去构造函数的 prototype 上找
+└─────────────────┬─────────────────────┘
+                  │ 没找到
+                  ▼
+┌───────────────────────────────────────┐
+│    Object.prototype                   │  ← 再往上找
+└─────────────────┬─────────────────────┘
+                  │ 没找到
+                  ▼
+┌───────────────────────────────────────┐
+│    null（终点）→ 返回 undefined          │  ← 到达终点
+└───────────────────────────────────────┘
+```
+
+<Note title="💡 一句话总结">
+
+原型链是 JS 实现动态继承的基石，V8 用 Inline Cache 把 O(n) 的链式查找优化到 O(1)。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 错误示范: 原型链污染">
+
+直接修改全局构造函数的 prototype，会顺着原型链波及所有数组实例，引发极其难以排查的 Bug。
+```javascript
+Object.prototype.say = function() { ... }
+// 所有对象都被污染了！
+```
+
+</Card>
+<Card title="✅ 正确解法: 安全的字典对象">
+
+如果你只需要一个纯粹的 Key-Value 映射字典，不需要继承任何对象方法。
+```javascript
+const dict = Object.create(null);
+// 原型链指向 null，没有 toString 等污染
+```
+
+</Card>
+</CardGroup>
+
+---
+
+## Q2: 高频手写题：剥开原型链的伪装
+
+```javascript
+// 手写 instanceof
+function myInstanceof(left, right) {
+  if (typeof left !== 'object' || left === null) return false;
+  let proto = Object.getPrototypeOf(left);
+  while (proto !== null) {
+    if (proto === right.prototype) return true;
+    proto = Object.getPrototypeOf(proto);
+  }
+  return false;
+}
+
+// 手写 new 操作符
+function myNew(Constructor, ...args) {
+  const obj = Object.create(Constructor.prototype); // 创建空对象，链接原型
+  const result = Constructor.apply(obj, args);       // 执行构造函数
+  return (result !== null && typeof result === 'object') ? result : obj; // 防御性判断
+}
+```
+
+### instanceof 的底层原理
+
+`instanceof` 的本质是沿着对象的 `[[Prototype]]` 链逐层向上查找，判断 `right.prototype` 是否在链上。它不能判断基本类型，也不能跨 iframe 使用（不同 iframe 的构造函数不同）。
+
+```javascript
+// instanceof 的本质
+[] instanceof Array  // true：Array.prototype 在 [] 的原型链上
+[] instanceof Object // true：Object.prototype 也在 [] 的原型链上
+
+// 跨 iframe 失效
+const iframe = document.createElement('iframe');
+document.body.appendChild(iframe);
+const IframeArray = iframe.contentWindow.Array;
+new IframeArray() instanceof Array; // false（不同构造函数）
+```
+
+### 手写 Object.create
+
+`Object.create(proto)` 的本质是创建一个新对象并将其 `[[Prototype]]` 指向 `proto`：
+
+```javascript
+function myCreate(proto) {
+  function F() {}
+  F.prototype = proto;
+  return new F();
+}
+```
+
+<Warning title="⚠️ 致命踩坑: new 的最后一步">
+
+`new` 的最后一步（判断返回值）经常被遗漏。如果构造函数内部主动 `return` 了一个对象，必须以它为准；否则返回新创建的实例。这也是为什么在设计模式中，我们可以通过在构造函数内部 `return` 一个单例对象，来强行覆盖 `new` 的默认实例化行为。
+
+
+</Warning>
+
+---
+
+## 🔍 底层源码：V8 的 Inline Cache 优化
+
+<div class="follow-up">
+原型链查找明明要一层层往上找，为什么在 V8 里读取对象属性依然极快？
+</div>
+
+V8 对原型链查找做了极致的降维打击优化（详见 [V8 Blog: Inline Caches](https://v8.dev/blog/ic-under-the-hood)）：
+
+1. **Hidden Class（隐藏类 / Map）**：V8 并没有把对象当成哈希表，而是为每个对象在底层动态生成了一个类似 C++ 结构体的 `Map`（描述对象的内存布局和属性偏移量）。
+2. **Inline Cache (内联缓存 IC)**：当 V8 第一次执行 `obj.foo` 并沿着原型链千辛万苦找到目标时，它会**立刻把这个结果连同当前对象的 Map 缓存起来**。
+3. **跳过原型链**：下次同一行代码再访问 `obj.foo` 时，V8 会先比对当前对象的 Map 是否和缓存一致（Monomorphic 单态）。如果一致，**直接根据缓存的内存偏移量去取值，时间复杂度 O(1)**，彻底跳过原型链查找！
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："请谈谈你对 JavaScript 原型链的理解？"
+
+**及格回答（60-70分）：**
+> "每个对象都有一个 `__proto__` 属性，指向它构造函数的 `prototype`。当访问一个属性时，如果自己身上没有，就会顺着 `[[Prototype]]` 链一直往上找。我们在原型上写方法可以实现内存复用。"
+
+面试官评价：**标准课本背诵，缺乏对底层引擎设计的认知。**
+
+**满分回答（90-100分）：**
+
+> "原型链是 JS 实现动态继承的基石。语言规范层面上，它的核心是沿着对象的 `[[Prototype]]` 指针不断向父级甚至 `null` 进行回溯属性查找的线性机制。<sup>[1]</sup>"
+
+> "为了突破逐层扫描的性能瓶颈，V8 引入了 Hidden Class（隐藏类/Map）与 Inline Cache（内联缓存）。当热点属性被命中后，V8 会直接将其内存偏移量缓存。下次访问时，只要对象形态不变，即可实现 O(1) 级的跨域降维打击，完全跳过真正的链式遍历。<sup>[2]</sup>"
+
+> "基于上述底层优化，在实际业务中坚决反对随意篡改原生内置对象（如修改 `Array.prototype`）。这种操作会瞬间导致所有相关对象的 Map 失效，摧毁 V8 好不容易建立的 IC 缓存路径，引发大面积的性能断崖。<sup>[3]</sup>"
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title='Object.create(null) 和 {} 有什么本质区别?' icon="layer-group">
+
+    **答题要点：**
+    原型链终点与纯净字典。
+
+    **高分回答：**
+    "`{}` 是通过 `Object` 构造函数生成的，它的 `[[Prototype]]` 依然指向 `Object.prototype`，因此它携带着 `toString`、`hasOwnProperty` 等一堆内置方法。而 `Object.create(null)` 会硬生生切断原型链，返回一个 `[[Prototype]]` 严格为 `null` 的纯净对象。它不仅没有原型链污染的风险，在 V8 眼里也是一个结构最简单的纯净字典，非常适合用来做大量数据的 Key-Value 映射。"
+
+  </Accordion>
+
+  <Accordion title='原型链和作用域链有什么区别?' icon="layer-group">
+
+    **答题要点：**
+    从查找目标和查找方向两个维度对比。
+
+    **高分回答：**
+    "原型链查找的是**对象的属性**，沿着 `__proto__` 向上攀升，终点是 `null`。作用域链查找的是**变量**，沿着词法环境的 `outer` 指针向上攀升，终点是全局环境。两者是完全独立的机制：原型链是对象层面的继承关系，作用域链是代码层面的变量可见性。一个函数内部可以同时使用两条链——先沿作用域链找到变量（闭包），再沿原型链找到变量的方法。"
+
+  </Accordion>
+
+  <Accordion title='如何判断一个属性是对象自身的还是继承自原型的?' icon="node">
+
+    **答题要点：**
+    hasOwnProperty vs in 操作符的区别。
+
+    **高分回答：**
+    "用 `hasOwnProperty` 判断属性是否属于对象自身，用 `in` 操作符判断属性是否在对象上（包括原型链）。
+    ```javascript
+    function Foo() { this.a = 1; }
+    Foo.prototype.b = 2;
+    const obj = new Foo();
+    obj.hasOwnProperty('a'); // true（自身属性）
+    obj.hasOwnProperty('b'); // false（原型上的）
+    'b' in obj;              // true（原型链上能找到）
+    ```
+    注意：`for...in` 会遍历原型链上所有可枚举属性，所以通常需要配合 `hasOwnProperty` 过滤。ES2022 推荐使用 `Object.hasOwn(obj, prop)` 替代。"
+
+  </Accordion>
+
+  <Accordion title='__proto__ 和 prototype 的区别?' icon="node">
+
+    **答题要点：**
+    从所属对象和用途两个维度区分。
+
+    **高分回答：**
+    "`__proto__` 是**每个对象**都有的内部属性（`[[Prototype]]`），指向其构造函数的 `prototype`。`prototype` 只有**函数**才有，是函数的一个普通属性，用作 `new` 创建实例时的原型模板。
+    ```javascript
+    function Foo() {}
+    const f = new Foo();
+    f.__proto__ === Foo.prototype;  // true
+    Foo.__proto__ === Function.prototype; // true（Foo 也是 Function 的实例）
+    Foo.prototype.__proto__ === Object.prototype; // true
+    ```
+    推荐用 `Object.getPrototypeOf(obj)` 替代 `obj.__proto__`。"
+
+  </Accordion>
+
+  <Accordion title='如何实现 ES5 的类继承?' icon="stopwatch">
+
+    **答题要点：**
+    寄生组合式继承是最佳方案。
+
+    **高分回答：**
+    "ES5 最佳继承方案是**寄生组合式继承**：
+    ```javascript
+    function Parent(name) { this.name = name; }
+    Parent.prototype.sayHello = function() { return 'hello ' + this.name; };
+    
+    function Child(name, age) {
+      Parent.call(this, name); // 继承实例属性
+      this.age = age;
+    }
+    Child.prototype = Object.create(Parent.prototype); // 继承原型方法
+    Child.prototype.constructor = Child; // 修复 constructor 指向
+    ```
+    为什么不用 `Child.prototype = new Parent()`？因为构造函数中的副作用（如 `this.name = name`）会被执行两次，而且会把 `name` 等实例属性错误地放到原型上。"
+
+  </Accordion>
+
+  <Accordion title='为什么修改 Object.prototype 会导致性能暴跌?' icon="stopwatch">
+
+    **答题要点：**
+    从 V8 Hidden Class 和 Inline Cache 的角度解释。
+
+    **高分回答：**
+    "V8 为每个对象生成 Hidden Class（Map），描述对象的内存布局和属性偏移量。Inline Cache 缓存了 Map 与属性偏移量的映射关系。修改 `Object.prototype` 会导致**所有对象的 Map 失效**（因为所有对象的原型链都经过 `Object.prototype`），IC 缓存瞬间破产，V8 不得不重新逐层查找原型链，性能暴跌百倍。
+    ```javascript
+    // ❌ 极其危险——摧毁所有对象的 IC 缓存
+    Object.prototype.say = function() {};
+    
+    // ✅ 用 Object.create(null) 创建纯净字典
+    const dict = Object.create(null);
+    ```"
+
+  </Accordion>
+
+  <Accordion title='🔥 手写一个 Object.create 并解释其原理' icon="skull">
+
+    **答题要点：**
+    本质是创建空对象并设置原型指向。
+
+    **高分回答：**
+    "`Object.create(proto)` 的本质是创建一个新对象并将其 `[[Prototype]]` 指向 `proto`：
+    ```javascript
+    Object.create = function(proto, propertiesObject) {
+      if (typeof proto !== 'object' && typeof proto !== 'function') {
+        throw new TypeError('Object prototype may only be an Object or null');
+      }
+      function F() {}
+      F.prototype = proto;
+      const obj = new F();
+      if (propertiesObject) Object.defineProperties(obj, propertiesObject);
+      return obj;
+    };
+    ```
+    第二个参数 `propertiesObject` 可以像 `Object.defineProperties` 一样定义属性描述符。`Object.create(null)` 创建的纯净对象没有原型链，适合做安全的字典。"
+
+  </Accordion>
+
+  <Accordion title='🔥 prototype 的 constructor 属性有什么用？丢失了怎么办?' icon="skull">
+
+    **答题要点：**
+    constructor 指回构造函数，手动赋值原型对象时会丢失。
+
+    **高分回答：**
+    "每个函数的 `prototype` 对象自带一个 `constructor` 属性指回函数自身。但当我们手动赋值 `prototype` 时会丢失：
+    ```javascript
+    function Foo() {}
+    Foo.prototype = { /* 新对象没有 constructor */ };
+    new Foo().constructor === Foo;      // false
+    new Foo().constructor === Object;   // true（沿原型链找到 Object.prototype.constructor）
+    ```
+    修复方式：手动补上 `constructor`。
+    ```javascript
+    Foo.prototype = {
+      constructor: Foo, // 显式修复
+      method1() {},
+      method2() {}
+    };
+    ```
+    `constructor` 在 `instanceof` 中不参与判断，但对某些序列化和反射场景有用。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [V8 Deep Dive: Inline Caches](https://v8.dev/blog/ic-under-the-hood)：*V8 官方揭秘内联缓存与原型链性能优化底层原理。* <sup>[1]</sup>
+- 📖 [MDN Web Docs: 继承与原型链](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Inheritance_and_the_prototype_chain)：*MDN 最权威的基础语言特性梳理。* <sup>[2]</sup>
+- 🟢 [V8 Source Code: ic.cc](https://github.com/v8/v8/blob/main/src/ic/ic.cc)：*V8 内联缓存的核心实现源码。* <sup>[3]</sup>

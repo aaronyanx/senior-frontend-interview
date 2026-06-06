@@ -1,0 +1,940 @@
+---
+title: "正则表达式"
+---
+
+> **面试官为什么问这个？**
+>
+> 正则表达式是前端表单验证、文本处理、数据提取的核心工具。面试官问这个，本质上是在考察你：**你能不能用正则解决实际的文本匹配问题？你知不知道正则引擎的匹配原理？** 如果你答不清楚，说明你对字符串处理的理解停留在 `indexOf` 层面。
+
+---
+
+## Q1: 正则表达式的历史？为什么要有它？
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  1956年      │ → │  1968年      │ → │  1986年      │ → │  1995年      │
+│  数学理论    │ │  Unix 工具    │ │  POSIX 标准  │ │  JavaScript  │
+│  (Kleene)    │ │  (grep)      │ │  (IEEE)      │ │  (RegExp)    │
+└──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
+```
+
+<Steps>
+
+  <Step title="1956年: 数学家 Kleene 的理论">
+
+    数学家 Stephen Kleene 在 1956 年提出了**正则集合**（Regular Sets）的概念，用数学方式描述了"可以用有限状态自动机识别的语言"。这就是"正则"（Regular）这个词的来源。
+
+  </Step>
+  <Step title="1968年: Unix 工具 grep 的诞生">
+
+    Ken Thompson 在 Unix 中实现了 `grep` 命令，用正则表达式搜索文本文件。从此，正则表达式从数学理论变成了实用工具。
+
+  </Step>
+  <Step title="1995年: JavaScript 引入正则表达式">
+
+    JavaScript 1.2 引入了 `RegExp` 对象，让正则表达式可以在浏览器端运行。从此，正则表达式成为前端表单验证、文本处理的标配工具。
+
+  </Step>
+
+</Steps>
+
+**正则表达式解决的核心问题：**
+
+```text
+问题：用普通的字符串方法（indexOf、includes）无法描述复杂的匹配规则
+
+如何判断一个字符串是合法的邮箱？
+indexOf('@') 只能检查有没有 @，无法检查格式是否正确
+
+解决：用正则表达式描述匹配规则，引擎自动匹配
+
+/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+→ 一行代码验证邮箱格式
+```
+
+<Note title="💡 一句话总结">
+
+正则表达式是一种用模式描述字符串的语法，让复杂的文本匹配变得简洁。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有正则表达式">
+
+判断一个字符串是否是合法的手机号，你需要手动检查：长度是否为 11 位、第一位是否是 1、第二位是否是 3-9、剩余 9 位是否都是数字。代码写出来又长又容易出错。
+
+</Card>
+<Card title="✅ 引入正则表达式">
+
+用一行正则就能搞定：`/^1[3-9]\d{9}$/`。简洁、高效、易维护。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么需要正则"（普通字符串方法的局限性），再说"正则能做什么"（模式匹配）。面试官想听的是你理解正则的使用场景，而不是背诵语法规则。
+
+</Tip>
+
+---
+
+## Q2: 正则表达式的核心语法
+
+正则表达式由**字符**和**元字符**组成，描述一个匹配模式。
+
+```text
+┌───────────────────────────────────────────────┐
+│           正则表达式的组成                      │
+│                                                │
+│  /pattern/flags                                │
+│   ───┬───  ──┬──                               │
+│       │       │                                │
+│       │       └── 标志位（g, i, m, s 等）       │
+│       │                                        │
+│       └── 匹配模式                              │
+│           - 字面量字符（a, b, 1, 2）            │
+│           - 元字符（., *, +, ?, ^, $）          │
+│           - 字符集（[abc], [0-9]）              │
+│           - 分组（(abc)）                       │
+└───────────────────────────────────────────────┘
+```
+
+**常用元字符：**
+
+| 元字符 | 含义 | 示例 | 匹配 |
+|--------|------|------|------|
+| `.` | 任意字符（除换行） | `a.c` | `abc`, `a1c`, `a c` |
+| `*` | 0 次或多次 | `ab*c` | `ac`, `abc`, `abbc` |
+| `+` | 1 次或多次 | `ab+c` | `abc`, `abbc`（不匹配 `ac`） |
+| `?` | 0 次或 1 次 | `ab?c` | `ac`, `abc` |
+| `^` | 开头 | `^a` | 字符串以 `a` 开头 |
+| `$` | 结尾 | `a$` | 字符串以 `a` 结尾 |
+| `\d` | 数字 | `\d+` | `123` |
+| `\w` | 单词字符 | `\w+` | `hello` |
+| `\s` | 空白字符 | `\s+` | ` `, `\t`, `\n` |
+
+```javascript
+// 基础匹配
+/hello/.test('hello world');     // true
+/hello/.test('Hello world');     // false（区分大小写）
+
+// 忽略大小写
+/hello/i.test('Hello world');    // true
+
+// 全局匹配
+'hello hello'.match(/hello/g);   // ['hello', 'hello']
+```
+
+<Warning title="⚠️ 核心机制: 贪婪匹配 vs 非贪婪匹配">
+
+默认情况下，`*`、`+`、`?` 是**贪婪匹配**——尽可能多地匹配字符。加 `?` 变成**非贪婪匹配**——尽可能少地匹配字符。
+
+```javascript
+// 贪婪匹配：尽可能多
+'<div>hello</div>'.match(/<.*>/);   // ['<div>hello</div>']
+// 匹配了从第一个 < 到最后一个 > 的所有内容
+
+// 非贪婪匹配：尽可能少
+'<div>hello</div>'.match(/<.*?>/);  // ['<div>']
+// 只匹配了第一个 < 到第一个 > 的内容
+```
+
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 贪婪 vs 非贪婪">
+
+贪婪匹配就像一个贪吃的人——看到一桌菜，他会尽可能多吃。非贪婪匹配就像一个节制的人——只吃够自己需要的量。在正则中，`*` 是贪吃的人，`*?` 是节制的人。
+
+
+</Tip>
+
+### 字符集（Character Classes）
+
+```javascript
+// 字符集：匹配括号内的任意一个字符
+/[abc]/.test('apple');    // true（匹配 a）
+/[abc]/.test('hello');    // false（没有 a, b, c）
+
+// 范围：匹配范围内的字符
+/[a-z]/.test('hello');    // true（小写字母）
+/[A-Z]/.test('Hello');    // true（大写字母）
+/[0-9]/.test('123');      // true（数字）
+
+// 取反：匹配不在括号内的字符
+/[^abc]/.test('hello');   // true（有非 a, b, c 的字符）
+/[^abc]/.test('aabbcc');  // false（全是 a, b, c）
+
+// 预定义字符集
+/\d/.test('123');         // true（数字，等价于 [0-9]）
+/\D/.test('hello');       // true（非数字，等价于 [^0-9]）
+/\w/.test('hello');       // true（单词字符，等价于 [a-zA-Z0-9_]）
+/\W/.test('!@#');         // true（非单词字符）
+/\s/.test(' ');           // true（空白字符）
+/\S/.test('hello');       // true（非空白字符）
+```
+
+---
+
+## Q3: 量词与边界
+
+量词描述字符出现的次数，边界描述匹配的位置。
+
+```javascript
+// 量词
+/a{3}/.test('aaa');       // true（恰好 3 次）
+/a{2,4}/.test('aa');      // true（2 到 4 次）
+/a{2,}/.test('aaaaa');    // true（至少 2 次）
+
+// 边界
+/^hello/.test('hello world');  // true（字符串开头）
+/world$/.test('hello world');  // true（字符串结尾）
+/^hello$/.test('hello');       // true（完全匹配）
+
+// 单词边界
+/\bword\b/.test('hello word');  // true（独立的单词）
+/\bword\b/.test('wordsmith');   // false（不是独立的单词）
+```
+
+<Warning title="⚠️ 边界匹配的常见错误">
+
+`^` 和 `$` 是字符串边界，不是单词边界。很多开发者混淆了这两个概念。
+
+```javascript
+// ❌ 错误理解：以为 ^ 和 $ 是单词边界
+/^hello$/.test('hello world');  // false（整个字符串是 'hello world'）
+
+// ✅ 正确理解：^ 和 $ 是字符串边界
+/^hello/.test('hello world');   // true（字符串以 'hello' 开头）
+/hello$/.test('say hello');     // true（字符串以 'hello' 结尾）
+
+// ✅ 用 \b 匹配单词边界
+/\bhello\b/.test('say hello world');  // true（'hello' 是独立的单词）
+/\bhello\b/.test('say helloworld');   // false（'hello' 不是独立的单词）
+```
+
+
+</Warning>
+
+---
+
+## Q4: 分组与捕获
+
+分组用 `()` 表示，可以捕获匹配的内容。
+
+```javascript
+// 基础分组
+/(ab)+/.test('ababab');  // true（'ab' 重复多次）
+
+// 捕获分组
+'hello world'.match(/(\w+) (\w+)/);
+// ['hello world', 'hello', 'world']
+// 第一个元素是完整匹配，后续元素是捕获组
+
+// 非捕获分组（?:）
+'hello world'.match(/(?:\w+) (\w+)/);
+// ['hello world', 'world']
+// (?:) 不捕获，只分组
+
+// 命名捕获分组（ES2018）
+'2024-01-15'.match(/(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})/);
+// groups: { year: '2024', month: '01', day: '15' }
+```
+
+<Warning title="⚠️ 捕获组的编号规则">
+
+捕获组按照左括号 `(` 的出现顺序编号，从 1 开始。
+
+```javascript
+// 编号规则：按左括号的顺序
+/(a)(b(c)d)e/.match('abcde');
+// 捕获组 1: 'a'
+// 捕获组 2: 'bcd'
+// 捕获组 3: 'c'
+
+// 反向引用：用 \n 引用第 n 个捕获组
+/(a)\1/.test('aa');          // true（\1 引用第一个捕获组 'a'）
+/(a)(b)\2/.test('abb');      // true（\2 引用第二个捕获组 'b'）
+
+// 命名反向引用（ES2018）
+/(?<char>a)\k<char>/.test('aa');  // true
+```
+
+
+</Warning>
+
+### 分组的实际应用
+
+```javascript
+// 1. 提取日期
+const dateStr = '2024-01-15';
+const match = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
+if (match) {
+  const [, year, month, day] = match;
+  console.log(`${year}年${month}月${day}日`); // 2024年01月15日
+}
+
+// 2. 替换格式
+'hello-world'.replace(/(\w+)-(\w+)/, '$2_$1'); // 'world_hello'
+
+// 3. 命名捕获组
+const url = 'https://example.com:8080/path';
+const { protocol, host, port, path } = url.match(
+  /(?<protocol>https?):\/\/(?<host>[^:]+):(?<port>\d+)(?<path>\/.*)?/
+).groups;
+// protocol: 'https', host: 'example.com', port: '8080', path: '/path'
+```
+
+---
+
+## Q5: 断言（Lookahead & Lookbehind）
+
+断言是一种**零宽度匹配**——它匹配一个位置，但不消耗字符。
+
+```javascript
+// 正向前瞻（Lookahead）：后面必须跟着 ...
+/hello(?= world)/.test('hello world');  // true
+/hello(?= world)/.test('hello there');  // false
+
+// 负向前瞻（Negative Lookahead）：后面不能跟着 ...
+/hello(?! world)/.test('hello there');  // true
+/hello(?! world)/.test('hello world');  // false
+
+// 正向后顾（Lookbehind）：前面必须是 ...（ES2018）
+/(?<=hello) world/.test('hello world');  // true
+/(?<=hello) world/.test('hi world');     // false
+
+// 负向后顾（Negative Lookbehind）：前面不能是 ...（ES2018）
+/(?<!hello) world/.test('hi world');     // true
+/(?<!hello) world/.test('hello world');  // false
+```
+
+<Warning title="⚠️ 断言的实际应用">
+
+断言常用于复杂的匹配场景：
+
+```javascript
+// 1. 匹配价格（但不包含货币符号）
+/(?<=\$)\d+\.\d{2}/.exec('$19.99');  // ['19.99']
+
+// 2. 匹配单词（但不在引号内）
+/(?<!")\bword\b(?!")/g.exec('say "word" and word');  // 匹配第二个 word
+
+// 3. 密码强度验证（至少包含大小写字母和数字）
+/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test('Abc12345');  // true
+```
+
+
+</Warning>
+
+---
+
+## Q6: 常用正则表达式实战
+
+### 邮箱验证
+
+```javascript
+// 简单版（够用）
+/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test('user@example.com');  // true
+
+// 严格版（RFC 5322）
+/^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/
+```
+
+### 手机号验证（中国大陆）
+
+```javascript
+// 中国大陆手机号
+/^1[3-9]\d{9}$/.test('13812345678');  // true
+/^1[3-9]\d{9}$/.test('12345678901');  // false（第二位不是 3-9）
+```
+
+### URL 解析
+
+```javascript
+const url = 'https://www.example.com:8080/path?query=value#hash';
+const regex = /^(?<protocol>https?):\/\/(?<host>[^:\/?#]+)(?::(?<port>\d+))?(?<path>\/[^?#]*)?(?:\?(?<query>[^#]*))?(?:#(?<hash>.*))?$/;
+const { protocol, host, port, path, query, hash } = url.match(regex).groups;
+// protocol: 'https', host: 'www.example.com', port: '8080'
+// path: '/path', query: 'query=value', hash: 'hash'
+```
+
+### HTML 标签提取
+
+```javascript
+// 提取标签内容（简单场景）
+'<p>hello</p>'.match(/<p>(.*?)<\/p>/);  // ['<p>hello</p>', 'hello']
+
+// ⚠️ 注意：正则不适合解析复杂的 HTML，应该用 DOMParser
+const parser = new DOMParser();
+const doc = parser.parseFromString(htmlString, 'text/html');
+```
+
+<Warning title="⚠️ 正则不适合解析 HTML">
+
+HTML 不是正则语言（Regular Language），用正则解析 HTML 会导致各种边界问题：
+
+```javascript
+// ❌ 用正则解析嵌套标签——无法正确处理
+'<div><p>hello</p></div>'.match(/<div>(.*?)<\/div>/);
+// 匹配到 '<p>hello</p>'，但如果嵌套更深就会出错
+
+// ✅ 用 DOMParser 解析 HTML
+const parser = new DOMParser();
+const doc = parser.parseFromString(htmlString, 'text/html');
+const div = doc.querySelector('div');
+console.log(div.textContent); // 'hello'
+```
+
+
+</Warning>
+
+---
+
+## Q7: 正则表达式的性能优化
+
+正则表达式可能遇到**灾难性回溯**（Catastrophic Backtracking）问题，导致性能急剧下降。
+
+```text
+┌───────────────────────────────────────────────┐
+│           灾难性回溯的原理                      │
+│                                                │
+│  正则：/a+b/                                   │
+│  字符串：'aaaaaaaaac'                          │
+│                                                │
+│  引擎尝试：                                    │
+│  1. a+ 匹配所有 a → 失败（没有 b）             │
+│  2. a+ 回退一个 a → 失败（还是没有 b）         │
+│  3. a+ 再回退一个 a → 失败                     │
+│  ...                                           │
+│  4. a+ 回退到只剩一个 a → 失败                  │
+│  5. 放弃，a+ 匹配 0 个 a → 失败（没有 a 开头） │
+│                                                │
+│  时间复杂度：O(2^n) —— 指数级！                │
+└───────────────────────────────────────────────┘
+```
+
+```javascript
+// ❌ 灾难性回溯的例子
+const regex = /^(a+)+$/;
+regex.test('aaaaaaaaaaaaaaaaaaaaaaaaaaaac');
+// 引擎需要尝试 2^30 种可能性，耗时数秒
+
+// ✅ 优化：用原子组（Atomic Group）或占有量词（Possessive Quantifier）
+// JavaScript 不支持原子组，但可以用其他方式优化
+const regex = /^a+$/;
+regex.test('aaaaaaaaaaaaaaaaaaaaaaaaaaaac');
+// 立即返回 false，因为后面有 'c'
+```
+
+<Warning title="⚠️ 灾难性回溯的常见模式">
+
+以下正则模式容易导致灾难性回溯：
+
+```javascript
+// ❌ 嵌套量词
+/(a+)+$/;      // 嵌套的 +
+/(a*)*$/;      // 嵌套的 *
+/(a|b)*$/;     // 交替和量词组合
+
+// ❌ 重叠的字符集
+/([a-z]+)*$/;  // 量词嵌套
+
+// ✅ 优化方案
+// 1. 避免嵌套量词
+/^a+$/;        // 简单量词
+
+// 2. 使用原子组（如果引擎支持）
+// /^(?>a+)+$/;  // 原子组（JavaScript 不支持）
+
+// 3. 使用占有量词（如果引擎支持）
+// /^a++$/;       // 占有量词（JavaScript 不支持）
+```
+
+
+</Warning>
+
+### 正则表达式的优化技巧
+
+```javascript
+// 1. 锚定开头：减少匹配尝试次数
+/^hello/.test('say hello');  // 从头开始匹配，快速失败
+
+// 2. 避免不必要的捕获
+/(?:abc)+/;  // 非捕获分组，比 /(abc)+/ 更快
+
+// 3. 使用更精确的字符集
+/[a-zA-Z0-9]/;  // 比 /./ 更精确
+
+// 4. 避免回溯
+/^[a-z]+$/;  // 锚定开头和结尾，减少回溯
+
+// 5. 编译正则（复用）
+const regex = /^[a-z]+$/;  // 编译一次
+regex.test('hello');        // 多次使用
+regex.test('world');
+```
+
+---
+
+## Q8: 正则表达式在 JavaScript 中的使用
+
+```javascript
+// 1. 创建正则
+const regex1 = /pattern/flags;           // 字面量
+const regex2 = new RegExp('pattern', flags); // 构造函数
+
+// 2. 常用方法
+/pattern/.test('string');      // 返回 true/false
+'string'.match(/pattern/);     // 返回匹配结果
+'string'.replace(/pattern/, 'replacement'); // 替换
+'string'.search(/pattern/);    // 返回匹配位置
+'string'.split(/pattern/);     // 分割
+
+// 3. 标志位
+/pattern/g;  // 全局匹配（找到所有匹配）
+/pattern/i;  // 忽略大小写
+/pattern/m;  // 多行模式（^ 和 $ 匹配每行的开头和结尾）
+/pattern/s;  // dotAll 模式（. 匹配换行符）
+/pattern/u;  // Unicode 模式（正确处理 Unicode 字符）
+/pattern/y;  // 粘性模式（从 lastIndex 位置开始匹配）
+```
+
+<Warning title="⚠️ exec 和 match 的区别">
+
+`exec` 和 `match` 在全局匹配时行为不同：
+
+```javascript
+// exec：返回一个匹配，需要循环调用
+const regex = /\d+/g;
+const str = '123 abc 456';
+let match;
+while ((match = regex.exec(str)) !== null) {
+  console.log(match[0], match.index);
+}
+// '123' 0
+// '456' 8
+
+// match：返回所有匹配
+'123 abc 456'.match(/\d+/g);
+// ['123', '456']
+```
+
+
+</Warning>
+
+---
+
+## 🔍 底层源码：正则引擎是如何工作的？
+
+<div class="follow-up">
+正则引擎的匹配原理是什么？
+</div>
+
+正则引擎有两种实现方式：**NFA（非确定性有限自动机）** 和 **DFA（确定性有限自动机）**。JavaScript 使用 NFA（详见 [V8 源码：src/regexp/regexp-parser.cc](https://github.com/v8/v8/blob/main/src/regexp/regexp-parser.cc)）：
+
+```cpp
+// V8 正则引擎的简化逻辑
+
+// 1. 解析正则表达式，生成 AST
+RegExpAST* ParseRegExp(const char* pattern) {
+  // 把 /a+b/ 解析成：Concat(a, Quantifier(+), b)
+}
+
+// 2. 编译 AST 为字节码
+RegExpBytecode CompileRegExp(RegExpAST* ast) {
+  // 把 AST 编译成字节码指令
+  // 例如：MATCH_CHAR 'a', LOOP, MATCH_CHAR 'b'
+}
+
+// 3. 用 NFA 执行匹配
+bool ExecuteNFA(RegExpBytecode bytecode, const char* input) {
+  // 从起始状态开始
+  // 尝试匹配每个字符
+  // 如果失败，回溯到上一个选择点
+  // 如果成功，继续匹配下一个字符
+}
+```
+
+NFA 和 DFA 的区别：
+
+| 特性 | NFA | DFA |
+|------|-----|-----|
+| **回溯** | 有（可能回溯） | 无（不回溯） |
+| **性能** | 可能慢（灾难性回溯） | 快（线性时间） |
+| **功能** | 支持反向引用、断言 | 不支持反向引用、断言 |
+| **实现** | JavaScript、Java、Python | grep、awk |
+
+<div class="follow-up">
+为什么 JavaScript 选择 NFA 而不是 DFA？
+</div>
+
+因为 NFA 支持更多功能（反向引用、断言等），而 DFA 不支持。JavaScript 的正则表达式需要支持这些高级功能，所以选择了 NFA。
+
+```javascript
+// 反向引用：NFA 支持，DFA 不支持
+/(a)\1/.test('aa');  // true（\1 引用第一个捕获组 'a'）
+
+// 前瞻断言：NFA 支持，DFA 不支持
+/hello(?= world)/.test('hello world');  // true
+```
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说正则表达式的匹配原理，什么是灾难性回溯？"
+
+**及格回答（60-70分）：**
+> "正则表达式用模式匹配字符串。灾难性回溯是当正则表达式有嵌套量词时，引擎需要尝试大量可能性，导致性能急剧下降。比如 /(a+)+$/ 匹配 'aaaaaaaaac' 会很慢。"
+
+面试官评价：**知道现象但不理解原理**。
+
+**满分回答（90-100分）：**
+
+> 正则表达式引擎有两种实现：**NFA（非确定性有限自动机）** 和 **DFA（确定性有限自动机）**。JavaScript 使用 NFA，因为它支持反向引用、断言等高级功能。NFA 的工作方式是：从起始状态开始，尝试匹配每个字符。如果匹配失败，回溯到上一个选择点，尝试另一种可能性。<sup>[1]</sup>
+
+> 灾难性回溯发生在**嵌套量词**的场景。以 `/(a+)+$/` 为例，当输入是 `aaaaaaaaac` 时，引擎需要尝试 `a+` 匹配 1 个 a、2 个 a、...、9 个 a 的所有组合。因为有两层嵌套（`(a+)+`），每种组合内部还需要进一步拆分，导致时间复杂度达到 O(2^n)。<sup>[2]</sup>
+
+> 避免灾难性回溯的方法：1）避免嵌套量词；2）使用非捕获分组 `(?:)` 减少回溯开销；3）锚定开头 `^` 减少匹配尝试次数；4）使用更精确的字符集，避免过度匹配。<sup>[3]</sup>
+
+> 实际项目中，正则表达式常用于表单验证、文本提取、URL 解析等场景。对于复杂的 HTML 解析，应该用 DOMParser 而不是正则——因为 HTML 不是正则语言，用正则解析嵌套标签会导致各种边界问题。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title='正则表达式中的贪婪匹配和非贪婪匹配？' icon="layer-group">
+
+    **答题要点：**
+    默认贪婪（尽可能多），加 `?` 变非贪婪（尽可能少）。
+
+    **高分回答：**
+    "默认情况下，`*`、`+`、`?` 是**贪婪匹配**——尽可能多地匹配字符。加 `?` 变成**非贪婪匹配**——尽可能少地匹配字符。
+
+    ```javascript
+    // 贪婪匹配：尽可能多
+    '<div>hello</div>'.match(/<.*>/);   // ['<div>hello</div>']
+    // 匹配了从第一个 < 到最后一个 > 的所有内容
+
+    // 非贪婪匹配：尽可能少
+    '<div>hello</div>'.match(/<.*?>/);  // ['<div>']
+    // 只匹配了第一个 < 到第一个 > 的内容
+    ```
+
+    贪婪匹配的原理：引擎先尽可能多地匹配，如果后续匹配失败，再回退一个字符重新尝试。非贪婪匹配相反：先尽可能少地匹配，如果后续匹配失败，再多匹配一个字符。
+
+    实际应用：提取 HTML 标签内容时，必须用非贪婪匹配，否则会匹配到不正确的范围。"
+
+  </Accordion>
+
+  <Accordion title='正则表达式中的分组和捕获？' icon="layer-group">
+
+    **答题要点：**
+    捕获组用 `()`，非捕获组用 `(?:)`，命名捕获组用 `(?<name>)`。
+
+    **高分回答：**
+    "分组用 `()` 表示，分为三种：
+
+    ```javascript
+    // 1. 捕获组：捕获匹配的内容
+    'hello world'.match(/(\w+) (\w+)/);
+    // ['hello world', 'hello', 'world']
+    // 第一个元素是完整匹配，后续元素是捕获组
+
+    // 2. 非捕获组：只分组，不捕获
+    'hello world'.match(/(?:\w+) (\w+)/);
+    // ['hello world', 'world']
+    // (?:) 不捕获，只分组
+
+    // 3. 命名捕获组（ES2018）：给捕获组命名
+    '2024-01-15'.match(/(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})/);
+    // groups: { year: '2024', month: '01', day: '15' }
+    ```
+
+    捕获组的用途：
+    1. **提取数据**：从字符串中提取特定部分
+    2. **替换**：在替换中引用捕获组（`$1`、`$2`）
+    3. **反向引用**：在正则中引用之前的匹配（`\1`、`\2`）"
+
+  </Accordion>
+
+  <Accordion title='什么是断言（Lookahead & Lookbehind）？' icon="stopwatch">
+
+    **答题要点：**
+    断言是零宽度匹配，只匹配位置不消耗字符。
+
+    **高分回答：**
+    "断言是一种**零宽度匹配**——它匹配一个位置，但不消耗字符。有四种断言：
+
+    ```javascript
+    // 正向前瞻（Lookahead）：后面必须跟着 ...
+    /hello(?= world)/.test('hello world');  // true
+    /hello(?= world)/.test('hello there');  // false
+
+    // 负向前瞻（Negative Lookahead）：后面不能跟着 ...
+    /hello(?! world)/.test('hello there');  // true
+    /hello(?! world)/.test('hello world');  // false
+
+    // 正向后顾（Lookbehind）：前面必须是 ...（ES2018）
+    /(?<=hello) world/.test('hello world');  // true
+    /(?<=hello) world/.test('hi world');     // false
+
+    // 负向后顾（Negative Lookbehind）：前面不能是 ...（ES2018）
+    /(?<!hello) world/.test('hi world');     // true
+    /(?<!hello) world/.test('hello world');  // false
+    ```
+
+    断言的实际应用：
+    ```javascript
+    // 密码强度验证（至少包含大小写字母和数字）
+    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test('Abc12345');
+
+    // 匹配价格（但不包含货币符号）
+    /(?<=\$)\d+\.\d{2}/.exec('$19.99');  // ['19.99']
+    ```"
+
+  </Accordion>
+
+  <Accordion title='正则表达式的 exec 和 match 方法有什么区别？' icon="stopwatch">
+
+    **答题要点：**
+    exec 返回单个匹配（需循环），match 在全局模式下返回所有匹配。
+
+    **高分回答：**
+    "`exec` 和 `match` 的区别：
+
+    ```javascript
+    // exec：返回一个匹配，需要循环调用
+    const regex = /\d+/g;
+    const str = '123 abc 456';
+    let match;
+    while ((match = regex.exec(str)) !== null) {
+      console.log(match[0], match.index);
+    }
+    // '123' 0
+    // '456' 8
+
+    // match：返回所有匹配
+    '123 abc 456'.match(/\d+/g);
+    // ['123', '456']
+    ```
+
+    区别：
+    1. **返回值**：`exec` 返回一个匹配对象（包含 index、groups 等），`match` 在全局模式下返回字符串数组
+    2. **捕获组**：`exec` 返回捕获组，`match` 在全局模式下不返回捕获组
+    3. **循环**：`exec` 需要循环调用，`match` 一次返回所有匹配
+
+    ```javascript
+    // exec 可以获取捕获组
+    /(\d+)-(\d+)/.exec('123-456');
+    // ['123-456', '123', '456']
+
+    // match 在全局模式下不返回捕获组
+    '123-456 789-012'.match(/(\d+)-(\d+)/g);
+    // ['123-456', '789-012']  // 没有捕获组
+    ```"
+
+  </Accordion>
+
+  <Accordion title='如何优化正则表达式的性能？' icon="node">
+
+    **答题要点：**
+    避免嵌套量词、锚定开头、使用非捕获分组。
+
+    **高分回答：**
+    "优化正则表达式的方法：
+
+    1. **锚定开头**：减少匹配尝试次数
+    ```javascript
+    /^hello/.test('say hello');  // 从头开始匹配，快速失败
+    ```
+
+    2. **避免嵌套量词**：防止灾难性回溯
+    ```javascript
+    // ❌ 嵌套量词
+    /(a+)+$/;
+
+    // ✅ 简单量词
+    /^a+$/;
+    ```
+
+    3. **使用非捕获分组**：减少回溯开销
+    ```javascript
+    // ❌ 捕获分组（额外开销）
+    /(abc)+/;
+
+    // ✅ 非捕获分组（更快）
+    /(?:abc)+/;
+    ```
+
+    4. **使用更精确的字符集**：避免过度匹配
+    ```javascript
+    // ❌ 过度匹配
+    /.+/;
+
+    // ✅ 精确匹配
+    /[a-zA-Z0-9]+/;
+    ```
+
+    5. **编译正则**：复用已编译的正则
+    ```javascript
+    // ❌ 每次都创建新正则
+    function test(str) {
+      return /^[a-z]+$/.test(str);
+    }
+
+    // ✅ 编译一次，多次使用
+    const regex = /^[a-z]+$/;
+    function test(str) {
+      return regex.test(str);
+    }
+    ```"
+
+  </Accordion>
+
+  <Accordion title='为什么用正则解析 HTML 是错误的？' icon="node">
+
+    **答题要点：**
+    HTML 不是正则语言，嵌套标签无法正确处理。
+
+    **高分回答：**
+    "HTML 不是**正则语言**（Regular Language），用正则解析 HTML 会导致各种边界问题：
+
+    ```javascript
+    // ❌ 用正则解析嵌套标签——无法正确处理
+    '<div><p>hello</p></div>'.match(/<div>(.*?)<\/div>/);
+    // 匹配到 '<p>hello</p>'，但如果嵌套更深就会出错
+
+    // ❌ 无法处理嵌套的同名标签
+    '<div><div>hello</div></div>'.match(/<div>(.*?)<\/div>/);
+    // 匹配到 '<div>hello'，而不是 '<div>hello</div>'
+    ```
+
+    正确做法是用 DOMParser：
+    ```javascript
+    // ✅ 用 DOMParser 解析 HTML
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlString, 'text/html');
+    const div = doc.querySelector('div');
+    console.log(div.textContent); // 'hello'
+    ```
+
+    为什么正则不能解析 HTML？
+    1. **嵌套结构**：HTML 有嵌套标签，正则无法正确匹配嵌套结构
+    2. **属性复杂**：HTML 属性可以包含引号、转义字符等
+    3. **错误容忍**：浏览器对 HTML 的解析是容错的，正则无法处理错误的 HTML"
+
+  </Accordion>
+
+  <Accordion title='🔥 正则表达式的灾难性回溯是怎么回事？' icon="skull">
+
+    **答题要点：**
+    嵌套量词导致指数级的回溯尝试。
+
+    **高分回答：**
+    "灾难性回溯发生在**嵌套量词**的场景。以 `/(a+)+$/` 为例：
+
+    ```javascript
+    const regex = /^(a+)+$/;
+    regex.test('aaaaaaaaaaaaaaaaaaaaaaaaaaaac');
+    // 引擎需要尝试 2^30 种可能性，耗时数秒
+    ```
+
+    原理：
+    1. 外层 `+` 尝试把字符串分成 1 组、2 组、...、n 组
+    2. 内层 `+` 对每种分组方式，尝试不同的分割点
+    3. 如果最后发现不匹配（因为有 `c`），需要回溯尝试所有可能性
+    4. 总共有 2^n 种可能性（n 是 a 的个数）
+
+    避免方法：
+    ```javascript
+    // ❌ 嵌套量词
+    /(a+)+$/;
+
+    // ✅ 简单量词
+    /^a+$/;
+
+    // ✅ 使用原子组（如果引擎支持）
+    // /^(?>a+)+$/;  // 原子组（JavaScript 不支持）
+    ```
+
+    实际项目中的例子：
+    ```javascript
+    // ❌ 验证邮箱的危险正则
+    /^([a-zA-Z0-9]+\.)+[a-zA-Z]{2,}$/
+
+    // 如果输入是 'aaaaaaaaaaaaaaaaaaaaaaaaaaaac'
+    // 引擎会尝试所有可能的分组方式，导致灾难性回溯
+
+    // ✅ 安全的邮箱验证
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    ```
+
+  </Accordion>
+
+  <Accordion title='🔥 如何用正则实现一个模板引擎？' icon="skull">
+
+    **答题要点：**
+    用正则匹配模板变量，用 replace 替换。
+
+    **高分回答：**
+    "用正则实现一个简易的模板引擎：
+
+    ```javascript
+    function render(template, data) {
+      return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+        return data[key] !== undefined ? data[key] : match;
+      });
+    }
+
+    const template = 'Hello, {{name}}! You are {{age}} years old.';
+    const data = { name: 'Alice', age: 25 };
+    console.log(render(template, data));
+    // 'Hello, Alice! You are 25 years old.'
+    ```
+
+    进阶：支持嵌套属性
+    ```javascript
+    function render(template, data) {
+      return template.replace(/\{\{([\w.]+)\}\}/g, (match, path) => {
+        const keys = path.split('.');
+        let value = data;
+        for (const key of keys) {
+          if (value === undefined) return match;
+          value = value[key];
+        }
+        return value !== undefined ? value : match;
+      });
+    }
+
+    const template = 'Hello, {{user.name}}! Your email is {{user.email}}.';
+    const data = { user: { name: 'Alice', email: 'alice@example.com' } };
+    console.log(render(template, data));
+    // 'Hello, Alice! Your email is alice@example.com.'
+    ```
+
+    更复杂的需求可以用 `new Function` 实现：
+    ```javascript
+    function compile(template) {
+      const code = template.replace(/\{\{(.+?)\}\}/g, '${$1}');
+      return new Function('data', `with(data) { return \`${code}\`; }`);
+    }
+
+    const render = compile('Hello, {{name}}!');
+    console.log(render({ name: 'Alice' })); // 'Hello, Alice!'
+    ```
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [MDN 正则表达式指南](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions)：Mozilla 官方对 JavaScript 正则表达式的完整指南。<sup>[1]</sup>
+- 📖 [正则表达式调试工具](https://regex101.com/)：在线正则表达式测试和调试工具，支持多种引擎。<sup>[2]</sup>
+- 🟢 [V8 正则引擎源码](https://github.com/v8/v8/blob/main/src/regexp/)：V8 引擎的正则表达式实现，包括解析器和执行引擎。<sup>[3]</sup>
+- 📘 [Regular Expression Matching Can Be Simple And Fast](https://swtch.com/~rsc/regexp/regexp1.html)：Russ Cox 对正则引擎 NFA 和 DFA 的经典分析。<sup>[4]</sup>

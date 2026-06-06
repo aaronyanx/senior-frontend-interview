@@ -1,0 +1,469 @@
+---
+title: "Next.js"
+---
+
+> **面试官为什么问这个？**
+>
+> Next.js 是 React 生态中最主流的全栈框架，几乎垄断了中大型 React 项目的工程化方案。面试官问这个，本质上是在考察你：**你能不能从"会写 React 组件"跨越到"能设计整站渲染架构"？** 如果你答不清楚 SSR/SSG/ISR 的区别和选型依据，说明你对前端工程化的理解停留在"本地 dev 能跑"的层面。
+
+---
+
+## Q1: Next.js 是什么？为什么用它而不是纯 React？
+
+<Steps>
+
+  <Step title="2013年前后: SPA 统治前端">
+
+    React 2013 年开源后，单页应用（SPA）成为主流范式。浏览器先下载一个空 HTML 和一大坨 JS，执行后才渲染页面——整个过程对用户和搜索引擎都是"黑屏等待"。
+
+  </Step>
+  <Step title="致命痛点: 首屏白屏 + SEO 灾难">
+
+    SPA 的首屏体验极度依赖 JS Bundle 的下载和执行速度。网速慢或 JS 文件大时，用户看到长达数秒的白屏。更致命的是，搜索引擎爬虫拿到的是空 `<div id="root"></div>`，SEO 直接归零。
+
+  </Step>
+  <Step title="2016年: Next.js 横空出世">
+
+    Vercel（前身为 ZEIT）推出了 Next.js，核心理念是：**在服务端把 React 组件渲染成 HTML 再发给浏览器**。用户拿到的就是完整页面，爬虫也能正常抓取。同时提供文件系统路由、自动代码分割、API Routes 等开箱即用的能力。
+
+  </Step>
+  <Step title="核心机制: 混合渲染策略">
+
+    Next.js 不是只做 SSR，而是提供了 SSR、SSG、ISR、CSR 四种渲染策略，让开发者按页面粒度选择最合适的方案。一个项目中可以同时存在 SSR 页面（动态数据）和 SSG 页面（静态内容），互不干扰。
+
+  </Step>
+  <Step title="关键洞察: 从 UI 库到全栈框架">
+
+    React 本身只是一个 UI 渲染库，不关心路由、数据获取、服务端渲染。Next.js 补齐了这些缺失的拼图，让 React 具备了生产级的工程化能力。这也是为什么 Vercel 的 CEO Guillermo Rauch 说："Next.js 就是 React 的生产环境。"
+
+  </Step>
+
+</Steps>
+
+**Next.js 解决的核心问题：**
+
+```text
+问题：纯 React SPA = 首屏白屏 + SEO 灾难
+
+用户访问 → 下载空 HTML → 下载 JS Bundle（数百 KB）→ 执行 JS → 渲染页面
+爬虫访问 → 看到空 HTML → 放弃抓取
+
+解决：服务端预渲染 + 客户端 Hydration
+
+用户访问 → 服务端渲染完整 HTML → 立即显示页面 → 后台加载 JS → 页面可交互
+爬虫访问 → 拿到完整 HTML → 正常索引
+```
+
+**一句话总结：Next.js 让 React 从"客户端渲染的 UI 库"进化为"服务端 + 客户端混合渲染的全栈框架"。**
+
+<CardGroup cols={2}>
+
+<Card title="没有 Next.js (纯 React SPA) ">
+
+纯 SPA 只能在客户端渲染，所有 HTML 都是 JS 执行后动态生成的。就像一家餐厅只提供"现做"服务——每个客人来了都得从和面开始等，饿着肚子看厨师忙活半天。
+
+</Card>
+<Card title="引入 Next.js">
+
+Next.js 在服务端预先渲染好 HTML，用户打开页面就能直接看到内容。就像餐厅提前备好了招牌菜（SSG），或者你一点单厨师就立刻出锅（SSR），不用从零开始等。
+
+</Card>
+</CardGroup>
+
+<Tip title="面试技巧">
+
+回答时先说"为什么"（SPA 的白屏和 SEO 问题），再说"怎么解决"（服务端预渲染）。面试官想听的是你理解问题的本质，而不是背诵 Next.js 的功能列表。
+
+</Tip>
+
+---
+
+## Q2: SSR vs SSG vs ISR vs CSR 到底怎么选？
+
+渲染策略的本质是**在"数据新鲜度"和"性能/成本"之间做权衡**，核心逻辑只有 4 种选择：
+
+```text
+┌───────────────────────────────────────────┐
+│            CSR（客户端渲染）                 │  ← 全靠浏览器 JS，最慢但最灵活
+└─────────────────┬─────────────────────────┘
+                  │ 需要 SEO / 首屏速度？
+                  ▼
+┌───────────────────────────────────────────┐
+│            SSR（服务端渲染）                 │  ← 每次请求实时渲染，数据最新
+└─────────────────┬─────────────────────────┘
+                  │ 数据变化不频繁？
+                  ▼
+┌───────────────────────────────────────────┐
+│            ISR（增量静态再生）               │  ← 静态缓存 + 按需后台刷新
+└─────────────────┬─────────────────────────┘
+                  │ 数据几乎不变？
+                  ▼
+┌───────────────────────────────────────────┐
+│            SSG（静态站点生成）               │  ← 构建时生成，CDN 直接返回，最快
+└───────────────────────────────────────────┘
+```
+
+```javascript
+// SSR：每次请求都在服务端执行，数据永远最新
+// 适用：用户个人页、搜索结果页、实时数据看板
+export async function getServerSideProps(context) {
+  const data = await fetch('https://api.example.com/user/' + context.params.id);
+  return { props: { user: await data.json() } };
+}
+
+// SSG：构建时生成静态 HTML，CDN 直接返回
+// 适用：博客、文档、营销落地页
+export async function getStaticProps() {
+  const posts = await fetch('https://api.example.com/posts');
+  return { props: { posts: await posts.json() } };
+}
+
+// ISR：静态页面按需后台重新生成，兼顾速度和新鲜度
+// 适用：电商商品页、新闻列表
+export async function getStaticProps() {
+  const products = await fetch('https://api.example.com/products');
+  return {
+    props: { products: await products.json() },
+    revalidate: 60, // 60 秒后，下次访问触发后台重新生成
+  };
+}
+
+// App Router 等价写法（Next.js 13+）
+async function ProductPage() {
+  // 等价于 SSR
+  const data = await fetch('https://api.example.com/data', { cache: 'no-store' });
+  // 等价于 SSG
+  const data2 = await fetch('https://api.example.com/data', { cache: 'force-cache' });
+  // 等价于 ISR
+  const data3 = await fetch('https://api.example.com/data', { next: { revalidate: 60 } });
+  return <div>{/* ... */}</div>;
+}
+```
+
+<Warning title="核心机制: ISR 的两阶段返回">
+
+ISR 的行为很容易被误解。当一个静态页面的 revalidate 时间过期后：
+
+- 第一个请求者拿到的仍然是**旧的缓存页面**（不是新的）。
+- Next.js 在**后台触发重新生成**，生成完毕后替换缓存。
+- **下一个请求者**才能拿到新页面。
+
+这意味着 ISR 存在一个"脏窗口期"——revalidate 过期后到重新生成完成前，用户看到的是过期数据。如果你的业务对数据一致性要求极高（如金融报价），ISR 不是正确选择，应该用 SSR。
+
+参考：[Next.js 源码：packages/next/src/server/base-http/index.ts](https://github.com/vercel/next.js/blob/canary/packages/next/src/server/base-http/index.ts)
+
+</Warning>
+
+<Tip title="通俗比喻: 餐厅的四种出餐模式">
+
+SSR 就像"现点现做"——你点了鱼香肉丝，厨师立刻起锅烧油，最新鲜但最慢。SSG 就像"提前做好放保温柜"——你来了直接拿，最快但菜可能凉了。ISR 就像"保温柜 + 定时换新"——大部分时间直接拿，但如果菜放超过 60 秒，后台厨师会做一份新的替换，下一个客人就能拿到刚出锅的。CSR 就像"给你食材和锅，自己在桌上炒"——完全在客户端完成，厨师（服务器）不参与。
+
+</Tip>
+
+---
+
+## Q3: Pages Router vs App Router 有什么区别？
+
+### 基础梳理
+
+| 对比维度 | Pages Router | App Router |
+|---------|-------------|-----------|
+| **引入版本** | Next.js 9（2019） | Next.js 13（2022） |
+| **React 版本** | React 17/18 | React 18+（必须） |
+| **组件模型** | 所有组件默认客户端执行 | Server Components（默认）+ Client Components |
+| **数据获取** | `getServerSideProps` / `getStaticProps` | async 组件直接 `await` |
+| **布局系统** | `_app.tsx` + 手动嵌套 | 原生嵌套 `layout.tsx` |
+| **流式渲染** | 不支持 | 支持（Suspense + Streaming） |
+| **Server Actions** | 不支持 | 支持（表单直接调用服务端函数） |
+| **缓存策略** | 手动控制 | 自动缓存（fetch 默认缓存） |
+
+### 专家视角深度剖析
+
+很多候选人只能背诵上面的表格，但大厂面试官真正在意的是：**App Router 的架构设计到底解决了 Pages Router 的哪些根本性缺陷？**
+
+Pages Router 时代的根本矛盾是：**组件代码既在服务端执行（SSR），又在客户端执行（Hydration），但你无法控制哪些部分只在服务端跑。** 每个组件都会被打包进客户端 JS Bundle，即使它只是用来查询数据库和渲染静态内容。这导致了两个严重问题：
+
+1. **JS Bundle 臃肿**：服务端数据获取的逻辑（如 ORM 调用、数据库查询）也被打包进客户端 JS，白白增大了包体积。
+2. **瀑布流请求**：`getServerSideProps` 只能在页面级别调用，不能在组件级别独立获取数据。如果页面有多个数据源，必须在顶层串行等待，形成"请求瀑布流"。
+
+App Router 引入 **React Server Components（RSC）** 彻底解决了这个问题。RSC 的核心思想是：**组件默认只在服务端执行，不会被发送到客户端。** 只有显式标记了 `'use client'` 的组件才会被打包进客户端 JS。这意味着：
+
+- 服务端组件可以直接 `await` 数据库查询，零客户端 JS 开销。
+- 每个组件可以独立获取数据，Next.js 会自动并行化请求。
+- 布局（Layout）在页面切换时不会重新渲染，只渲染变化的子页面。
+
+```javascript
+// Pages Router：数据获取只能在页面顶层，形成瀑布流
+// pages/dashboard.tsx
+export async function getServerSideProps() {
+  const user = await fetchUser();      // 等 200ms
+  const orders = await fetchOrders();  // 再等 300ms
+  const stats = await fetchStats();    // 再等 150ms
+  // 总耗时：650ms（串行）
+  return { props: { user, orders, stats } };
+}
+
+// App Router：每个组件独立获取数据，自动并行化
+// app/dashboard/page.tsx
+async function Dashboard() {
+  // Next.js 会自动并行执行这三个请求
+  return (
+    <Layout>
+      <UserProfile />   {/* 独立 await fetchUser() */}
+      <OrderList />     {/* 独立 await fetchOrders() */}
+      <StatsPanel />    {/* 独立 await fetchStats() */}
+    </Layout>
+  );
+}
+// 总耗时：max(200, 300, 150) = 300ms（并行）
+```
+
+---
+
+## Q4: Server Actions 和 API Routes 有什么区别？
+
+**Server Actions 的本质：**
+
+Server Actions 是 Next.js 14 正式稳定的 RPC（远程过程调用）机制。它允许你在客户端组件中直接调用服务端函数，不需要手动写 HTTP 请求。
+
+```javascript
+// API Routes 方式（传统 REST）
+// app/api/users/route.ts
+export async function POST(request: Request) {
+  const { name, email } = await request.json();
+  await db.insert({ name, email });
+  return Response.json({ success: true });
+}
+
+// 客户端需要手动 fetch
+'use client';
+async function handleSubmit(formData: FormData) {
+  const res = await fetch('/api/users', {
+    method: 'POST',
+    body: JSON.stringify({ name: formData.get('name'), email: formData.get('email') }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const data = await res.json();
+  revalidate(); // 手动刷新
+}
+
+// Server Actions 方式（RPC 风格）
+// app/actions.ts
+'use server';
+export async function createUser(formData: FormData) {
+  const name = formData.get('name') as string;
+  const email = formData.get('email') as string;
+  await db.insert({ name, email });
+  revalidatePath('/users'); // 自动刷新页面
+}
+
+// 客户端直接调用，零 fetch 代码
+'use client';
+import { createUser } from './actions';
+function Form() {
+  return (
+    <form action={createUser}>
+      <input name="name" />
+      <input name="email" />
+      <button type="submit">创建</button>
+    </form>
+  );
+}
+```
+
+**经典踩坑：Server Actions 不是万能的。**
+
+```javascript
+// 踩坑 1：Server Actions 有大小限制
+// Vercel 的 Server Actions 请求体上限默认为 1MB
+// 上传文件需要用 Multipart Upload，不能直接 formData.get('file')
+'use server';
+export async function uploadFile(formData: FormData) {
+  const file = formData.get('file') as File;
+  // 如果文件 > 1MB，会直接报 413 Payload Too Large
+  const buffer = Buffer.from(await file.arrayBuffer());
+  await fs.writeFile('./uploads/' + file.name, buffer);
+}
+
+// 踩坑 2：Server Actions 是顺序执行的，不支持并行
+// 如果一个表单有多个 action，它们会串行执行
+<form action={async () => {
+  await createUser(formData);     // 先执行
+  await sendWelcomeEmail(email);  // 再执行
+}}>
+
+// 踩坑 3：错误处理需要 try/catch，不会自动返回 HTTP 状态码
+'use server';
+export async function createUser(formData: FormData) {
+  try {
+    await db.insert({ name: formData.get('name') });
+  } catch (e) {
+    // 必须自己处理错误，不能像 API Routes 那样 return 500
+    throw new Error('创建失败'); // 客户端会收到这个错误
+  }
+}
+```
+
+**关键区别：**
+
+| 对比维度 | API Routes | Server Actions |
+|---------|-----------|---------------|
+| **调用方式** | HTTP 请求（fetch/axios） | 直接函数调用（RPC） |
+| **序列化** | 手动 JSON 序列化/反序列化 | 自动序列化（支持 FormData、Blob 等） |
+| **适用场景** | 第三方 Webhook、公开 API | 表单提交、内部数据变更 |
+| **类型安全** | 需要手动维护类型 | 自动推导（TypeScript 原生支持） |
+| **缓存集成** | 需要手动 revalidate | 自动集成 revalidatePath / revalidateTag |
+| **请求大小** | 无限制（自行控制） | 默认 1MB（Vercel 限制） |
+
+<Tip title="最佳实践">
+
+Server Actions 用于项目内部的表单提交和数据变更（增删改），API Routes 用于对外暴露的接口和第三方集成（Webhook、OAuth 回调）。两者不是替代关系，而是互补关系。不要把所有 API 都迁移到 Server Actions。
+
+</Tip>
+
+---
+
+## 🔍 底层源码：Next.js 是如何实现渲染的？
+
+<div class="follow-up">
+Next.js 的 SSR 渲染流程在源码中是怎么实现的？
+</div>
+
+Next.js 的服务端渲染核心在 `packages/next/src/server/render.tsx` 中。渲染流程分为三个阶段（详见 [Next.js 源码：packages/next/src/server/render.tsx](https://github.com/vercel/next.js/blob/canary/packages/next/src/server/render.tsx)）：
+
+```typescript
+// 简化的渲染流程（Next.js Pages Router）
+async function renderToHTML(req, res, pathname, query) {
+  // 1. 执行数据获取
+  const data = await getServerSideProps({ req, res, params, query });
+
+  // 2. 用 React 渲染成 HTML 字符串
+  const html = ReactDOMServer.renderToString(
+    <RouterContext.Provider value={router}>
+      <App Component={Component} props={data.props} />
+    </RouterContext.Provider>
+  );
+
+  // 3. 注入 HTML 到文档模板，返回给客户端
+  return `<!DOCTYPE html><html><body>${html}</body></html>`;
+}
+```
+
+这段代码做了 3 件事：先调用 `getServerSideProps` 获取数据，再用 `ReactDOMServer.renderToString` 把 React 组件树序列化为 HTML 字符串，最后把 HTML 注入到文档模板中返回给浏览器。
+
+<div class="follow-up">
+App Router 的 RSC（React Server Components）又是怎么实现的？
+</div>
+
+App Router 的核心是 RSC 协议，实现在 `packages/next/src/server/app-render/` 目录下（详见 [Next.js 源码：packages/next/src/server/app-render/rsc/render.tsx](https://github.com/vercel/next.js/blob/canary/packages/next/src/server/app-render/rsc/render.tsx)）：
+
+```typescript
+// RSC 渲染的核心概念：组件树被序列化为 RSC Payload（一种流式 JSON 格式）
+// 而不是 HTML 字符串
+
+// 简化的 RSC 渲染流程：
+async function renderToReadableStream(rscStream) {
+  // 1. 服务端组件在服务端执行，生成 RSC Payload
+  //    RSC Payload 不是 HTML，而是一种描述组件树的流式 JSON
+  const flightData = await renderToReadableStream(
+    <RootLayout>
+      <Page />
+    </RootLayout>
+  );
+
+  // 2. RSC Payload 通过 HTTP 流式传输到客户端
+  //    客户端的 React 运行时（不是 ReactDOM）负责把 Payload 渲染为 DOM
+
+  // 3. 客户端组件被打包进 JS Bundle，由客户端执行
+  //    服务端组件的代码完全不进入客户端 Bundle
+}
+```
+
+RSC 的关键设计：服务端组件和客户端组件通过一个"边界"（`'use client'` 指令）分离。服务端组件的渲染结果以 RSC Payload（流式 JSON）的形式传输，而不是 HTML。客户端的 React 运行时消费这个 Payload，结合客户端组件的 JS 代码，最终渲染为 DOM。这就是为什么服务端组件可以 `await` 数据库查询而不会增加客户端 JS 体积——它们的代码永远不会到达浏览器。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 Next.js 的渲染策略，什么时候用 SSR，什么时候用 SSG？"
+
+**及格回答（60-70分）：**
+> "SSR 是每次请求时在服务端渲染，适合动态数据。SSG 是构建时生成静态页面，适合不怎么变的内容。ISR 是 SSG 的增强版，可以按需重新生成。"
+
+面试官评价：**知道定义但不理解选型逻辑**。
+
+**满分回答（90-100分）：**（4 段，每段 3-5 句）
+
+> Next.js 提供四种渲染策略，本质是在"数据新鲜度"和"性能成本"之间做权衡。SSR 每次请求都执行服务端渲染，数据永远最新，但服务器 CPU 是瓶颈——高并发场景下需要配合 Redis 缓存或 CDN 回源保护。SSG 在构建时生成静态 HTML，CDN 直接返回，首屏极快但数据可能过期，适合内容不常变化的页面<sup>[1]</sup>。
+
+> ISR 是最具工程价值的策略。它结合了 SSG 的性能和 SSR 的新鲜度：页面静态缓存，但 revalidate 时间过期后，下一个请求触发后台重新生成。关键细节是，第一个请求者拿到的仍然是旧页面，新页面要等重新生成完成后才对后续请求可见<sup>[2]</sup>。这意味着 ISR 存在"脏窗口期"，不适合对数据一致性要求极高的场景。
+
+> App Router 引入了 React Server Components，把渲染策略从"页面级"细化到了"组件级"。服务端组件默认不发送 JS 到客户端，可以安全地调用数据库。每个组件独立获取数据，Next.js 自动并行化，解决了 Pages Router 时代的"请求瀑布流"问题<sup>[3]</sup>。
+
+> 实际项目选型：电商商品详情页用 ISR（revalidate: 10s，CDN 扛流量），搜索结果页用 SSR（每次查询不同），文档站用 SSG（内容固定），后台管理系统用 CSR（不需要 SEO）。一个项目中可以混合使用多种策略，按页面粒度选择最优方案。
+
+### 大厂高频连环拷问
+
+> 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。
+
+<AccordionGroup>
+
+  <Accordion title="Next.js 的缓存策略有哪几层?" icon="layer-group">
+
+    **答题要点：**
+    不能只说"Next.js 有缓存"，必须精确到四层缓存的名字和作用域。
+
+    **高分回答：**
+    "Next.js 有四层缓存。第一层是 **Request Memoization**，作用域是单次渲染周期——同一个 Server Component 树中，相同 URL 的 `fetch` 请求只执行一次，底层用 `React.cache()` 实现。第二层是 **Data Cache**，作用域是跨请求的——`fetch` 的结果默认被持久化缓存，直到手动 `revalidateTag` 或 `revalidatePath`。第三层是 **Full Route Cache**，作用域是跨请求的页面级——静态渲染的页面在构建时缓存为 RSC Payload + HTML，动态渲染的页面在首次请求时缓存。第四层是 **Router Cache**，作用域是客户端会话级——浏览器缓存已访问路由的 RSC Payload，前进后退时直接用缓存，不需要重新请求服务端。
+
+    需要注意的是，`fetch` 默认缓存在 App Router 中是开启的，这和浏览器原生 `fetch` 不缓存的行为不同，是一个常见的踩坑点。"
+
+  </Accordion>
+
+  <Accordion title="Server Actions 和 API Routes 怎么选?" icon="stopwatch">
+
+    **答题要点：**
+    必须强调互补关系，不是替代关系。还要指出 Server Actions 的限制。
+
+    **高分回答：**
+    "Server Actions 和 API Routes 是互补关系，不是替代关系。Server Actions 适用于项目内部的数据变更操作——表单提交、删除、更新等。它的优势是零 fetch 样板代码、自动类型推导、自动集成 revalidate。API Routes 适用于对外暴露的接口——第三方 Webhook 回调、OAuth 认证、公开的 REST API。
+
+    Server Actions 有几个关键限制需要注意：请求体大小默认 1MB（Vercel 限制），不能用于大文件上传；它是顺序执行的，不支持并行调用多个 Action；错误处理需要 try/catch，不会自动返回 HTTP 状态码。所以最佳实践是：内部表单用 Server Actions，对外接口用 API Routes。"
+
+  </Accordion>
+
+  <Accordion title="Hydration 是什么?Hydration 失败会怎样?" icon="node">
+
+    **答题要点：**
+    必须解释 Hydration 的机制和失败时的表现，以及常见失败原因。
+
+    **高分回答：**
+    "Hydration（注水）是 SSR 的客户端阶段。服务端渲染生成 HTML 发送到浏览器后，用户立即看到页面但无法交互。然后浏览器下载 JS Bundle，React 在客户端'接管'这个 HTML——把事件监听器绑定到 DOM 节点上，让页面变得可交互。这个过程就像给一个充气娃娃注入灵魂。
+
+    Hydration 失败（Hydration Mismatch）发生在服务端渲染的 HTML 和客户端首次渲染的结果不一致时。常见原因有：在组件中使用了 `Date.now()`、`Math.random()` 等非确定性 API；直接读取 `window`、`localStorage` 等浏览器 API；`useEffect` 中的状态在首次渲染前就被消费。失败时 React 会在控制台报错，严重时会触发整个组件树的客户端重新渲染（降级为纯 CSR），白屏时间大幅增加。"
+
+  </Accordion>
+
+  <Accordion title="Next.js 的 Middleware 和 Express 中间件有什么区别?" icon="skull">
+
+    **答题要点：**
+    对比运行时环境，点出 Edge Runtime 的限制。
+
+    **高分回答：**
+    "Next.js 的 Middleware 运行在 **Edge Runtime** 上，而不是 Node.js Runtime。这意味着它不能使用 `fs`、`path`、`crypto` 等 Node.js 原生模块，也不能使用大多数 npm 包（除非它们兼容 Edge）。它的执行时机在路由匹配之前——比所有 Server Components 和 API Routes 都早，适合做鉴权重定向、A/B 测试、地理位置判断等轻量逻辑。
+
+    和 Express 中间件的核心区别有三点：1) 运行环境不同——Next.js Middleware 在 Edge Runtime（基于 WinterCG 标准），Express 在 Node.js；2) 执行范围不同——Next.js Middleware 通过 `config.matcher` 精确匹配路径，Express 是全局管道；3) 能力限制不同——Next.js Middleware 不能读写响应体（只能修改请求头和做重定向），Express 可以完全控制请求和响应。
+
+    如果需要在 Middleware 中使用 Node.js API，应该切换到 Server Components 或 Route Handlers 处理，而不是试图在 Middleware 中强行使用。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [Next.js 官方文档 - Rendering](https://nextjs.org/docs/app/building-your-application/rendering)：官方对 SSR/SSG/ISR/CSR 四种渲染策略的最权威解释，包含 App Router 的最新 API。<sup>[1]</sup>
+- 📖 [React Server Components 协议提案](https://github.com/reactjs/rfcs/blob/main/text/0188-server-components.md)：React 团队对 RSC 架构的 RFC 设计文档，解释了为什么要把组件分为服务端和客户端两类。<sup>[2]</sup>
+- 🟢 [Vercel 博客：Making the Web Faster](https://vercel.com/blog)：Vercel 工程团队对 Next.js 缓存策略、ISR 实现原理的深度技术博客。<sup>[3]</sup>
+- 🔗 [Next.js GitHub 源码](https://github.com/vercel/next.js)：`packages/next/src/server/` 目录包含 SSR 渲染、RSC Payload 生成、缓存管理的核心实现。

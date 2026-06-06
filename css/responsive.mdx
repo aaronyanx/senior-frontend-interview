@@ -1,0 +1,408 @@
+---
+title: "响应式与移动端适配"
+---
+
+> **面试官为什么问这个？**
+>
+> 面试官问这个，本质上是在考察你是否具备跨越无数尺寸碎片的**"物理设备适配"工业级解决能力**。如果你做移动端还在用死板的 `px`，或者不知道 Retina 高分屏下 1px 会变成粗糙的 2px 线条，说明你对物理像素与逻辑像素的硬件屏障完全缺乏基础认知。
+
+---
+
+## Q1: 移动端适配发展史与最佳方案选型
+
+<Steps>
+
+  <Step title="上古时代的百分比与媒体查询">
+
+  早年面对不同的屏幕宽度，前端只能写 `width: 50%`，或者写冗长的 `@media (max-width: 320px)` 媒体查询断点。这导致代码极度臃肿，且在面对不可预知的奇葩机型屏幕时，依然会出各种怪异的布局裂缝。
+
+  </Step>
+  <Step title='致命痛点：设备碎片化的鸿沟'>
+
+  从 320px 的 iPhone SE 到 428px 的 iPhone 14 Pro Max，再到 768px 的 iPad，屏幕尺寸碎片化到了令人绝望的程度。每新增一种设备，就要多写一套媒体查询，维护成本指数级增长。
+
+  </Step>
+  <Step title="大一统的标准方案: vw / vh 视口单位">
+
+  随着现代浏览器对新规范的全面支持，前端终于等来了原生的上帝单位--**视口单位（Viewport Units）**。`1vw` 永远等于精准的屏幕真实物理宽度的 1%。我们放弃了监听屏幕变化去动态改 `font-size` 的笨重 JS 脚本，全盘拥抱纯 CSS 方案（借助 PostCSS 插件在编译期直接将设计稿的 px 自动折算为 vw），实现了纯净、零运行时代价的终极适配。
+
+  </Step>
+  <Step title='物理像素与逻辑像素的硬件屏障'>
+
+  在 Retina 高分屏（DPR=3）上，你在 CSS 里写的 `1px` 是逻辑像素，浏览器为了填满视觉会动用 3x3 即 9 颗真实的物理发光点去渲染，导致 1px 的线看起来又粗又毛糙。这不是 CSS 的 bug，而是物理像素与逻辑像素映射错位导致的硬件级放大失真，直接写 `0.5px` 在部分安卓机型上会因无法解析而消失。
+
+  </Step>
+  <Step title="关键洞察: vw 不是万能的封顶策略">
+
+    `1vw` 在 375px 手机上等于 3.75px，但在 1440px 平板上等于 14.4px--字体会等比放大到脸盆大小。因此必须用媒体查询对平板端设定阈值封顶：`vw` 负责手机端的等比缩放，媒体查询负责平板端的封顶保护。同时，对于边框、圆角等装饰性细节，坚决保留固定 `px` 绝对值，只有阅读型文本和容器尺寸才用 vw 等比缩放。
+
+  </Step>
+
+</Steps>
+
+**响应式适配 解决的核心问题：**
+
+```text
+问题：设备碎片化--从 320px 到 2560px，每种屏幕都要单独适配
+
+媒体查询 → 为每种设备写一套 CSS → 代码臃肿 → 维护噩梦
+rem 方案 → 需要注入 JS 计算 font-size → 加载慢时页面闪烁
+
+解决：vw 视口单位--纯 CSS、零运行时、自动适配所有屏幕
+
+1vw = 屏幕宽度的 1% → PostCSS 插件自动将 375px 设计稿的 px 转为 vw → 一行媒体查询都不用写
+```
+
+<Note title="💡 一句话总结">
+
+vw 视口单位让移动端适配从"为每种设备写 CSS"变成了"PostCSS 自动转换"，是现代前端工程的最佳方案。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 传统 rem 方案 (已被淘汰)">
+
+需要在 HTML 头部阻塞注入一小段 JS（计算屏幕宽度以设置 HTML 的 font-size）。如果这段脚本加载慢了，页面初始渲染会瞬间错乱闪烁一下。
+
+</Card>
+<Card title='✅ 纯血 vw 方案 (现代大厂标配)'>
+
+无需任何运行时 JS 介入！在工程化打包（Webpack/Vite）阶段，利用 `postcss-px-to-viewport` 插件，直接将 UI 稿的 `375px` 物理尺寸，强行编译替换成对应的 `vw` 极值，完美顺滑。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么'（设备碎片化的痛点），再说"怎么解决"（vw 视口单位 + PostCSS 自动转换）。重点是理解适配方案的演进逻辑，而不是背诵 rem 的计算公式。
+
+</Tip>
+
+---
+
+## Q2: Retina 屏幕下致命的 1px 像素膨胀灾难
+
+移动端面试经典的"鬼门关"：明明设计稿上画的是 1px 的超细分割线，为什么在 iPhone 上看却显得又粗又毛糙，像被放大成了 2px 甚至 3px？
+
+```text
+┌───────────────────────────────────────┐
+│           CSS 1px（逻辑像素）           │  ← 你在代码里写的 1px
+└─────────────────┬─────────────────────┘
+                  │ 乘以 DPR（设备像素比）
+                  ▼
+┌───────────────────────────────────────┐
+│        物理像素（Device Pixel）         │  ← iPhone 14 (DPR=3) → 3 颗真实发光点
+└─────────────────┬─────────────────────┘
+                  │ 视觉效果
+                  ▼
+┌───────────────────────────────────────┐
+│        1px 变成了 3px 的粗线            │  ← 视觉上又粗又毛糙
+└───────────────────────────────────────┘
+```
+
+这触及了硬件的物理法则：**物理像素（Device Pixel）与逻辑像素（CSS Pixel）的决裂。**
+
+1. **逻辑像素**：你在 CSS 里写的 `1px`，这是个虚拟尺寸。
+2. **物理像素**：手机屏幕上微小的一颗真实发光 LED 二极管。
+3. **设备像素比 (DPR, Device Pixel Ratio)**：在早年，1个 CSS 像素刚好等于 1个物理发光点。但苹果推出了 Retina 高清屏（如 iPhone 14，DPR = 3）。为了不让网页缩小得看不清，系统强横地开启了**像素高保真拉伸**：你在 CSS 里写的 1px，浏览器为了填满视觉，会动用 3x3（即 9 颗）真实的物理发光点去渲染这条线！这就是 1px 变粗变糊的根本原因！
+
+<Warning title="⚠️ 机制: 物理像素与逻辑像素的决裂">
+
+正如 W3C 在 [CSS Values and Units Module Level 4](https://www.w3.org/TR/css-values-4/) 中定义的：**CSS 像素（px）是一个逻辑单位，它与物理像素的映射关系由设备像素比（DPR）决定。**
+
+- 在 DPR = 1 的普通屏幕上，1 CSS px = 1 物理像素。
+- 在 DPR = 3 的 Retina 屏上，1 CSS px = 3 物理像素（即 3x3 = 9 颗发光点）。
+- 所以 1px 的线在高分屏上会变粗--它被放大了 DPR 倍。
+
+</Warning>
+
+<Tip title='🎢 通俗比喻：像素膨胀'>
+
+逻辑像素就像"1 厘米"--它是一个抽象单位。在普通纸上画 1 厘米的线，和在高清打印纸上画 1 厘米的线，肉眼看粗细是一样的。但 Retina 屏就像高清打印纸--它用 3 颗物理发光点来表达你声明的"1 厘米"，结果这条线在视觉上就变成了 3 厘米粗。
+
+</Tip>
+
+---
+
+## Q3: rem、vw/vh 与媒体查询有什么区别？
+
+### 基础梳理
+
+| 对比维度 | rem 方案 | vw/vh 方案 | 媒体查询方案 |
+|---------|---------|-----------|-----------|
+| **运行时依赖** | 需要 JS 计算 font-size | 纯 CSS | 纯 CSS |
+| **适配精度** | 高（等比缩放） | 极高（精确到 1%） | 低（断点跳跃） |
+| **字体适配** | 天然支持 | 需要额外处理 | 需要额外处理 |
+| **平板适配** | 需要额外处理 | 需要封顶阈值 | 天然支持断点 |
+| **维护成本** | 中等 | 极低（PostCSS 自动转换） | 高（每种设备一套 CSS） |
+| **页面闪烁** | 有（JS 加载慢时） | 无 | 无 |
+
+### 专家视角深度剖析
+
+很多候选人只能背诵上面的表格，但大厂面试官真正在意的是：**为什么 vw 方案还需要媒体查询封顶？难道 vw 不是万能的吗？**
+
+vw 不是万能的。`1vw` 在 375px 的手机上等于 3.75px，在 1440px 的平板上等于 14.4px--**字体也会等比放大**！如果一个按钮在手机上是 14px，在平板上就会变成 50px 以上，大得像脸盆一样。所以我们需要用媒体查询对平板端设定**阈值封顶**：
+
+```css
+/* PostCSS 自动转换后的 vw 值 */
+.button { font-size: 3.733vw; } /* 375px 设计稿的 14px → 3.733vw */
+
+/* 平板封顶：超过 750px 后，字体固定为 14px */
+@media (min-width: 750px) {
+  .button { font-size: 14px; }
+}
+/* 关键点：vw 负责手机端的等比缩放，媒体查询负责平板端的封顶保护 */
+```
+
+```css
+/* 建议：边框、圆角等细微尺寸保留 px */
+.border { border: 1px solid #ccc; } /* 不要转成 vw！否则在大屏上边框会粗到离谱 */
+/* 关键点：阅读型文本用 vw 等比缩放，装饰型细节保留 px 绝对值 */
+```
+
+---
+
+## Q4: 经典面试题：1px 问题的最佳方案
+
+**直接写 0.5px 行不行？**
+天真的想法！很多新人试图直接写 `border: 0.5px solid black;`。在安卓庞大碎片的系统生态中，有些老旧的 WebView 渲染引擎或者奇葩厂商的深度定制系统，会直接把无法解析的小数点 `0.5px` 当作非法的 `0px` 处理掉！导致边框直接凭空消失，酿成恶劣的 UI 事故。
+
+**伪元素 + transform 的最佳方案：**
+利用伪元素（`::after`）构建一个巨大的长宽 200% 的虚拟边框图层，然后利用 `transform: scale(0.5)` 将整个虚拟图层暴力压缩 50% 并叠加在原元素之上！由于 `transform` 在 Blink 引擎底层走的是 GPU 亚像素级别的极限精度渲染，它能完美、物理级地在任何高分屏上压榨出真实的 1 个物理发光像素。
+
+**关键区别：**
+
+| 方案 | 兼容性 | 视觉效果 | 推荐度 |
+|------|-------|---------|-------|
+| `border: 0.5px` | ❌ 安卓部分机型消失 | ✅ 精准 | ❌ 不推荐 |
+| `border-image` | ✅ 好 | ⚠️ 不支持圆角 | ⚠️ 特定场景 |
+| `transform: scale(0.5)` | ✅ 极好 | ✅ 精准 | ✅ 推荐 |
+| `box-shadow` | ✅ 好 | ⚠️ 有模糊 | ⚠️ 特定场景 |
+
+<Tip title="建议: ">
+
+千万不要把所有的属性全转成 `vw`！对于边框线、细微的圆角，或者阅读型的超长文本字号，坚决保留使用固定 `px` 或者 `rem`，再配合媒体查询对平板端设定阈值封顶（不能在 iPad 上把字体也等比例拉长成脸盆那么大），这才是资深工程师的排版品味。
+
+</Tip>
+
+---
+
+## 🔍 源码：Blink 引擎是如何实现的？
+
+<div class="follow-up">
+浏览器是怎么把虚拟的 CSS px 乘上 DPR 的？
+</div>
+
+在 Chrome 的 Blink 渲染引擎底层，有一个全局重要的因子掌控着所有绘制尺寸的生杀大权（详见 [Blink 源码 src/core/page/page.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/page/page.cc)）：
+
+```cpp
+// 详见：Blink 源码 src/core/page/page.cc
+// 处理屏幕设备像素比 (DPR)
+
+void Page::SetDeviceScaleFactor(float scale_factor) {
+  // 当系统通知屏幕切换了（比如拖动到了 Retina 外接显示器），触发 DRP 重设
+  if (device_scale_factor_ == scale_factor) return;
+
+  device_scale_factor_ = scale_factor;
+
+  // 引擎最暴烈的一步：
+  // 一旦 DPR 改变，这不仅是放大那么简单，引擎必须强制向全站所有的 RenderObject 发出死亡通牒！
+  // 所有的排版（Layout）和绘制缓存（Paint Cache）瞬间干净地全部作废！必须以新的极值比例重新排版。
+  SetNeedsRecalcStyleInAllFrames();
+}
+
+// 在绘制具体的 CSS 1px 边框时：
+int LayoutUnit::ToPhysicalPixel() const {
+  // 引擎会将虚拟的 1px，直接乘上那个庞大的 device_scale_factor_（比如 3.0）
+  // 最终得出要在显卡上真正点亮的像素颗数！
+  return round(value * GetDeviceScaleFactor());
+}
+```
+
+<div class="follow-up">
+env(safe-area-inset-*) 在 Blink 中是怎么实现的？
+</div>
+
+在 Blink 底层，`env(safe-area-inset-*)` 是通过 `CSSEnvironmentVariables` 实现的。当系统通知浏览器屏幕存在安全区域（如刘海、底部横条）时，引擎会将这些区域的物理尺寸转换为 CSS 像素值，并注入到环境变量中。开发者通过 `env()` 函数读取这些值，实现安全区域的自适应布局。详见 [Blink 源码 src/core/css/css_environment_variables.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/css/css_environment_variables.cc)。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："请谈谈在移动端开发中，你是如何进行屏幕适配的？遇到过 Retina 屏 1px 的问题吗，怎么解决？"
+
+**及格回答（60-70分）：**
+> "我一般用 rem 来做适配，在 html 设置 font-size，或者直接用 vw 单位。1px 的问题遇到过，因为手机屏幕好，1px 会变成 2px。我一般用 transform 的 scale(0.5) 把它缩小一半来解决。"
+
+面试官评价：**知道规则但不理解设计**。
+
+**满分回答（90-100分）：**
+
+> 移动端适配的终极诉求，是跨越海量终端设备的碎裂鸿沟，实现**视觉比例的无损物理映射**。从 320px 的 iPhone SE 到 428px 的 iPhone 14 Pro Max，再到 768px 的 iPad，屏幕尺寸碎片化到了令人绝望的程度。而 1px 问题的本质是高分辨率屏幕（高 DPR）下，逻辑像素与物理发光点映射错位导致的放大失真——在 Retina 高分屏（DPR=3）上，CSS 的 1px 会动用 3x3 即 9 颗真实的物理发光点去渲染，导致线条看起来又粗又毛糙。<sup>[1]</sup>
+
+> 在适配架构上，业界经历了漫长的演进。从上古用 JS 动态强行劫持计算 html `font-size` 的 `rem` 方案（有页面闪烁问题），到现在清爽优雅、零运行时损耗的纯粹 CSS 视口单位（`vw/vh`）。`1vw` 永远等于精准的屏幕真实物理宽度的 1%，通过配置 PostCSS 插件（postcss-px-to-viewport），实现了开发期写标准 px、打包期全自动映射转化的高维工程化屏蔽。但 vw 不是万能的——在 1440px 平板上字体会等比放大到脸盆大小，需要用媒体查询对平板端设定阈值封顶。<sup>[2]</sup>
+
+> 解决 1px 的极致细线问题，我们不能冒险写 `0.5px`（极易在低端机上因无法解析而消失）。在实际工业基建中，最顶尖也是兼容性恐怖的防弹级解法是：**利用伪元素（`::after`）构建一个巨大的长宽 200% 的虚拟边框图层，然后利用 `transform: scale(0.5)` 将整个虚拟图层暴力压缩 50% 并叠加在原元素之上**！由于 `transform` 在 Blink 引擎的复合层计算中走的是 GPU 亚像素级别的极限精度渲染，它能完美、物理级地在任何高分屏上压榨出真实的 1 个物理发光像素。圆角边框需要额外处理——伪元素的 `border-radius` 必须扩大为父元素的 2 倍，被 scale(0.5) 压缩后才能贴合回正确弧度。<sup>[3]</sup>
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="第一层: 伪元素 + scale(0.5) 解决 1px, 圆角边框怎么处理?" icon="layer-group">
+
+  **答题要点：**
+  必须提到圆角需要放大 200% 的数学畸变修复。
+
+  **高分回答：**
+  "这是一个刁钻的真实踩坑题！如果不加任何特殊处理，会出大丑！当我们将伪元素放大到 200% 时，如果直接继承父元素的 `border-radius`（比如本来是 10px），然后再被 `scale(0.5)` 压缩回原来的大小。此时由于数学乘法的畸变，它在视觉上呈现出的真实圆角弧度，将会惊悚地变成 5px！整个圆角直接瘪掉一半。架构级的终极修复补丁是：必须严密地将伪元素图层自身的 `border-radius` 强制扩大成父元素期望值的两倍（即 **200% 或者 2 倍的 px**）！当它被 GPU 缩放一半时，其数学弧线才能极度精确地贴合回父元素的曲线！"
+
+  </Accordion>
+
+  <Accordion title="第二层: iPhone 刘海屏和 Android 全面屏怎么处理安全区域?" icon="stopwatch">
+
+  **答题要点：**
+  结合 `viewport-fit=cover` 和 `env(safe-area-inset-*)` 解释。
+
+  **高分回答：**
+  "这就是后移动时代最恶劣的异形屏入侵灾难！当用户横屏拿着 iPhone 时，页面内容极有可能被两侧巨大的物理刘海黑洞直接吞噬掉！为了建立不可侵犯的安全护城河，我们必须在 HTML 的 meta 视口标签中注入极度强势的护甲指令 `viewport-fit=cover`，强行告诉浏览器引擎：打破所有限制，把画布撑满整个异形屏幕。但这还不够，撑满后内容依然会被刘海挡住。紧接着我们必须在 CSS 中祭出苹果创造并已被 W3C 收编的终极超维环境变量函数：**`env(safe-area-inset-bottom)` 和 `env(safe-area-inset-top)`**！我们将其结合进 padding 算法中：`padding-bottom: env(safe-area-inset-bottom);`。此时，浏览器底层渲染引擎会自动嗅探物理屏幕开孔的绝对坐标边界，将底部那条粗大的 Home 虚拟操作横线所侵占的领土面积精准折算成像素值并返回填充。"
+
+  </Accordion>
+
+  <Accordion title="第三层: vw 方案在平板上字体会不会太大?怎么封顶?" icon="node">
+
+  **答题要点：**
+  必须分场景讨论！vw 在大屏上的字体膨胀问题。
+
+  **高分回答：**
+  "分两种情况：
+  **1. 手机端**：vw 在 375px 的手机上正常工作，14px 的字体 = 3.733vw，等比缩放精准无误。
+  **2. 平板端**：在 1440px 的平板上，3.733vw = 53.7px，字体大得像脸盆！解决方案是用媒体查询封顶：
+  ```css
+    .text { font-size: 3.733vw; }
+    @media (min-width: 750px) {
+      .text { font-size: 14px; }
+    }
+  ```
+  **建议**：对于边框、圆角等装饰性细节，坚决保留 `px` 绝对值，不要转成 vw。只有阅读型的文本和容器尺寸才用 vw 等比缩放。"
+
+  </Accordion>
+
+  <Accordion title="第四层: CSS Grid 在响应式设计中有什么独特优势?" icon="stopwatch">
+
+  **答题要点：**
+  结合 Grid 的 auto-fill/auto-fit 特性解释。
+
+  **高分回答：**
+  "CSS Grid 在响应式设计中的独特优势是 `repeat(auto-fill, minmax(200px, 1fr))`：
+  **1. 无媒体查询的响应式**：Grid 可以根据容器宽度自动计算列数，不需要写任何媒体查询。
+  **2. 内容驱动的布局**：Grid 可以根据内容自动调整行高和列宽。
+  **3. 复杂的二维布局**：Grid 可以同时控制行和列，适合复杂的网格布局。
+  **4. 命名区域**：使用 `grid-template-areas` 定义命名区域，让布局更语义化。
+  ```css
+  .container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+  }
+  ```
+  **与 Flex 的对比**：Grid 适合复杂的二维布局，Flex 适合简单的一维布局。在响应式设计中，两者可以混合使用。"
+
+  </Accordion>
+
+  <Accordion title="第五层: 如何用 CSS 实现暗黑模式的响应式设计?" icon="node">
+
+  **答题要点：**
+  必须分场景讨论！不同场景下的暗黑模式实现。
+
+  **高分回答：**
+  "暗黑模式的响应式设计有多种实现方式：
+  **1. 媒体查询**：使用 `prefers-color-scheme` 媒体查询检测系统主题。
+  ```css
+  @media (prefers-color-scheme: dark) {
+    :root { --bg-color: #1a1a1a; --text-color: #ffffff; }
+  }
+  ```
+  **2. CSS 变量**：在 `:root` 上定义主题变量，通过 JS 动态切换。
+  **3. 类名切换**：在 `<html>` 或 `<body>` 上添加 `dark` 类名，通过 CSS 选择器切换样式。
+  **4. 混合方案**：使用媒体查询作为默认值，允许用户手动覆盖。
+  **最佳实践**：使用 CSS 变量 + 媒体查询的组合方案。在 `:root` 上定义主题变量，使用 `prefers-color-scheme` 作为默认值，允许用户通过 JS 动态切换。"
+
+  </Accordion>
+
+  <Accordion title="🔥 如果用户在手机上修改了系统的字体大小设置, vw 方案会受影响吗?" icon="skull">
+
+  **答题要点：**
+  对比 rem 与 vw 在系统字体放大下的行为差异。
+
+  **高分回答：**
+  "**vw 方案不受影响，rem 方案会被破坏！** 这是 vw 方案的一个隐藏优势。在安卓系统中，当用户修改了"字体大小"设置时，系统会修改浏览器的根字体大小（`html` 的 `font-size`）。如果你用的是 rem 方案，所有用 `rem` 做单位的元素都会被系统强制放大，导致布局错乱。而 vw 方案完全基于视口宽度，与字体大小无关，所以不会受到系统字体设置的影响。
+
+  **但这同时也是一个陷阱**：如果你的 app 需要支持"无障碍模式"（大字体），vw 方案的字体会保持不变，不会跟随用户的无障碍设置放大。此时需要额外的处理：用 `rem` 做字体单位（跟随系统），用 `vw` 做布局单位（保持适配）。"
+
+  </Accordion>
+
+  <Accordion title="🔥 杀手锏追问: 在响应式设计中, 如何处理图片的高清屏适配?" icon="skull">
+
+  **答题要点：**
+  结合 srcset 和 picture 元素解释高清屏适配。
+
+  **高分回答：**
+  "高清屏（Retina）的图片适配需要考虑分辨率切换：
+  **1. `srcset` 属性**：提供多个分辨率的图片，浏览器根据 DPR 自动选择。
+  ```html
+  <img srcset="image-1x.jpg 1x, image-2x.jpg 2x, image-3x.jpg 3x"
+       src="image-1x.jpg" alt="示例图片">
+  ```
+  **2. `picture` 元素**：提供不同格式的图片，浏览器根据支持情况选择。
+  ```html
+  <picture>
+    <source srcset="image.avif" type="image/avif">
+    <source srcset="image.webp" type="image/webp">
+    <img src="image.jpg" alt="示例图片">
+  </picture>
+  ```
+  **3. 响应式图片**：使用 `sizes` 属性指定不同视口宽度下的图片尺寸。
+  **4. CSS 图片**：使用 `image-set()` 函数在 CSS 中指定多分辨率图片。
+  **最佳实践**：结合 `srcset` 和 `picture` 元素，提供 AVIF/WebP/JPEG 三级降级，同时支持 1x/2x/3x 分辨率。"
+
+  </Accordion>
+
+  <Accordion title="🔥 杀手锏追问: 在响应式设计中, 如何处理表格在移动端的显示问题?" icon="skull">
+
+  **答题要点：**
+  结合多种表格响应式方案解释。
+
+  **高分回答：**
+  "表格在移动端的显示是一个常见问题：
+  **1. 水平滚动**：给表格容器添加 `overflow-x: auto`，允许水平滚动。
+  ```css
+  .table-container { overflow-x: auto; }
+  ```
+  **2. 隐藏列**：使用媒体查询隐藏不重要的列。
+  ```css
+  @media (max-width: 768px) {
+    .table .hide-mobile { display: none; }
+  }
+  ```
+  **3. 卡片布局**：将表格转换为卡片布局，每行显示一条记录。
+  ```css
+  @media (max-width: 768px) {
+    table, thead, tbody, th, td, tr { display: block; }
+    td { position: relative; padding-left: 50%; }
+    td::before { content: attr(data-label); position: absolute; left: 0; }
+  }
+  ```
+  **4. 响应式表格库**：使用 `react-table`、`tanstack-table` 等库，内置响应式支持。
+  **最佳实践**：根据表格的复杂度和数据量选择合适的方案。简单表格用水平滚动，复杂表格用卡片布局。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [CSS Values and Units Module Level 4 - W3C 规范](https://www.w3.org/TR/css-values-4/)：W3C 官方对视口单位（vw/vh）和环境变量（env()）的权威定义。<sup>[1]</sup>
+- 📖 [postcss-px-to-viewport 插件](https://github.com/evrone/postcss-px-to-viewport)：将 px 自动转换为 vw 的 PostCSS 插件，现代 vw 适配方案的工程化基石。<sup>[2]</sup>
+- 🟢 [MDN Web Docs - Using media queries](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_media_queries/Using_media_queries)：MDN 对媒体查询的全面教程，包含响应式设计的建议。<sup>[3]</sup>

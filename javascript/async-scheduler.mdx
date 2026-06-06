@@ -1,0 +1,1233 @@
+---
+title: "异步调度"
+---
+
+> **面试官为什么问这个？**
+>
+> 异步调度是前端框架（React、Vue）性能优化的核心。面试官问这个，本质上是在考察你：**当大量异步任务涌来时，你如何保证页面不阻塞、用户输入优先响应？** 如果你答不清楚，说明你对"优先级"和"并发"的理解停留在 `setTimeout` 层面。
+
+---
+
+## Q1: 异步调度的历史？为什么要有它？
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  用户输入    │ → │  高优先级    │ → │  低优先级    │ → │  空闲任务    │
+│  (Input)     │ │  (Immediate)  │ │  (Normal)     │ │  (Idle)      │
+└──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
+       │                  │                  │                  │
+       └──────────────────┴──────────────────┴──────────────────┘
+                              调度器统一管理
+```
+
+<Steps>
+
+  <Step title="2013年: 同步渲染的瓶颈">
+
+    React 诞生之初采用同步渲染——当状态变化时，整棵虚拟 DOM 树一次性协调完成。如果组件树很大（如 10000 个节点），协调过程可能耗时 100ms 以上，期间页面完全阻塞，用户点击无响应。
+
+  </Step>
+  <Step title="2017年: Fiber 架构的诞生">
+
+    React 16 引入 Fiber 架构，把协调工作拆分成一个个小单元（Fiber 节点）。每个单元执行完后，检查是否需要让出主线程——如果用户正在输入或有高优先级任务，就暂停当前工作，先处理高优先级任务。
+
+  </Step>
+  <Step title="2022年: 调度器独立化">
+
+    React 18 把调度器（Scheduler）从 React 核心中独立出来，成为通用的异步调度方案。它实现了时间切片（Time Slicing）和优先级队列，让任何异步任务都可以按优先级调度。
+
+  </Step>
+
+</Steps>
+
+**异步调度解决的核心问题：**
+
+```text
+问题：大量异步任务同时到来 → 按 FIFO 顺序执行 → 高优先级任务被低优先级任务阻塞
+
+用户快速输入搜索关键词 → 每次输入都触发搜索请求 → 旧请求的回调阻塞新请求的回调
+→ 用户看到的是旧搜索结果，而不是最新的
+
+解决：引入优先级机制，高优先级任务可以打断低优先级任务
+
+用户快速输入 → 高优先级任务（最新输入）直接执行 → 低优先级任务（旧请求）被取消
+→ 用户始终看到最新的搜索结果
+```
+
+<Note title="💡 一句话总结">
+
+异步调度 = 优先级队列 + 时间切片，让高优先级任务不被低优先级任务阻塞。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有异步调度">
+
+一家医院没有分诊台，所有患者按先来后到排队。一个感冒患者排在前面，后面的心脏病患者只能等着——直到感冒患者看完，心脏病患者可能已经错过了最佳抢救时间。
+
+</Card>
+<Card title="✅ 引入异步调度">
+
+有了分诊台（调度器），护士根据病情严重程度分配优先级。心脏病患者直接进抢救室（高优先级），感冒患者继续排队（低优先级）。每个人都能在合理的时间内得到治疗。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么需要调度"（优先级问题），再说"怎么调度"（时间切片 + 优先级队列）。面试官想听的是你理解"并发"的本质，而不是背诵 React API。
+
+</Tip>
+
+---
+
+## Q2: 什么是时间切片（Time Slicing）？
+
+时间切片的核心思想：把一个长任务拆成多个小单元，每个单元执行完后检查是否需要让出主线程。
+
+```text
+┌───────────────────────────────────────────────┐
+│              一帧 (16.6ms)                     │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐         │
+│  │ 单元 1  │ │ 单元 2  │ │ 单元 3  │ ← 让出  │
+│  │ (5ms)   │ │ (5ms)   │ │ (5ms)   │   主线程│
+│  └─────────┘ └─────────┘ └─────────┘         │
+└───────────────────────────────────────────────┘
+                    ↓ 让出主线程
+┌───────────────────────────────────────────────┐
+│         浏览器处理用户输入 + 渲染               │
+└───────────────────────────────────────────────┘
+                    ↓ 恢复执行
+┌───────────────────────────────────────────────┐
+│  ┌─────────┐ ┌─────────┐                      │
+│  │ 单元 4  │ │ 单元 5  │                      │
+│  │ (5ms)   │ │ (5ms)   │                      │
+│  └─────────┘ └─────────┘                      │
+└───────────────────────────────────────────────┘
+```
+
+```javascript
+// ❌ 同步长任务——阻塞主线程 100ms
+function processAll(items) {
+  for (const item of items) {
+    heavyComputation(item); // 假设总共 100ms
+  }
+}
+
+// ✅ 时间切片——每处理一批让出主线程
+function processInChunks(items, chunkSize = 100) {
+  let index = 0;
+  function processChunk(deadline) {
+    while (deadline.timeRemaining() > 1 && index < items.length) {
+      heavyComputation(items[index++]);
+    }
+    if (index < items.length) {
+      requestIdleCallback(processChunk); // 让出主线程
+    }
+  }
+  requestIdleCallback(processChunk);
+}
+```
+
+<Warning title="⚠️ 核心机制: requestIdleCallback 的局限性">
+
+`requestIdleCallback` 在浏览器空闲时执行，但有两个问题：
+
+- **兼容性差**：Safari 不支持
+- **不可靠**：如果主线程一直忙碌，回调可能永远不执行
+
+因此 React 的 Scheduler 用 `MessageChannel` 模拟了更可靠的调度机制——`MessageChannel` 的回调作为宏任务执行，优先级低于微任务但高于 `setTimeout`。
+
+```javascript
+// React Scheduler 的核心调度机制
+const channel = new MessageChannel();
+const port = channel.port2;
+channel.port1.onmessage = performWorkUntilDeadline;
+
+function scheduleCallback(callback) {
+  port.postMessage(null); // 触发宏任务
+}
+```
+
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 吃自助餐">
+
+时间切片就像吃自助餐——你不能一个人霸占取餐台 10 分钟（长任务阻塞）。正确做法是：每次只拿 2-3 样菜（小单元），然后回到座位吃完，再去拿。这样其他人也有机会取餐（浏览器处理用户输入）。
+
+
+</Tip>
+
+### MessageChannel vs setTimeout 的调度优先级
+
+```javascript
+// MessageChannel 的回调优先于 setTimeout
+setTimeout(() => console.log('timeout'), 0);
+const channel = new MessageChannel();
+channel.port1.onmessage = () => console.log('message');
+channel.port2.postMessage(null);
+
+// 输出：message → timeout
+// MessageChannel 是宏任务，但比 setTimeout 先执行
+```
+
+### React Scheduler 的时间切片实现
+
+React Scheduler 内部用 `shouldYieldToHost()` 判断是否需要让出主线程：
+
+```javascript
+// React Scheduler 的简化逻辑
+function workLoop(hasTimeRemaining, initialTime) {
+  let currentTime = initialTime;
+  currentTask = peek(taskQueue); // 取最高优先级任务
+
+  while (currentTask !== null) {
+    if (currentTask.expirationTime > currentTime && shouldYieldToHost()) {
+      // 时间片用完了，让出主线程
+      break;
+    }
+    const continuationCallback = currentTask.callback(currentTask);
+    if (typeof continuationCallback === 'function') {
+      currentTask.callback = continuationCallback; // 未完成，继续
+    } else {
+      pop(taskQueue); // 完成，移除
+    }
+    currentTask = peek(taskQueue); // 取下一个任务
+  }
+}
+```
+
+---
+
+## Q3: 优先级队列的实现
+
+异步调度的核心是**优先级队列**——不是所有任务都平等，高优先级任务可以插队。
+
+```text
+┌───────────────────────────────────────────────┐
+│           Scheduler 优先级队列                  │
+│  ┌─────────────────────────────────────────┐  │
+│  │ Immediate (最高)    │ 用户输入、紧急更新 │  │
+│  │ UserBlocking (高)   │ 用户交互、动画     │  │
+│  │ Normal (中)         │ 普通更新           │  │
+│  │ Low (低)            │ 后台数据预取       │  │
+│  │ Idle (最低)         │ 分析、日志         │  │
+│  └─────────────────────────────────────────┘  │
+└───────────────────────────────────────────────┘
+```
+
+**React 的 5 种优先级（Lane 模型）：**
+
+| 优先级 | 场景 | 超时时间 |
+|--------|------|---------|
+| **Immediate** | 用户输入（点击、键盘） | 0ms |
+| **UserBlocking** | 悬停、拖拽、动画 | 250ms |
+| **Normal** | 普通状态更新 | 5000ms |
+| **Low** | 后台数据预取 | 10000ms |
+| **Idle** | 分析、日志 | 最大值 |
+
+```javascript
+// React 18 的优先级调度
+import { startTransition } from 'react';
+
+// 高优先级：用户输入，立即响应
+setInputValue(e.target.value);
+
+// 低优先级：搜索结果更新，可以被打断
+startTransition(() => {
+  setSearchResults(filteredData);
+});
+```
+
+<Warning title="⚠️ 核心机制: 高优先级任务可以打断低优先级任务">
+
+当高优先级任务到来时，调度器会暂停正在执行的低优先级任务，优先处理高优先级任务。这就是"并发"的本质——不是同时执行多个任务，而是可以打断和恢复。
+
+```javascript
+// 场景：用户快速输入搜索关键词
+// 低优先级：旧的搜索请求（已过时）
+startTransition(() => fetchSearchResults('re'));
+
+// 高优先级：新的搜索请求（最新）
+setInputValue('react'); // 立即响应
+
+// 调度器行为：暂停旧请求的处理 → 优先处理新输入 → 旧请求被取消
+```
+
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 餐厅后厨">
+
+优先级队列就像餐厅后厨——VIP 客人（高优先级）的菜可以插队先做。如果厨师正在做普通客人的菜（低优先级），VIP 客人来了，厨师会先把做到一半的菜放一边（暂停），优先做 VIP 的菜。做完 VIP 的菜后，再回来继续做普通客人的菜（恢复）。
+
+
+</Tip>
+
+### 小顶堆（Min Heap）实现优先级队列
+
+React Scheduler 内部用小顶堆实现优先级队列，保证每次取到的都是最高优先级任务：
+
+```javascript
+// 简化的小顶堆实现
+class MinHeap {
+  constructor() {
+    this.heap = [];
+  }
+
+  push(task) {
+    this.heap.push(task);
+    this.bubbleUp(this.heap.length - 1);
+  }
+
+  pop() {
+    const top = this.heap[0];
+    const last = this.heap.pop();
+    if (this.heap.length > 0) {
+      this.heap[0] = last;
+      this.sinkDown(0);
+    }
+    return top;
+  }
+
+  bubbleUp(index) {
+    while (index > 0) {
+      const parent = Math.floor((index - 1) / 2);
+      if (this.heap[parent].priority <= this.heap[index].priority) break;
+      [this.heap[parent], this.heap[index]] = [this.heap[index], this.heap[parent]];
+      index = parent;
+    }
+  }
+
+  sinkDown(index) {
+    const length = this.heap.length;
+    while (true) {
+      let smallest = index;
+      const left = 2 * index + 1;
+      const right = 2 * index + 2;
+      if (left < length && this.heap[left].priority < this.heap[smallest].priority) {
+        smallest = left;
+      }
+      if (right < length && this.heap[right].priority < this.heap[smallest].priority) {
+        smallest = right;
+      }
+      if (smallest === index) break;
+      [this.heap[smallest], this.heap[index]] = [this.heap[index], this.heap[smallest]];
+      index = smallest;
+    }
+  }
+}
+```
+
+### 优先级队列 vs 普通队列
+
+| 特性 | 普通队列 (FIFO) | 优先级队列 |
+|------|----------------|-----------|
+| **取任务顺序** | 先进先出 | 最高优先级先出 |
+| **适用场景** | 任务平等 | 任务有优先级差异 |
+| **时间复杂度** | O(1) 入队/出队 | O(log n) 入队/出队 |
+| **数据结构** | 数组/链表 | 小顶堆/大顶堆 |
+
+---
+
+## Q4: requestAnimationFrame 与调度的关系
+
+`requestAnimationFrame` 是浏览器提供的帧同步机制，它在每一帧渲染前执行回调。
+
+```text
+┌───────────────────────────────────────────────┐
+│              一帧的执行顺序                      │
+│                                                │
+│  rAF 回调 → Layout → Paint → Composite         │
+│      ↑                                         │
+│      └── 在渲染前执行，保证动画流畅              │
+└───────────────────────────────────────────────┘
+```
+
+**rAF 的核心特性：**
+
+```javascript
+// rAF 保证在每一帧渲染前执行
+function animate() {
+  element.style.transform = `translateX(${x}px)`;
+  x += 1;
+  if (x < 300) requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+
+// 对比 setTimeout：不与渲染同步，可能掉帧
+function animate() {
+  element.style.transform = `translateX(${x}px)`;
+  x += 1;
+  if (x < 300) setTimeout(animate, 16); // 实际延迟 > 16ms
+}
+```
+
+<Warning title="⚠️ rAF 与调度器的配合">
+
+在 React 的并发模式中，rAF 用于处理需要在下一帧渲染前完成的任务（如动画）。调度器会把 rAF 回调的优先级设为 `UserBlocking`（高优先级），保证动画不卡顿。
+
+```javascript
+// React 内部的 rAF 调度逻辑
+function requestAnimationFrameWithPriority(callback) {
+  // 用 rAF 保证在下一帧渲染前执行
+  requestAnimationFrame(() => {
+    // 设为高优先级，保证动画流畅
+    callback();
+  });
+}
+```
+
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 火车时刻表">
+
+rAF 就像火车时刻表——每 16.6ms 有一班车（一帧）。你必须在火车到站前（渲染前）完成准备工作（更新 DOM），否则就要等下一班车（下一帧）。调度器的作用是帮你安排好哪些工作在这一班车完成，哪些推迟到下一班车。
+
+
+</Tip>
+
+### rAF 的取消机制
+
+```javascript
+// 用 rAF 做动画时，记得在组件卸载时取消
+const rafId = requestAnimationFrame(animate);
+
+// 组件卸载时取消
+cancelAnimationFrame(rafId);
+
+// React useEffect 中的正确用法
+useEffect(() => {
+  const animate = () => {
+    // 更新动画
+    rafIdRef.current = requestAnimationFrame(animate);
+  };
+  rafIdRef.current = requestAnimationFrame(animate);
+
+  return () => {
+    cancelAnimationFrame(rafIdRef.current); // 清理
+  };
+}, []);
+```
+
+---
+
+## Q5: Vue 的 nextTick 与调度机制
+
+Vue 的 `nextTick` 本质上也是一种异步调度——把 DOM 更新推迟到微任务队列清空后执行。
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  状态变化    │ → │  批量收集    │ → │  nextTick    │
+│  (reactive)  │ │  (queue job)  │ │  (flush)     │
+└──────────────┘   └──────────────┘   └──────────────┘
+       │                  │                  │
+       └──────────────────┴──────────────────┘
+                    Vue 的调度流程
+```
+
+```javascript
+// Vue 3 的 nextTick 实现原理
+const queue = [];
+let isFlushing = false;
+
+function queueJob(job) {
+  if (!queue.includes(job)) {
+    queue.push(job);
+    if (!isFlushing) {
+      isFlushing = true;
+      Promise.resolve().then(flushJobs); // 微任务
+    }
+  }
+}
+
+function flushJobs() {
+  isFlushing = false;
+  // 按 id 排序，保证父组件先于子组件更新
+  queue.sort((a, b) => a.id - b.id);
+  for (const job of queue) {
+    job();
+  }
+  queue.length = 0;
+}
+```
+
+<Warning title="⚠️ Vue 的调度策略: 同步更新 + 微任务刷新">
+
+Vue 3 的调度策略是：**状态变化时同步执行副作用（watchEffect），但 DOM 更新推迟到微任务**。这意味着：
+
+```javascript
+// Vue 3 的执行顺序
+const count = ref(0);
+
+count.value++; // 1. 同步执行 watchEffect
+count.value++; // 2. 同步执行 watchEffect（但 DOM 还没更新）
+count.value++; // 3. 同步执行 watchEffect（但 DOM 还没更新）
+
+await nextTick(); // 4. 微任务：一次性更新 DOM（批量优化）
+
+// ❌ 错误理解：每次 count.value++ 都会更新 DOM
+// ✅ 正确理解：三次变化被批量收集，最后一次性更新 DOM
+```
+
+
+</Warning>
+
+### Vue 的异步队列 vs React 的优先级队列
+
+| 特性 | Vue 3 | React 18 |
+|------|-------|----------|
+| **调度机制** | 微任务队列 | 优先级队列 + 时间切片 |
+| **更新粒度** | 组件级（按 id 排序） | Fiber 节点级 |
+| **中断能力** | 不能中断 | 可以中断 |
+| **适用场景** | 同步批量更新 | 并发优先级调度 |
+
+---
+
+## Q6: 如何实现一个简易的异步调度器？
+
+面试中经常考"实现一个带并发限制的异步调度器"。
+
+```javascript
+// 实现一个带并发限制的异步调度器
+class AsyncScheduler {
+  constructor(maxConcurrent = 2) {
+    this.maxConcurrent = maxConcurrent;
+    this.running = 0;
+    this.queue = [];
+  }
+
+  add(asyncFn) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ asyncFn, resolve, reject });
+      this.runNext();
+    });
+  }
+
+  runNext() {
+    if (this.running >= this.maxConcurrent || this.queue.length === 0) {
+      return;
+    }
+
+    this.running++;
+    const { asyncFn, resolve, reject } = this.queue.shift();
+
+    asyncFn()
+      .then(resolve)
+      .catch(reject)
+      .finally(() => {
+        this.running--;
+        this.runNext(); // 执行完一个，立即执行下一个
+      });
+  }
+}
+
+// 使用示例
+const scheduler = new AsyncScheduler(2); // 最大并发数为 2
+
+scheduler.add(() => fetch('/api/1')); // 立即执行
+scheduler.add(() => fetch('/api/2')); // 立即执行
+scheduler.add(() => fetch('/api/3')); // 等前面有一个完成后才执行
+```
+
+<Warning title="⚠️ 并发限制的实际意义">
+
+并发限制不是"同时执行"，而是"同时发起"。浏览器对同一域名的 HTTP 并发限制是 6 个（Chrome）。如果不限制并发数，可能导致：
+
+- 网络请求堆积，带宽被占满
+- 低优先级请求阻塞高优先级请求
+- 浏览器响应变慢
+
+```javascript
+// ❌ 无限制并发——100 个请求同时发出
+Promise.all(items.map(item => fetch(`/api/${item}`)));
+
+// ✅ 限制并发——每次最多 6 个
+const scheduler = new AsyncScheduler(6);
+await Promise.all(items.map(item => scheduler.add(() => fetch(`/api/${item}`))));
+```
+
+
+</Warning>
+
+### 带优先级的异步调度器
+
+```javascript
+// 带优先级的异步调度器
+class PriorityScheduler {
+  constructor() {
+    this.queue = []; // 小顶堆
+    this.running = false;
+  }
+
+  add(asyncFn, priority = 0) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ asyncFn, priority, resolve, reject });
+      this.queue.sort((a, b) => a.priority - b.priority); // 按优先级排序
+      this.runNext();
+    });
+  }
+
+  async runNext() {
+    if (this.running || this.queue.length === 0) return;
+
+    this.running = true;
+    const { asyncFn, resolve, reject } = this.queue.shift();
+
+    try {
+      const result = await asyncFn();
+      resolve(result);
+    } catch (error) {
+      reject(error);
+    } finally {
+      this.running = false;
+      this.runNext();
+    }
+  }
+}
+```
+
+---
+
+## Q7: AbortController 与任务取消
+
+异步调度中，任务取消是关键能力——当高优先级任务到来时，需要取消低优先级任务。
+
+```javascript
+// 用 AbortController 取消 fetch 请求
+const controller = new AbortController();
+const signal = controller.signal;
+
+fetch('/api/search?q=old', { signal })
+  .then(response => response.json())
+  .then(data => {
+    // 处理旧请求
+  })
+  .catch(err => {
+    if (err.name === 'AbortError') {
+      console.log('请求被取消'); // 不需要处理
+    }
+  });
+
+// 高优先级任务到来，取消旧请求
+controller.abort();
+
+// 重新发起新请求
+fetch('/api/search?q=new')
+  .then(response => response.json())
+  .then(data => {
+    // 处理新请求
+  });
+```
+
+<Warning title="⚠️ 取消请求的实际场景">
+
+在搜索框输入时，每次输入都会触发搜索请求。如果不取消旧请求，可能出现：
+
+```javascript
+// ❌ 不取消旧请求——竞态条件
+async function search(query) {
+  const response = await fetch(`/api/search?q=${query}`);
+  const data = await response.json();
+  setSearchResults(data); // 可能是旧请求的结果
+}
+
+// 用户输入 'react'，触发三次请求
+search('r');    // 请求 1：慢
+search('re');   // 请求 2：中等
+search('react'); // 请求 3：快
+
+// 如果请求 3 先返回，请求 1 后返回
+// 最终显示的是请求 1 的结果（'r' 的结果），而不是 'react' 的结果
+```
+
+```javascript
+// ✅ 用 AbortController 取消旧请求
+let currentController = null;
+
+async function search(query) {
+  if (currentController) {
+    currentController.abort(); // 取消旧请求
+  }
+  currentController = new AbortController();
+
+  try {
+    const response = await fetch(`/api/search?q=${query}`, {
+      signal: currentController.signal
+    });
+    const data = await response.json();
+    setSearchResults(data);
+  } catch (err) {
+    if (err.name !== 'AbortError') throw err;
+  }
+}
+```
+
+
+</Warning>
+
+---
+
+## Q8: Web Workers 与真正的并行计算
+
+当任务是 CPU 密集型（如大数组排序、图像处理）时，异步调度无法解决问题——因为 JS 是单线程的。此时需要用 Web Workers 实现真正的并行。
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  主线程      │   │  Worker 1    │   │  Worker 2    │
+│  (JS 引擎)   │ ←→│  (独立线程)  │ ←→│  (独立线程)  │
+│              │ │  │              │ │  │              │
+└──────────────┘ │  └──────────────┘ │  └──────────────┘
+       │         │         │         │         │
+       └─────────┴─────────┴─────────┴─────────┘
+                      postMessage 通信
+```
+
+```javascript
+// 主线程
+const worker = new Worker('worker.js');
+
+worker.postMessage({ data: largeArray, operation: 'sort' });
+
+worker.onmessage = (event) => {
+  const sortedArray = event.data;
+  console.log('排序完成:', sortedArray);
+};
+
+// worker.js
+self.onmessage = (event) => {
+  const { data, operation } = event.data;
+
+  if (operation === 'sort') {
+    const result = data.sort((a, b) => a - b);
+    self.postMessage(result); // 把结果发回主线程
+  }
+};
+```
+
+<Warning title="⚠️ Web Workers 的限制">
+
+Web Workers 不是万能的，它有以下限制：
+
+- **不能访问 DOM**：Worker 在独立线程中运行，无法操作 DOM
+- **通信开销**：主线程和 Worker 之间通过 `postMessage` 通信，数据会被序列化/反序列化
+- **启动成本**：创建 Worker 有启动成本，不适合频繁创建销毁
+
+```javascript
+// ❌ 频繁创建 Worker——启动成本高
+for (let i = 0; i < 100; i++) {
+  const worker = new Worker('worker.js'); // 每次都创建新 Worker
+}
+
+// ✅ 用 Worker 池——复用 Worker
+class WorkerPool {
+  constructor(workerScript, poolSize = navigator.hardwareConcurrency) {
+    this.workers = [];
+    this.queue = [];
+
+    for (let i = 0; i < poolSize; i++) {
+      this.workers.push(new Worker(workerScript));
+    }
+  }
+
+  run(data) {
+    return new Promise((resolve) => {
+      const worker = this.workers.pop();
+      if (worker) {
+        worker.onmessage = (event) => {
+          resolve(event.data);
+          this.workers.push(worker); // 归还 Worker
+        };
+        worker.postMessage(data);
+      } else {
+        this.queue.push({ data, resolve });
+      }
+    });
+  }
+}
+```
+
+
+</Warning>
+
+---
+
+## 🔍 底层源码：React Scheduler 是如何实现的？
+
+<div class="follow-up">
+React Scheduler 的时间切片是怎么实现的？
+</div>
+
+React Scheduler 内部用 `MessageChannel` 实现时间切片（详见 [React Scheduler 源码：packages/scheduler/src/forks/Scheduler.js](https://github.com/facebook/react/blob/main/packages/scheduler/src/forks/Scheduler.js)）：
+
+```javascript
+// React Scheduler 的核心调度逻辑（简化版）
+
+// 1. 用 MessageChannel 实现宏任务调度
+const channel = new MessageChannel();
+const port = channel.port2;
+channel.port1.onmessage = performWorkUntilDeadline;
+
+// 2. 调度回调
+function scheduleCallback(callback) {
+  scheduledHostCallback = callback;
+  port.postMessage(null); // 触发宏任务
+}
+
+// 3. 时间切片：每帧最多执行 5ms
+function performWorkUntilDeadline() {
+  if (scheduledHostCallback) {
+    const currentTime = getCurrentTime();
+    // 计算截止时间：当前时间 + 5ms
+    deadline = currentTime + yieldInterval;
+    const hasMoreWork = scheduledHostCallback(currentTime);
+    if (hasMoreWork) {
+      port.postMessage(null); // 还有任务，继续调度
+    }
+  }
+}
+
+// 4. 判断是否需要让出主线程
+function shouldYieldToHost() {
+  return getCurrentTime() >= deadline;
+}
+```
+
+这段代码做了 3 件事：
+1. 用 `MessageChannel` 替代 `setTimeout`（更精确的宏任务调度）
+2. 每帧最多执行 5ms（yieldInterval），剩下的时间留给浏览器渲染
+3. 用 `shouldYieldToHost()` 判断是否需要让出主线程
+
+<div class="follow-up">
+Vue 的调度器和 React 的调度器有什么本质区别？
+</div>
+
+Vue 的调度器（`queueJob`）本质上是一个**微任务批处理**机制，而 React 的调度器是一个**优先级时间切片**机制：
+
+```javascript
+// Vue 的调度器：微任务批处理
+function queueJob(job) {
+  queue.push(job);
+  if (!isFlushing) {
+    isFlushing = true;
+    Promise.resolve().then(flushJobs); // 微任务
+  }
+}
+
+// React 的调度器：优先级时间切片
+function scheduleCallback(callback, priority) {
+  const task = { callback, priority, expirationTime: ... };
+  push(taskQueue, task); // 小顶堆
+  requestHostCallback(flushWork); // 宏任务（MessageChannel）
+}
+```
+
+本质区别：
+- **Vue**：不能中断，所有任务一次性执行完（微任务必须清空）
+- **React**：可以中断，每个 Fiber 节点执行完后检查是否需要让出主线程
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说异步调度，React 的并发模式是怎么实现的？"
+
+**及格回答（60-70分）：**
+> "React 18 引入了并发模式，用 Scheduler 实现时间切片。把长任务拆成小块，每块执行完后让出主线程。还有优先级队列，高优先级任务可以打断低优先级任务。"
+
+面试官评价：**知道概念但不理解实现**。
+
+**满分回答（90-100分）：**
+
+> 异步调度解决的核心问题是**高优先级任务被低优先级任务阻塞**。在同步渲染模式下，状态变化触发整棵组件树的协调，如果组件树很大，主线程会被阻塞 100ms 以上，期间用户输入无响应。<sup>[1]</sup>
+
+> React 18 的 Scheduler 用 `MessageChannel` 实现时间切片——每帧最多执行 5ms 的 JS 任务，剩下的时间留给浏览器渲染和响应用户输入。内部用小顶堆实现优先级队列，5 种优先级（Immediate > UserBlocking > Normal > Low > Idle）对应不同的超时时间。高优先级任务到来时，可以打断正在执行的低优先级任务。<sup>[2]</sup>
+
+> 实际项目中的应用：用 `startTransition` 标记低优先级更新（如搜索结果），用 `useDeferredValue` 延迟非紧急的渲染。在搜索框场景中，输入框用同步更新（立即响应），搜索结果用 `startTransition` 包裹（可以被打断），用户始终看到最新的输入，搜索结果异步更新。<sup>[3]</sup>
+
+> Vue 的调度机制不同——它用微任务批处理，不能中断。Vue 3 的 `nextTick` 本质上是 `Promise.resolve().then(flushJobs)`，所有状态变化被收集到队列中，最后一次性更新 DOM。这种机制简单高效，但无法像 React 那样根据优先级中断和恢复任务。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title='React 的时间切片是怎么实现的？' icon="layer-group">
+
+    **答题要点：**
+    用 MessageChannel 替代 setTimeout，每帧最多执行 5ms。
+
+    **高分回答：**
+    "React Scheduler 用 `MessageChannel` 实现时间切片。`MessageChannel` 的回调作为宏任务执行，但比 `setTimeout` 优先级更高。每帧最多执行 5ms（`yieldInterval`），超过 5ms 就让出主线程。
+
+    ```javascript
+    // 核心逻辑
+    const channel = new MessageChannel();
+    channel.port1.onmessage = performWorkUntilDeadline;
+
+    function performWorkUntilDeadline() {
+      deadline = getCurrentTime() + 5ms;
+      const hasMoreWork = scheduledCallback(currentTime);
+      if (hasMoreWork) port.postMessage(null); // 继续调度
+    }
+
+    function shouldYieldToHost() {
+      return getCurrentTime() >= deadline; // 时间片用完，让出主线程
+    }
+    ```
+
+    为什么用 `MessageChannel` 而不是 `setTimeout`？
+    1. `setTimeout` 有 4ms 最小延迟限制
+    2. `setTimeout` 的回调执行时机不可预测
+    3. `MessageChannel` 的回调在当前宏任务结束后立即执行"
+
+  </Accordion>
+
+  <Accordion title='React 的优先级是怎么划分的？' icon="layer-group">
+
+    **答题要点：**
+    5 种优先级，对应不同的超时时间和使用场景。
+
+    **高分回答：**
+    "React 用 Lane 模型实现优先级，把优先级映射到二进制位：
+
+    | 优先级 | Lane | 超时时间 | 场景 |
+    |--------|------|---------|------|
+    | Immediate | 0b0000000000000000000000000000001 | 0ms | 用户输入 |
+    | UserBlocking | 0b0000000000000000000000000000100 | 250ms | 悬停、动画 |
+    | Normal | 0b0000000000000000000000000010000 | 5000ms | 普通更新 |
+    | Low | 0b0000000000000000000000001000000 | 10000ms | 后台预取 |
+    | Idle | 0b0000000000000000000000100000000 | 最大值 | 日志分析 |
+
+    用二进制位的好处是可以用位运算合并优先级：
+    ```javascript
+    const mergedLanes = lane1 | lane2; // 合并
+    const hasHighPriority = lanes & HighPriorityLane; // 检查
+    ```"
+
+  </Accordion>
+
+  <Accordion title='startTransition 和 setTimeout 有什么区别？' icon="stopwatch">
+
+    **答题要点：**
+    startTransition 标记低优先级，可以被高优先级打断；setTimeout 延迟到下一帧。
+
+    **高分回答：**
+    "`startTransition` 和 `setTimeout` 的本质区别是：
+
+    ```javascript
+    // setTimeout：延迟到下一个宏任务
+    setTimeout(() => {
+      setSearchResults(data); // 延迟执行，但执行时不可中断
+    }, 0);
+
+    // startTransition：标记为低优先级，可以被打断
+    startTransition(() => {
+      setSearchResults(data); // 标记为低优先级，可以被打断
+    });
+    ```
+
+    区别：
+    1. **时机**：`setTimeout` 在下一个宏任务执行；`startTransition` 在当前帧的低优先级时间片执行
+    2. **中断**：`setTimeout` 的回调一旦执行就不能中断；`startTransition` 标记的更新可以被高优先级任务打断
+    3. **状态**：`startTransition` 有 `isPending` 状态，可以显示加载指示器
+
+    ```javascript
+    const [isPending, startTransition] = useTransition();
+
+    function handleChange(e) {
+      setInputValue(e.target.value); // 高优先级：立即响应
+
+      startTransition(() => {
+        setSearchResults(filterData(e.target.value)); // 低优先级：可以被打断
+      });
+    }
+
+    return (
+      <>
+        <input value={inputValue} onChange={handleChange} />
+        {isPending ? <Spinner /> : <SearchResults results={searchResults} />}
+      </>
+    );
+    ```
+
+  </Accordion>
+
+  <Accordion title='Vue 的 nextTick 和 React 的 flushSync 有什么区别？' icon="stopwatch">
+
+    **答题要点：**
+    nextTick 是微任务批处理，flushSync 是同步刷新。
+
+    **高分回答：**
+    "`Vue.nextTick` 和 `React.flushSync` 的区别：
+
+    ```javascript
+    // Vue：nextTick 是微任务批处理
+    count.value++;
+    count.value++;
+    count.value++;
+    await nextTick(); // 三次变化合并为一次 DOM 更新
+
+    // React：flushSync 是同步刷新
+    flushSync(() => {
+      setCount(1); // 立即同步更新 DOM
+    });
+    flushSync(() => {
+      setCount(2); // 立即同步更新 DOM
+    });
+    ```
+
+    核心区别：
+    1. **Vue nextTick**：把 DOM 更新推迟到微任务，多次变化合并为一次更新（优化）
+    2. **React flushSync**：强制同步刷新，立即更新 DOM（用于需要立即看到效果的场景）
+
+    使用场景：
+    - Vue 的 `nextTick`：读取更新后的 DOM（如获取元素尺寸）
+    - React 的 `flushSync`：在事件处理函数中需要立即看到 DOM 变化（如焦点管理）"
+
+  </Accordion>
+
+  <Accordion title='如何实现一个带并发限制的异步调度器？' icon="node">
+
+    **答题要点：**
+    用队列 + 计数器实现，每次最多执行 N 个异步任务。
+
+    **高分回答：**
+    "核心思路：维护一个等待队列和一个正在执行的计数器。
+
+    ```javascript
+    class AsyncScheduler {
+      constructor(maxConcurrent = 2) {
+        this.maxConcurrent = maxConcurrent;
+        this.running = 0;
+        this.queue = [];
+      }
+
+      add(asyncFn) {
+        return new Promise((resolve, reject) => {
+          this.queue.push({ asyncFn, resolve, reject });
+          this.runNext();
+        });
+      }
+
+      runNext() {
+        if (this.running >= this.maxConcurrent || this.queue.length === 0) return;
+
+        this.running++;
+        const { asyncFn, resolve, reject } = this.queue.shift();
+
+        asyncFn()
+          .then(resolve)
+          .catch(reject)
+          .finally(() => {
+            this.running--;
+            this.runNext(); // 执行完一个，立即执行下一个
+          });
+      }
+    }
+
+    // 使用：限制并发数为 3
+    const scheduler = new AsyncScheduler(3);
+    await Promise.all(
+      urls.map(url => scheduler.add(() => fetch(url)))
+    );
+    ```
+
+    实际应用：
+    - 限制 API 请求并发数（避免触发限流）
+    - 限制图片上传并发数（避免带宽占满）
+    - 限制文件下载并发数（避免磁盘 I/O 过载）"
+
+  </Accordion>
+
+  <Accordion title='requestIdleCallback 有什么局限性？' icon="node">
+
+    **答题要点：**
+    兼容性差、执行时机不可靠、不适合动画。
+
+    **高分回答：**
+    "`requestIdleCallback` 有三个主要局限性：
+
+    1. **兼容性差**：Safari 不支持，需要 polyfill
+    2. **执行时机不可靠**：如果主线程一直忙碌，回调可能永远不执行
+    3. **不适合动画**：回调在浏览器空闲时执行，无法保证在渲染前执行
+
+    ```javascript
+    // ❌ 用 requestIdleCallback 做动画——不流畅
+    requestIdleCallback(() => {
+      element.style.transform = `translateX(${x}px)`; // 可能掉帧
+    });
+
+    // ✅ 用 requestAnimationFrame 做动画——流畅
+    requestAnimationFrame(() => {
+      element.style.transform = `translateX(${x}px)`; // 保证在渲染前执行
+    });
+    ```
+
+    React Scheduler 选择用 `MessageChannel` 而不是 `requestIdleCallback`，正是因为：
+    - `MessageChannel` 兼容性好（IE 10+）
+    - `MessageChannel` 的回调在当前宏任务结束后立即执行，时机可控
+    - React 自己实现了时间切片（`shouldYieldToHost`），不需要依赖浏览器的空闲判断"
+
+  </Accordion>
+
+  <Accordion title='🔥 如果在微任务中不断产生新的微任务，调度器会怎样？' icon="skull">
+
+    **答题要点：**
+    微任务必须清空，会导致主线程永远阻塞，调度器无法工作。
+
+    **高分回答：**
+    "会导致**主线程彻底阻塞，调度器完全失效**。
+
+    因为微任务的优先级高于宏任务——必须把所有微任务清空，才能进入下一个阶段。如果微任务无限递归产生新微任务，主线程就永远困在微任务队列中。
+
+    ```javascript
+    // ❌ 微任务无限递归——调度器失效
+    function loop() {
+      Promise.resolve().then(loop); // 永远清不空
+    }
+    loop(); // 主线程永远阻塞，rAF、setTimeout 都无法执行
+
+    // ✅ 用宏任务递归——调度器正常工作
+    function loop() {
+      setTimeout(loop, 0); // 每次执行完让出主线程
+    }
+    loop(); // 调度器有机会执行其他任务
+    ```
+
+    这就是为什么 React Scheduler 用 `MessageChannel`（宏任务）而不是 `Promise`（微任务）——宏任务每次只取一个执行，执行完就有机会让出主线程。"
+
+  </Accordion>
+
+  <Accordion title='🔥 在实际项目中，如何选择 React 的调度策略？' icon="skull">
+
+    **答题要点：**
+    根据任务的紧急程度选择不同的调度 API。
+
+    **高分回答：**
+    "React 18 提供了多种调度策略，根据任务的紧急程度选择：
+
+    ```javascript
+    // 1. 同步更新（默认）：用户输入、表单提交
+    setInputValue(e.target.value); // 立即响应
+
+    // 2. startTransition：非紧急更新（如搜索结果）
+    startTransition(() => {
+      setSearchResults(filterData(query)); // 可以被打断
+    });
+
+    // 3. useDeferredValue：延迟渲染（如列表过滤）
+    const deferredQuery = useDeferredValue(query); // 延迟更新
+
+    // 4. flushSync：强制同步刷新（如焦点管理）
+    flushSync(() => {
+      setShowModal(true); // 立即更新 DOM
+    });
+    modalInput.focus(); // 立即聚焦
+    ```
+
+    选择策略：
+    - **用户输入**：同步更新（立即响应）
+    - **搜索结果**：`startTransition`（可以被打断）
+    - **大列表过滤**：`useDeferredValue`（延迟渲染）
+    - **焦点管理**：`flushSync`（强制同步）"
+
+  </Accordion>
+
+  <Accordion title='🔥 如何实现并发任务控制？async pool 和 p-limit 的原理是什么?' icon="skull">
+
+    **答题要点：**
+    区分"并发限制"和"并行限制"，手写 async pool 核心逻辑，理解 p-limit 的信号量模型。
+
+    **高分回答：**
+    "并发任务控制的核心是**限制同时处于 pending 状态的 Promise 数量**，而不是限制同时执行的线程数（JS 是单线程的）。常见实现有三种思路：
+    
+    **思路 1：Promise.race 动态池（p-limit 原理）**
+    
+    维护一个'正在执行'的 Set，池满时用 `Promise.race` 等待任意一个完成后再加入新任务：
+    
+    ```javascript
+    async function asyncPool(limit, items, iteratorFn) {
+      const results = [];
+      const executing = new Set();
+      for (const [i, item] of items.entries()) {
+        const p = Promise.resolve().then(() => iteratorFn(item, i));
+        results[i] = p;
+        executing.add(p);
+        const clean = () => executing.delete(p);
+        p.then(clean, clean);
+        if (executing.size >= limit) {
+          await Promise.race(executing); // 等到有一个完成
+        }
+      }
+      return Promise.all(results);
+    }
+    ```
+    
+    **思路 2：信号量（Semaphore）模型（p-limit 库的实现）**
+    
+    用一个计数器模拟信号量，每获取一个令牌执行一个任务，任务完成后归还令牌：
+    
+    ```javascript
+    function pLimit(concurrency) {
+      let activeCount = 0;
+      const queue = [];
+    
+      const next = () => {
+        activeCount--;
+        if (queue.length > 0) queue.shift()(); // 出队执行下一个
+      };
+    
+      return (fn) => new Promise((resolve, reject) => {
+        const run = () => {
+          activeCount++;
+          fn().then(resolve, reject).finally(next);
+        };
+        if (activeCount < concurrency) run();
+        else queue.push(run); // 排队等待
+      });
+    }
+    
+    const limit = pLimit(3);
+    const results = await Promise.all(
+      urls.map(url => limit(() => fetch(url)))
+    );
+    ```
+    
+    **思路 3：Generator 顺序喂入**
+    
+    用 Generator 逐个产出任务，调度器从 Generator 中取任务喂入执行池：
+    
+    ```javascript
+    async function pool(generator, concurrency) {
+      const workers = Array.from({ length: concurrency }, async () => {
+        for (const task of generator) {
+          await task();
+        }
+      });
+      await Promise.all(workers);
+    }
+    ```
+    
+    **p-limit vs asyncPool 的核心区别**：
+    - `p-limit` 是**通用限流器**，返回一个 `limit` 函数，可以在任何场景复用，支持排队（queue）
+    - `asyncPool` 是**一次性批处理**，传入数组和并发数，返回全部结果，不保留队列状态
+    
+    **实际应用场景**：
+    - 批量上传文件（限制同时上传 3 个）
+    - 批量请求接口（避免触发服务端限流）
+    - 批量 Puppeteer 截图（限制同时打开的页面数）"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [React 18 并发模式官方文档](https://react.dev/blog/2022/03/29/react-v18)：React 团队对并发特性的权威解释，涵盖 `startTransition`、`useDeferredValue` 等核心 API。<sup>[1]</sup>
+- 📖 [React Scheduler 源码解析](https://github.com/facebook/react/tree/main/packages/scheduler)：Scheduler 的完整实现，包括时间切片和优先级队列。<sup>[2]</sup>
+- 🟢 [Vue 3 调度器设计](https://vuejs.org/guide/extras/reactivity-in-depth.html)：Vue 官方对响应式系统和调度机制的深度解释。<sup>[3]</sup>
+- 📘 [Inside React's scheduling system](https://blog.isquaredsoftware.com/2020/05/blogged-answers-a-mostly-complete-guide-to-react-rendering-behavior/)：Mark Erikson 对 React 渲染和调度行为的全面分析。<sup>[4]</sup>

@@ -1,0 +1,576 @@
+---
+title: "ES6+ API"
+---
+
+> **面试官为什么问这个？**
+>
+> ES6+ 是现代 JavaScript 的基石。面试官问这个，本质上是在考察你：**是否理解 ES6 解决了什么问题，以及这些特性的底层原理。** 如果你答不清楚，说明你对 JS 的理解停留在"会用 API"而不是"知道为什么这么设计"。
+
+---
+
+## Q1: let/const/var 的区别？const 的值真的不能改吗？
+
+<Steps>
+
+  <Step title="ES5 时代: var 的设计缺陷">
+
+    `var` 是函数作用域，变量提升后初始化为 `undefined`，容易掩盖 Bug。没有块级作用域，`for` 循环中的变量会泄漏到外部。
+
+  </Step>
+  <Step title="致命痛点: 变量提升导致隐蔽 Bug">
+
+    `console.log(a); var a = 1;` 不报错，输出 `undefined`。你在不知情的情况下使用了未初始化的变量。
+
+  </Step>
+  <Step title="ES6 引入 let/const">
+
+    `let` 和 `const` 是块级作用域，有暂时性死区（TDZ），不能重复声明。声明前访问会报错，比 `var` 的静默失败更安全。
+
+  </Step>
+  <Step title="核心机制: V8 的双环境设计">
+
+    ES6 后 V8 将执行上下文拆分为"词法环境"（存放 let/const）和"变量环境"（存放 var）。`let` 受控于词法环境栈的推入与弹出，完美隔绝块级作用域。
+
+  </Step>
+  <Step title="关键洞察: const 保证的是引用不变">
+
+    `const` 只保证引用不变，不保证值不变。`const obj = {}; obj.name = 'Tom'` 是合法的。
+
+  </Step>
+
+</Steps>
+
+**let/const/var 解决的核心问题：**
+
+```text
+问题：var 的函数作用域和变量提升导致隐蔽 Bug
+
+var：提升后初始化为 undefined，没有块级作用域，容易泄漏
+
+解决：let/const 的块级作用域 + TDZ + 不可重复声明
+
+let/const：声明前访问报错（TDZ），块级作用域隔离变量
+```
+
+<Note title="💡 一句话总结">
+
+let/const 用块级作用域和 TDZ 解决了 var 的设计缺陷，const 只保证引用不变。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 var 的半吊子提升">
+
+`var` 声明会被提升，并且在创建阶段就被强行初始化为 `undefined`。
+```javascript
+console.log(a); // undefined（不会报错！）
+var a = 10;
+```
+这种设计极易掩盖 Bug。
+
+</Card>
+<Card title="✅ let/const 与 TDZ">
+
+`let` 和 `const` 同样会被提升！但在执行到声明行之前，它们处于**未初始化状态**（TDZ）。此时访问会直接报错。
+```javascript
+console.log(b); // ReferenceError
+let b = 20;
+```
+报错比静默失败更安全。
+
+</Card>
+</CardGroup>
+
+<Warning title="⚠️ 核心机制: let 也会提升">
+
+很多人以为 `let` 不会提升，这是错误的。`let` 和 `const` 也会提升，但**不会初始化**。在声明语句之前访问会进入"暂时性死区"（TDZ），抛出 ReferenceError。
+
+
+</Warning>
+
+---
+
+## Q2: 箭头函数和普通函数有什么区别？
+
+### 基础梳理
+
+| 维度 | 普通函数 | 箭头函数 |
+|------|---------|---------|
+| this | 调用时决定（四种绑定规则） | 定义时继承外层（词法 this） |
+| arguments | 有 arguments 对象 | 没有，用 rest 参数代替 |
+| 构造函数 | 可以 new | 不能 new（没有 prototype） |
+| prototype | 有 | 没有 |
+
+### 专家视角深度剖析
+
+```javascript
+// this 是最关键的区别
+const obj = {
+  name: 'Tom',
+  regular: function() {
+    console.log(this.name); // 'Tom'（隐式绑定）
+  },
+  arrow: () => {
+    console.log(this.name); // undefined（继承外层，外层是全局）
+  },
+  delayed: function() {
+    setTimeout(() => {
+      console.log(this.name); // 'Tom'（箭头函数继承 delayed 的 this）
+    }, 100);
+  },
+};
+
+// 箭头函数不能被 bind/call/apply 修改 this
+const fn = () => console.log(this);
+fn.call({ name: 'test' }); // 还是原来的 this，call 无效
+```
+
+### V8 中箭头函数的 this 实现
+
+箭头函数在 V8 中被编译时，其 `[[ThisMode]]` 被标记为 `kLexical`。当引擎准备为它解析 `this` 时，一旦发现是 `kLexical`，会**直接跳过运行时动态绑定阶段**，强行去读取闭包上下文 `Context` 中的 `this`。这就是为什么 `call/apply` 也无法扭转箭头函数的 `this`。
+
+### 箭头函数不能作为构造函数
+
+箭头函数没有 `prototype` 属性，也没有内部的 `[[Construct]]` 方法。使用 `new` 调用箭头函数会直接抛出 TypeError。
+
+```javascript
+const Foo = () => {};
+new Foo(); // TypeError: Foo is not a constructor
+Foo.prototype; // undefined
+```
+
+### 箭头函数的实际应用场景
+
+箭头函数最适合用于回调函数中需要继承外层 `this` 的场景，最典型的例子是数组方法和定时器回调。
+
+```javascript
+class Timer {
+  constructor() {
+    this.seconds = 0;
+    // ✅ 箭头函数继承 Timer 的 this
+    setInterval(() => this.seconds++, 1000);
+    // ❌ 普通函数的 this 指向 window
+    // setInterval(function() { this.seconds++; }, 1000);
+  }
+}
+```
+
+<Tip title="🎢 通俗比喻: 租房 vs 自建房">
+
+普通函数的 `this` 就像租房——谁签的合同（谁调用），房子就归谁。你把钥匙（函数引用）给别人，别人就成了新的租户。箭头函数的 `this` 就像自建房——从出生起就被钉死在出生地（定义时的外层作用域），无论谁来住（怎么调用），房子的位置永远不会变。所以你在对象里写了一个箭头函数，它"出生"在全局作用域，`this` 就永远指向全局，跟这个对象没有半毛钱关系。
+
+
+</Tip>
+
+---
+
+## Q3: 解构赋值的原理？有什么坑？
+
+```javascript
+// 数组解构
+const [a, b, ...rest] = [1, 2, 3, 4]; // a=1, b=2, rest=[3,4]
+
+// 对象解构
+const { name, age, city = 'Beijing' } = { name: 'Tom', age: 25 };
+
+// 嵌套解构
+const { data: { user: { name } } } = response;
+
+// 常见坑
+const { a } = { a: { b: 1 } };
+a.b = 2; // 原对象也被改了（解构是浅拷贝）
+
+let x, y;
+// {x, y} = {x: 1, y: 2}; // ❌ 语法错误
+({x, y} = {x: 1, y: 2});  // ✅ 加括号
+```
+
+### 解构赋值的本质
+
+解构赋值的本质是模式匹配——等号左边是一个"模式"，右边是数据源。引擎按照模式从数据源中提取对应的值并赋给变量。
+
+```javascript
+// 对象解构的默认值：只有值严格等于 undefined 时才生效
+const { name = 'Tom', age = 0 } = { name: undefined };
+// name='Tom', age=0
+
+// 数组解构可以跳过元素
+const [a, , c] = [1, 2, 3]; // a=1, c=3
+```
+
+### 解构的常见坑与最佳实践
+
+```javascript
+// 坑1：解构是浅拷贝，嵌套对象仍共享引用
+const { a } = { a: { b: 1 } };
+a.b = 2; // 原对象也被改了
+
+// 坑2：解构未匹配到的属性是 undefined
+const { x, y } = { x: 1 }; // y 是 undefined
+
+// 最佳实践：函数参数解构配合默认值
+function createUser({ name = 'Tom', age = 18 } = {}) {
+  return { name, age };
+}
+createUser(); // { name: 'Tom', age: 18 }
+```
+
+---
+
+## Q4: Map 和 Object 的区别？什么时候用 Map？
+
+| 维度 | Object | Map |
+|------|--------|-----|
+| key 类型 | 只能是 String/Symbol | 任意类型（对象、函数、NaN） |
+| 顺序 | 无序（数字 key 会排序） | 有序（按插入顺序） |
+| 长度 | Object.keys(obj).length | map.size |
+| 性能 | 频繁增删场景慢 | 频繁增删场景快 |
+
+```javascript
+// Map 的 key 可以是对象
+const map = new Map();
+const key = { id: 1 };
+map.set(key, 'value');
+map.get(key); // 'value'
+
+// Object 做不到
+obj[{ id: 1 }]; // undefined（key 被转成字符串 '[object Object]'）
+```
+
+### Map 的内部实现原理
+
+Map 内部使用哈希表（Hash Table）实现。V8 对 Map 的哈希表做了优化：当 key 数量较少时使用线性存储，数量增长后切换到哈希表模式。
+
+```javascript
+// Map 的遍历顺序与插入顺序一致
+const map = new Map();
+map.set('c', 3);
+map.set('a', 1);
+map.set('b', 2);
+[...map.keys()]; // ['c', 'a', 'b'] — 保持插入顺序
+
+// Object 的数字 key 会被排序
+const obj = { 3: 'c', 1: 'a', 2: 'b' };
+Object.keys(obj); // ['1', '2', '3'] — 数字 key 被排序
+```
+
+### Map vs Object 的选择策略
+
+<Tip title="最佳实践: ">
+
+当 key 不是字符串、需要频繁增删、需要保持插入顺序时用 Map。稳定结构的属性访问用 Object 更快（V8 的 Inline Cache 优化）。
+
+
+</Tip>
+
+```javascript
+// ✅ 用 Map 的场景：频繁增删、非字符串 key
+const cache = new Map();
+cache.set(domNode, metadata); // DOM 节点作为 key
+
+// ✅ 用 Object 的场景：稳定的属性结构
+const config = { host: 'localhost', port: 3000 };
+// V8 的 Inline Cache 对稳定形状的 Object 极其优化
+```
+
+### WeakMap 与 Map 的区别
+
+WeakMap 的 key 必须是对象，且是弱引用——当 key 对象没有其他引用时会被垃圾回收，适合存储 DOM 节点关联数据。
+
+```javascript
+const wm = new WeakMap();
+let obj = { name: 'Tom' };
+wm.set(obj, 'metadata');
+obj = null; // obj 被 GC，WeakMap 中的条目也会被清除
+```
+
+---
+
+## Q5: 可选链 (?.) 和空值合并 (??) 的区别？
+
+```javascript
+// 可选链：安全访问嵌套属性
+const city = user?.address?.city; // 如果 address 是 undefined，返回 undefined
+
+// 空值合并：只对 null 和 undefined 生效
+const a = null ?? 'default'; // 'default'
+const b = 0 ?? 'default';   // 0（0 不是 null/undefined）
+const c = 0 || 'default';   // 'default'（0 是 falsy）
+```
+
+### ?? 和 || 的本质区别
+
+`??` 比 `||` 更精准：`||` 对所有 falsy 值生效（0、''、false、null、undefined、NaN），`??` 只对 null 和 undefined 生效。
+
+```javascript
+// 实际场景：用户配置合并
+const config = {
+  timeout: userConfig.timeout ?? 5000,  // 用户传 0 时保留 0
+  // ❌ 用 || 的话：userConfig.timeout || 5000，传 0 会被覆盖为 5000
+};
+```
+
+### 可选链的短路特性
+
+可选链 `?.` 在遇到 `null` 或 `undefined` 时会立即短路返回 `undefined`，不会再执行后续的属性访问。
+
+```javascript
+// 短路：callback 不会被调用
+const result = null?.callback();
+// 等价于：null == null ? undefined : null.callback()
+```
+
+### 最佳实践与注意事项
+
+```javascript
+// ✅ 可选链用于安全访问深层属性
+const city = user?.address?.city;
+
+// ❌ 不要过度使用可选链——可能掩盖数据结构问题
+const value = a?.b?.c?.d?.e; // 如果结构这么深，说明设计有问题
+
+// ✅ 空值合并用于设置默认值
+const timeout = config.timeout ?? 3000;
+```
+
+---
+
+## Q6: Symbol 有什么用？
+
+```javascript
+// Symbol：唯一的值，常用于对象的唯一 key
+const id = Symbol('id');
+const obj = { [id]: 123, name: 'Tom' };
+Object.keys(obj); // ['name']（Symbol key 不会被 for...in 遍历到）
+
+// 内置 Symbol
+const obj2 = {
+  [Symbol.toPrimitive](hint) {
+    if (hint === 'number') return 42;
+    if (hint === 'string') return 'hello';
+    return true;
+  }
+};
++obj2;    // 42
+`${obj2}`; // 'hello'
+```
+
+### Symbol 的唯一性保证
+
+每个 Symbol 值都是唯一的，即使描述（description）相同。`Symbol.for()` 是例外——它会在全局注册表中查找或创建 Symbol。
+
+```javascript
+Symbol('id') === Symbol('id'); // false — 每次创建都是新的
+Symbol.for('id') === Symbol.for('id'); // true — 全局注册表
+
+// 查看全局注册表中的 Symbol
+Symbol.keyFor(Symbol.for('id')); // 'id'
+Symbol.keyFor(Symbol('id'));     // undefined（不在全局注册表中）
+```
+
+### 内置 Symbol 的应用
+
+```javascript
+// Symbol.iterator：定义对象的迭代行为
+const range = {
+  from: 1, to: 5,
+  [Symbol.iterator]() {
+    let current = this.from;
+    const last = this.to;
+    return {
+      next() {
+        return current <= last
+          ? { value: current++, done: false }
+          : { done: true };
+      }
+    };
+  }
+};
+[...range]; // [1, 2, 3, 4, 5]
+
+// Symbol.hasInstance：自定义 instanceof 行为
+class Even {
+  static [Symbol.hasInstance](num) {
+    return typeof num === 'number' && num % 2 === 0;
+  }
+}
+2 instanceof Even; // true
+3 instanceof Even; // false
+```
+
+---
+
+## 🔍 底层源码：V8 如何处理 Generator 和 async/await
+
+<div class="follow-up">
+Generator 在 V8 中是怎么实现暂停和恢复的？
+</div>
+
+Generator 被 V8 编译为状态机（详见 [V8 源码：src/interpreter/bytecode-generator.cc](https://github.com/v8/v8/blob/main/src/interpreter/bytecode-generator.cc)）：
+
+```cpp
+// 每次 yield 暂停时，V8 保存当前的执行状态
+// （包括局部变量、程序计数器）到 Generator 对象的 context 中。
+// next() 恢复时，从 context 中恢复状态继续执行。
+
+// async/await 在 V8 内部被编译为 Generator + 自动执行器：
+// await expr 被转换为 yield Promise.resolve(expr)
+// 自动执行器在 Promise resolve 后调用 gen.next(value)
+```
+
+这和 async/await 的关系：async 函数在 V8 内部被编译为 Generator + 自动执行器。`await expr` 被转换为 `yield Promise.resolve(expr)`，自动执行器在 Promise resolve 后调用 `gen.next(value)`。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："let/const 和 var 的区别？"
+
+**及格回答（60-70分）：**
+> "var 是函数作用域，let/const 是块级作用域。let/const 有暂时性死区，不能重复声明。const 不能重新赋值但可以修改对象属性。"
+
+面试官评价：**知道规则但不理解底层**。
+
+**满分回答（90-100分）：**
+
+> "区别不仅在于作用域范围（函数作用域 vs 块级作用域），更在 V8 的字节码生成机制。`var` 声明在编译阶段绑定到函数的 VariableProxy，生成 `LdaGlobal` 字节码。而 `let/const` 绑定到块级作用域的 Declaration Scope，生成 `LdaContextSlot`。<sup>[1]</sup>"
+
+> "TDZ 的本质是 V8 在进入块级作用域时，将 `let/const` 变量初始化为特殊的 `the_hole`（空洞）值。在遇到赋值语句前访问它，V8 检测到 `the_hole` 即抛出 ReferenceError，这是保证代码严谨性的机制。<sup>[2]</sup>"
+
+> "Generator 在 V8 中被编译为状态机。每次 `yield` 暂停时，V8 保存当前的执行状态到 Generator 对象的 `context` 中。`next()` 恢复时，从 context 中恢复状态继续执行。async/await 在 V8 内部被编译为 Generator + 自动执行器，`await expr` 被转换为 `yield Promise.resolve(expr)`。<sup>[3]</sup>"
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title='Generator 和 async/await 的关系?' icon="layer-group">
+
+    **答题要点：**
+    说出 async/await 是 Generator + Promise 的语法糖。
+
+    **高分回答：**
+    "async/await 是 Generator + Promise 的语法糖。Generator 提供暂停/恢复能力（`yield`），async/await 在此基础上自动执行并处理 Promise。`await expr` 被 V8 转换为 `yield Promise.resolve(expr)`，自动执行器在 Promise resolve 后调用 `gen.next(value)` 恢复执行。错误通过 `gen.throw(err)` 注入到 generator 内部，所以 `await` 的错误能被 `try/catch` 捕获。"
+
+  </Accordion>
+
+  <Accordion title='Map 和 Object 的性能差异在哪?' icon="stopwatch">
+
+    **答题要点：**
+    从 V8 的 Inline Cache 角度分析。
+
+    **高分回答：**
+    "Object 的属性查找依赖 V8 的 Inline Cache，如果对象形状稳定（monomorphic），性能极高——直接根据缓存的内存偏移量取值，O(1) 复杂度。但如果频繁增删属性导致形状变化（polymorphic/megamorphic），Inline Cache 失效，性能会下降。
+
+    Map 的内部实现是哈希表，增删操作始终是 O(1)，不受形状变化影响。所以频繁增删场景用 Map 更好，稳定结构的属性访问用 Object 更快。"
+
+  </Accordion>
+
+  <Accordion title='for...of 和 for...in 的区别?' icon="node">
+
+    **答题要点：**
+    从遍历目标和遍历内容两个维度对比。
+
+    **高分回答：**
+    "`for...in` 遍历对象的可枚举属性（包括原型链上的），key 是字符串。`for...of` 遍历可迭代对象（Array、Map、Set、String 等），value 是值。数组遍历推荐用 `for...of`，不要用 `for...in`——`for...in` 会遍历原型链上的属性，且顺序不保证。"
+
+  </Accordion>
+
+  <Accordion title='🔥 Object.is() 和 === 有什么区别?' icon="skull">
+
+    **答题要点：**
+    说出两个特殊 case。
+
+    **高分回答：**
+    "`Object.is()` 比 `===` 更严格，有两个关键区别：
+    1. `Object.is(NaN, NaN)` 返回 `true`，而 `NaN === NaN` 返回 `false`
+    2. `Object.is(+0, -0)` 返回 `false`，而 `+0 === -0` 返回 `true`
+
+    其他情况两者行为一致。`Object.is` 的本质是比较两个值的 `SameValue` 算法，而 `===` 用的是 `Strict Equality` 算法。"
+
+  </Accordion>
+
+  <Accordion title='ES6 模块和 CommonJS 的区别?' icon="layer-group">
+
+    **答题要点：**
+    从加载方式、值的引用关系、循环依赖处理三个维度对比。
+
+    **高分回答：**
+    "核心区别有三个：
+    1. **加载方式**：CommonJS 是运行时同步加载（`require`），ES6 模块是编译时静态分析（`import/export`）
+    2. **值的关系**：CommonJS 导出的是值的拷贝，ES6 模块导出的是值的引用——模块内部变量变化，导入方也能感知到
+    3. **循环依赖**：CommonJS 遇到循环依赖会返回已执行部分的值（可能不完整），ES6 模块因为是引用关系，能正确处理循环依赖"
+
+  </Accordion>
+
+  <Accordion title='Set 和数组的区别? 去重用哪个?' icon="stopwatch">
+
+    **答题要点：**
+    从数据结构特性和去重场景两个角度分析。
+
+    **高分回答：**
+    "Set 和数组的核心区别是 Set 的元素唯一（基于 SameValueZero 算法）。
+    ```javascript
+    // 基本去重
+    const arr = [1, 2, 2, 3, 3];
+    [...new Set(arr)]; // [1, 2, 3]
+
+    // 对象去重——Set 帮不了，因为引用不同
+    const objs = [{ id: 1 }, { id: 1 }];
+    [...new Set(objs)]; // 两个都在，因为引用不同
+    // 需要用 Map 或 reduce 按 id 去重
+    ```
+    Set 去重的时间复杂度是 O(n)，而 `Array.prototype.filter + indexOf` 是 O(n^2)。大数据量场景优先用 Set。"
+
+  </Accordion>
+
+  <Accordion title='🔥 Promise.all / Promise.race / Promise.allSettled 的区别?' icon="skull">
+
+    **答题要点：**
+    从行为差异和适用场景两个维度对比。
+
+    **高分回答：**
+    "三者的区别：
+    1. **Promise.all**：所有 Promise 都成功才返回成功，有一个失败就立即失败（fail-fast）
+    2. **Promise.race**：返回第一个完成的结果（不管成功还是失败）
+    3. **Promise.allSettled**：等所有 Promise 都完成（不管成功还是失败），返回每个结果的状态数组
+
+    ```javascript
+    // Promise.all 的 fail-fast 特性
+    const p1 = Promise.resolve(1);
+    const p2 = Promise.reject('error');
+    const p3 = Promise.resolve(3);
+    await Promise.all([p1, p2, p3]); // 立即失败，不会等 p3
+
+    // Promise.allSettled 不会 fail-fast
+    await Promise.allSettled([p1, p2, p3]);
+    // [{status:'fulfilled',value:1}, {status:'rejected',reason:'error'}, {status:'fulfilled',value:3}]
+    ```
+    实际项目建议：用 `Promise.allSettled` 替代 `Promise.all + try/catch`，更优雅地处理部分失败。"
+
+  </Accordion>
+
+  <Accordion title='如何实现一个符合 Promise A+ 规范的 Promise?' icon="node">
+
+    **答题要点：**
+    说出状态机、回调队列、异步调度、thenable 展平四个核心。
+
+    **高分回答：**
+    "手写 Promise 的关键不是背代码，而是理解四件事：
+    1. **状态机**：pending → fulfilled/rejected，状态只能改变一次（不可逆）
+    2. **回调队列**：pending 状态时把 then 的回调存起来，状态改变后批量执行
+    3. **异步调度**：then 的回调必须用 `queueMicrotask` 异步执行，防 Zalgo 现象
+    4. **thenable 展平**：`resolvePromise` 递归处理嵌套的 Promise 和 thenable 对象
+
+    V8 中 Promise.then 的回调是通过微任务队列执行的。then 方法返回一个新的 Promise，实现了链式调用。每次 then 都创建新的 Promise 实例，状态由回调函数的返回值决定。"
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [MDN Web Docs: ES6](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/JavaScript_technologies_overview)：*MDN 对 ES6 特性的完整文档。* <sup>[1]</sup>
+- 📖 [V8 Blog: Understanding V8's Bytecode](https://v8.dev/docs/ignition)：*了解 V8 Ignition 解释器如何处理变量提升与作用域。* <sup>[2]</sup>
+- 🟢 [V8 Source Code: bytecode-generator.cc](https://github.com/v8/v8/blob/main/src/interpreter/bytecode-generator.cc)：*V8 字节码生成器的源码，包含箭头函数 this 和 Generator 的处理。* <sup>[3]</sup>
