@@ -83,6 +83,8 @@
 *   **n8n / Dify**: n8n / Dify（当前主流的可视化 AI 工作流与 Agent 编排构建平台。n8n 偏向节点自动化，Dify 偏向大模型应用全栈开发）
 *   **OpenClaw / Hermes**: OpenClaw（开源的本地优先智能体执行框架） / Hermes（NousResearch 推出的专为 Tool Use / Agent 行为深度微调的开源模型家族）
 *   **Codex / Claude Code**: Codex（OpenAI 早期开创性的代码生成大模型底座） / Claude Code（Anthropic 推出的一款深度集成在终端 CLI 中的现代自主编程 Agent）
+*   **AGENT.md / CLAUDE.md / AGENTS.md**: Agent 配置文件（为 AI Agent 提供项目级持久化指令的标准文件格式。AGENT.md 是通用格式，CLAUDE.md 是 Anthropic 专有，AGENTS.md 是 OpenAI 专有。2025-05-07 Sourcegraph Amp 宣布支持 AGENT.md）
+*   **Amp**: Amp（Sourcegraph 推出的 AI 编程 Agent，支持 AGENT.md 配置文件）
 
 ## 8. Node.js 服务端生态 (参考：Node.js 官方文档、《深入浅出 Node.js》)
 *   **Event Loop**: 事件循环（Node.js 特有的 6 个阶段：Timers, Pending, Idle/Prepare, Poll, Check, Close）

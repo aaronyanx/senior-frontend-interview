@@ -285,6 +285,339 @@ wm.set(obj, 'metadata');
 obj = null; // obj 被 GC，WeakMap 中的条目也会被清除
 ```
 
+### Map 深度展开：内部实现与性能
+
+**Map 的内部实现原理（哈希表）：**
+
+Map 内部使用哈希表（Hash Table）实现。V8 对 Map 做了分层优化：key 数量较少时使用线性数组存储（Fast Mode），数量增长后切换到哈希表模式（Dictionary Mode）。
+
+```text
+┌──────────────────────────────────────────────┐
+│              Map 内部存储结构                   │
+├──────────────────────────────────────────────┤
+│  key 数量 ≤ 阈值 → Fast Mode（线性数组）       │
+│  key 数量 > 阈值 → Dictionary Mode（哈希表）   │
+├──────────────────────────────────────────────┤
+│  set(key, val)                               │
+│    → 计算 key 的哈希值                        │
+│    → 定位桶（bucket）                         │
+│    → 桶内链表/开放寻址 存储 key-value 对       │
+│                                              │
+│  get(key)                                    │
+│    → 计算 key 的哈希值                        │
+│    → 定位桶 → 遍历桶内元素匹配 key            │
+│    → 返回 value                              │
+└──────────────────────────────────────────────┘
+```
+
+**Map vs Object 详细对比（8 个维度）：**
+
+| 维度 | Object | Map |
+|------|--------|-----|
+| key 类型 | 只能是 String/Symbol | 任意类型（对象、函数、NaN、数字） |
+| 遍历顺序 | 数字 key 会升序排列，其他按插入顺序 | 严格按插入顺序 |
+| 长度获取 | `Object.keys(obj).length`（O(n)） | `map.size`（O(1)） |
+| 频繁增删 | 性能差（V8 Inline Cache 失效） | 性能好（哈希表 O(1)） |
+| 原型链 | 有原型链属性干扰 | 无原型链污染 |
+| 序列化 | `JSON.stringify` 直接支持 | 不支持 JSON 序列化 |
+| 迭代协议 | 需要 `Object.entries()` | 原生可迭代（`for...of`） |
+| 内存开销 | 属性少时更省内存 | 属性多时更省内存（无 hidden class 开销） |
+
+```javascript
+// Map 的 key 可以是任意类型
+const map = new Map();
+const fnKey = () => {};
+const objKey = { id: 1 };
+map.set(fnKey, 'function value');
+map.set(objKey, 'object value');
+map.set(NaN, 'NaN works too');
+
+// Object 的数字 key 会排序
+const obj = { 3: 'c', 1: 'a', 2: 'b' };
+Object.keys(obj); // ['1', '2', '3'] — 数字 key 被排序
+
+// Map 严格保持插入顺序
+const map2 = new Map();
+map2.set('3', 'c');
+map2.set('1', 'a');
+map2.set('2', 'b');
+[...map2.keys()]; // ['3', '1', '2'] — 保持插入顺序
+```
+
+**Map 的遍历性能优势：**
+
+```javascript
+// Map 的遍历是 O(n)，且没有原型链干扰
+const map = new Map();
+map.set('a', 1);
+map.set('b', 2);
+
+// 直接遍历
+for (const [key, value] of map) {
+  console.log(key, value); // 只遍历自身的 key-value
+}
+
+// Object 需要 Object.keys/entries 过滤原型链
+for (const [key, value] of Object.entries(obj)) {
+  // 只遍历自身可枚举属性，但需要额外方法调用
+}
+```
+
+**性能基准对比：**
+
+```javascript
+// 频繁增删场景：Map 完胜
+// 测试：10000 次 set + get + delete 操作
+
+// Map: ~2ms（哈希表 O(1) 操作）
+const map = new Map();
+for (let i = 0; i < 10000; i++) {
+  map.set(i, i);
+  map.get(i);
+  map.delete(i);
+}
+
+// Object: ~15ms（V8 Inline Cache 频繁失效）
+const obj = {};
+for (let i = 0; i < 10000; i++) {
+  obj[i] = i;
+  const _ = obj[i];
+  delete obj[i];
+}
+```
+
+### WeakMap 的弱引用原理与使用场景
+
+**弱引用的底层机制：**
+
+WeakMap 的弱引用是语言层面的语义保证，不是手动引用计数。V8 的垃圾回收器（GC）使用标记-清除算法：当一个对象从 GC Root 不可达时，WeakMap 中的对应条目会在下次 GC 时被自动清除。
+
+```text
+┌─────────────────────────────────────────────────┐
+│           WeakMap 弱引用机制                      │
+├─────────────────────────────────────────────────┤
+│  WeakMap.set(keyObj, value)                     │
+│    → WeakMap 对 keyObj 是「弱引用」              │
+│    → 不会阻止 keyObj 被 GC 回收                  │
+│                                                 │
+│  当 keyObj 从 GC Root 不可达时：                  │
+│    → GC 标记阶段发现 keyObj 无强引用              │
+│    → GC 清除阶段回收 keyObj                       │
+│    → WeakMap 中的条目自动消失                     │
+│                                                 │
+│  为什么 WeakMap 不能被遍历？                      │
+│    → 遍历需要枚举所有 key                         │
+│    → 但 key 可能在任何时刻被 GC 回收              │
+│    → 遍历结果不确定，违反语言规范                  │
+└─────────────────────────────────────────────────┘
+```
+
+**WeakMap 使用场景 1：DOM 节点关联数据**
+
+```javascript
+// ❌ 用 Map 存储 DOM 元素的元数据 → 内存泄漏
+const metadataMap = new Map();
+
+function bindData(element, data) {
+  metadataMap.set(element, data);
+}
+
+// 当 element 从 DOM 移除后，metadataMap 仍持有强引用
+// element 无法被 GC，导致内存泄漏
+document.removeChild(element);
+// metadataMap.get(element) 仍然存在！
+
+// ✅ 用 WeakMap → 自动清理
+const metadataWeakMap = new WeakMap();
+
+function bindData(element, data) {
+  metadataWeakMap.set(element, data);
+}
+
+// 当 element 从 DOM 移除且无其他引用时
+// WeakMap 中的条目自动被 GC 清除，无内存泄漏
+```
+
+**WeakMap 使用场景 2：私有变量实现**
+
+```javascript
+// WeakMap 实现真正的私有变量（ES2022 之前的标准方案）
+const _private = new WeakMap();
+
+class Counter {
+  constructor() {
+    _private.set(this, { count: 0 });
+  }
+
+  increment() {
+    const priv = _private.get(this);
+    priv.count++;
+  }
+
+  getCount() {
+    return _private.get(this).count;
+  }
+}
+
+const counter = new Counter();
+counter.increment();
+counter.getCount(); // 1
+// 外部无法直接访问 _private 中的数据
+// 且当 counter 实例被 GC 后，_private 中的条目也会被清除
+```
+
+**WeakMap 使用场景 3：缓存计算结果**
+
+```javascript
+// 使用 WeakMap 缓存对象的计算结果
+// 当对象不再需要时，缓存自动释放
+const cache = new WeakMap();
+
+function heavyComputation(obj) {
+  if (cache.has(obj)) {
+    return cache.get(obj);
+  }
+  const result = expensiveCalculation(obj);
+  cache.set(obj, result);
+  return result;
+}
+
+// 当 obj 不再被引用时，缓存条目自动被 GC 清除
+// 不需要手动管理缓存的生命周期
+```
+
+<Note title="一句话总结">
+
+Map 用哈希表实现 O(1) 增删查改，key 可以是任意类型且保持插入顺序；WeakMap 用弱引用关联对象，当 key 对象无其他引用时自动被 GC 清除，适合存储 DOM 元素关联数据和实现私有变量。
+
+</Note>
+
+### Set 深度展开：内部实现与去重机制
+
+**Set 的内部实现原理：**
+
+Set 内部同样使用哈希表实现，但只存储 key，不存储 value。V8 对 Set 的优化策略与 Map 一致：少量元素用线性存储，大量元素切换到哈希表。
+
+```javascript
+// Set 的本质是一个只有 key 的 Map
+// 内部结构：每个元素既是 key 又是 value
+const set = new Set();
+set.add(1);
+set.add(2);
+set.add(1); // 重复元素，自动忽略
+
+console.log(set.size); // 2
+console.log([...set]); // [1, 2]
+```
+
+**Set 的去重机制（SameValueZero 算法）：**
+
+Set 使用 SameValueZero 算法判断元素是否相同，与 `===` 几乎一致，唯一的区别是 `NaN === NaN` 为 `false`，而 `Set` 认为 `NaN` 等于 `NaN`。
+
+```javascript
+// 基本类型去重
+const set1 = new Set([1, 2, 2, 3, 3]);
+[...set1]; // [1, 2, 3]
+
+// NaN 去重（SameValueZero 的特殊之处）
+const set2 = new Set([NaN, NaN, NaN]);
+[...set2]; // [NaN] — 只保留一个 NaN
+
+// 对象引用去重（引用不同就是不同元素）
+const set3 = new Set();
+set3.add({ id: 1 });
+set3.add({ id: 1 });
+set3.size; // 2 — 引用不同，无法去重
+
+// 如果需要按内容去重对象，需要借助 Map
+const seen = new Map();
+const items = [{ id: 1 }, { id: 1 }, { id: 2 }];
+const unique = items.filter(item => {
+  const key = item.id;
+  if (seen.has(key)) return false;
+  seen.set(key, true);
+  return true;
+});
+// unique: [{ id: 1 }, { id: 2 }]
+```
+
+**Set vs Array 对比：**
+
+| 维度 | Set | Array |
+|------|-----|-------|
+| 元素唯一性 | 自动去重（SameValueZero） | 允许重复 |
+| 查找元素 | `set.has(val)` — O(1) | `arr.includes(val)` — O(n) |
+| 删除元素 | `set.delete(val)` — O(1) | `arr.splice(i, 1)` — O(n) |
+| 有序性 | 有序（按插入顺序） | 有序（按索引） |
+| 访问方式 | 不能通过索引访问 | `arr[i]` 直接访问 |
+| 适用场景 | 去重、集合运算、快速查找 | 有序数据、索引访问 |
+
+```javascript
+// Set 的去重性能优势
+const largeArray = Array.from({ length: 100000 }, () =>
+  Math.floor(Math.random() * 1000)
+);
+
+// Set 去重：O(n)
+const unique1 = [...new Set(largeArray)];
+
+// filter + indexOf 去重：O(n²)
+const unique2 = largeArray.filter((v, i, arr) => arr.indexOf(v) === i);
+// 性能差距可达 100 倍以上
+```
+
+**Set 的集合运算实现：**
+
+```javascript
+// 并集
+const union = (a, b) => new Set([...a, ...b]);
+
+// 交集
+const intersect = (a, b) => new Set([...a].filter(x => b.has(x)));
+
+// 差集
+const difference = (a, b) => new Set([...a].filter(x => !b.has(x)));
+
+// 使用示例
+const setA = new Set([1, 2, 3, 4]);
+const setB = new Set([3, 4, 5, 6]);
+
+[...union(setA, setB)];      // [1, 2, 3, 4, 5, 6]
+[...intersect(setA, setB)];  // [3, 4]
+[...difference(setA, setB)]; // [1, 2]
+```
+
+### WeakSet 的使用场景
+
+WeakSet 与 Set 的关系，等同于 WeakMap 与 Map 的关系：key 必须是对象，且是弱引用。
+
+```javascript
+// 使用场景 1：标记已处理的对象
+const visited = new WeakSet();
+
+function processNode(node) {
+  if (visited.has(node)) return; // 防止循环引用
+  visited.add(node);
+  // 处理 node...
+  node.children.forEach(child => processNode(child));
+}
+
+// 使用场景 2：防止对象被重复添加到 DOM
+const attachedElements = new WeakSet();
+
+function attachOnce(element, parent) {
+  if (attachedElements.has(element)) {
+    console.warn('Element already attached');
+    return;
+  }
+  attachedElements.add(element);
+  parent.appendChild(element);
+}
+
+// 当 element 从 DOM 移除且无其他引用时
+// WeakSet 中的标记自动被 GC 清除
+```
+
 ---
 
 ## Q5: 可选链 (?.) 和空值合并 (??) 的区别？
@@ -401,6 +734,252 @@ class Even {
 
 ---
 
+## Q7: 数组方法的三大流派？为什么 React 里不能直接 sort？
+
+### 三大流派分类
+
+面试官问"你常用哪些数组方法"，如果你只是报菜名，那只能拿 60 分。真正拉开差距的回答是：**按副作用行为把数组方法分成三个流派，每个流派的适用场景和坑完全不同。**
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│                  数组方法的三大流派                              │
+├────────────────────┬────────────────────┬────────────────────┤
+│  副作用派           │  纯函数派           │  降维打击派          │
+│  (Mutating)        │  (Non-Mutating)    │  (Reduce)          │
+├────────────────────┼────────────────────┼────────────────────┤
+│  push / pop        │  map / filter      │  reduce             │
+│  splice            │  slice / concat    │  reduceRight         │
+│  sort / reverse     │  flat / flatMap    │                    │
+│  shift / unshift    │  toSorted (ES2023) │                    │
+│  fill / copyWithin  │  toSpliced (ES2023)│                    │
+├────────────────────┼────────────────────┼────────────────────┤
+│  直接修改原数组      │  返回新数组         │  把数组"折叠"成任意值  │
+│  调用后原数组变了    │  原数组不变         │  原数组不变          │
+└────────────────────┴────────────────────┴────────────────────┘
+```
+
+### 副作用派：直接修改原数组
+
+副作用派方法会**原地修改**数组本身。在纯 JavaScript 脚本里没问题，但一旦进入 React/Vue 的响应式世界，就可能变成隐形炸弹。
+
+```javascript
+const arr = [3, 1, 2];
+
+// 副作用派：原地修改
+arr.sort();           // arr 变成 [1, 2, 3]，原数组被改了
+arr.push(4);          // arr 变成 [1, 2, 3, 4]
+arr.splice(1, 1);     // arr 变成 [1, 3, 4]，删除了索引 1
+
+// 你以为只是"查看"了一下，其实原数组已经面目全非
+```
+
+### 纯函数派：返回新数组，原数组不动
+
+纯函数派方法不会触碰原数组，而是返回一个全新的数组。这是 React/Vue 等框架最喜欢的模式——因为框架需要通过引用比较（`===`）来判断数据是否变化。
+
+```javascript
+const arr = [3, 1, 2];
+
+// 纯函数派：返回新数组
+const sorted = arr.toSorted();   // [1, 2, 3]，arr 仍是 [3, 1, 2]
+const sliced = arr.slice(1);     // [1, 2]，arr 不变
+const filtered = arr.filter(n => n > 1); // [3, 2]，arr 不变
+const mapped = arr.map(n => n * 2);      // [6, 2, 4]，arr 不变
+```
+
+### 降维打击派：reduce 不只是求和
+
+大多数候选人对 `reduce` 的理解停留在"求数组之和"。但 reduce 真正的威力是**把数组"降维"成任意数据结构**——Map、Object、嵌套树，什么都行。
+
+```javascript
+// ❌ 大多数人的 reduce 用法：求和
+const sum = [1, 2, 3, 4].reduce((acc, cur) => acc + cur, 0);
+// 10 — 这只是 reduce 最初级的用法
+
+// ✅ 真正有用的：把数组降维成 Map 字典，O(n) → O(1) 查找
+const users = [
+  { id: 1, name: 'Alice', dept: 'engineering' },
+  { id: 2, name: 'Bob', dept: 'design' },
+  { id: 3, name: 'Charlie', dept: 'engineering' },
+];
+
+// 把 O(n) 的数组查找变成 O(1) 的 Map 查找
+const userMap = users.reduce((map, user) => {
+  map.set(user.id, user);
+  return map;
+}, new Map());
+
+userMap.get(2); // { id: 2, name: 'Bob', dept: 'design' } — O(1)
+// 如果用 users.find(u => u.id === 2)，每次都是 O(n)
+```
+
+**大型管理后台的性能优化实战：**
+
+```javascript
+// 场景：管理后台有一个 5000 人的员工列表
+// 需要根据部门分组展示
+
+// ❌ 每次渲染都 filter — O(n) × 部门数
+const engineeringUsers = users.filter(u => u.dept === 'engineering');
+const designUsers = users.filter(u => u.dept === 'design');
+// ... 每个部门遍历一次，10 个部门就是 50000 次比较
+
+// ✅ 用 reduce 一次性分组 — 只遍历一次 O(n)
+const grouped = users.reduce((groups, user) => {
+  const dept = user.dept;
+  if (!groups.has(dept)) {
+    groups.set(dept, []);
+  }
+  groups.get(dept).push(user);
+  return groups;
+}, new Map());
+
+grouped.get('engineering'); // [{ id: 1, name: 'Alice', ... }, ...]
+grouped.get('design');      // [{ id: 2, name: 'Bob', ... }]
+// 5000 条数据只遍历一次，比多次 filter 快 10 倍
+```
+
+### 结合框架规范：为什么 React 里不能直接 sort
+
+React 和 Vue 的响应式系统都依赖**引用比较**来检测数据变化。如果你直接修改原数组，引用没变，框架就"看不见"变化，界面不会更新。
+
+```javascript
+// ❌ React 中直接 sort 原数组 — 界面不更新
+const [users, setUsers] = useState(initialUsers);
+
+function handleSort() {
+  users.sort((a, b) => a.name.localeCompare(b.name));
+  setUsers(users); // users 的引用没变！React 认为数据没变化，不重渲染
+}
+
+// ❌ 用展开运算符创建新数组再 sort — 可以工作但有隐患
+function handleSort() {
+  const sorted = [...users].sort((a, b) => a.name.localeCompare(b.name));
+  setUsers(sorted); // 引用变了，React 会重渲染
+  // 但 [...users] 只是浅拷贝，嵌套对象仍是同一个引用
+}
+
+// ✅ 最干净的写法：ES2023 不可变方法
+function handleSort() {
+  setUsers(users.toSorted((a, b) => a.name.localeCompare(b.name)));
+  // toSorted 返回新数组，原数组不变，语义最清晰
+}
+```
+
+<Warning title="⚠️ Vue 3 的 Proxy 陷阱">
+
+Vue 3 用 Proxy 代理响应式数据，`arr.sort()` 和 `arr.splice()` 会触发 Proxy 的 set 陷阱，Vue 能检测到变化。但这不意味着你可以随意使用副作用方法——在 `computed` 或 `watch` 中直接修改响应式数组会导致无限循环或意外行为。**养成用纯函数派方法的习惯，框架无关，代码更安全。**
+
+</Warning>
+
+### ES2023 不可变方法：toSorted、toSpliced、toReversed
+
+ES2023 终于给数组加上了纯函数版本的变异方法，解决了困扰开发者多年的痛点：
+
+```javascript
+const original = [3, 1, 4, 1, 5, 9];
+
+// ES2023 之前：需要先拷贝再操作
+const sorted1 = [...original].sort((a, b) => a - b);
+const reversed1 = [...original].reverse();
+const spliced1 = [...original].splice(1, 2);
+
+// ES2023：直接调用纯函数版本
+const sorted2 = original.toSorted((a, b) => a - b);   // [1, 1, 3, 4, 5, 9]
+const reversed2 = original.toReversed();                // [9, 5, 1, 4, 1, 3]
+const spliced2 = original.toSpliced(1, 2);              // [3, 1, 5, 9]
+
+// original 始终是 [3, 1, 4, 1, 5, 9]，从未被修改
+```
+
+### V8 引擎底层：数组方法的性能陷阱
+
+**unshift 的 O(n) 开销：**
+
+`unshift` 在数组头部插入元素，V8 需要把所有现有元素往后移一位——这是连续内存的移位操作，时间复杂度 O(n)。数据量大时性能断崖式下降。
+
+```javascript
+// ❌ 循环中用 unshift — O(n²)
+const result = [];
+for (let i = 0; i < 10000; i++) {
+  result.unshift(i); // 每次都移位所有已有元素
+}
+// 10000 次移位，总操作次数 = 1+2+3+...+10000 = O(n²)
+
+// ✅ 先 push 再 reverse — O(n)
+const result2 = [];
+for (let i = 0; i < 10000; i++) {
+  result2.push(i); // O(1) 尾部插入
+}
+result2.reverse(); // 一次性 O(n) 反转
+```
+
+**delete arr[1] 的危害：**
+
+用 `delete` 删除数组元素会在数组中留下"空洞"（empty slot），V8 会把这种数组从高效的 **Packed Elements** 模式降级为低效的 **Holey Elements** 模式，甚至进一步降级到 **Dictionary Elements**（字典模式），性能断崖式下降。
+
+```javascript
+// ❌ delete 制造空洞 — 性能灾难
+const arr = [1, 2, 3, 4, 5];
+delete arr[1];
+console.log(arr);        // [1, empty, 3, 4, 5]
+console.log(arr.length); // 5（length 不变！）
+console.log(arr[1]);     // undefined（不是真的删除，是变成 empty）
+
+// ❌ 空洞数组的遍历也有坑
+arr.forEach(x => console.log(x)); // 只输出 1, 3, 4, 5（跳过 empty）
+arr.map(x => x * 2);              // [2, empty, 6, 8, 10]（empty 被保留）
+```
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│              V8 数组的三种 Elements 模式                        │
+├──────────────────────────────────────────────────────────────┤
+│  Packed Elements（紧密模式）                                    │
+│    → 连续存储，没有空洞                                         │
+│    → V8 可以用连续内存块直接索引访问，性能最优                     │
+│    → [1, 2, 3, 4, 5] ✅                                      │
+│                                                              │
+│  Holey Elements（空洞模式）                                     │
+│    → 存在 empty slot（delete 或稀疏赋值导致）                    │
+│    → 每次访问需要额外检查"这个位置是不是空洞"                      │
+│    → 性能比 Packed 慢 2-3 倍                                   │
+│    → [1, empty, 3, 4, 5] ⚠️                                 │
+│                                                              │
+│  Dictionary Elements（字典模式）                                │
+│    → 空洞太多时，V8 直接退化为哈希表存储                          │
+│    → 每次访问都要算哈希，性能断崖式下降                            │
+│    → 性能比 Packed 慢 10 倍以上                                 │
+│    → { 0: 'a', 10000: 'b', 99999: 'c' } ❌                  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+```javascript
+// ❌ 稀疏数组触发 Dictionary Elements 降级
+const sparse = [];
+sparse[0] = 'a';
+sparse[10000] = 'b';
+sparse[99999] = 'c';
+// V8 会把 sparse 从 Packed 降级到 Dictionary Elements
+// 此时 arr[i] 的访问从 O(1) 直接索引变成 O(1) 哈希查找
+// 但常数因子大得多，而且失去了 V8 对连续数组的各种优化
+
+// ✅ 正确做法：用 Map 替代稀疏数组
+const map = new Map();
+map.set(0, 'a');
+map.set(10000, 'b');
+map.set(99999, 'c');
+// Map 本身就是哈希表，不存在"降级"问题
+```
+
+<Note title="一句话总结">
+
+数组方法按副作用分为三派：副作用派（sort/splice/push）直接改原数组，纯函数派（map/filter/slice/toSorted）返回新数组，reduce 是降维打击派能折叠成任意结构。React/Vue 中应优先用纯函数派；V8 底层对 Packed/Holey/Dictionary 三种数组模式有巨大的性能差异，避免 `delete` 和稀疏赋值。
+
+</Note>
+
+---
+
 ## 🔍 底层源码：V8 如何处理 Generator 和 async/await
 
 <div class="follow-up">
@@ -439,6 +1018,292 @@ Generator 被 V8 编译为状态机（详见 [V8 源码：src/interpreter/byteco
 > "TDZ 的本质是 V8 在进入块级作用域时，将 `let/const` 变量初始化为特殊的 `the_hole`（空洞）值。在遇到赋值语句前访问它，V8 检测到 `the_hole` 即抛出 ReferenceError，这是保证代码严谨性的机制。<sup>[2]</sup>"
 
 > "Generator 在 V8 中被编译为状态机。每次 `yield` 暂停时，V8 保存当前的执行状态到 Generator 对象的 `context` 中。`next()` 恢复时，从 context 中恢复状态继续执行。async/await 在 V8 内部被编译为 Generator + 自动执行器，`await expr` 被转换为 `yield Promise.resolve(expr)`。<sup>[3]</sup>"
+
+### 问题："说说你 ES6 ES7 都用了什么 API"
+
+**及格回答（60-70分）：**
+> "我用过 let/const、箭头函数、解构赋值、Promise、async/await、Map/Set、可选链、空值合并……"
+
+面试官评价：**报菜名，没有深度**。
+
+**满分回答（90-100分）：**
+
+> "ES6+ 的演进有三条主线。第一条是异步编程的演进——从回调地狱到 Promise 再到 async/await。Promise 解决了回调嵌套问题，async/await 让异步代码看起来像同步代码。V8 内部把 async/await 编译为 Generator + 自动执行器，`await expr` 被转换为 `yield Promise.resolve(expr)`，自动执行器在 Promise resolve 后调用 `gen.next(value)` 恢复执行。<sup>[1]</sup>"
+
+> "第二条是数据结构的完善。ES5 时代只有 Object 和 Array，但 Object 的 key 只能是字符串，频繁增删性能差，遍历顺序不稳定。ES6 引入 Map/Set/WeakMap 解决了这些问题。Map 的 key 可以是任意类型，内部用哈希表实现，增删操作始终是 O(1)。WeakMap 的 key 是弱引用，当 key 对象没有其他引用时会被垃圾回收，适合存储 DOM 节点关联数据——用 Map 存 DOM 元素的元数据，节点移除后 Map 仍持有强引用，导致内存泄漏。<sup>[2]</sup>"
+
+> "第三条是防御性编程糖。ES2020 引入的可选链 `?.` 和空值合并 `??` 解决了深层属性访问和默认值设置的痛点。`??` 比 `||` 更精准——`||` 对所有 falsy 值生效（0、''、false），`??` 只对 null 和 undefined 生效。实际项目中用户传 `timeout: 0` 时，用 `||` 会被覆盖为默认值，用 `??` 则正确保留 0。<sup>[3]</sup>"
+
+> "实际工程中还有兼容性问题需要关注。语法层（let/const、箭头函数、解构）靠 Babel 转译，内建对象（Promise、Map/Set、Symbol）靠 Polyfill，而 Proxy/Reflect 这类元编程 API 无法 Polyfill。配置 `useBuiltIns: 'usage'` 可以按需引入 polyfill，只打包用到的 API。物流 PDA 设备用 Chromium 49 内核，`Promise.allSettled` 没被 polyfill 直接白屏——这些踩坑经验才是真正体现工程能力的地方。"
+
+### Babel + Polyfill 深度展开：ES6+ 的工程化兼容方案
+
+**ES6+ 特性的三层分类：**
+
+ES6+ 的新特性在兼容性层面可以分为三类，处理方式完全不同：
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│              ES6+ 特性的三层分类                          │
+├─────────────────────────────────────────────────────────┤
+│  第一层：语法层（Syntax）                                 │
+│    let/const、箭头函数、解构赋值、模板字符串、class        │
+│    → 靠 Babel 转译（代码转换，不改变运行时）              │
+│                                                         │
+│  第二层：内建对象（Built-in Objects）                      │
+│    Promise、Map/Set/WeakMap、Symbol、Array.includes      │
+│    → 靠 Polyfill（注入缺失的 API 实现）                  │
+│                                                         │
+│  第三层：元编程 API（不可 Polyfill）                      │
+│    Proxy、Reflect、WeakRef                              │
+│    → 无法 Polyfill（依赖引擎内部机制）                    │
+│    → 只能换方案或放弃兼容                                  │
+└─────────────────────────────────────────────────────────┘
+```
+
+```javascript
+// 第一层：语法层 — Babel 转译
+// 输入（ES6+）
+const fn = () => {
+  const { name, age } = getUser();
+  return `Hello ${name}, age ${age}`;
+};
+
+// 输出（ES5，Babel 转译后）
+var fn = function fn() {
+  var _getUser = getUser();
+  var name = _getUser.name;
+  var age = _getUser.age;
+  return 'Hello ' + name + ', age ' + age;
+};
+// 只是代码层面的等价转换，不需要额外运行时
+
+// 第二层：内建对象 — Polyfill 注入
+// Promise、Map、Set、Symbol 等在旧浏览器中不存在
+// Polyfill 会在全局注入这些 API 的 JavaScript 实现
+
+// 第三层：元编程 API — 无法 Polyfill
+// Proxy 依赖引擎内部的拦截机制，纯 JavaScript 无法模拟
+// Reflect 的部分方法依赖底层元操作
+```
+
+**Babel 的转换原理（AST 解析 -> 代码生成）：**
+
+Babel 的工作流程分为三个阶段：解析（Parse）、转换（Transform）、生成（Generate）。
+
+```text
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│   解析 Parse  │ →  │  转换 Transform│ →  │  生成 Generate│
+├──────────────┤    ├──────────────┤    ├──────────────┤
+│ 源代码        │    │ AST           │    │ 新 AST       │
+│   ↓           │    │   ↓           │    │   ↓           │
+│ 词法分析       │    │ 插件遍历 AST   │    │ 代码生成器    │
+│   ↓           │    │   ↓           │    │   ↓           │
+│ Token 流      │    │ 修改/替换节点  │    │ 目标代码      │
+│   ↓           │    │   ↓           │    │              │
+│ 语法分析       │    │ 新 AST        │    │              │
+│   ↓           │    │              │    │              │
+│ AST           │    │              │    │              │
+└──────────────┘    └──────────────┘    └──────────────┘
+```
+
+```javascript
+// Babel 插件的本质：接收 AST，返回新 AST
+// 以箭头函数转换为例（简化版）
+const plugin = {
+  visitor: {
+    // 访问 ArrowFunctionExpression 节点
+    ArrowFunctionExpression(path) {
+      const { params, body } = path.node;
+      // 替换为普通函数表达式
+      path.replaceWith({
+        type: 'FunctionExpression',
+        params,
+        body: {
+          type: 'BlockStatement',
+          body: [
+            { type: 'ReturnStatement', argument: body }
+          ]
+        }
+      });
+    }
+  }
+};
+```
+
+**@babel/preset-env 的作用：**
+
+`@babel/preset-env` 是 Babel 的智能预设，它根据目标浏览器环境，自动决定需要哪些转换插件和 Polyfill。
+
+```javascript
+// babel.config.js — preset-env 的基本配置
+module.exports = {
+  presets: [
+    ['@babel/preset-env', {
+      // 指定目标环境
+      targets: '> 0.25%, not dead',
+      // 或者指定具体浏览器
+      // targets: { chrome: '58', ie: '11' }
+
+      // 决定如何注入 Polyfill
+      useBuiltIns: 'usage', // 'usage' | 'entry' | false
+      corejs: 3,            // core-js 版本
+    }]
+  ]
+};
+```
+
+**core-js 的作用：**
+
+core-js 是 JavaScript 标准库的模块化 Polyfill 集合，提供了 ES5 到最新提案中几乎所有 API 的兼容实现。
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│                    core-js 模块结构                       │
+├─────────────────────────────────────────────────────────┤
+│  core-js/es      → ECMAScript 标准 API                   │
+│    ├─ promise    → Promise 构造函数和方法                  │
+│    ├─ map        → Map 构造函数                           │
+│    ├─ set        → Set 构造函数                           │
+│    ├─ symbol     → Symbol 构造函数和内置 Symbol            │
+│    ├─ array      → Array.from、Array.includes 等          │
+│    └─ object     → Object.assign、Object.entries 等       │
+│                                                         │
+│  core-js/proposals → Stage 1-3 的提案 API                │
+│  core-js/stable    → 已纳入标准的 API                     │
+│                                                         │
+│  为什么需要 core-js？                                      │
+│    → Babel 只转译语法，不处理内建对象                       │
+│    → core-js 提供内建对象的 Polyfill 实现                  │
+│    → 模块化设计，可以按需引入，减小打包体积                  │
+└─────────────────────────────────────────────────────────┘
+```
+
+**.browserslistrc 配置详解：**
+
+browserslist 是前端工具链的统一目标环境配置，被 Babel、Autoprefixer、ESLint 等工具共享。
+
+```text
+# .browserslistrc — 目标浏览器配置
+
+# 常用查询语法：
+# > 0.5%        — 全球市场份额 > 0.5% 的浏览器
+# last 2 versions — 每个浏览器的最近 2 个版本
+# not dead      — 排除官方已停止维护的浏览器
+# not ie 11     — 排除 IE 11
+# Chrome >= 80  — Chrome 80 及以上
+
+# 推荐配置（现代项目）
+> 0.5%
+last 2 versions
+not dead
+not ie 11
+
+# 保守配置（需要兼容旧设备）
+> 0.2%
+last 2 versions
+ie >= 11
+
+# 查看当前配置匹配了哪些浏览器：
+# npx browserslist
+```
+
+**useBuiltIns: 'usage' 按需引入：**
+
+`useBuiltIns` 决定了 core-js Polyfill 的注入方式，`'usage'` 是最推荐的模式。
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│           useBuiltIns 三种模式对比                        │
+├──────────────┬──────────────────────────────────────────┤
+│  false       │ 不注入任何 Polyfill                       │
+│              │ 适合：不需要兼容旧浏览器                    │
+├──────────────┼──────────────────────────────────────────┤
+│  'entry'     │ 在入口文件手动 import 一次                  │
+│              │ 根据 targets 过滤掉不需要的 Polyfill       │
+│              │ 缺点：仍会引入整个 core-js 中目标环境       │
+│              │ 不支持的所有 Polyfill，体积较大             │
+├──────────────┼──────────────────────────────────────────┤
+│  'usage'     │ 扫描源码，只注入用到的 Polyfill             │
+│              │ 优点：最小化打包体积                        │
+│              │ 缺点：可能遗漏动态使用的 API                │
+└──────────────┴──────────────────────────────────────────┘
+```
+
+```javascript
+// useBuiltIns: 'usage' 的工作原理示例
+
+// 源码中使用了 Promise.allSettled 和 Array.includes
+const result = await Promise.allSettled(promises);
+const hasItem = arr.includes(target);
+
+// Babel + core-js 自动注入的 Polyfill（仅这两个 API）：
+// import "core-js/modules/es.promise.all-settled.js";
+// import "core-js/modules/es.array.includes.js";
+
+// 如果用 'entry' 模式，会在入口注入所有目标环境缺失的 Polyfill
+// import "core-js/modules/es.promise.js";
+// import "core-js/modules/es.map.js";
+// import "core-js/modules/es.set.js";
+// import "core-js/modules/es.symbol.js";
+// ... 几百个模块，体积差距巨大
+```
+
+**实际配置示例（完整项目配置）：**
+
+```javascript
+// babel.config.js — 生产级配置
+module.exports = (api) => {
+  const isProd = api.env('production');
+
+  return {
+    presets: [
+      ['@babel/preset-env', {
+        // 使用 browserslist 配置
+        useBuiltIns: 'usage',
+        corejs: {
+          version: 3,
+          proposals: true, // 包含尚未正式纳入标准的提案 API
+        },
+        // 不转换 ES 模块语法，交给 Webpack 处理（支持 tree-shaking）
+        modules: false,
+        // 调试模式：查看每个目标环境需要哪些 Polyfill
+        // debug: true,
+      }],
+      ['@babel/preset-typescript', {
+        // 仅做类型剥离，不做类型检查（类型检查交给 tsc）
+        onlyRemoveTypeImports: true,
+      }],
+    ],
+    plugins: [
+      // 生产环境移除 console.log
+      isProd && 'transform-remove-console',
+      // 按需导入（如 antd、lodash）
+      ['import', { libraryName: 'antd', libraryDirectory: 'es', style: true }],
+    ].filter(Boolean),
+  };
+};
+```
+
+```text
+# .browserslistrc — 生产环境推荐配置
+> 0.5%
+last 2 versions
+not dead
+not ie 11
+```
+
+<Warning title="实际踩坑：useBuiltIns: 'entry' vs 'useBuiltIns: 'usage''">
+
+用 `entry` 模式时，必须在入口文件顶部手动 `import 'core-js/stable'`，否则 Polyfill 不会被注入。用 `usage` 模式则不需要手动导入，Babel 会自动扫描并注入。但 `usage` 模式有一个坑：它只能静态分析源码，如果通过 `window.Promise` 动态访问 API，可能漏掉 Polyfill。
+
+</Warning>
+
+<Note title="一句话总结">
+
+语法层靠 Babel 转译（AST 解析 -> 代码生成），内建对象靠 core-js Polyfill，`@babel/preset-env` + `useBuiltIns: 'usage'` + `.browserslistrc` 三者配合实现按需兼容。Proxy 等元编程 API 无法 Polyfill，只能换方案。
+
+</Note>
 
 ### 大厂高频连环拷问
 

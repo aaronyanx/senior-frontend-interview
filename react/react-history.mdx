@@ -423,6 +423,793 @@ rootNode.addEventListener('click', (e) => {
 
 ---
 
+## Q7: React 生命周期经历了哪些变化？
+
+### React 15 生命周期
+
+React 15 的生命周期围绕类组件的挂载、更新和卸载三个阶段设计，整体流程是同步且线性的：
+
+```text
+挂载阶段（Mounting）                 更新阶段（Updating）                 卸载阶段（Unmounting）
+┌───────────────────┐            ┌───────────────────┐              ┌───────────────────┐
+│ componentWillMount │            │ componentWillReceiveProps│         │ componentWillUnmount│
+│        ↓          │            │        ↓           │              └───────────────────┘
+│   render()        │            │ shouldComponentUpdate│
+│        ↓          │            │        ↓           │
+│ componentDidMount │            │ componentWillUpdate │
+└───────────────────┘            │        ↓           │
+                                 │   render()         │
+                                 │        ↓           │
+                                 │ componentDidUpdate │
+                                 └───────────────────┘
+```
+
+```javascript
+class UserProfile extends React.Component {
+  // 1. 挂载：组件即将插入 DOM（已被废弃）
+  componentWillMount() {
+    console.log('componentWillMount - DOM 不存在，不能做 DOM 操作');
+  }
+
+  // 2. 挂载：组件已插入 DOM
+  componentDidMount() {
+    console.log('componentDidMount - 可以安全地做 DOM 操作和数据请求');
+    this.fetchUser(this.props.userId);
+  }
+
+  // 3. 更新：父组件传入新 props（已被废弃）
+  componentWillReceiveProps(nextProps) {
+    if (nextProps.userId !== this.props.userId) {
+      this.setState({ loading: true });
+    }
+  }
+
+  // 4. 更新：判断是否需要重新渲染
+  shouldComponentUpdate(nextProps, nextState) {
+    return nextProps.userId !== this.props.userId;
+  }
+
+  // 5. 更新：即将开始重新渲染（已被废弃）
+  componentWillUpdate(nextProps, nextState) {
+    console.log('componentWillUpdate - render 之前');
+  }
+
+  // 6. 更新：渲染完成后
+  componentDidUpdate(prevProps, prevState) {
+    if (prevProps.userId !== this.props.userId) {
+      this.fetchUser(this.props.userId);
+    }
+  }
+
+  // 7. 卸载：组件即将从 DOM 移除
+  componentWillUnmount() {
+    console.log('componentWillUnmount - 清理定时器、取消订阅');
+  }
+
+  render() {
+    return <div>{this.state.user?.name}</div>;
+  }
+}
+```
+
+### React 16 生命周期
+
+React 16 引入 Fiber 架构后，Render 阶段可以被中断和重新执行。如果生命周期方法有副作用（如修改 state、操作 DOM），就会在中断恢复时被重复触发，导致不可预测的 bug。因此 React 16.3 废弃了三个带副作用的生命周期，引入了两个更"纯粹"的替代方案。
+
+```text
+挂载阶段（Mounting）                 更新阶段（Updating）                 卸载阶段（Unmounting）
+┌───────────────────┐            ┌───────────────────┐              ┌───────────────────┐
+│  constructor()    │            │ getDerivedStateFromProps│         │ componentWillUnmount│
+│        ↓          │            │        ↓           │              └───────────────────┘
+│ getDerivedStateFromProps│       │ shouldComponentUpdate│
+│        ↓          │            │        ↓           │
+│   render()        │            │   render()         │
+│        ↓          │            │        ↓           │
+│ getSnapshotBeforeUpdate│ ← 新增│ getSnapshotBeforeUpdate│ ← 新增
+│        ↓          │            │        ↓           │
+│ componentDidMount │            │ componentDidUpdate │
+└───────────────────┘            └───────────────────┘
+```
+
+**新增的两个生命周期：**
+
+```javascript
+class ChatList extends React.Component {
+  // 替代 componentWillMount + componentWillReceiveProps
+  // 纯函数：只根据 props/state 计算返回值，没有副作用
+  static getDerivedStateFromProps(nextProps, prevState) {
+    if (nextProps.userId !== prevState.prevUserId) {
+      return {
+        prevUserId: nextProps.userId,
+        messages: [],       // 重置消息列表
+      };
+    }
+    return null; // 不需要更新 state
+  }
+
+  // 替代 componentWillUpdate
+  // 在 DOM 更新前获取快照信息（如滚动位置），传递给 componentDidUpdate
+  getSnapshotBeforeUpdate(prevProps, prevState) {
+    if (prevProps.messages.length < this.props.messages.length) {
+      const list = this.listRef.current;
+      return list.scrollHeight - list.scrollTop; // 返回滚动偏移量
+    }
+    return null;
+  }
+
+  // 收到 getSnapshotBeforeUpdate 的返回值作为 snapshot 参数
+  componentDidUpdate(prevProps, prevState, snapshot) {
+    if (snapshot !== null) {
+      const list = this.listRef.current;
+      list.scrollTop = list.scrollHeight - snapshot; // 恢复滚动位置
+    }
+  }
+
+  render() {
+    return <div ref={this.listRef}>{/* 消息列表 */}</div>;
+  }
+}
+```
+
+### React 15 vs 16 生命周期对比表
+
+| 阶段 | React 15 | React 16 | 变化原因 |
+|------|----------|----------|----------|
+| 挂载 - 初始化 | `componentWillMount` | `constructor()` | `componentWillMount` 中 setState 无效，直接用 constructor 替代 |
+| 挂载 - 初始化 | `componentWillMount` | `getDerivedStateFromProps` | 纯函数，无副作用，不会被中断重复触发 |
+| 更新 - props 变化 | `componentWillReceiveProps` | `getDerivedStateFromProps` | 挂载和更新统一用同一个静态方法 |
+| 更新 - 渲染前 | `componentWillUpdate` | `getSnapshotBeforeUpdate` | 只读 DOM 快照，不修改 state，安全可中断 |
+| 更新 - 渲染后 | `componentDidUpdate` | `componentDidUpdate` | 无变化，已在 Commit 阶段，安全 |
+| 卸载 | `componentWillUnmount` | `componentWillUnmount` | 无变化，已在 Commit 阶段，安全 |
+
+### 为什么 React 16 废弃了旧生命周期？
+
+核心原因在于 Fiber 架构将渲染分为两个阶段：
+
+```text
+Render 阶段（可中断）                Commit 阶段（不可中断）
+┌──────────────────────────┐      ┌──────────────────────────┐
+│ getDerivedStateFromProps  │      │ componentDidMount        │
+│ shouldComponentUpdate     │      │ componentDidUpdate        │
+│ render                    │      │ getSnapshotBeforeUpdate  │
+│                           │      │ componentWillUnmount     │
+│ ⚠️ 可能执行多次！          │      │ ✅ 只执行一次             │
+│ 中断 → 丢弃 → 重新开始     │      │ 一旦开始就不会中断        │
+└──────────────────────────┘      └──────────────────────────┘
+```
+
+`componentWillMount`、`componentWillReceiveProps`、`componentWillUpdate` 都处于 Render 阶段。如果在这些方法中有副作用（发起网络请求、修改全局变量、手动修改 DOM），中断恢复时副作用会被重复执行——发两次请求、改两次 DOM、导致数据错乱。
+
+React 16 的策略是：Render 阶段只允许纯计算（`getDerivedStateFromProps` 返回新 state、`getSnapshotBeforeUpdate` 返回快照），所有副作用全部放到 Commit 阶段（`componentDidMount`、`componentDidUpdate`）。
+
+### Hooks 生命周期
+
+Hooks 时代没有显式的生命周期方法，但 `useEffect` 和 `useLayoutEffect` 覆盖了所有生命周期场景：
+
+```javascript
+import { useEffect, useLayoutEffect } from 'react';
+
+function UserProfile({ userId }) {
+  // 等价于 componentDidMount + componentDidUpdate + componentWillUnmount
+  useEffect(() => {
+    console.log('组件挂载或 userId 变化后执行');
+    fetchUser(userId);
+
+    // 返回的清理函数等价于 componentWillUnmount
+    // 且在下次 effect 执行前也会先清理上一次的
+    return () => {
+      console.log('清理上一次 effect 或组件卸载');
+    };
+  }, [userId]); // 依赖数组：只有 userId 变化时才重新执行
+
+  // useLayoutEffect vs useEffect 的区别：
+  // useEffect   - 浏览器绘制后异步执行（不阻塞渲染）
+  // useLayoutEffect - DOM 更新后、浏览器绘制前同步执行（阻塞渲染）
+  useLayoutEffect(() => {
+    // 适合读取 DOM 布局并同步修改（避免闪烁）
+    const rect = ref.current.getBoundingClientRect();
+    setTooltipPosition(rect.top);
+  }, []);
+
+  return <div ref={ref}>...</div>;
+}
+```
+
+**useEffect vs useLayoutEffect 执行时机：**
+
+```text
+setState 触发
+     │
+     ▼
+React 计算新虚拟 DOM
+     │
+     ▼
+更新真实 DOM
+     │
+     ├──────────────────────────────────┐
+     ▼                                  ▼
+useLayoutEffect（同步，阻塞绘制）    浏览器绘制（Paint）
+     │                                  │
+     ▼                                  ▼
+  执行完毕                          useEffect（异步，不阻塞绘制）
+     │                                  │
+     ▼                                  ▼
+浏览器绘制                         执行完毕
+```
+
+<Warning title="⚠️ useEffect 和 useLayoutEffect 的关键区别">
+
+- `useEffect` 在浏览器完成绘制后异步执行，不会阻塞用户看到画面。适合大多数副作用（数据请求、日志、订阅）。
+- `useLayoutEffect` 在 DOM 更新后、浏览器绘制前同步执行。适合需要读取 DOM 布局并同步修改的场景（如定位 tooltip）。如果误用 `useLayoutEffect` 做耗时操作，会阻塞渲染导致页面卡顿。
+- 测试环境（Jest + jsdom）中 `useLayoutEffect` 会报 warning，因为测试环境没有真正的浏览器绘制。
+
+</Warning>
+
+<Note title="💡 一句话总结">
+
+React 生命周期从 15 的同步线性模型演进到 16 的可中断双阶段模型，本质原因是 Fiber 允许 Render 阶段中断重试，副作用必须全部移到 Commit 阶段；Hooks 用 `useEffect` 统一了生命周期概念，用依赖数组控制执行时机。
+
+</Note>
+
+### Function Component vs Class Component
+
+React 组件经历了从 Class Component 到 Function Component 的范式转移。理解两者的本质区别，是理解 React 为什么最终拥抱 Hooks 的前提。
+
+**两种组件的本质区别：**
+
+| 维度 | Class Component | Function Component |
+|------|----------------|-------------------|
+| **本质** | 一个 ES6 Class 实例，有生命周期方法 | 一个纯函数，接收 props 返回 JSX |
+| **状态管理** | `this.state` + `this.setState` | `useState` / `useReducer` |
+| **副作用** | 生命周期方法（`componentDidMount` 等） | `useEffect` / `useLayoutEffect` |
+| **逻辑复用** | HOC / Render Props（层层嵌套） | 自定义 Hook（扁平组合） |
+| **this 绑定** | 需要手动处理 `this` 指向问题 | 没有 `this`，不存在绑定问题 |
+| **代码量** | 样板代码多（constructor、bind、生命周期） | 样板代码少，更简洁 |
+| **可测试性** | 需要实例化类，测试生命周期交互 | 纯函数入参出参，天然易测 |
+
+**为什么 Class Component 被淘汰？**
+
+```text
+Class Component 的三大痛点：
+
+1. this 绑定地狱
+   constructor 里 bind、render 里 bind、onClick 里箭头函数……
+   一个组件 10 个事件处理函数 = 10 次 bind
+
+2. 逻辑复用困难
+   想复用"监听窗口大小"的逻辑 → HOC 包一层
+   想复用"鼠标位置追踪"的逻辑 → 再包一层
+   → "包装地狱"（Wrapper Hell）
+
+3. 生命周期方法不内聚
+   componentDidMount 里发请求 + 订阅 + 设置定时器
+   componentWillUnmount 里清理订阅 + 清理定时器
+   同一个逻辑分散在两个生命周期方法中 → 难以理解和维护
+```
+
+**Function Component 的优势：**
+
+```javascript
+// ❌ Class Component：同一个逻辑分散在多个生命周期中
+class WindowWidth extends React.Component {
+  state = { width: window.innerWidth };
+
+  componentDidMount() {
+    window.addEventListener('resize', this.handleResize);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener('resize', this.handleResize);
+  }
+
+  handleResize = () => {
+    this.setState({ width: window.innerWidth });
+  };
+
+  render() {
+    return <div>窗口宽度: {this.state.width}</div>;
+  }
+}
+
+// ✅ Function Component：同一个逻辑集中在一处
+function WindowWidth() {
+  const [width, setWidth] = useState(window.innerWidth);
+
+  useEffect(() => {
+    const handleResize = () => setWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  return <div>窗口宽度: {width}</div>;
+}
+
+// ✅ 逻辑复用：提取为自定义 Hook，任何组件都能用
+function useWindowWidth() {
+  const [width, setWidth] = useState(window.innerWidth);
+
+  useEffect(() => {
+    const handleResize = () => setWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  return width;
+}
+
+// 使用：一行代码复用逻辑
+function Dashboard() {
+  const width = useWindowWidth();
+  return <div>当前宽度: {width}</div>;
+}
+```
+
+<Note title="💡 一句话总结">
+
+Class Component 用 Class 实例承载状态和生命周期，但 this 绑定、逻辑复用和生命周期分散是三大痛点；Function Component 用纯函数 + Hooks 实现相同能力，代码更简洁、逻辑更内聚、复用更扁平——这就是 React 16.8 引入 Hooks 后 Class Component 逐渐被淘汰的根本原因。
+
+</Note>
+
+### 为什么要写 this.handleClick = this.handleClick.bind(this)
+
+Class Component 中最经典的"坑"之一：事件处理函数中的 `this` 丢失问题。这道题考察的是你对 JavaScript `this` 绑定规则的理解深度。
+
+**Class Component 的 this 丢失问题：**
+
+```javascript
+class Button extends React.Component {
+  handleClick() {
+    console.log(this); // ❌ undefined！this 丢失了
+  }
+
+  render() {
+    return <button onClick={this.handleClick}>Click</button>;
+  }
+}
+```
+
+**为什么 `onClick={this.handleClick}` 会丢失 this？**
+
+```text
+关键：this 的值由"调用方式"决定，不是由"定义方式"决定
+
+render() 中：
+  <button onClick={this.handleClick}>
+                    ↑
+                    这只是"引用"了 handleClick 函数，并没有调用它
+
+用户点击按钮时：
+  浏览器调用 handleClick()
+  ↑ 注意：是"直接调用"，不是"通过对象调用"
+
+  直接调用 → this = undefined（严格模式下）
+  就像：const fn = obj.method; fn(); // this 不是 obj
+```
+
+打个比方：你把名片（函数引用）给了浏览器，浏览器拿着名片打电话（调用函数）时，它不知道名片是谁给的——`this` 的指向在调用时才确定，而不是定义时。
+
+**3 种解决方案：**
+
+**方案 1：constructor 中 bind（经典方案）**
+
+```javascript
+class Button extends React.Component {
+  constructor(props) {
+    super(props);
+    // bind 返回一个新函数，this 永远绑定到实例
+    this.handleClick = this.handleClick.bind(this);
+  }
+
+  handleClick() {
+    console.log(this); // ✅ Button 实例
+  }
+
+  render() {
+    return <button onClick={this.handleClick}>Click</button>;
+  }
+}
+```
+
+**方案 2：箭头函数（在 render 中）**
+
+```javascript
+class Button extends React.Component {
+  handleClick() {
+    console.log(this); // ✅ Button 实例
+  }
+
+  render() {
+    // 箭头函数没有自己的 this，继承外层（render 的 this = 实例）
+    return <button onClick={() => this.handleClick()}>Click</button>;
+  }
+}
+```
+
+<Warning title="⚠️ render 中的箭头函数有性能隐患">
+
+每次 render 都会创建一个新的匿名函数，导致 `React.memo` 和 `shouldComponentUpdate` 的浅比较失效（引用不同）。在列表渲染中尤其明显——100 个列表项 = 100 个新函数 = 子组件全部重新渲染。
+
+</Warning>
+
+**方案 3：类属性 + 箭头函数（推荐方案）**
+
+```javascript
+class Button extends React.Component {
+  // 类属性语法：箭头函数定义在实例上，this 自动绑定
+  handleClick = () => {
+    console.log(this); // ✅ Button 实例
+  };
+
+  render() {
+    return <button onClick={this.handleClick}>Click</button>;
+  }
+}
+```
+
+**❌/✅ 代码对比：**
+
+```javascript
+// ❌ 错误：直接传递方法引用，this 丢失
+class Counter extends React.Component {
+  state = { count: 0 };
+
+  increment() {
+    this.setState({ count: this.state.count + 1 });
+    // TypeError: Cannot read property 'setState' of undefined
+  }
+
+  render() {
+    return <button onClick={this.increment}>{this.state.count}</button>;
+  }
+}
+
+// ✅ 正确：constructor bind
+class Counter extends React.Component {
+  constructor(props) {
+    super(props);
+    this.increment = this.increment.bind(this);
+  }
+
+  state = { count: 0 };
+
+  increment() {
+    this.setState({ count: this.state.count + 1 });
+  }
+
+  render() {
+    return <button onClick={this.increment}>{this.state.count}</button>;
+  }
+}
+
+// ✅ 正确：类属性箭头函数（最简洁）
+class Counter extends React.Component {
+  state = { count: 0 };
+
+  increment = () => {
+    this.setState({ count: this.state.count + 1 });
+  };
+
+  render() {
+    return <button onClick={this.increment}>{this.state.count}</button>;
+  }
+}
+```
+
+<Note title="💡 一句话总结">
+
+Class Component 中 `onClick={this.handleClick}` 丢失 this 的本质是 JavaScript 的"隐式绑定"在直接调用时失效；三种解决方案中，constructor bind 是经典方案、render 中箭头函数有性能隐患、类属性箭头函数最简洁且性能最优——而在 Function Component 中这个问题根本不存在，因为没有 `this`。
+
+</Note>
+
+### constructor / props / super 的作用
+
+Class Component 的 `constructor`、`props` 和 `super` 是面试中被问烂的基础题，但很多候选人只能背"要调用 super(props)"，却说不清"为什么"。这道题考察的是你对 JavaScript Class 继承机制的理解。
+
+**constructor 的作用：**
+
+```text
+constructor 是 ES6 Class 的构造方法，在实例被创建时自动调用。
+在 React Class Component 中，constructor 有 3 个职责：
+
+1. 初始化 state
+2. 绑定事件处理函数的 this
+3. 调用 super(props) 初始化父类（React.Component）
+```
+
+```javascript
+class UserProfile extends React.Component {
+  constructor(props) {
+    super(props); // 必须第一行调用
+
+    // 职责 1：初始化 state
+    this.state = {
+      name: props.name,
+      loading: false,
+    };
+
+    // 职责 2：绑定 this
+    this.handleSubmit = this.handleSubmit.bind(this);
+  }
+
+  handleSubmit() {
+    console.log(this.state.name); // ✅ this 正确指向实例
+  }
+
+  render() {
+    return <div>{this.state.name}</div>;
+  }
+}
+```
+
+**props 是什么？**
+
+```text
+props = properties（属性）
+
+props 是父组件传给子组件的只读数据。
+子组件不能修改自己的 props——这是 React 单向数据流的核心原则。
+```
+
+```javascript
+// 父组件传递 props
+function App() {
+  return <UserProfile name="张三" age={25} />;
+}
+
+// 子组件接收 props
+class UserProfile extends React.Component {
+  render() {
+    // this.props 是只读的
+    return (
+      <div>
+        <p>姓名: {this.props.name}</p>  {/* "张三" */}
+        <p>年龄: {this.props.age}</p>    {/* 25 */}
+      </div>
+    );
+  }
+}
+
+// ❌ 子组件不能修改 props
+class UserProfile extends React.Component {
+  handleClick() {
+    this.props.name = "李四"; // ❌ 报错！Props are read-only
+  }
+}
+```
+
+**为什么必须调用 super(props)？**
+
+```text
+class UserProfile extends React.Component { ... }
+                ↑
+                继承了 React.Component
+
+JavaScript 规则：子类的 constructor 中，必须先调用 super() 才能使用 this。
+因为 super() 负责调用父类的构造函数来初始化 this 对象。
+
+如果在 super() 之前访问 this → ReferenceError: Must call super constructor
+```
+
+```javascript
+// ❌ 不调用 super()
+class Button extends React.Component {
+  constructor(props) {
+    // 没有调用 super()
+    this.state = { clicked: false };
+    // ❌ ReferenceError: Must call super constructor
+    // before accessing 'this' or returning from derived constructor
+  }
+}
+
+// ❌ 调用了 super() 但没传 props
+class Button extends React.Component {
+  constructor(props) {
+    super(); // 没传 props
+    console.log(this.props); // ❌ undefined！
+    // React 内部不会帮你把 props 挂到 this 上
+    // 只有 super(props) 才会触发 React.Component 内部的 this.props = props
+  }
+}
+
+// ✅ 正确：super(props)
+class Button extends React.Component {
+  constructor(props) {
+    super(props);
+    console.log(this.props); // ✅ { label: "Click", onClick: fn }
+  }
+}
+```
+
+**不调用 super(props) 会怎样？**
+
+```text
+不调用 super():
+  → JavaScript 引擎直接报错 ReferenceError
+  → 代码根本跑不起来
+
+调用 super() 但不传 props:
+  → constructor 内 this.props = undefined
+  → constructor 中无法访问 props
+  → render() 等其他生命周期中 this.props 仍然正常
+     （因为 React 在调用生命周期方法前会重新赋值 this.props）
+
+所以：
+  只有在 constructor 中需要访问 this.props 时，才"必须"传 props
+  但最佳实践是"永远传 props"，避免踩坑
+```
+
+<Note title="💡 一句话总结">
+
+`constructor` 是 Class 的构造方法，用于初始化 state 和绑定 this；`props` 是父组件传入的只读数据；`super(props)` 是调用父类构造函数并让 `this.props` 在 constructor 中可用——不调用 `super()` 会直接报错，不传 `props` 会导致 constructor 中 `this.props` 为 `undefined`。
+
+</Note>
+
+---
+
+## Q8: setState 什么时候是同步，什么时候是异步？
+
+### setState 的异步场景
+
+在 React 事件回调和生命周期方法中，`setState` 是"异步"的（更准确地说是**批量更新**）。React 会把多次 `setState` 合并成一次渲染，而不是每次 `setState` 都立即更新 DOM。
+
+```javascript
+class Counter extends React.Component {
+  state = { count: 0 };
+
+  handleClick = () => {
+    console.log('setState 前:', this.state.count); // 0
+
+    this.setState({ count: this.state.count + 1 });
+    console.log('setState 后:', this.state.count); // 0（还没更新！）
+
+    this.setState({ count: this.state.count + 1 });
+    console.log('再次 setState 后:', this.state.count); // 0（还是没更新！）
+
+    // 最终只触发一次渲染，count = 1（不是 2！因为两次读到的都是 0）
+  };
+
+  render() {
+    return <button onClick={this.handleClick}>{this.state.count}</button>;
+  }
+}
+```
+
+为什么最终 `count` 是 1 而不是 2？因为 React 18 之前，`setState({ count: this.state.count + 1 })` 中的 `this.state.count` 在同一个事件回调内始终是**更新前的值**（0）。两次 `setState` 都是 `{ count: 0 + 1 }`，最后一次覆盖前一次，结果是 1。
+
+### setState 的同步场景
+
+在 `setTimeout`、`Promise`、原生 DOM 事件等非 React 管理的上下文中，React 17 及以前的 `setState` 会立即触发渲染，表现为"同步"：
+
+```javascript
+class Counter extends React.Component {
+  state = { count: 0 };
+
+  handleClick = () => {
+    // React 事件回调内：批量更新
+    this.setState({ count: this.state.count + 1 });
+    console.log(this.state.count); // 0（异步，还没更新）
+
+    setTimeout(() => {
+      // setTimeout 内：React 17 立即更新，React 18 仍然是批量更新
+      this.setState({ count: this.state.count + 1 });
+      console.log(this.state.count); // React 17: 1, React 18: 取决于调度时机
+    }, 0);
+
+    // 原生 DOM 事件：React 17 立即更新
+    document.getElementById('btn').addEventListener('click', () => {
+      this.setState({ count: this.state.count + 1 });
+      console.log(this.state.count); // React 17: 1
+    });
+  };
+}
+```
+
+### React 18 之后的变化：Automatic Batching
+
+React 18 引入了 Automatic Batching（自动批处理），将批处理范围从 React 事件扩展到了**所有上下文**：
+
+```text
+React 17 及以前                       React 18+
+┌──────────────────────┐            ┌──────────────────────┐
+│ onClick（React 事件）  │            │ onClick（React 事件）  │
+│   setState × 3        │            │   setState × 3        │
+│   → 1 次渲染 ✅       │            │   → 1 次渲染 ✅       │
+├──────────────────────┤            ├──────────────────────┤
+│ setTimeout / Promise  │            │ setTimeout / Promise  │
+│   setState × 3        │            │   setState × 3        │
+│   → 3 次渲染 ❌       │            │   → 1 次渲染 ✅       │
+├──────────────────────┤            ├──────────────────────┤
+│ 原生 DOM 事件          │            │ 原生 DOM 事件          │
+│   setState × 3        │            │   setState × 3        │
+│   → 3 次渲染 ❌       │            │   → 1 次渲染 ✅       │
+└──────────────────────┘            └──────────────────────┘
+```
+
+```javascript
+// React 18 的 Automatic Batching 示例
+import { createRoot } from 'react-dom/client';
+
+function Counter() {
+  const [count, setCount] = useState(0);
+  const [flag, setFlag] = useState(false);
+
+  function handleClick() {
+    // React 17: 在 setTimeout 中会触发 2 次渲染
+    // React 18: 自动批处理，只触发 1 次渲染
+    setTimeout(() => {
+      setCount(c => c + 1);
+      setFlag(f => !f);
+    }, 0);
+  }
+
+  return <button onClick={handleClick}>{count}</button>;
+}
+
+// React 18 必须用 createRoot 才能启用 Automatic Batching
+const root = createRoot(document.getElementById('root'));
+root.render(<Counter />);
+```
+
+### setState 的批量更新机制
+
+React 的批量更新本质上是将多个 `setState` 调用收集到一个队列中，在当前执行栈结束后的微任务中统一处理：
+
+```text
+handleClick 执行
+     │
+     ├── setState({ a: 1 })  → 放入更新队列
+     ├── setState({ b: 2 })  → 放入更新队列
+     ├── setState({ c: 3 })  → 放入更新队列
+     │
+     ▼
+handleClick 执行完毕（同步代码跑完）
+     │
+     ▼
+微任务阶段：React 统一处理队列
+     │
+     ├── 合并 state: { a: 1, b: 2, c: 3 }
+     ├── 执行一次 render()
+     └── 更新一次 DOM
+```
+
+如果需要在批量更新中立即获取最新 state，可以使用 `setState` 的函数式写法：
+
+```javascript
+class Counter extends React.Component {
+  state = { count: 0 };
+
+  handleClick = () => {
+    // ❌ 错误：对象式写法，每次读到的 this.state.count 都是旧值
+    this.setState({ count: this.state.count + 1 }); // 0 + 1 = 1
+    this.setState({ count: this.state.count + 1 }); // 0 + 1 = 1（覆盖）
+    this.setState({ count: this.state.count + 1 }); // 0 + 1 = 1（覆盖）
+    // 最终 count = 1
+
+    // ✅ 正确：函数式写法，参数是上一次的最新 state
+    this.setState((prevState) => ({ count: prevState.count + 1 })); // 0 + 1 = 1
+    this.setState((prevState) => ({ count: prevState.count + 1 })); // 1 + 1 = 2
+    this.setState((prevState) => ({ count: prevState.count + 1 })); // 2 + 1 = 3
+    // 最终 count = 3
+  };
+}
+```
+
+**函数式写法 vs 对象式写法：**
+
+| 场景 | 对象式 `setState({})` | 函数式 `setState(fn)` |
+|------|----------------------|----------------------|
+| 单次调用 | 正常工作 | 正常工作 |
+| 同一事件内多次调用 | 后面的覆盖前面的（读到旧值） | 每次拿到最新的 state |
+| 依赖上一次 state 时 | 不可靠 | 推荐使用 |
+
+<Note title="💡 一句话总结">
+
+`setState` 在 React 事件和生命周期中是批量更新（看起来像异步），在 setTimeout/Promise/原生事件中 React 17 是同步、React 18 也是批量更新；多个 `setState` 依赖上一次 state 时必须用函数式写法，否则会被覆盖。
+
+</Note>
+
+---
+
 ## 🔍 底层源码：Automatic Batching 是如何实现的？
 
 <div class="follow-up">

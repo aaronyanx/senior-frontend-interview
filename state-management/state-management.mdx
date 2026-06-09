@@ -1132,7 +1132,7 @@ function compose(...funcs) {
       }
       return next(action); // 对象就传递下去
     };
-    ```"
+    ```
 
   </Accordion>
 
@@ -1178,7 +1178,7 @@ function compose(...funcs) {
       store.count++;  // 不会立即触发 reaction
       store.count++;  // 合并为一次更新
     })();
-    ```"
+    ```
 
   </Accordion>
 
@@ -1283,7 +1283,7 @@ function compose(...funcs) {
     // dispatch('FETCH', 1) → saga 1 开始
     // dispatch('FETCH', 2) → saga 1 取消，saga 2 开始
     // dispatch('FETCH', 3) → saga 2 取消，saga 3 开始
-    ```"
+    ```
 
   </Accordion>
 

@@ -1,0 +1,802 @@
+---
+title: "Nginx 与 BFF 架构"
+---
+
+> **面试官为什么问这个？**
+>
+> Nginx 和 BFF 是前端工程师从"浏览器内开发"走向"全栈架构"的关键跳板。面试官问这个，本质上是在考察你：**是否理解请求从浏览器发出后，经过哪些中间层才到达后端服务？** 如果你答不清楚，说明你对生产环境的部署链路和前后端协作架构停留在"只知道 localhost:3000"。
+
+---
+
+## Q1: Nginx 的历史？为什么要有它？
+
+```text
+┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
+│  Apache 称霸    │ → │  C10K 问题爆发  │ → │  Nginx 诞生     │ → │  现代基础设施    │
+│  (1995-2000)    │   │  (2000-2004)    │   │  (2004-2010)    │   │  (2010-至今)    │
+│  同步阻塞模型   │   │  万级并发瓶颈   │   │  事件驱动模型   │   │  反向代理标配    │
+└─────────────────┘   └─────────────────┘   └─────────────────┘   └─────────────────┘
+```
+
+<Steps>
+
+  <Step title="1995-2000: Apache 称霸与同步阻塞模型">
+
+    Apache HTTP Server 在 1995 年发布，迅速成为 Web 服务器的事实标准。它采用**进程/线程驱动模型**——每来一个连接就分配一个进程或线程。在连接数不多的年代，这个模型简单有效，稳定可靠。
+
+  </Step>
+  <Step title="2000-2004: C10K 问题爆发">
+
+    随着互联网用户激增，单台服务器需要同时处理上万个连接（C10K = 10,000 connections）。Apache 的进程模型在高并发下崩溃——每个进程消耗 2-10MB 内存，1 万个连接就需要 20-100GB 内存。服务器频繁出现拒绝服务和内存溢出。<sup>[1]</sup>
+
+  </Step>
+  <Step title="2004年: Igor Sysoev 开发 Nginx">
+
+    俄罗斯工程师 Igor Sysoev 为解决 Rambler 搜索引擎的高并发访问问题，用 C 语言开发了 Nginx。核心创新是**事件驱动、异步非阻塞架构**——一个工作进程通过 epoll/kqueue 可以同时处理数千个连接，内存开销仅为 Apache 的 1/10。
+
+  </Step>
+  <Step title="2004-2010: 从 Web 服务器到反向代理">
+
+    Nginx 最初作为静态文件服务器和反向代理快速普及。随着架构演进，Nginx 逐渐承担起负载均衡、SSL 终止、缓存、限流等更多职责，成为现代 Web 架构中不可或缺的"流量入口"。
+
+  </Step>
+  <Step title="2010-至今: 成为云原生基础设施标配">
+
+    Nginx 被 F5 Networks 收购后演进为 Nginx Plus（商业版），开源版继续活跃。如今几乎每一台生产服务器都运行着 Nginx，它是 Docker 容器、Kubernetes Ingress、Serverless 网关的底层基石。全球超过 34% 的网站使用 Nginx 作为 Web 服务器。
+
+  </Step>
+
+</Steps>
+
+**Nginx 解决的核心问题：**
+
+```text
+问题：Apache 的进程/线程模型无法应对万级并发
+
+Apache：每个连接 = 一个进程（2-10MB 内存）
+         1 万连接 = 20-100GB 内存 → OOM 崩溃
+
+解决：事件驱动 + 异步非阻塞 I/O
+
+Nginx：一个工作进程 + epoll 事件循环 = 同时管理数千连接
+       1 万连接 ≈ 几十 MB 内存 → 轻松应对
+```
+
+<Note title="💡 一句话总结">
+
+Nginx 用事件驱动模型解决了 Apache 无法应对的 C10K 高并发问题，成为现代 Web 架构的流量入口。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有 Nginx">
+
+Apache 每接一个请求就起一个进程，像餐厅里每来一位客人就雇一个专属服务员。当 1 万名客人同时涌入，餐厅（服务器）人满为患，最终崩溃。
+
+</Card>
+<Card title="✅ 引入 Nginx">
+
+Nginx 像一个超级服务员，用"事件通知"机制同时照看数千桌客人。客人举手（事件触发）时才过去服务，其余时间在柜台待命，内存消耗极低。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说 C10K 问题（为什么需要新方案），再对比 Apache 和 Nginx 的架构差异（进程模型 vs 事件驱动），最后落到 Nginx 在现代架构中的角色。面试官想听你理解"为什么要发明 Nginx"，而不是背诵发布时间。
+
+</Tip>
+
+---
+
+## Q2: Nginx 反向代理原理
+
+Nginx 反向代理的本质是**流量转发网关**——客户端以为自己在和 Nginx 通信，实际上 Nginx 在背后将请求转发给真正的后端服务器。核心逻辑只有 3 步：
+
+```text
+┌──────────┐         ┌───────────────────────┐         ┌──────────────┐
+│  浏览器   │ ──请求──→│       Nginx           │ ──转发──→│  后端服务器   │
+│          │ ←─响应──│  (反向代理层)          │ ←─返回──│  (API 服务)  │
+└──────────┘         └───────────────────────┘         └──────────────┘
+                      ① 接收请求 ② 路由决策 ③ 转发
+```
+
+**正向代理 vs 反向代理：**
+
+| 对比维度 | 正向代理 | 反向代理 |
+|---------|---------|---------|
+| **代表谁** | 代表客户端 | 代表服务器 |
+| **服务对象** | 帮助客户端访问受限资源 | 帮助服务器接收和分发请求 |
+| **客户端感知** | 客户端知道目标服务器是谁 | 客户端不知道真实服务器是谁 |
+| **典型场景** | VPN、科学上网、公司内网代理 | 负载均衡、SSL 终止、跨域代理 |
+
+<Warning title="⚠️ 核心区别: 代理方向">
+
+正向代理隐藏的是**客户端身份**（服务器不知道谁在访问），反向代理隐藏的是**服务器身份**（客户端不知道请求被转发给了谁）。两者方向相反，配置方式完全不同。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 餐厅前台">
+
+正向代理像"外卖代购"——你让跑腿小哥帮你买某家店的东西，店家不知道是你买的。反向代理像"餐厅前台"——你走进餐厅跟前台点菜（以为前台就是厨师），前台把菜单转给后厨，你不需要知道后厨有几口锅、几个厨师。Nginx 就是那个前台。
+
+</Tip>
+
+### Nginx 反向代理配置详解
+
+```nginx
+# /etc/nginx/conf.d/proxy.conf
+
+server {
+    listen 80;
+    server_name api.example.com;
+
+    # 反向代理：将所有请求转发到后端 Node.js 服务
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+
+        # 关键 Header：把客户端真实信息传递给后端
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # 超时配置
+        proxy_connect_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+
+        # WebSocket 支持
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
+
+### proxy_set_header 的作用
+
+`proxy_set_header` 决定了 Nginx 转发请求时携带哪些信息。后端服务依赖这些 Header 获取客户端的真实 IP、协议和域名：
+
+```nginx
+# Host：客户端请求的域名（后端用于虚拟主机判断）
+proxy_set_header Host $host;
+
+# X-Real-IP：客户端的真实 IP 地址
+proxy_set_header X-Real-IP $remote_addr;
+
+# X-Forwarded-For：代理链路上所有 IP 的列表（用于追踪请求路径）
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+# X-Forwarded-Proto：客户端使用的协议（http 或 https）
+proxy_set_header X-Forwarded-Proto $scheme;
+```
+
+### Node.js 后端如何获取真实 IP
+
+```javascript
+// Express 中获取客户端真实 IP
+app.get('/api/user', (req, res) => {
+  // 被 Nginx 代理后，req.ip 拿到的是 127.0.0.1（Nginx 的 IP）
+  // 需要从 X-Forwarded-For 中获取真实客户端 IP
+  const realIP = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  console.log('客户端真实 IP:', realIP);
+  res.json({ ip: realIP });
+});
+
+// Express 内置的信任代理设置
+app.set('trust proxy', true); // 信任 Nginx 代理，req.ip 自动解析 X-Forwarded-For
+```
+
+---
+
+## Q3: Nginx 负载均衡
+
+当单台服务器无法承载所有流量时，需要将请求分发到多台服务器上。Nginx 的负载均衡模块就是这个"流量分配器"。
+
+### 负载均衡策略对比
+
+| 策略 | 原理 | 适用场景 | Nginx 配置 |
+|------|------|---------|-----------|
+| **轮询（Round Robin）** | 按顺序逐个分配请求 | 服务器配置相同 | `upstream backend { server A; server B; }` |
+| **加权轮询** | 按权重比例分配请求 | 服务器配置不同 | `server A weight=3; server B weight=1;` |
+| **IP Hash** | 根据客户端 IP 计算哈希值，同一 IP 固定访问同一台服务器 | 需要会话保持 | `ip_hash;` |
+| **最少连接** | 将请求分配给当前连接数最少的服务器 | 请求处理时间差异大 | `least_conn;` |
+
+### 负载均衡配置示例
+
+```nginx
+# 定义后端服务器组
+upstream backend_servers {
+    # IP Hash：保证同一用户的请求打到同一台服务器（解决 Session 问题）
+    ip_hash;
+
+    # 权重分配：server1 处理 3 倍于 server2 的请求
+    server 192.168.1.10:3000 weight=3;
+    server 192.168.1.11:3000 weight=1;
+
+    # 备用服务器：只有当主服务器全部不可用时才启用
+    server 192.168.1.12:3000 backup;
+
+    # 健康检查配置（被动检查）
+    server 192.168.1.10:3000 max_fails=3 fail_timeout=30s;
+}
+
+server {
+    listen 80;
+    server_name api.example.com;
+
+    location / {
+        proxy_pass http://backend_servers;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+```
+
+### 健康检查机制
+
+Nginx 的健康检查分为**被动检查**（开源版支持）和**主动检查**（Nginx Plus 商业版支持）：
+
+```nginx
+# 被动健康检查（开源版）
+upstream backend {
+    server 192.168.1.10:3000 max_fails=3 fail_timeout=30s;
+    # max_fails=3：连续 3 次请求失败则标记为不可用
+    # fail_timeout=30s：标记为不可用后，30 秒后重新尝试
+}
+```
+
+<Warning title="⚠️ 被动检查的局限性">
+
+被动健康检查只有在请求失败后才会发现服务器故障，存在一定延迟。在生产环境中，建议结合外部监控（如 Consul、Prometheus）实现主动健康检查，确保故障服务器被快速摘除。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 分诊台">
+
+负载均衡就像医院的分诊台。轮询是按挂号顺序叫号；加权轮询是专家号看 3 个、普通号看 1 个；IP Hash 是你的病历固定在某个医生手上，每次复诊都找同一个；最少连接是谁手头病人少就给谁分配新病人。
+
+</Tip>
+
+---
+
+## Q4: Nginx 静态资源服务
+
+Nginx 处理静态资源的速度远超 Node.js——它用 C 语言实现了零拷贝（sendfile）和内存映射（mmap），是前端项目生产部署的最佳选择。
+
+### 静态文件配置与缓存策略
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name static.example.com;
+
+    # SSL 证书配置
+    ssl_certificate /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # 静态资源目录
+    root /var/www/frontend/dist;
+
+    # 带 hash 的静态资源：长期缓存（1年）
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+
+        # 开启 sendfile 零拷贝，内核直接传输文件，不经过用户态缓冲
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+    }
+
+    # HTML 文件：协商缓存，每次验证新鲜度
+    location ~* \.html$ {
+        add_header Cache-Control "no-cache";
+        etag on;
+        last_modified on;
+    }
+
+    # SPA 应用的 fallback：找不到文件时返回 index.html
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+### gzip 压缩配置
+
+```nginx
+# 全局开启 gzip
+gzip on;
+gzip_vary on;                    # 添加 Vary: Accept-Encoding 响应头
+gzip_proxied any;                # 代理请求也压缩
+gzip_comp_level 6;               # 压缩级别 1-9，6 是性能与压缩率的平衡点
+gzip_min_length 1024;            # 小于 1KB 的文件不压缩（压缩后可能更大）
+gzip_types
+    text/plain
+    text/css
+    text/javascript
+    application/javascript
+    application/json
+    application/xml
+    image/svg+xml;
+```
+
+### HTTPS + HTTP/2 配置
+
+```nginx
+server {
+    listen 443 ssl http2;          # 同时开启 SSL 和 HTTP/2
+    server_name www.example.com;
+
+    ssl_certificate /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+
+    # TLS 安全配置
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
+    ssl_prefer_server_ciphers on;
+
+    # HSTS：强制浏览器使用 HTTPS 访问
+    add_header Strict-Transport-Security "max-age=63072000" always;
+
+    # HTTP/2 Server Push（推送关键资源）
+    location / {
+        root /var/www/frontend/dist;
+        http2_push /assets/main.css;
+        http2_push /assets/main.js;
+    }
+}
+
+# HTTP 自动跳转 HTTPS
+server {
+    listen 80;
+    server_name www.example.com;
+    return 301 https://$server_name$request_uri;
+}
+```
+
+<Warning title="⚠️ HTTP/2 Server Push 已被废弃">
+
+Chrome 106+ 已移除 HTTP/2 Server Push 支持，原因是实现复杂且效果不如预加载（103 Early Hints）。生产环境中应使用 `<link rel="preload">` 或 103 Early Hints 替代。
+
+</Warning>
+
+<Tip title="最佳实践:">
+
+生产环境部署前端项目时，让 Nginx 直接服务静态资源（而非代理给 Node.js），性能提升可达 10-50 倍。Node.js 只负责处理 API 请求。带 hash 的文件名设为长期缓存（1 年 + immutable），HTML 设为协商缓存（no-cache）。
+
+</Tip>
+
+---
+
+## Q5: Nginx 反向代理消除跨域
+
+浏览器的同源策略（Same-Origin Policy）限制了跨域请求。前端开发中，反向代理是最常用的跨域解决方案——它不改变浏览器行为，而是让请求"看起来"是同源的。
+
+### 跨域产生的原因
+
+```text
+浏览器: https://www.example.com  ──请求──→  https://api.example.com:3000/api/users
+         ↑ 同源：协议+域名+端口一致          ↑ 不同源 → CORS 错误
+
+解决方案：让请求先到同源的 Nginx，再由 Nginx 转发到后端
+
+浏览器: https://www.example.com/api/users
+         ↓ 同源请求（无跨域问题）
+Nginx:   /api/users  ──转发──→  http://127.0.0.1:3000/api/users
+```
+
+### 开发环境: webpack-dev-server proxy 配置
+
+```javascript
+// webpack.config.js 或 vite.config.js
+// 原理：开发服务器内置了一个反向代理，将指定路径的请求转发到后端
+module.exports = {
+  devServer: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3000',  // 转发目标
+        changeOrigin: true,                // 修改 Origin 为目标地址
+        pathRewrite: { '^/api': '' },      // 路径重写：/api/users → /users
+      },
+    },
+  },
+};
+```
+
+```javascript
+// Vite 配置
+export default defineConfig({
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+    },
+  },
+});
+```
+
+### 生产环境: Nginx 反向代理配置
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name www.example.com;
+
+    ssl_certificate /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+
+    # 前端静态资源
+    location / {
+        root /var/www/frontend/dist;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # API 请求代理到后端 —— 消除跨域
+    location /api/ {
+        proxy_pass http://127.0.0.1:3000/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+### ❌/✅ 代码对比：错误与正确的跨域处理方式
+
+```javascript
+// ❌ 错误做法：生产环境用 CORS 代替代理
+// 后端直接设置 Access-Control-Allow-Origin: *
+// 问题：安全风险高，暴露后端真实地址，无法统一管控
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  next();
+});
+
+// ✅ 正确做法：生产环境用 Nginx 反向代理
+// 前端和 API 在同一个域名下，不存在跨域问题
+// /api/users → Nginx → http://localhost:3000/users
+// 安全、可控、统一管理
+```
+
+---
+
+## Q6: BFF 架构详解
+
+### 什么是 BFF？
+
+BFF（Backend For Frontend）是为前端专门定制的后端服务层。它不是通用的后端 API，而是针对特定前端（Web、移动端、小程序）的"适配层"——聚合多个后端服务的接口，裁剪数据格式，处理鉴权和缓存。
+
+```text
+┌──────────┐  ┌──────────┐  ┌──────────┐
+│  Web 前端 │  │ 移动端    │  │ 小程序    │
+└─────┬────┘  └─────┬────┘  └─────┬────┘
+      │             │             │
+      ▼             ▼             ▼
+┌──────────┐  ┌──────────┐  ┌──────────┐
+│ Web BFF  │  │ Mobile   │  │ Mini BFF │  ← 每个前端一个专属 BFF
+│ (Node.js)│  │ BFF      │  │ (Node.js)│
+└─────┬────┘  └─────┬────┘  └─────┬────┘
+      │             │             │
+      └──────────┬──┴─────────────┘
+                 ▼
+     ┌───────────────────────┐
+     │    后端微服务集群       │
+     │  用户服务 | 订单服务    │
+     │  商品服务 | 支付服务    │
+     └───────────────────────┘
+```
+
+### 为什么需要 BFF？
+
+在没有 BFF 的架构中，前端直接对接多个后端微服务，会面临三个痛点：
+
+**痛点一：接口聚合。** 一个页面需要调用 5 个微服务接口，前端发 5 次请求，页面加载慢，代码复杂。
+
+**痛点二：数据裁剪。** 后端返回的通用数据结构包含大量前端不需要的字段，浪费带宽。Web 端和移动端需要的数据字段不同。
+
+**痛点三：逻辑下沉。** 鉴权、数据格式转换、错误处理等逻辑散落在每个前端项目中，重复代码难以维护。
+
+### BFF 的典型场景
+
+| 场景 | 说明 | 示例 |
+|------|------|------|
+| **多端适配** | 不同端的数据结构和交互逻辑不同 | Web 展示完整商品详情，移动端只展示摘要 |
+| **接口聚合** | 将多个后端接口合并为一个前端接口 | 首页需要用户信息 + 推荐列表 + 通知数，BFF 一次返回 |
+| **数据裁剪** | 裁剪后端返回的冗余字段 | 后端返回 50 个字段，移动端只需要 10 个 |
+| **协议转换** | 将 GraphQL/gRPC 转为 REST | 前端用 REST，后端用 gRPC，BFF 做中间转换 |
+
+### Node.js BFF 实现示例
+
+```javascript
+// bff-server.js —— 基于 Express 的 BFF 服务
+const express = require('express');
+const axios = require('axios');
+
+const app = express();
+
+// 接口聚合：前端只需一次请求，BFF 聚合多个后端服务
+app.get('/api/home', async (req, res) => {
+  try {
+    const userId = req.headers['x-user-id'];
+
+    // 并行请求多个后端微服务
+    const [userInfo, recommendations, notifications] = await Promise.all([
+      axios.get(`http://user-service:3001/users/${userId}`),
+      axios.get(`http://recommend-service:3002/recommendations`, {
+        params: { userId, limit: 10 },
+      }),
+      axios.get(`http://notify-service:3003/notifications/unread`, {
+        params: { userId },
+      }),
+    ]);
+
+    // 数据裁剪 + 格式转换：按前端需要的结构组装
+    res.json({
+      user: {
+        name: userInfo.data.name,
+        avatar: userInfo.data.avatar_url,
+        // 移除前端不需要的 internal_id、permissions 等字段
+      },
+      recommendations: recommendations.data.items.map((item) => ({
+        id: item.product_id,
+        title: item.product_name,
+        price: item.current_price,
+        image: item.cover_url,
+      })),
+      unreadCount: notifications.data.count,
+    });
+  } catch (error) {
+    // 统一错误处理
+    res.status(502).json({
+      error: 'BFF 聚合请求失败',
+      detail: error.message,
+    });
+  }
+});
+
+// 数据裁剪：移动端专用接口，只返回必要字段
+app.get('/api/mobile/product/:id', async (req, res) => {
+  const { data } = await axios.get(
+    `http://product-service:3004/products/${req.params.id}`
+  );
+
+  // 移动端只保留核心字段，减少传输体积
+  res.json({
+    id: data.id,
+    title: data.name,
+    price: data.current_price,
+    thumbnail: data.images[0],
+    rating: data.average_rating,
+  });
+});
+
+app.listen(4000, () => {
+  console.log('BFF 服务运行在 http://localhost:4000');
+});
+```
+
+### BFF 的优缺点
+
+| 维度 | 优点 | 缺点 |
+|------|------|------|
+| **开发效率** | 前端自主控制数据格式，减少联调成本 | 需要维护额外的服务层 |
+| **灵活性** | 不同端可以有独立的数据逻辑 | 服务数量增多，部署复杂度上升 |
+| **性能** | 接口聚合减少网络请求次数 | 增加了一层网络跳转，有额外延迟 |
+| **团队协作** | 前端拥有更大的架构话语权 | 需要前端具备 Node.js 服务能力 |
+
+<Tip title="🎢 通俗比喻: 翻译官">
+
+BFF 就像一位翻译官。你在法国旅游（前端），不懂法语（后端微服务的各种接口协议）。你告诉翻译官"我想点一份牛排和一杯红酒"（一次请求），翻译官分别跟厨师和酒保沟通（聚合多个后端接口），最后把你要的东西一起端上来（裁剪后的数据）。不同国家的游客（Web/移动端）有不同的翻译官（不同的 BFF），各自处理不同的需求。
+
+</Tip>
+
+---
+
+## Q7: 高频面试题
+
+### 基础梳理
+
+| 面试题 | 考察重点 | 难度 |
+|--------|---------|------|
+| Nginx 和 Apache 的核心区别是什么？ | 事件驱动 vs 进程模型 | 基础 |
+| 什么是反向代理？和正向代理有什么区别？ | 代理方向和应用场景 | 基础 |
+| Nginx 如何实现负载均衡？有哪些策略？ | upstream 配置和策略选型 | 进阶 |
+| Nginx 如何处理前端 SPA 应用的路由？ | try_files 和 history 模式 | 进阶 |
+| BFF 是什么？解决什么问题？ | 架构设计和适用场景 | 综合 |
+| 如何用 Nginx 消除跨域？ | 反向代理配置 | 基础 |
+| 生产环境如何配置静态资源缓存？ | expires、Cache-Control | 进阶 |
+| BFF 和直接调后端 API 有什么区别？ | 架构层次和性能权衡 | 综合 |
+
+### 专家视角深度剖析
+
+很多候选人能说出 Nginx 是反向代理、负载均衡，但大厂面试官真正在意的是：**你的前端项目在生产环境到底是怎么部署的？请求链路是怎样的？**
+
+一个合格的前端工程师应该能清晰描述：浏览器发起请求 → CDN 缓存 → Nginx 入口 → 路由分发（静态资源直返 / API 转发）→ BFF 聚合层 → 后端微服务。Nginx 在这条链路中承担了 SSL 终止、负载均衡、静态资源服务、反向代理、gzip 压缩等多项职责。理解这条完整的请求链路，才是区分"会用脚手架"和"懂工程化"的关键标准。<sup>[2]</sup>
+
+---
+
+## 🔍 底层源码：Nginx 事件驱动是如何实现的？
+
+<div class="follow-up">
+Nginx 的事件驱动模型底层是怎么实现的？
+</div>
+
+Nginx 的事件循环基于操作系统的事件通知机制（Linux 上是 epoll，macOS 上是 kqueue），核心架构是一个 master-worker 多进程模型（详见 [Nginx 源码 src/event/ngx_event.c](https://github.com/nginx/nginx/blob/master/src/event/ngx_event.c)）：
+
+```c
+// Nginx 事件循环核心逻辑（极度简化）
+void ngx_process_events_and_timers(ngx_cycle_t *cycle) {
+    // 1. 调用 epoll_wait，阻塞等待事件（带超时）
+    //    超时时间由最近的定时器决定
+    ngx_int_t n = epoll_wait(ep, events, nevents, timer);
+
+    // 2. 遍历就绪事件，逐个处理
+    for (i = 0; i < n; i++) {
+        ev = events[i].data.ptr;
+
+        // 3. 根据事件类型调用对应的 handler
+        if (ev->accept) {
+            ngx_event_accept(ev);      // 新连接事件
+        } else {
+            ngx_event_recvmsg(ev);     // 读事件
+            ngx_event_sendmsg(ev);     // 写事件
+        }
+    }
+
+    // 4. 处理超时事件（定时器）
+    ngx_event_expire_timers();
+}
+```
+
+这段代码做了 4 件事：通过 epoll_wait 监听所有连接的 I/O 事件；将就绪事件逐个分发给对应的 handler；一个 worker 进程可以同时管理数千个连接；定时器驱动超时检测和健康检查。<sup>[1]</sup>
+
+<div class="follow-up">
+Nginx 是如何处理静态文件的零拷贝？
+</div>
+
+Nginx 使用 Linux 的 `sendfile()` 系统调用实现零拷贝（详见 [Nginx 源码 src/os/unix/ngx_linux_sendfile_chain.c](https://github.com/nginx/nginx/blob/master/src/os/unix/ngx_linux_sendfile_chain.c)）：
+
+```c
+// sendfile 零拷贝的核心流程
+// 传统方式：磁盘 → 内核缓冲区 → 用户缓冲区 → 内核 socket 缓冲区 → 网卡
+// sendfile：  磁盘 → 内核缓冲区 → 网卡（跳过用户态拷贝）
+
+sent = sendfile(c->fd,       // 目标 socket 文件描述符
+                file_fd,      // 源文件文件描述符
+                &offset,      // 文件偏移量
+                size);        // 发送字节数
+```
+
+传统方式需要 4 次上下文切换和 4 次数据拷贝，sendfile 只需要 2 次上下文切换和 2 次拷贝（DMA 拷贝到网卡），在大文件传输场景下性能提升显著。<sup>[1]</sup>
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："你们前端项目的生产部署架构是怎样的？Nginx 在其中扮演什么角色？"
+
+**及格回答（60-70分）：**
+> "我们用 Nginx 做反向代理，把 API 请求转发给后端。静态资源直接由 Nginx 托管，前端打包后放到服务器上。"
+
+面试官评价：**知道 Nginx 能做代理，但不清楚完整的请求链路和配置细节**。
+
+**满分回答（90-100分）：**
+
+> "我们的请求链路是这样的：用户浏览器 → CDN（静态资源缓存）→ Nginx 入口层。Nginx 承担了四项职责：第一，SSL 终止——在 Nginx 层完成 TLS 握手，后端服务之间用 HTTP 通信，降低后端的 CPU 压力。第二，静态资源服务——带 hash 的 JS/CSS 文件设置 1 年长期缓存（Cache-Control: public, immutable），HTML 文件设置协商缓存（no-cache），这样每次发版只有变更的 chunk 需要重新下载。Nginx 开启了 sendfile 零拷贝和 gzip 压缩，静态资源的传输性能是 Node.js 的 10 倍以上。<sup>[1]</sup>
+
+> 第三，API 反向代理——`/api/` 路径的请求通过 `proxy_pass` 转发到 Node.js BFF 服务。Nginx 设置了 `proxy_set_header` 把客户端真实 IP、协议等信息传递给后端。对于 WebSocket 长连接，配置了 `proxy_http_version 1.1` 和 `Upgrade` 头。第四，负载均衡——BFF 服务部署了 3 个实例，用 `upstream` + `ip_hash` 策略保证同一用户的请求打到同一台服务器，解决了 Session 一致性问题。健康检查配置了 `max_fails=3 fail_timeout=30s`。<sup>[2]</sup>
+
+> 踩过的坑：有一次上线后用户反馈接口 502，排查发现是 Nginx 默认的 `proxy_read_timeout` 只有 60 秒，而一个复杂报表接口的后端处理超过了 60 秒，Nginx 主动断开了连接。后来对长耗时接口单独配置了 300 秒超时。还有一个坑是 `proxy_pass` 末尾有没有 `/` 的区别——`proxy_pass http://backend` 会把 `/api/users` 转发为 `/api/users`，而 `proxy_pass http://backend/` 会转发为 `/users`，少一个 `/` 就多一层路径。<sup>[3]</sup>
+
+> 我们的 BFF 层用 Node.js 实现，主要做三件事：接口聚合（首页需要用户信息 + 推荐列表 + 通知数，BFF 并行请求三个微服务后合并返回）、数据裁剪（移动端只需要商品的 10 个字段，而不是后端返回的 50 个）、鉴权前置（在 BFF 层统一校验 Token，后端服务只处理业务逻辑）。"
+
+### 大厂高频连环拷问
+
+> 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。每个模块 **8 个 Accordion**，覆盖 4 个难度层级。
+
+<AccordionGroup>
+
+  <Accordion title="Nginx 的 worker_processes 应该设置为多少？为什么？" icon="layer-group">
+
+    **答题要点：**
+    不是越大越好，要匹配 CPU 核心数。
+
+    **高分回答：**
+    `worker_processes` 应设置为 CPU 核心数（或 `auto`）。Nginx 的每个 worker 进程是一个独立进程，绑定一个 CPU 核心后可以避免上下文切换开销。如果设置为 8 核机器上跑 16 个 worker，反而会因为 CPU 调度竞争导致性能下降。每个 worker 进程通过 epoll 独立处理数千个连接，所以 8 个 worker 就能轻松处理数万并发。可以通过 `worker_cpu_affinity` 绑定核心，让每个 worker 独占一个 CPU，避免缓存失效（Cache Line Bouncing）。此外，`worker_connections` 决定每个 worker 的最大连接数，理论最大并发数 = `worker_processes` x `worker_connections`。
+
+  </Accordion>
+
+  <Accordion title="proxy_pass 末尾加不加 / 有什么区别？" icon="layer-group">
+
+    **答题要点：**
+    这是 Nginx 反向代理最经典的坑，加 `/` 会截断 location 匹配的路径前缀。
+
+    **高分回答：**
+    假设 `location /api/` 匹配了请求 `/api/users`：`proxy_pass http://backend` 不加斜杠，请求转发为 `/api/users`（保留完整路径）；`proxy_pass http://backend/` 加斜杠，请求转发为 `/users`（截掉了 `/api/` 前缀）。这是因为加了 `/` 后，Nginx 把 `http://backend/` 视为 URI，将 location 匹配部分替换掉。如果后端接口路径不包含 `/api` 前缀，必须加 `/`；如果后端也需要 `/api` 前缀，就不能加。最佳实践是用 `proxy_pass http://backend/api/` 明确指定转发路径，避免歧义。
+
+  </Accordion>
+
+  <Accordion title="Nginx 的 worker 进程和 master 进程分别负责什么？" icon="stopwatch">
+
+    **答题要点：**
+    master 负责管理和监控，worker 负责处理请求。理解这个分工对调优和排障至关重要。
+
+    **高分回答：**
+    master 进程以 root 权限运行，负责读取配置文件、管理 worker 进程的生命周期（启动、停止、重启）、处理热重载信号（`nginx -s reload`）。worker 进程以普通用户（如 www-data）权限运行，每个 worker 是一个独立进程，通过 epoll 事件循环处理实际的客户端连接。热重载的原理是：master 收到 SIGHUP 信号后，根据新配置启动新的 worker 进程，同时向旧 worker 发送优雅退出信号——旧 worker 停止接收新连接，但继续处理已有连接直到完成，然后退出。这种"滚动更新"保证了配置切换期间零中断。可以通过 `ps aux | grep nginx` 看到一个 master 和多个 worker 进程。
+
+  </Accordion>
+
+  <Accordion title="Nginx 如何实现请求限流？有哪些限流算法？" icon="stopwatch">
+
+    **答题要点：**
+    Nginx 内置了 `limit_req` 和 `limit_conn` 两个模块，分别限制请求速率和并发连接数。
+
+    **高分回答：**
+    `limit_req_zone` 基于**漏桶算法（Leaky Bucket）**——请求进入桶中，以固定速率流出处理；桶满时拒绝新请求。配置示例：`limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;` 表示每个 IP 每秒最多 10 个请求。`burst=20` 参数允许突发 20 个请求排队。`limit_conn_zone` 基于**并发连接数**——限制同一 IP 的同时连接数。配置示例：`limit_conn_zone $binary_remote_addr zone=addr:10m; limit_conn addr 100;` 表示每个 IP 最多 100 个并发连接。这两个模块常用于 API 防刷、防止 DDoS 攻击。注意 `limit_req` 的 `burst` 和 `nodelay` 参数组合可以控制突发请求是排队还是直接拒绝。
+
+  </Accordion>
+
+  <Accordion title="BFF 层应该放在哪里？是每个前端团队各维护一个，还是统一一个？" icon="node">
+
+    **答题要点：**
+    这是架构选型题，没有标准答案，需要分场景讨论。
+
+    **高分回答：**
+    取决于团队规模和业务复杂度。小型团队（3-5 人）建议**统一一个 BFF**——代码少、维护成本低、所有端共用一套聚合逻辑。中大型团队建议**按端拆分**——Web BFF 和 Mobile BFF 各自独立，因为两端的数据结构差异很大（Web 需要富文本、分页、筛选条件；移动端需要精简数据、懒加载、离线缓存）。如果团队更大（20+ 前端），可以考虑**按业务域拆分 BFF**——商品 BFF、订单 BFF、用户 BFF，每个 BFF 由对应的前端业务团队维护。还有一种方案是用 **GraphQL 代替 BFF**——前端通过 GraphQL 查询自己需要的字段，后端提供统一的 GraphQL Schema，省去了 BFF 层。但 GraphQL 需要后端配合，改造成本较高。
+
+  </Accordion>
+
+  <Accordion title="Nginx 和 Node.js 处理静态资源的性能差多少？为什么？" icon="node">
+
+    **答题要点：**
+    Nginx 性能远超 Node.js，差距在于语言层面（C vs JS）和系统调用层面（sendfile vs read+write）。
+
+    **高分回答：**
+    基准测试中，Nginx 处理静态文件的 QPS（每秒查询数）是 Node.js 的 10-50 倍。根本原因有三个：第一，Nginx 用 C 语言实现，直接操作内核系统调用，没有 V8 引擎的 GC（垃圾回收）暂停和 JIT（即时编译）开销。第二，Nginx 使用 `sendfile()` 系统调用实现零拷贝——文件数据从磁盘直接通过 DMA 传到网卡，不经过用户态内存拷贝；Node.js 的 `fs.readFile` 需要先将文件读入用户态 Buffer，再写入 socket 缓冲区，至少多两次拷贝。第三，Nginx 的 `open_file_cache` 可以缓存文件描述符和元数据，避免重复的 `open()` 和 `stat()` 系统调用。所以生产环境中，静态资源一定交给 Nginx 处理，Node.js 只负责动态 API。
+
+  </Accordion>
+
+  <Accordion title="🔥 如何排查 Nginx 502 Bad Gateway 错误？" icon="skull">
+
+    **答题要点：**
+    502 代表 Nginx 收到了无效的上游响应，需要从后端服务、网络、超时三个维度排查。
+
+    **高分回答：**
+    502 表示 Nginx 作为网关或代理，从上游服务器收到了无效响应。排查步骤：第一步，看 Nginx 错误日志（`/var/log/nginx/error.log`），常见信息是 `connect() failed (111: Connection refused)` ——说明后端服务没有启动或端口不对；`upstream timed out (110: Connection timed out)` ——说明后端处理超时。第二步，检查后端服务是否存活——`curl http://localhost:3000/health` 直接请求后端，排除 Nginx 层的问题。第三步，检查 Nginx 配置——`proxy_pass` 的地址和端口是否正确，`upstream` 中的服务器是否都可达。第四步，调整超时参数——`proxy_connect_timeout`（连接超时）、`proxy_read_timeout`（读取超时）、`proxy_send_timeout`（发送超时），默认都是 60 秒。第五步，检查系统资源——`dmesg` 看是否有 OOM（内存溢出），`ss -s` 看连接数是否达到上限，`ulimit -n` 看文件描述符限制。一个常见的坑是：后端服务重启期间（约 3-5 秒），所有请求都会 502，需要用 `upstream` 的 `backup` 服务器做故障转移。
+
+  </Accordion>
+
+  <Accordion title="🔥 BFF 层引入后如何保证高可用？BFF 挂了怎么办？" icon="skull">
+
+    **答题要点：**
+    BFF 作为中间层，一旦故障会阻断所有前端请求。需要从部署、降级、监控三个维度保障高可用。
+
+    **高分回答：**
+    BFF 高可用的核心策略有四个。第一，**多实例部署 + 负载均衡**——BFF 至少部署 2 个实例，Nginx 通过 upstream 配置健康检查（`max_fails=3 fail_timeout=30s`），故障实例自动摘除。第二，**优雅降级（Graceful Degradation）**——BFF 应该对每个后端请求独立 try-catch，某个微服务超时时返回降级数据（如缓存数据或默认值），而不是整体 502。示例代码：`const userInfo = await fetchUser().catch(() => cachedUser || defaultUser)`。第三，**熔断机制（Circuit Breaker）**——当某个后端服务的错误率超过阈值（如 50%），自动"熔断"——后续请求直接返回降级数据，不再打向后端，防止雪崩。可以用 `opossum` 等 Node.js 熔断库实现。第四，**请求超时控制**——BFF 的每个请求都要设置超时（如 3 秒），避免一个慢接口拖垮整个 BFF。`Promise.race([fetchAPI(), timeout(3000)])` 是最简单的实现方式。监控方面，BFF 需要上报 QPS、P99 延迟、错误率等指标，配合告警及时发现问题。
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [Ilya Grigorik: High Performance Browser Networking](https://www.igvita.com/)：系统讲解了 HTTP、TLS、WebSocket 和网络性能优化，是理解 Nginx 代理和 HTTP/2 配置的底层基础。<sup>[1]</sup>
+- 📖 [朴灵: 《深入浅出 Node.js》](https://github.com/nicolerey)：深入剖析了 Node.js 的事件循环、非阻塞 I/O 和 Stream 机制，是理解 BFF 服务层 Node.js 实现原理的必读书籍。<sup>[2]</sup>
+- 📖 [阿里 Node 架构团队 (Egg.js / Midway.js) 技术博客](https://midwayjs.org/)：国内把 Node.js 在企业级高并发、微服务治理、Serverless 落地做得最深的团队，BFF 层的最佳实践和性能调优经验值得反复研读。<sup>[3]</sup>
+- 🔗 [Cloudflare Blog: Nginx Performance Tuning](https://blog.cloudflare.com/)：Cloudflare 在边缘网络层面大量使用 Nginx，他们的博客对 Nginx 事件驱动模型、epoll 调优和 HTTP/3 支持有极深度的技术分享。<sup>[1]</sup>
+- 🔗 [美团技术团队: 前端工程化与部署架构](https://tech.meituan.com/)：国内大厂中分享文章最成体系的技术博客之一，在微前端、跨端基建、前端监控系统搭建和 Nginx 部署架构上有大量深度实践文章。<sup>[2]</sup>
+- 🟢 [Nginx 官方文档: Module ngx_http_proxy_module](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)：Nginx 反向代理模块的最权威配置参考，包含了 proxy_pass、proxy_set_header、超时配置等所有参数的详细说明。<sup>[1]</sup>
+- 📖 [狼叔: 大前端工程化与 Node.js 布道](https://github.com/i5ting)：国内极度活跃的 Node.js 与大前端架构布道者，在 BFF 架构设计和 Node.js 服务端最佳实践上有大量高质量输出。<sup>[3]</sup>
+- 🔗 [字节跳动 Web Infra 团队博客](https://github.com/web-infra-dev)：在 BFF 层的接口聚合、数据裁剪、Node.js 微服务治理方面有工业级的实践分享，是了解大规模 BFF 架构演进的最佳来源。<sup>[3]</sup>

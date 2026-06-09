@@ -686,7 +686,7 @@ bool ShouldConvertToDictionary(uint32_t current_length,
     // forEach：约 0.35ns/元素
     // for...of：约 0.8ns/元素（迭代器开销）
     // for...in：约 5ns/元素（原型链遍历 + 字符串键）
-    ```"
+    ```
 
   </Accordion>
 
@@ -736,7 +736,7 @@ bool ShouldConvertToDictionary(uint32_t current_length,
     // 普通 Array：1000000 * 24 bytes ≈ 24MB
     // Float64Array：1000000 * 8 bytes ≈ 8MB
     // Float32Array：1000000 * 4 bytes ≈ 4MB
-    ```"
+    ```
 
   </Accordion>
 
@@ -765,7 +765,7 @@ bool ShouldConvertToDictionary(uint32_t current_length,
       const args = Array.from(arguments); // 或 [...arguments]
       // 现在是真正的 Array，享受 V8 优化
     }
-    ```"
+    ```
 
   </Accordion>
 

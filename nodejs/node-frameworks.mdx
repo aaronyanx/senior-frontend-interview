@@ -1,0 +1,929 @@
+---
+title: "Node.js 框架"
+---
+
+> **面试官为什么问这个？**
+>
+> Node.js 框架是前端工程师走向全栈的必经之路。面试官问这个，本质上是在考察你：**你是否理解服务端框架的设计思想，能否从中间件、路由、依赖注入等架构模式中看出框架的演进脉络？** 如果你只会 `app.get('/api', handler)` 而说不出 Express、Koa、NestJS 的设计差异，说明你对服务端架构的理解停留在"会用"而不是"懂设计"。
+
+---
+
+## Q1: Node.js 框架的历史？为什么要有它？
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  CGI 时代    │ → │  PHP/JSP     │ → │  Node.js     │ → │  框架演进    │ → │  全栈时代    │
+│  (1993)      │   │  (1995-2000) │   │  (2009)      │   │  (2010-2020) │   │  (2020+)     │
+└──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
+```
+
+<Steps>
+
+  <Step title="1993 年: CGI 时代——每个请求一个进程">
+
+    早期 Web 服务器处理请求的方式是 CGI（Common Gateway Interface）：每来一个请求，就 fork 一个操作系统进程去处理。这种模型简单粗暴，但进程创建和销毁的开销极大，几百个并发就能把服务器拖垮。后来出现了 FastCGI 和各种持久化进程方案，但根本问题没变——**每条请求独占一个进程/线程，资源浪费严重。**
+
+  </Step>
+  <Step title="1995-2000 年: PHP/JSP 的线程池模型">
+
+    PHP 搭配 Apache 的 prefork MPM，Java 搭配 Tomcat 的线程池，本质都是"预先创建一批工作单元，来了请求就分配一个"。并发量上去后，线程上下文切换和内存占用成为瓶颈。一台 4GB 内存的服务器，Tomcat 默认 200 个线程就要吃掉近 1GB。
+
+  </Step>
+  <Step title="2009 年: Ryan Dahl 发布 Node.js——事件驱动 + 非阻塞 I/O">
+
+    Ryan Dahl 看穿了一个事实：**Web 服务器的瓶颈不在 CPU，而在 I/O。** 一次数据库查询要 50ms，这 50ms 里线程什么都不干只是等着。Node.js 用单线程 + 事件循环 + 非阻塞 I/O 解决了这个问题：一个请求在等数据库时，线程立刻去处理下一个请求。<sup>[1]</sup>
+
+  </Step>
+  <Step title="2010-2014 年: Express 一统江湖">
+
+    TJ Holowaychuk 在 2010 年发布 Express，用极简的中间件模型和路由系统，迅速成为 Node.js 的事实标准。同一时期他还创造了 Koa（2013），引入了洋葱模型的概念。Express 的设计哲学是"少即是多"——只提供路由和中间件，其余靠社区生态。
+
+  </Step>
+  <Step title="2016-2020 年: 企业级框架崛起">
+
+    阿里推出 Egg.js（2016），在 Express/Koa 之上加了"约定优于配置"和插件机制，解决企业级 Node.js 应用的工程化问题。NestJS（2017）则从 Angular 借鉴了依赖注入和装饰器模式，用 TypeScript 重新定义了 Node.js 框架的架构标准。<sup>[2]</sup>
+
+  </Step>
+
+</Steps>
+
+**Node.js 框架解决的核心问题：**
+
+```text
+问题：裸写 Node.js http.createServer() 的痛点
+
+路由 → 手写 if/else 判断 URL
+中间件 → 手写 next() 调用链
+错误处理 → 手写 try/catch 包裹
+组织代码 → 没有标准，每人一套风格
+
+解决：框架提供标准化的路由、中间件、错误处理、项目结构
+
+路由 → app.get('/api/users', handler)
+中间件 → app.use(cors()).use(bodyParser())
+错误处理 → 统一的错误中间件
+组织代码 → 约定目录结构 + 模块化
+```
+
+<Note title="💡 一句话总结">
+
+Node.js 框架的演进本质是：从"手写一切"到"约定优于配置"，从"个人项目"到"企业级架构"，中间件模型是贯穿始终的核心设计模式。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有框架">
+
+裸写 `http.createServer()`，路由用 `if (req.url === '/api')` 判断，中间件自己用回调嵌套实现。项目超过 10 个接口后代码就变成意大利面条，每个人写法不同，新人接手直接崩溃。
+
+</Card>
+<Card title="✅ 引入框架">
+
+Express 提供 `app.get()` 路由 + `app.use()` 中间件，Koa 提供洋葱模型和 `async/await`，NestJS 提供完整的模块化架构。团队有了统一的代码规范，项目可以从 10 个接口扩展到 1000 个接口而不失控。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说框架演进的主线（CGI → 线程池 → 事件驱动 → 中间件 → 模块化），再聚焦到你最熟悉的一个框架深入。面试官想看到你对"为什么要这样设计"的理解，而不是背诵 API。
+
+</Tip>
+
+---
+
+## Q2: Express 核心原理
+
+Express 的本质是一个**中间件调度器**。它只做了三件事：注册路由、存储中间件、按顺序执行。
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│                     Express 应用                         │
+│  ┌───────────┐   ┌───────────┐   ┌───────────┐         │
+│  │ 中间件 1  │ → │ 中间件 2  │ → │ 路由处理  │ → 响应  │
+│  │ (cors)    │   │ (bodyParser)│  │ (handler) │         │
+│  └───────────┘   └───────────┘   └───────────┘         │
+│         │                                              │
+│         ▼                                              │
+│  每个中间件调用 next() 把控制权交给下一个               │
+└─────────────────────────────────────────────────────────┘
+```
+
+```javascript
+// Express 中间件的核心实现原理（极度简化）
+const app = {
+  middlewares: [],
+
+  use(fn) {
+    this.middlewares.push(fn);
+  },
+
+  // 核心：递归调用 next()
+  handle(req, res) {
+    let index = 0;
+    const next = () => {
+      const fn = this.middlewares[index++];
+      if (fn) fn(req, res, next);
+    };
+    next();
+  }
+};
+```
+
+Express 的中间件是**线性链式调用**——每个中间件必须手动调用 `next()` 才会执行下一个。这种设计简单直接，但有两个致命缺陷：**没有 `async/await` 支持**（Express 4 基于回调），以及**错误处理是同步的**——异步错误必须手动 `next(err)` 传递。<sup>[3]</sup>
+
+<Warning title="⚠️ 核心机制: Express 的 next() 链">
+
+Express 的中间件执行是**线性的、单向的**：`req → middleware1 → middleware2 → handler → res`。每个中间件通过调用 `next()` 把控制权传递给下一个。如果不调用 `next()`，请求就会"停"在当前中间件。
+
+- 这就是为什么 `cors()` 必须放在路由之前——它需要在路由处理之前设置响应头。
+- 如果中间件内部抛出同步异常，Express 会跳到错误处理中间件（4 个参数的函数）。但**异步异常不会被捕获**——这是 Express 最大的设计缺陷。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 快递流水线">
+
+Express 的中间件就像工厂流水线上的工人——每个工人只负责一道工序（如贴标签、打包、扫码），做完后把包裹推给下一个工人（调用 `next()`）。如果某个工人忘了推包裹（忘记调用 `next()`），后面的工人就永远拿不到这个包裹。如果工人手滑摔了包裹（同步错误），流水线有质检员（错误中间件）来处理；但如果工人说了句"等一下，我去仓库拿个东西"然后一去不回（异步错误没人 catch），整条线就卡住了。
+
+</Tip>
+
+### 中间件的执行顺序
+
+中间件的执行顺序完全取决于 `app.use()` 的注册顺序。这是一个常见的踩坑点：
+
+```javascript
+// ❌ 错误做法：cors 放在路由之后，跨域请求会失败
+app.get('/api/users', handler);
+app.use(cors());  // 太晚了，响应头已经发出去了
+
+// ✅ 正确做法：cors 放在路由之前
+app.use(cors());
+app.get('/api/users', handler);
+```
+
+### Express 的路由系统
+
+Express 的路由是一个**分层的路由器树**。`express.Router()` 可以创建子路由器，通过 `app.use('/api', router)` 挂载到特定路径前缀。路由匹配是按注册顺序遍历的，第一个匹配的路由会处理请求。
+
+```javascript
+const router = express.Router();
+
+// 路由参数解析
+router.get('/users/:id', (req, res) => {
+  // req.params.id 来自 URL 路径
+  // req.query.page 来自查询字符串
+  // req.body 来自请求体（需要 bodyParser 中间件）
+  res.json({ id: req.params.id });
+});
+
+app.use('/api', router); // 挂载到 /api 前缀
+```
+
+### 为什么 Express 被"淘汰"？
+
+Express 没有被淘汰——它依然是 npm 上下载量最大的 Node.js 框架。但它的设计确实落后了：
+
+1. **不支持 `async/await`**：Express 4 的错误处理基于回调，异步错误无法被 catch。
+2. **没有内置的类型支持**：纯 JavaScript，TypeScript 需要额外安装 `@types/express`。
+3. **中间件模型过于简单**：没有洋葱模型，无法在响应阶段执行逻辑（如计算请求耗时）。
+
+Express 5（开发中多年）终于加了 `async` 支持，但社区已经大量迁移到 Koa 和 Fastify。<sup>[4]</sup>
+
+---
+
+## Q3: Koa 核心原理
+
+Koa 的核心贡献是**洋葱模型**——让中间件可以在请求和响应两个阶段都执行逻辑。
+
+```text
+请求 ──→ 中间件 1 ──→ 中间件 2 ──→ 路由处理
+              ↑            ↑            │
+              │            │            │
+响应 ←──── 响应 1 ←──── 响应 2 ←────────┘
+
+每一层都能在"进去"和"出来"时执行代码
+```
+
+```javascript
+// Koa 洋葱模型的执行顺序
+const Koa = require('koa');
+const app = new Koa();
+
+app.use(async (ctx, next) => {
+  console.log('1. 进入中间件 1');
+  await next();         // 控制权交给下一个中间件
+  console.log('4. 返回中间件 1');
+});
+
+app.use(async (ctx, next) => {
+  console.log('2. 进入中间件 2');
+  await next();
+  console.log('3. 返回中间件 2');
+});
+
+// 输出：1 → 2 → 3 → 4
+// 这就是"洋葱"：先一层层进去，再一层层出来
+```
+
+Koa 2 全面拥抱 `async/await`，把 Express 的回调地狱变成了线性的同步写法。每个中间件是一个 `async` 函数，`await next()` 就是"执行完后续中间件后再回来"。<sup>[5]</sup>
+
+<Warning title="⚠️ 核心机制: 洋葱模型的 compose 实现">
+
+洋葱模型的底层是 `koa-compose` 库，它用**递归**把中间件数组包装成一个嵌套的 `Promise` 链。核心代码只有 20 行左右：
+
+- 每个中间件接收 `(ctx, next)` 两个参数。
+- `next()` 实际上是执行下一个中间件的 Promise。
+- `await next()` 等待后续所有中间件执行完毕后才继续。
+
+这就是为什么 `console.log` 的顺序是 1→2→3→4 而不是 1→2→4→3。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 过安检">
+
+洋葱模型就像机场安检。你（请求）走进第一道门（中间件 1），安检员检查你的护照后说"请进"（调用 `next()`）。你走进第二道门（中间件 2），过了安检。回程时，你原路返回——先经过第二道门（中间件 2 的后半段），再经过第一道门（中间件 1 的后半段）。每道门都能在你"进去"和"出来"时做不同的事情，比如进去时记录时间，出来时计算耗时。
+
+</Tip>
+
+### Koa vs Express 对比
+
+| 对比维度 | Express | Koa |
+|---------|---------|-----|
+| **中间件模型** | 线性链式（`next()` 回调） | 洋葱模型（`await next()`） |
+| **异步支持** | 回调（Express 4）/ Promise（Express 5） | 原生 `async/await` |
+| **错误处理** | 同步 try/catch + 错误中间件 | 统一的 `try/catch` 包裹 `await next()` |
+| **Context 对象** | 分离的 `req` 和 `res` | 统一的 `ctx`（封装了 req/res） |
+| **路由** | 内置 `express.Router()` | 需要第三方 `@koa/router` |
+| **生态** | 最庞大（npm 下载量第一） | 较成熟，但规模小于 Express |
+| **TypeScript** | 需要 `@types/express` | Koa 2 内置类型推导 |
+
+### 洋葱模型的代码实现
+
+```javascript
+// 手写一个极简的洋葱模型 compose 函数
+function compose(middlewares) {
+  return function (ctx) {
+    let index = -1;
+
+    function dispatch(i) {
+      if (i <= index) return Promise.reject(new Error('next() called multiple times'));
+      index = i;
+      const fn = middlewares[i];
+      if (!fn) return Promise.resolve();
+      try {
+        return Promise.resolve(fn(ctx, () => dispatch(i + 1)));
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    }
+
+    return dispatch(0);
+  };
+}
+
+// 使用示例
+const middlewares = [
+  async (ctx, next) => {
+    ctx.timing = Date.now();
+    await next();
+    ctx.timing = Date.now() - ctx.timing;
+  },
+  async (ctx, next) => {
+    ctx.body = 'Hello World';
+    await next();
+  }
+];
+
+const fn = compose(middlewares);
+fn({}).then(ctx => console.log(ctx));
+```
+
+### 洋葱模型的实际应用场景
+
+洋葱模型最有价值的场景是**在请求前后都执行逻辑**：
+
+```javascript
+// 请求耗时统计（Express 做不到，或者非常别扭）
+app.use(async (ctx, next) => {
+  const start = Date.now();
+  await next();  // 等待所有后续中间件和路由处理完毕
+  const ms = Date.now() - start;
+  ctx.set('X-Response-Time', `${ms}ms`);
+  console.log(`${ctx.method} ${ctx.url} - ${ms}ms`);
+});
+
+// 统一错误处理
+app.use(async (ctx, next) => {
+  try {
+    await next();
+  } catch (err) {
+    ctx.status = err.status || 500;
+    ctx.body = { error: err.message };
+    ctx.app.emit('error', err, ctx);
+  }
+});
+```
+
+---
+
+## Q4: Egg 核心原理
+
+Egg.js 的设计哲学是**约定优于配置**——通过统一的目录结构和插件机制，让团队不需要讨论"代码放哪里"这种问题。
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│                    Egg.js 架构                           │
+│                                                         │
+│  ┌───────────┐   ┌───────────┐   ┌───────────┐         │
+│  │  插件机制  │   │  Loader   │   │  约定目录  │         │
+│  │  (Plugin)  │   │  加载器   │   │  结构     │         │
+│  └─────┬─────┘   └─────┬─────┘   └─────┬─────┘         │
+│        │               │               │                │
+│        ▼               ▼               ▼                │
+│  ┌─────────────────────────────────────────────┐        │
+│  │            Koa 内核（洋葱模型）              │        │
+│  └─────────────────────────────────────────────┘        │
+└─────────────────────────────────────────────────────────┘
+```
+
+Egg 的底层是 Koa 2，但它在 Koa 之上加了三层东西：**Loader 加载器**、**插件机制**、**约定目录结构**。<sup>[6]</sup>
+
+### 约定优于配置
+
+Egg 规定了严格的目录结构，团队不需要讨论代码组织方式：
+
+```
+egg-project/
+├── app/
+│   ├── controller/     ← 业务逻辑（处理请求）
+│   ├── service/        ← 业务服务（封装数据层）
+│   ├── middleware/      ← 中间件
+│   ├── router.js       ← 路由定义
+│   └── model/          ← 数据模型
+├── config/
+│   ├── config.default.js  ← 默认配置
+│   ├── config.prod.js     ← 生产环境配置
+│   └── plugin.js          ← 插件声明
+└── test/                ← 测试
+```
+
+```javascript
+// app/router.js — 路由自动映射到 controller
+module.exports = app => {
+  const { router, controller } = app;
+  router.get('/api/users', controller.user.list);
+  router.get('/api/users/:id', controller.user.detail);
+};
+
+// app/controller/user.js — 自动挂载到 ctx.controller
+class UserController extends app.Controller {
+  async list() {
+    const { ctx } = this;
+    ctx.body = await ctx.service.user.findAll();
+  }
+}
+```
+
+### 插件机制
+
+Egg 的插件是**带生命周期的 npm 包**。一个插件可以包含路由、中间件、配置、扩展、定时任务等。通过 `plugin.js` 声明式地启用或禁用插件：
+
+```javascript
+// config/plugin.js
+exports.cors = {
+  enable: true,
+  package: 'egg-cors',
+};
+
+exports.sequelize = {
+  enable: true,
+  package: 'egg-sequelize',
+};
+```
+
+插件的本质是把"中间件 + 配置 + 扩展 + 启动逻辑"打包成一个可复用的单元。这比 Express 的 `app.use(cors())` 更彻底——不只是挂一个中间件，而是把一整套能力（包括配置、启动钩子、定时任务）都集成进来。
+
+### Loader 加载器
+
+Loader 是 Egg 的"心脏"。它负责在应用启动时，按照约定扫描目录结构，自动加载 controller、service、middleware、config 等模块，并把它们挂载到 `app` 对象上。
+
+```javascript
+// Loader 的核心逻辑（极度简化）
+class Loader {
+  load() {
+    this.loadConfig();       // 扫描 config/ 目录
+    this.loadPlugin();       // 加载声明的插件
+    this.loadMiddleware();   // 扫描 app/middleware/
+    this.loadController();   // 扫描 app/controller/
+    this.loadService();      // 扫描 app/service/
+    this.loadRouter();       // 执行 app/router.js
+  }
+}
+```
+
+Loader 的设计让开发者不需要手动 `require` 每个文件——只要把文件放在约定的目录下，框架就会自动加载。这就是"约定优于配置"的实现方式。
+
+### 为什么阿里选择 Egg？
+
+阿里的 Node.js 应用面临三个核心挑战：<sup>[7]</sup>
+
+1. **团队协作标准化**：几千人的前端团队，每个人写 Node.js 的风格不同，Egg 的约定目录解决了这个问题。
+2. **企业级安全和稳定性**：Egg 内置了 CSRF 防护、安全中间件、进程管理（egg-cluster 基于 master-agent-worker 模型），不需要额外配置。
+3. **渐进式框架**：Egg 的插件机制让团队可以按需引入能力，而不是把所有东西都塞进来。
+
+---
+
+## Q5: NestJS 核心原理
+
+NestJS 的核心思想是**用装饰器 + 依赖注入来组织代码**，把 Node.js 框架从"中间件驱动"升级为"模块驱动"。
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│                    NestJS 架构                           │
+│                                                         │
+│  ┌───────────┐   ┌───────────┐   ┌───────────┐         │
+│  │  Module   │ → │ Controller│ → │  Service   │         │
+│  │  (模块)   │   │  (控制器) │   │  (服务)    │         │
+│  └───────────┘   └───────────┘   └───────────┘         │
+│        │               │               │                │
+│        ▼               ▼               ▼                │
+│  ┌─────────────────────────────────────────────┐        │
+│  │     装饰器 + 依赖注入 (DI) 容器             │        │
+│  └─────────────────────────────────────────────┘        │
+│        │                                                │
+│        ▼                                                │
+│  ┌─────────────────────────────────────────────┐        │
+│  │  底层适配器：Express (默认) 或 Fastify      │        │
+│  └─────────────────────────────────────────────┘        │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 模块化架构
+
+NestJS 用 `@Module()` 装饰器把代码组织成模块。每个模块声明自己的 controllers（处理请求）、providers（提供服务）、imports（依赖其他模块）、exports（对外暴露服务）。
+
+```typescript
+// user.module.ts
+import { Module } from '@nestjs/common';
+import { UserController } from './user.controller';
+import { UserService } from './user.service';
+
+@Module({
+  controllers: [UserController],   // 处理 HTTP 请求
+  providers: [UserService],        // 提供业务逻辑
+  exports: [UserService],          // 对外暴露，其他模块可以注入
+})
+export class UserModule {}
+```
+
+### 装饰器 + 依赖注入
+
+NestJS 的依赖注入（DI）是它的灵魂。你不需要手动 `new UserService()`，而是通过构造函数声明依赖，框架自动注入：
+
+```typescript
+// user.service.ts
+@Injectable()
+export class UserService {
+  constructor(
+    private readonly db: DatabaseService,  // 自动注入
+    private readonly cache: CacheService,  // 自动注入
+  ) {}
+
+  async findAll() {
+    return this.db.query('SELECT * FROM users');
+  }
+}
+
+// user.controller.ts
+@Controller('users')
+export class UserController {
+  constructor(private readonly userService: UserService) {}  // 自动注入
+
+  @Get()
+  async list() {
+    return this.userService.findAll();
+  }
+}
+```
+
+DI 的核心好处是**解耦**。Controller 不需要知道 UserService 的具体实现——它可以是真实的数据库查询，也可以是 Mock 的测试数据。这在单元测试时极其有用。
+
+### 控制器、服务、守卫
+
+NestJS 把请求处理拆成多个层次：
+
+| 层次 | 装饰器 | 职责 |
+|------|--------|------|
+| **控制器** | `@Controller()` | 接收请求、调用服务、返回响应 |
+| **服务** | `@Injectable()` | 封装业务逻辑和数据访问 |
+| **守卫** | `@Guard()` | 认证和授权（替代 Express 的 auth 中间件） |
+| **拦截器** | `@Interceptor()` | 请求/响应转换、日志、缓存（类似洋葱模型） |
+| **管道** | `@Pipe()` | 参数校验和转换（如 Zod Schema 校验） |
+| **过滤器** | `@Filter()` | 统一错误处理 |
+
+```typescript
+// 守卫：检查用户是否登录
+@Injectable()
+export class AuthGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest();
+    return !!request.headers.authorization;
+  }
+}
+
+// 使用守卫
+@UseGuards(AuthGuard)
+@Get('profile')
+getProfile() {
+  return this.userService.getProfile();
+}
+```
+
+### NestJS vs Egg 对比
+
+| 对比维度 | Egg | NestJS |
+|---------|-----|--------|
+| **底层** | Koa 2 | Express（默认）/ Fastify |
+| **语言** | JavaScript | TypeScript（原生） |
+| **架构模式** | 约定优于配置 | 装饰器 + 依赖注入 |
+| **模块化** | 插件机制 | Module 系统 |
+| **学习曲线** | 低（遵循约定即可） | 中高（需要理解 DI、装饰器） |
+| **适用场景** | 阿里系业务、快速开发 | 企业级应用、微服务 |
+| **社区活跃度** | 维护减少 | 活跃增长 |
+
+<Warning title="⚠️ 选择框架的关键考量">
+
+选框架不是选"最好的"，而是选"最适合团队的"。如果团队是纯前端背景、项目是阿里系业务，Egg 的约定目录让新人上手更快。如果团队有 Java/Spring 背景、项目需要微服务架构，NestJS 的 DI 和模块化更自然。<sup>[8]</sup>
+
+</Warning>
+
+---
+
+## Q6: BFF 架构详解
+
+BFF（Backend For Frontend）是**为前端定制的后端层**——它不替代后端微服务，而是在前端和后端之间加一个"翻译层"。
+
+```text
+┌──────────┐   ┌──────────────────┐   ┌──────────────┐
+│  Web 前端 │ → │                  │ → │ 用户服务     │
+│          │   │  BFF 层          │ → │ 订单服务     │
+│  App 前端 │ → │  (Node.js)       │ → │ 商品服务     │
+│          │   │                  │ → │ 推荐服务     │
+└──────────┘   └──────────────────┘   └──────────────┘
+   前端              聚合/裁剪              微服务
+```
+
+### 什么是 BFF
+
+传统架构中，前端直接调用后端微服务。但前端需要的数据往往是多个微服务的聚合——比如商品详情页需要调用用户服务、商品服务、评论服务、推荐服务。如果前端直接调 4 个接口，页面加载会很慢。BFF 的作用就是**在服务端把这些接口聚合成一个**，返回前端需要的精确数据结构。
+
+### 为什么需要 BFF
+
+1. **接口聚合**：一个页面的数据来自多个微服务，BFF 在服务端聚合，减少前端请求数。
+2. **数据裁剪**：后端返回的数据可能包含前端不需要的字段，BFF 按前端需求裁剪。
+3. **协议转换**：后端可能用 gRPC，前端只认 HTTP/JSON，BFF 做协议转换。
+4. **多端适配**：Web、App、小程序需要的数据结构不同，每个端一个 BFF。
+
+### BFF 的典型场景
+
+```javascript
+// Node.js BFF 实现示例
+const express = require('express');
+const app = express();
+
+// BFF：聚合多个微服务的数据
+app.get('/api/product/:id', async (req, res) => {
+  const { id } = req.params;
+
+  // 并发请求多个微服务
+  const [product, reviews, recommendations] = await Promise.all([
+    fetch(`http://product-service/products/${id}`).then(r => r.json()),
+    fetch(`http://review-service/products/${id}/reviews`).then(r => r.json()),
+    fetch(`http://recommend-service/products/${id}/similar`).then(r => r.json()),
+  ]);
+
+  // 聚合 + 裁剪：返回前端需要的精确结构
+  res.json({
+    id: product.id,
+    name: product.name,
+    price: product.price,
+    reviews: reviews.slice(0, 5),          // 只取前 5 条评论
+    similarProducts: recommendations.slice(0, 4), // 只取 4 个推荐
+  });
+});
+```
+
+### Node.js BFF 的优势
+
+Node.js 天然适合做 BFF 层，原因有三：
+
+1. **前端团队可以自己写**：不需要等后端排期，前端自己搞定接口聚合。
+2. **异步 I/O 适合聚合场景**：BFF 的核心是并发请求多个微服务然后聚合，Node.js 的非阻塞 I/O 正好匹配。
+3. **同构渲染**：BFF 层可以用 Next.js / Nuxt.js 做 SSR，同一份代码既处理 API 聚合又做服务端渲染。
+
+---
+
+## Q7: 高频面试题
+
+**Express 和 Koa 的核心区别是什么？**
+
+Express 的中间件是线性链式调用，通过 `next()` 回调传递控制权；Koa 是洋葱模型，通过 `await next()` 让每个中间件都能在请求和响应两个阶段执行逻辑。Express 4 不支持 `async/await`，异步错误处理困难；Koa 2 原生支持 `async/await`，可以用统一的 `try/catch` 捕获所有错误。
+
+**什么是洋葱模型？为什么叫"洋葱"？**
+
+洋葱模型是 Koa 的中间件执行机制。请求从外到内穿过每一层中间件，响应从内到外再穿过每一层。就像剥洋葱——一层层进去，再一层层出来。每一层都能在"进去"时执行前置逻辑，在"出来"时执行后置逻辑。
+
+**Egg 和 NestJS 怎么选？**
+
+看团队背景和项目规模。阿里系业务、纯前端团队、快速开发选 Egg——它的约定目录和插件机制让新人上手快。有 Java 背景的团队、需要微服务架构、追求强类型选 NestJS——它的依赖注入和装饰器模式更适合大型企业级应用。
+
+<Note title="💡 一句话总结">
+
+Express 是"最小化"，Koa 是"现代化"，Egg 是"工程化"，NestJS 是"企业化"。选框架的本质是选团队的协作方式和项目的规模预期。
+
+</Note>
+
+---
+
+## 🔍 底层源码：Koa 洋葱模型是如何实现的？
+
+<div class="follow-up">
+koa-compose 的 compose 函数是怎么实现洋葱模型的？
+</div>
+
+Koa 的洋葱模型由 `koa-compose` 库实现（详见 [koa-compose 源码 compose.js](https://github.com/koajs/compose/blob/master/index.js)）：
+
+```javascript
+// koa-compose 源码（核心逻辑）
+function compose(middlewares) {
+  // 参数校验
+  if (!Array.isArray(middlewares)) throw new TypeError('Middleware stack must be an array');
+  for (const fn of middlewares) {
+    if (typeof fn !== 'function') throw new TypeError('Middleware must be composed of functions');
+  }
+
+  return function (context, next) {
+    let index = -1;
+
+    return dispatch(0);
+
+    function dispatch(i) {
+      if (i <= index) return Promise.reject(new Error('next() called multiple times'));
+      index = i;
+      let fn = middlewares[i];
+      if (i === middlewares.length) fn = next;  // 最后一个中间件的 next 是外层传入的
+      if (!fn) return Promise.resolve();
+      try {
+        return Promise.resolve(fn(context, dispatch.bind(null, i + 1)));
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    }
+  };
+}
+```
+
+这段代码做了 3 件事：
+
+1. **递归包装**：`dispatch(0)` 启动第一个中间件，`dispatch(i + 1)` 递归调用下一个。
+2. **防重入**：`index` 变量确保 `next()` 只能被调用一次，防止循环调用。
+3. **Promise 链**：`Promise.resolve(fn(...))` 确保每个中间件的返回值都是 Promise，`await next()` 等待后续所有中间件执行完毕。
+
+<div class="follow-up">
+Express 5 是怎么加 async 支持的？
+</div>
+
+Express 5 修改了路由匹配逻辑（详见 [Express 5 源码 router/index.js](https://github.com/expressjs/express/blob/5.x/router/index.js)），让路由处理函数可以返回 Promise。如果 handler 是 `async` 函数，Express 5 会自动 catch 其 rejection 并传递给错误处理中间件：
+
+```javascript
+// Express 5 的改进（极度简化）
+try {
+  const result = handler(req, res, next);
+  if (result && typeof result.catch === 'function') {
+    result.catch(next);  // 自动捕获 async 错误
+  }
+} catch (err) {
+  next(err);
+}
+```
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："请比较 Express、Koa、Egg、NestJS 的设计思想和适用场景"
+
+**及格回答（60-70分）：**
+> "Express 最老最简单，Koa 支持 async/await，Egg 是阿里出的，NestJS 是 TypeScript 写的。Express 适合小项目，NestJS 适合大项目。"
+
+面试官评价：**知道有什么但不知道为什么**。
+
+**满分回答（90-100分）：**
+
+> Node.js 框架的演进有一条清晰的主线：从"最小化"到"企业级"。Express 的设计哲学是"只提供路由和中间件，其余靠社区"——TJ Holowaychuk 用不到 200 行代码就实现了中间件调度器，核心就是 `next()` 递归调用链。这种极简设计让 Express 成为 npm 下载量最大的框架，但也导致了异步错误处理的缺陷——Express 4 的 `next(err)` 无法捕获 `async` 函数中的 rejection。<sup>[1]</sup>
+
+> Koa 的洋葱模型是对 Express 最重要的改进。`koa-compose` 的 `compose` 函数用递归把中间件数组包装成嵌套的 Promise 链，每个中间件通过 `await next()` 实现"先执行后续逻辑，再回来执行自己的后置逻辑"。这让请求耗时统计、统一错误处理这些在 Express 中需要 hack 的功能变成了自然的写法。<sup>[5]</sup>
+
+> Egg 和 NestJS 解决的是不同层面的问题。Egg 的核心是"约定优于配置"——Loader 加载器在启动时扫描 `app/controller/`、`app/service/` 等目录，自动把模块挂载到 `app` 对象上，让几千人的前端团队不用讨论代码放哪里。NestJS 的核心是依赖注入——用 `@Module()` 装饰器声明模块依赖关系，DI 容器自动解析和注入，这让单元测试可以轻松 Mock 任何依赖。<sup>[6]</sup>
+
+> 实际项目中，如果团队是纯前端背景且项目是快速迭代的业务，我会选 Egg 或直接用 Koa；如果项目是需要长期维护的企业级应用，我会选 NestJS——它的模块化和 DI 机制让代码的可维护性和可测试性远超 Express/Koa。<sup>[8]</sup>
+
+### 大厂高频连环拷问
+
+> 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。每个模块 **8 个 Accordion**，覆盖 4 个难度层级。
+
+<AccordionGroup>
+
+  <Accordion title="Express 的中间件和 Koa 的中间件有什么本质区别？" icon="layer-group">
+
+    **答题要点：**
+    不只是 API 不同，要从执行模型的角度解释。Express 是线性链式，Koa 是洋葱模型。
+
+    **高分回答：**
+    Express 的中间件通过 `next()` 回调传递控制权，执行顺序是 `m1 → m2 → handler → res`，中间件只能在请求阶段执行逻辑。Koa 的中间件通过 `await next()` 实现洋葱模型，执行顺序是 `m1进 → m2进 → handler → m2出 → m1出`，每个中间件都能在请求和响应两个阶段执行。一个实际差异是请求耗时统计：Express 需要在路由处理函数中手动记录结束时间并计算差值，而 Koa 可以在中间件中用 `await next()` 自然地捕获响应阶段。
+
+    ```javascript
+    // Koa：自然的耗时统计
+    app.use(async (ctx, next) => {
+      const start = Date.now();
+      await next();
+      ctx.set('X-Response-Time', `${Date.now() - start}ms`);
+    });
+    ```
+
+  </Accordion>
+
+  <Accordion title="Express 的 next('route') 和 next() 有什么区别？" icon="layer-group">
+
+    **答题要点：**
+    大多数候选人只知道 `next()`，不知道 `next('route')` 的存在。这是区分"用过 Express"和"理解 Express 路由机制"的关键。
+
+    **高分回答：**
+    `next()` 是把控制权交给下一个中间件，`next('route')` 是跳过当前路由剩余的中间件，直接进入下一个匹配的路由。这在路由级中间件链中非常有用——比如你可以先做参数校验，校验失败就 `next('route')` 跳过后续处理，让 404 路由兜底。
+
+    ```javascript
+    app.get('/api/users/:id',
+      (req, res, next) => {
+        if (!/^\d+$/.test(req.params.id)) {
+          return next('route');  // 参数不是数字，跳过后续中间件
+        }
+        next();
+      },
+      (req, res) => {
+        res.json({ id: req.params.id });  // 只有合法 ID 才会执行到这里
+      }
+    );
+    ```
+
+  </Accordion>
+
+  <Accordion title="Koa 的 ctx 对象是怎么设计的？为什么不直接用 req/res？" icon="stopwatch">
+
+    **答题要点：**
+    从 API 设计和开发者体验的角度解释。ctx 是对 req/res 的高层抽象。
+
+    **高分回答：**
+    Koa 的 `ctx`（Context）是对 Node.js 原生 `req`/`res` 的高层封装，通过 getter/setter 代理了常用属性。`ctx.body` 实际上是设置 `res.body`，在响应阶段 Koa 会自动调用 `res.end(ctx.body)`。`ctx.query` 是对 `url.parse(req.url).query` 的解析结果。这种设计的好处是 API 更简洁——`ctx.body = data` 比 `res.json(data)` 更直观，而且 `ctx` 可以挂载任意属性（如 `ctx.state.user`）在中间件之间传递数据。
+
+    ```javascript
+    // ctx 的 getter 代理（源码简化）
+    const proto = {};
+    delegate(proto, 'response')
+      .access('body')      // ctx.body → ctx.res.body
+      .access('status')    // ctx.status → ctx.res.statusCode
+      .getter('headerSent');
+    delegate(proto, 'request')
+      .access('query')     // ctx.query → ctx.req.query
+      .getter('url')
+      .getter('method');
+    ```
+
+  </Accordion>
+
+  <Accordion title="Egg 的 Loader 加载器具体是怎么工作的？" icon="stopwatch">
+
+    **答题要点：**
+    要说出 Loader 的核心流程：扫描目录、加载文件、挂载到 app 对象。
+
+    **高分回答：**
+    Egg 的 Loader 在应用启动时执行以下流程：首先扫描 `config/plugin.js` 声明的插件，按依赖顺序加载插件代码；然后扫描 `config/config.default.js` 和环境配置文件，合并配置；接着按约定扫描 `app/extend/`（扩展）、`app/middleware/`（中间件）、`app/controller/`（控制器）、`app/service/`（服务）等目录，把每个文件的导出挂载到 `app` 对应的属性上。比如 `app/controller/user.js` 的导出会挂载到 `app.controller.user`。这就是为什么在 router 中可以直接用 `controller.user.list` 而不需要 `require`。
+
+    ```javascript
+    // Loader 的 loadController 实现（极度简化）
+    loadController() {
+      const controllerPath = path.join(this.appDir, 'app/controller');
+      const files = fs.readdirSync(controllerPath);
+      for (const file of files) {
+        const key = file.replace('.js', '');
+        this.app.controller[key] = require(path.join(controllerPath, file));
+      }
+    }
+    ```
+
+  </Accordion>
+
+  <Accordion title="NestJS 的依赖注入是怎么实现的？为什么 TypeScript 装饰器能做 DI？" icon="node">
+
+    **答题要点：**
+    要解释 `reflect-metadata` 和 `emitDecoratorMetadata` 的作用。DI 容器通过反射获取构造函数参数类型。
+
+    **高分回答：**
+    NestJS 的 DI 依赖 TypeScript 的 `emitDecoratorMetadata` 编译选项。当一个类被 `@Injectable()` 装饰时，TypeScript 编译器会在元数据中记录构造函数的参数类型。DI 容器启动时通过 `Reflect.getMetadata('design:paramtypes', UserService)` 获取到 `[DatabaseService, CacheService]`，然后递归解析这些依赖的构造函数参数，最终构建出完整的依赖图。如果存在循环依赖，NestJS 会抛出错误并提示使用 `forwardRef()`。
+
+    ```typescript
+    // TypeScript 编译后的代码（简化）
+    // 编译器自动添加了 __metadata
+    __decorate([
+      Injectable(),
+      __metadata('design:paramtypes', [DatabaseService, CacheService])
+    ], UserService);
+    ```
+
+  </Accordion>
+
+  <Accordion title="NestJS 的 Interceptor 和 Koa 的洋葱模型有什么关系？" icon="node">
+
+    **答题要点：**
+    两者都实现了"在请求前后执行逻辑"的能力，但实现方式和抽象层次不同。
+
+    **高分回答：**
+    NestJS 的 Interceptor 本质上也是洋葱模型——它用 RxJS 的 `pipe` 操作符包装了路由处理函数的返回值，可以在 `handle()` 前后执行逻辑。但 NestJS 的抽象层次更高：Koa 的洋葱模型是在中间件层面，所有请求都经过所有中间件；NestJS 的 Interceptor 可以通过装饰器精确控制作用范围——比如只对特定 Controller 或特定方法生效。此外 NestJS 还提供了 Guard（认证）、Pipe（校验）、Filter（错误处理）等独立的横切关注点，比 Koa 的"所有逻辑都是中间件"更清晰。
+
+    ```typescript
+    // NestJS Interceptor 实现耗时统计
+    @Injectable()
+    export class TimingInterceptor implements NestInterceptor {
+      intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+        const start = Date.now();
+        return next.handle().pipe(
+          tap(() => console.log(`耗时: ${Date.now() - start}ms`)),
+        );
+      }
+    }
+    ```
+
+  </Accordion>
+
+  <Accordion title="🔥 如何设计一个支持热更新的 Node.js 框架插件系统？" icon="skull">
+
+    **答题要点：**
+    考察对 Node.js 模块缓存机制和进程管理的理解。需要提到 `require.cache` 和 cluster 重启。
+
+    **高分回答：**
+    Node.js 的 `require` 有模块缓存机制——同一个文件只加载一次，后续 `require` 返回缓存。要实现插件热更新，有两种方案。第一种是清除 `require.cache` 后重新 `require`，但这有风险——如果旧模块被其他模块引用，引用不会更新。第二种是用 cluster 模式：master 进程监控文件变化，通知 worker 进程优雅退出（等当前请求处理完），然后 fork 新的 worker 并加载新代码。Egg 的 `egg-development` 插件用的就是第二种方案。
+
+    ```javascript
+    // 方案 1：清除模块缓存（有副作用）
+    delete require.cache[require.resolve('./plugin')];
+    const newPlugin = require('./plugin');
+
+    // 方案 2：cluster 优雅重启（Egg 的方案）
+    process.on('message', (msg) => {
+      if (msg === 'reload') {
+        server.close(() => process.exit(0));  // 等请求处理完再退出
+      }
+    });
+    ```
+
+  </Accordion>
+
+  <Accordion title="🔥 BFF 层如何处理微服务的级联故障？" icon="skull">
+
+    **答题要点：**
+    考察对服务治理的理解。需要提到熔断、降级、超时控制等机制。
+
+    **高分回答：**
+    BFF 层调用多个微服务时，任何一个服务超时都会拖慢整个响应。需要三层防护：第一层是超时控制——每个 `fetch` 请求设置合理的超时时间（如 3 秒），用 `AbortController` 实现。第二层是降级策略——如果推荐服务超时，返回默认推荐列表而不是阻塞整个页面。第三层是熔断——用 circuit breaker 模式，当某个服务连续失败 N 次后，直接跳过该服务（返回降级数据），等一段时间后再尝试恢复。Node.js 中可以用 `opossum` 库实现熔断。
+
+    ```javascript
+    // BFF 级联故障防护
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+
+    try {
+      const data = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeout);
+      return data;
+    } catch (err) {
+      clearTimeout(timeout);
+      return fallbackData;  // 降级：返回缓存或默认数据
+    }
+    ```
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [Ryan Dahl: Original Node.js Presentation (2009)](https://www.youtube.com/watch?v=ztspvPYybIY)：Node.js 创造者首次公开演讲，阐述了事件驱动 + 非阻塞 I/O 的设计初衷。<sup>[1]</sup>
+- 🔗 [朴灵: 《深入浅出 Node.js》](https://book.douban.com/subject/25768396/)：国内 Node.js 布道先驱的代表作，对 Node.js 的事件循环、模块系统、内存管理有系统性的深度剖析。<sup>[2]</sup>
+- 📖 [TJ Holowaychuk: Express 源码](https://github.com/expressjs/express)：Express 作者的原始实现，理解中间件模型的第一手资料。<sup>[3]</sup>
+- 📖 [Matteo Collina: Fastify 性能优化实践](https://www.fastify.io/)：Node.js TSC 成员、Fastify 核心作者对 Node.js HTTP 性能压榨的深度分享。<sup>[4]</sup>
+- 🟢 [Koa 官方文档](https://koajs.com/)：Koa 2 的官方文档，洋葱模型和 `ctx` 对象的权威解释。<sup>[5]</sup>
+- 🔗 [阿里 Node 架构团队: Egg.js 设计理念](https://www.eggjs.org/zh-CN/intro)：Egg 的"约定优于配置"和插件机制的官方设计文档。<sup>[6]</sup>
+- 📖 [苏千 (fengmk2): Egg.js 核心作者](https://github.com/fengmk2)：阿里 Egg.js 核心作者，长期致力于企业级 Node 框架和 npm 镜像建设。<sup>[7]</sup>
+- 🔗 [NestJS 官方文档](https://docs.nestjs.com/)：NestJS 的装饰器、依赖注入、模块系统的权威文档。<sup>[8]</sup>

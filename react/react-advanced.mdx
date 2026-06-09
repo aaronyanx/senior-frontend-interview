@@ -257,6 +257,229 @@ function UncontrolledInput() {
 
 ---
 
+## Q5: React 为什么没有 keep-alive？
+
+### React 官方的设计决策
+
+Vue 的 `<keep-alive>` 是一个内置组件，用于缓存不活跃的组件实例，切换时保留组件状态。React 从设计之初就没有提供等价的内置机制，这不是疏忽，而是有意为之。
+
+### 架构设计上的考量
+
+React 的核心设计理念是**声明式 UI + 单向数据流**。组件的输出完全由 props 和 state 决定，组件卸载后状态消失是符合预期的行为——因为状态应该由父组件或状态管理库（Redux、Zustand）来"持有"，而不是由组件实例自身持有。
+
+```text
+Vue 的 keep-alive 思路：
+  组件实例自带状态 → 切走时缓存实例 → 切回时恢复实例 + 状态
+
+React 的设计思路：
+  状态属于数据层（Redux/Zustand） → 组件只是状态的"视图" → 卸载重建无所谓
+```
+
+### Fiber 架构与并发模式的影响
+
+React 18 的并发模式（Concurrent Mode）进一步强化了"组件可随时卸载"的假设。在并发渲染中，React 可能会**预渲染**尚未展示的组件，也可能**丢弃**已经渲染但不再需要的组件。如果引入 keep-alive 这种"实例持久化"机制，会与并发模式的调度策略产生冲突。
+
+```text
+并发模式的调度行为：
+
+React：我预渲染了 TabB 的内容，但用户没点过去，我决定丢弃它
+  → 如果有 keep-alive，这个"丢弃"就变成了"缓存"，语义冲突
+
+React：用户切换到 TabB，但优先级不够高，我先中断渲染去做更重要的事
+  → 如果有 keep-alive，缓存的实例可能和当前 props 不同步
+```
+
+### React 为什么不提供 keep-alive？
+
+三个核心原因：
+
+| 原因 | 解释 |
+|------|------|
+| **状态应由数据层持有** | React 认为组件状态应该提升到 Redux/Zustand/URL，而不是由组件实例"私有" |
+| **并发模式兼容** | keep-alive 的"实例持久化"与并发模式的"可丢弃渲染"冲突 |
+| **组合优于缓存** | React 推荐用条件渲染 + 状态提升来替代缓存，保持组件树的简洁 |
+
+<Note title="💡 一句话总结">
+
+React 没有 keep-alive 不是功能缺失，而是设计哲学的选择——**状态属于数据层，组件只是视图函数，卸载重建是正常行为**。
+
+</Note>
+
+---
+
+## Q6: React 中如何实现 keep-alive 效果？
+
+虽然 React 没有内置 keep-alive，但有多种方式实现类似效果。
+
+### 方案一：状态提升（Lifting State Up）
+
+最符合 React 理念的方式——把组件的状态提升到父组件，子组件卸载重建时状态不丢失。
+
+```jsx
+function TabContainer() {
+  // 状态在父组件，子组件卸载不影响
+  const [tabAData, setTabAData] = useState([]);
+  const [tabBData, setTabBData] = useState([]);
+  const [activeTab, setActiveTab] = useState('A');
+
+  return (
+    <>
+      <TabBar active={activeTab} onChange={setActiveTab} />
+      {activeTab === 'A' && <TabA data={tabAData} onChange={setTabAData} />}
+      {activeTab === 'B' && <TabB data={tabBData} onChange={setTabBData} />}
+    </>
+  );
+  // Tab 切换时组件会卸载重建，但数据不丢失
+}
+```
+
+**局限性**：只能保存 React state，无法保存 DOM 状态（滚动位置、焦点、输入法状态）。
+
+### 方案二：useRef 缓存组件实例
+
+用 `useRef` 在父组件中缓存子组件的 VNode，切换时不销毁。
+
+```jsx
+import { useRef, useState } from 'react';
+
+function KeepAlive({ children, activeKey }) {
+  const cacheRef = useRef(new Map());
+
+  // 缓存当前活跃的组件
+  if (!cacheRef.current.has(activeKey)) {
+    cacheRef.current.set(activeKey, children);
+  }
+
+  // 渲染所有缓存的组件，用 display 控制显隐
+  return (
+    <>
+      {Array.from(cacheRef.current.entries()).map(([key, vnode]) => (
+        <div key={key} style={{ display: key === activeKey ? 'block' : 'none' }}>
+          {vnode}
+        </div>
+      ))}
+    </>
+  );
+}
+
+// 使用
+function App() {
+  const [activeTab, setActiveTab] = useState('A');
+  return (
+    <KeepAlive activeKey={activeTab}>
+      {activeTab === 'A' ? <TabA /> : <TabB />}
+    </KeepAlive>
+  );
+}
+```
+
+**局限性**：所有缓存的组件都在 DOM 中，内存占用高；`display: none` 的组件仍然消耗渲染资源。
+
+### 方案三：第三方库
+
+```bash
+# react-activation：最接近 Vue keep-alive 的实现
+npm install react-activation
+
+# 使用
+import { AliveScope, KeepAlive } from 'react-activation';
+
+function App() {
+  return (
+    <AliveScope>
+      <KeepAlive name="TabA">
+        <TabA />
+      </KeepAlive>
+      <KeepAlive name="TabB">
+        <TabB />
+      </KeepAlive>
+    </AliveScope>
+  );
+}
+```
+
+react-activation 的原理是通过 **React Context + Error Boundary** 把缓存的组件树"嫁接"到一个隐藏的 Provider 中，切换时从 Provider 中取出组件树挂载到目标位置。
+
+### 方案四：手写 keep-alive 原理
+
+核心思路：用一个 Map 缓存组件的 VNode，用 DOM 的 `appendChild` 把组件的真实 DOM 移到容器中，而不是销毁重建。
+
+```jsx
+import { useRef, useEffect, useCallback, createContext, useContext } from 'react';
+
+const KeepAliveContext = createContext();
+
+// 提供缓存容器
+function AliveScope({ children }) {
+  const cacheRef = useRef(new Map());
+
+  const keep = useCallback((id, dom) => {
+    cacheRef.current.set(id, dom);
+  }, []);
+
+  const release = useCallback((id) => {
+    cacheRef.current.delete(id);
+  }, []);
+
+  return (
+    <KeepAliveContext.Provider value={{ keep, release, cache: cacheRef }}>
+      {children}
+      <div id="alive-container" style={{ display: 'none' }}>
+        {/* 缓存的 DOM 节点存放在这里 */}
+      </div>
+    </KeepAliveContext.Provider>
+  );
+}
+
+// 缓存组件的 DOM
+function KeepAlive({ id, children }) {
+  const containerRef = useRef();
+  const { keep, release, cache } = useContext(KeepAliveContext);
+
+  useEffect(() => {
+    const container = document.getElementById('alive-container');
+    const cachedDom = cache.current.get(id);
+
+    if (cachedDom) {
+      // 从缓存中恢复 DOM
+      containerRef.current.appendChild(cachedDom);
+    }
+
+    return () => {
+      // 卸载时把 DOM 移到缓存容器，而不是销毁
+      if (containerRef.current?.firstChild) {
+        container.appendChild(containerRef.current.firstChild);
+      }
+    };
+  }, [id]);
+
+  return <div ref={containerRef}>{children}</div>;
+}
+```
+
+<Warning title="⚠️ 手写方案的局限性">
+
+手写的 keep-alive 只能缓存 DOM 节点，无法缓存 React 组件的内部状态（hooks state、ref 等）。如果需要完整的状态缓存，应该使用 react-activation 等第三方库。状态提升方案虽然简单，但最符合 React 的设计理念。
+
+</Warning>
+
+### 方案选型对比
+
+| 方案 | 缓存 DOM | 缓存状态 | 性能开销 | 复杂度 |
+|------|---------|---------|---------|--------|
+| **状态提升** | ❌ | ✅ state | 低 | 低 |
+| **useRef + display** | ✅ | ✅ | 中（隐藏组件仍渲染） | 中 |
+| **react-activation** | ✅ | ✅ | 中 | 低 |
+| **手写 DOM 转移** | ✅ | ❌ hooks 丢失 | 低 | 高 |
+
+<Note title="💡 一句话总结">
+
+React 没有 keep-alive，但**状态提升是最 React 的方案**——把状态放到数据层，组件只是视图，卸载重建无所谓。如果确实需要缓存 DOM 状态（滚动位置），用 react-activation。
+
+</Note>
+
+---
+
 > **Redux / Zustand / MobX 的原理详解和对比选型**，请参见 [状态管理](/state-management/state-management) 章节。该模块覆盖了 Redux 三大原则、Zustand 极简实现、MobX 响应式原理、以及三者的技术选型对比。
 
 ---

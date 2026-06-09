@@ -893,7 +893,7 @@ Module.prototype._compile = function(content, filename) {
     // ES Modules：编译时解析，import 被提升
     import a from './a'; // 不管在哪里写，都会在编译时被解析
     // ❌ 不能在条件中使用 import
-    ```"
+    ```
 
   </Accordion>
 
@@ -937,7 +937,7 @@ Module.prototype._compile = function(content, filename) {
 
     // CommonJS 中导入 ESM 模块（必须用动态 import）
     const esmModule = await import('./esm-module.mjs');
-    ```"
+    ```
 
   </Accordion>
 

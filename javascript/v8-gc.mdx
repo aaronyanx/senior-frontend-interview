@@ -624,7 +624,7 @@ void IncrementalMarking::Step() {
       return function() { return obj; }; // obj 被闭包引用
     }
     const fn = create(); // obj 存活，下一次 GC 后晋升到老生代
-    ```"
+    ```
 
   </Accordion>
 
@@ -685,7 +685,7 @@ void IncrementalMarking::Step() {
       const { rss, heapUsed, heapTotal } = process.memoryUsage();
       console.log(`RSS: ${(rss/1024/1024).toFixed(1)}MB`);
     }, 5000);
-    ```"
+    ```
 
   </Accordion>
 

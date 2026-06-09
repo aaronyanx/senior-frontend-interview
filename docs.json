@@ -222,6 +222,18 @@
             ]
           },
           {
+            "group": "Node.js 框架",
+            "pages": [
+              "nodejs/node-frameworks"
+            ]
+          },
+          {
+            "group": "Nginx 与 BFF",
+            "pages": [
+              "engineering/nginx-bff"
+            ]
+          },
+          {
             "group": "工程规范与 CI/CD",
             "pages": [
               "engineering/ci-cd"
@@ -293,6 +305,12 @@
             "pages": [
               "ai/multi-agent",
               "ai/agent-stability"
+            ]
+          },
+          {
+            "group": "AI 工程化实践",
+            "pages": [
+              "ai/ai-engineering"
             ]
           }
         ]
