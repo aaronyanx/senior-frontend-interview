@@ -403,3 +403,46 @@ When explaining a concept, **always start from the problem/pain point, then intr
 - Show the problem before the solution
 - Make the reader understand the motivation first
 - Never start with "XXX 是 YYY" without context
+
+### LLM Wiki 流程（严格执行）
+
+本项目遵循 Andrej Karpathy 的 LLM Wiki 模式——知识库是**持久化、可积累的活文档**，不是一次性生成的内容。
+
+**三层架构：**
+
+| 层级 | 文件 | 说明 |
+|------|------|------|
+| **Raw Sources（原始资料）** | `terminologies.md`、`frontend_ai_experts.md`、`tech_company_blogs.md` | 不可修改，只读 |
+| **The Wiki（知识库）** | 所有 `.mdx` 文件 | LLM 持续维护、更新、交叉引用 |
+| **The Schema（配置）** | `SKILL.md` | 告诉 LLM 怎么维护 wiki |
+
+**严格流程（每次写入必须遵循）：**
+
+```
+1. Ingest（摄入）：
+   - 读取 3 个知识库文件
+   - 联网查询相关专家/博客的实际文章
+   - 基于实际文章写内容
+   - 正文用 [1]、[2] 引用
+   - 延伸阅读列出实际文章链接
+
+2. Query（查询）：
+   - 写完的内容可以作为后续模块的参考
+   - 交叉引用其他模块的内容
+
+3. Lint（检查）：
+   - 检查一致性
+   - 修复矛盾
+   - 补充缺失
+```
+
+**知识库扩展规则：**
+- 如果联网查询到的知识是**新专家、新博客、新技术**，追加到现有三个文档
+- 扩展前先检查是否已存在，避免重复
+- 遵循现有文档的格式和分类
+
+**禁止行为：**
+- ❌ 从训练数据直接写内容，不联网查询
+- ❌ 凭空捏造专家或博客引用
+- ❌ 只"借用"名单里的名字，不实际查询文章
+- ❌ 正文不加 `[1]`、`[2]` 引用标号
