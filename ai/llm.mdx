@@ -1,0 +1,963 @@
+---
+title: "LLM 原理"
+---
+
+> **面试官为什么问这个？**
+>
+> LLM 是一切 AI 应用的底座。面试官问 LLM 原理，本质上是在考察你：**是否理解 AI 的能力边界和工作方式，而不是把 LLM 当成一个黑盒 API 调用。** 如果你答不清楚 Token 化、上下文窗口、推理过程这些底层概念，说明你无法预判 AI 的行为，无法优化成本，也无法诊断 AI 输出异常的根因。
+
+---
+
+## Q1: 什么是 LLM？
+
+<Steps>
+
+  <Step title="LLM 的定义：大规模语言模型">
+
+LLM（Large Language Model，大语言模型）是基于 Transformer 架构、在海量文本数据上训练的神经网络模型。它的核心能力是**根据输入的 Token 序列，预测下一个最可能的 Token**。"大规模"指的是两个维度：参数规模（数十亿到数万亿参数）和训练数据规模（数万亿 Token 的文本语料）。
+
+  </Step>
+  <Step title="与传统 AI 的根本区别">
+
+传统 AI（如规则引擎、决策树）是**确定性的**——给定输入，输出固定。LLM 是**概率性的**——同一个问题问两次，可能得到不同回答。传统 AI 擅长结构化任务（分类、回归），LLM 擅长非结构化任务（自然语言理解、生成、推理）。传统 AI 需要人工定义特征，LLM 通过预训练自动学习语言的统计规律。
+
+  </Step>
+  <Step title="为什么 LLM 能理解自然语言">
+
+LLM 并不真正"理解"语言，而是通过在海量文本上学习到了语言的**统计规律和语义关联**。当模型规模达到一定程度时，会涌现出（Emergent）理解上下文、推理、翻译等能力。这被称为"涌现能力"——不是设计出来的，而是规模带来的质变。Andrej Karpathy 将 LLM 的训练过程比喻为"压缩整个互联网的知识到一个神经网络中"。
+
+  </Step>
+  <Step title="LLM 的进化路线">
+
+从 GPT-1（1.17 亿参数，2018）到 GPT-4（推测万亿参数级别，2023），LLM 经历了从"语言模型"到"通用推理引擎"的进化。关键里程碑：GPT-2 证明了零样本学习能力，GPT-3 证明了 In-Context Learning，ChatGPT 引入了 RLHF（基于人类反馈的强化学习）让模型对齐人类偏好，GPT-4 引入了多模态能力。
+
+  </Step>
+
+</Steps>
+
+**LLM 与传统 AI 的核心区别：**
+
+```text
+传统 AI（规则引擎 / 机器学习）          LLM（大语言模型）
+
+确定性输出                              概率性输出
+  给定输入 → 固定输出                      同一问题 → 不同回答
+
+人工定义特征                            自动学习特征
+  需要数据科学家提取特征                    从海量文本中自动学习
+
+结构化任务                              非结构化任务
+  分类、回归、推荐                          对话、写作、推理、代码生成
+
+单任务模型                              通用模型
+  一个模型只能做一件事                      一个模型可以做很多事
+```
+
+<Note title="一句话总结">
+
+LLM 的本质是一个"超级自动补全"——它根据输入的 Token 序列预测下一个 Token，当模型规模足够大时，这种简单的预测能力会涌现出理解、推理、创作等高级能力。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="传统 AI（BERT 之前）">
+
+需要为每个任务训练专门的模型。情感分析用一个模型，翻译用另一个模型，代码补全再用一个模型。每个模型都需要大量标注数据和专门的训练流程。
+
+</Card>
+<Card title="LLM（GPT-3 之后）">
+
+一个通用模型可以处理几乎所有语言任务。通过 Prompt 告诉它"你是代码审查助手"，它就能审查代码；告诉它"你是翻译专家"，它就能翻译。无需为每个任务单独训练。
+
+</Card>
+</CardGroup>
+
+<Tip title="面试技巧">
+
+回答时先说"LLM 的本质是概率预测"（核心机制），再说"大规模带来了涌现能力"（与传统 AI 的区别），最后说"但它的理解是统计性的，不是真正的理解"（能力边界）。面试官想听的是你理解 LLM 的原理和局限，而不是背定义。
+
+</Tip>
+
+---
+
+## Q2: Transformer 架构详解
+
+Transformer 是 LLM 的底层架构，由 Google 在 2017 年的论文《Attention Is All You Need》中提出。理解 Transformer 是理解 LLM 工作原理的基础。
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                    Transformer 架构全景                       │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  输入 Token → 词嵌入 (Embedding) + 位置编码 (Positional)     │
+│       │                                                     │
+│       ▼                                                     │
+│  ┌─────────────────────────────────────┐                    │
+│  │  Multi-Head Self-Attention          │  ← 核心：让每个     │
+│  │  (多个注意力头并行计算)               │     Token 关注     │
+│  └──────────────┬──────────────────────┘     其他所有 Token  │
+│                 │                                           │
+│                 ▼                                           │
+│  ┌─────────────────────────────────────┐                    │
+│  │  Feed-Forward Network (FFN)         │  ← 对注意力结果     │
+│  │  (前馈神经网络，逐位置处理)           │     做非线性变换    │
+│  └──────────────┬──────────────────────┘                    │
+│                 │                                           │
+│                 ▼                                           │
+│  ┌─────────────────────────────────────┐                    │
+│  │  Layer Norm + 残差连接               │  ← 稳定训练         │
+│  └──────────────┬──────────────────────┘                    │
+│                 │                                           │
+│                 ▼                                           │
+│          重复 N 层（GPT-4 约 120 层）                         │
+│                 │                                           │
+│                 ▼                                           │
+│           输出概率分布 → 预测下一个 Token                      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Self-Attention 机制
+
+Self-Attention（自注意力）是 Transformer 的核心。它让序列中的每个 Token 都能"看到"其他所有 Token，并根据相关性分配不同的注意力权重。
+
+```text
+一句话理解：Self-Attention 就是让模型学会"哪些词和哪些词相关"。
+
+例子："小猫坐在垫子上，它很舒服"
+  - "它" 需要关注 "小猫"（而不是"垫子"）
+  - Self-Attention 让 "它" 和 "小猫" 之间的注意力权重变高
+```
+
+```javascript
+// Self-Attention 的计算过程（简化版伪代码）
+function selfAttention(input) {
+  // 1. 对每个 Token 生成 Q(Query)、K(Key)、V(Value) 三个向量
+  const Q = input.map(token => linearProjection(token, 'Q')); // 我想查什么？
+  const K = input.map(token => linearProjection(token, 'K')); // 我能提供什么？
+  const V = input.map(token => linearProjection(token, 'V')); // 我的实际内容
+
+  // 2. 计算注意力分数：Q 和 K 的点积
+  const scores = Q.map(q =>
+    K.map(k => dotProduct(q, k) / Math.sqrt(d_k)) // 除以 sqrt(d_k) 防止分数过大
+  );
+
+  // 3. Softmax 归一化：把分数转成概率分布
+  const attentionWeights = scores.map(row => softmax(row));
+
+  // 4. 加权求和：用注意力权重对 V 加权
+  const output = attentionWeights.map(weights =>
+    weights.reduce((sum, w, i) => add(sum, scale(V[i], w)), zeroVector)
+  );
+
+  return output; // 每个 Token 的新表示 = 所有 Token 的加权组合
+}
+```
+
+<Tip title="通俗比喻: 图书馆查资料">
+
+Self-Attention 就像在图书馆查资料。你要写一篇关于"前端性能优化"的论文（Query），图书馆里每本书的标题是它的 Key，书的内容是它的 Value。你先用 Query 和所有书的标题（Key）对比相关性，找到最相关的几本书，然后重点阅读这些书的内容（Value），最后把它们的信息综合起来。Self-Attention 做的就是同样的事——每个 Token 用自己的 Query 去"查询"所有其他 Token 的 Key，找到最相关的，然后加权读取它们的 Value。
+
+</Tip>
+
+### Multi-Head Attention
+
+Multi-Head Attention 不是只做一次 Self-Attention，而是同时做多次（通常是 8、12、或更多次），每次用不同的线性变换。这让模型能从不同角度关注信息。
+
+```text
+Multi-Head Attention 的意义：
+
+Head 1 可能学到：语法关系（主语-谓语-宾语）
+Head 2 可能学到：语义关系（同义词、反义词）
+Head 3 可能学到：位置关系（相邻的词更相关）
+...
+Head 8 可能学到：长距离依赖（代词指代）
+
+最终把 8 个 Head 的结果拼接起来 → 包含多维度的语言理解
+```
+
+### 位置编码
+
+Transformer 没有循环结构（不像 RNN），所以它本身不知道 Token 的顺序。位置编码（Positional Encoding）通过给每个 Token 加上一个"位置信号"来解决这个问题。
+
+```javascript
+// 原始 Transformer 的正弦位置编码
+function positionalEncoding(position, d_model) {
+  const pe = new Array(d_model);
+  for (let i = 0; i < d_model; i++) {
+    if (i % 2 === 0) {
+      pe[i] = Math.sin(position / Math.pow(10000, i / d_model));
+    } else {
+      pe[i] = Math.cos(position / Math.pow(10000, (i - 1) / d_model));
+    }
+  }
+  return pe;
+}
+
+// 最终输入 = 词嵌入 + 位置编码
+const input = tokenEmbedding.map((emb, pos) =>
+  add(emb, positionalEncoding(pos, d_model))
+);
+
+// 现代 LLM（如 LLaMA）使用 RoPE（旋转位置编码）
+// 核心思想：通过旋转矩阵将位置信息编码到 Q、K 向量中
+// 优势：支持更长的上下文窗口，外推性更好
+```
+
+### 编码器 vs 解码器
+
+Transformer 原始架构有编码器（Encoder）和解码器（Decoder）两个部分，但现代 LLM 通常只用其中一种：
+
+| 架构 | 代表模型 | 特点 | 适用场景 |
+|------|---------|------|---------|
+| **仅编码器** | BERT、RoBERTa | 双向注意力，能看到上下文所有 Token | 文本分类、语义理解、信息提取 |
+| **仅解码器** | GPT 系列、Claude、LLaMA | 单向注意力，只能看到前面的 Token | 文本生成、对话、代码补全 |
+| **编码器-解码器** | T5、BART | 编码器理解输入，解码器生成输出 | 翻译、摘要、问答 |
+
+```text
+为什么 GPT 选择仅解码器架构？
+
+编码器（BERT）：双向注意力 → 每个 Token 能看到所有其他 Token
+  适合"理解"任务，但不能直接生成文本
+
+解码器（GPT）：单向注意力 → 每个 Token 只能看到它前面的 Token
+  天然适合"生成"任务——预测下一个 Token
+  训练效率更高（可以一次处理整个序列）
+  规模化效果更好（涌现能力在解码器架构上更明显）
+```
+
+<Note title="一句话总结">
+
+Transformer 的核心是 Self-Attention——让每个 Token 都能关注其他所有 Token 并分配不同的注意力权重。Multi-Head Attention 从多个角度关注信息，位置编码告诉模型 Token 的顺序，解码器架构天然适合文本生成任务。
+
+</Note>
+
+---
+
+## Q3: Token 化原理
+
+### 什么是 Token
+
+Token 是 LLM 处理文本的最小单位。它不是"字"也不是"词"，而是介于两者之间的**子词片段**。LLM 不直接处理字符串，而是先把文本切成 Token，再把 Token 转成数字 ID。
+
+```text
+"Hello, world!" → Token 化 → ["Hello", ",", " world", "!"]
+                        → ID 化 → [15496, 11, 995, 0]
+
+"前端开发" → Token 化 → ["前端", "开发"]
+                   → ID 化 → [23412, 34521]
+
+"frontend" → Token 化 → ["front", "end"]
+                   → ID 化 → [4829, 498]
+```
+
+### BPE 算法
+
+BPE（Byte Pair Encoding，字节对编码）是目前 LLM 最主流的 Token 化算法。它的核心思想是：**从单个字符开始，反复合并出现频率最高的相邻字符对，直到达到目标词表大小。**
+
+```javascript
+// BPE 算法的训练过程（简化版）
+function trainBPE(corpus, vocabSize) {
+  // 1. 初始词表：所有单个字符 + 特殊 Token
+  let vocab = getAllCharacters(corpus); // ['a', 'b', 'c', ...]
+
+  // 2. 反复合并，直到词表达到目标大小
+  while (vocab.length < vocabSize) {
+    // 统计所有相邻 Token 对的出现频率
+    const pairs = countPairFrequencies(corpus);
+
+    // 找到频率最高的 Token 对
+    const bestPair = findMostFrequent(pairs); // 例如 ('t', 'h')
+
+    // 合并这个 Token 对为一个新 Token
+    const newToken = bestPair[0] + bestPair[1]; // 'th'
+    vocab.push(newToken);
+
+    // 在语料中执行合并
+    corpus = mergePair(corpus, bestPair, newToken);
+  }
+
+  return vocab; // 最终词表，通常包含 32K-100K 个 Token
+}
+
+// GPT-4 使用 tiktoken 库，词表大小约 100,256 个 Token
+// Claude 使用自定义的 Token 化方案
+```
+
+### Token 与字符的关系
+
+一个 Token 不等于一个字符，也不等于一个词。Token 的粒度取决于训练语料中的统计规律：
+
+```text
+英文 Token 粒度：
+  "hello"     → 1 个 Token（常见词，整个词是一个 Token）
+  "tokenize"  → 2 个 Token ["token", "ize"]（不常见词，被拆成子词）
+  "supercalifragilistic" → 多个 Token（罕见词，被拆得更细）
+
+中文 Token 粒度：
+  "你好"     → 1-2 个 Token（取决于 Token 化器）
+  "人工智能"  → 2 个 Token ["人工", "智能"]
+  "大语言模型" → 2-3 个 Token
+
+数字 Token 粒度：
+  "2024"      → 1 个 Token（常见数字）
+  "3.14159"   → 可能是 2-3 个 Token ["3.14", "159"]
+```
+
+### 中文 Token 的特殊性
+
+中文 Token 化有一个重要特点：**同等信息量的中文文本，消耗的 Token 数通常比英文多 1.5-2 倍。** 这直接影响了 API 调用成本和上下文窗口的有效利用率。
+
+```text
+为什么中文消耗更多 Token？
+
+LLM 的词表主要基于英文语料训练，常见英文词（如 "the", "is", "hello"）
+都是独立 Token。但中文字符在英文为主的词表中不是常见模式，
+通常需要 2-3 个字节才能编码一个中文字符。
+
+对比：
+  "Hello world"        → 2 个 Token
+  "你好世界"           → 4-6 个 Token
+
+  "Large Language Model" → 3 个 Token
+  "大语言模型"           → 4-6 个 Token
+
+实际影响：
+  128K 上下文窗口，英文约能放 10 万单词
+  同样的窗口，中文约只能放 5-6 万字
+  同样的 API 调用，中文成本约是英文的 1.5-2 倍
+```
+
+<Warning title="核心机制: Token 化对前端开发的影响">
+
+Token 化不只是后端的事，它直接影响前端的用户体验和成本：
+
+- **输入框长度限制**：前端输入框限制 1000 字符，但实际 Token 数可能是 1500-2000。需要在前端做 Token 预估。
+- **流式输出的渲染**：LLM 按 Token 流式输出，一个 Token 可能是 1-4 个字符。前端需要正确拼接 Token，不能按字节切割。
+- **成本预估**：展示给用户的"剩余次数"或"成本估算"需要基于 Token 数而不是字符数。
+
+</Warning>
+
+```javascript
+// 前端 Token 预估（简化版，不需要精确计算）
+function estimateTokens(text) {
+  // 英文：约 1 Token / 4 字符
+  // 中文：约 1.5-2 Token / 字符
+  const chineseChars = (text.match(/[一-鿿]/g) || []).length;
+  const otherChars = text.length - chineseChars;
+  return Math.ceil(chineseChars * 1.5 + otherChars / 4);
+}
+
+// 精确计算：使用 tiktoken（需要 WebAssembly）
+import { encoding_for_model } from 'tiktoken';
+const enc = encoding_for_model('gpt-4');
+const tokens = enc.encode('你好世界');
+console.log(tokens.length); // 精确的 Token 数
+```
+
+<Note title="一句话总结">
+
+Token 是 LLM 处理文本的最小单位，通过 BPE 算法从字符级别逐步合并高频相邻对生成。中文文本消耗的 Token 数比英文多 1.5-2 倍，这直接影响 API 成本和上下文窗口的有效利用率。
+
+</Note>
+
+---
+
+## Q4: 上下文窗口
+
+### 什么是上下文窗口
+
+上下文窗口（Context Window）是 LLM 一次能处理的最大 Token 数量。它包含输入（System Prompt + 用户消息 + 历史对话 + 工具调用结果）和输出（模型生成的内容）的总和。
+
+```text
+上下文窗口 = 输入 Token + 输出 Token
+
+┌─────────────────────────────────────────────────────┐
+│              上下文窗口（200K tokens）                 │
+├──────────┬──────────┬──────────┬────────────────────┤
+│ System   │ 历史对话  │ 当前输入  │ 模型输出            │
+│ Prompt   │          │          │                    │
+│ 2K       │ 50K      │ 8K       │ 剩余空间            │
+└──────────┴──────────┴──────────┴────────────────────┘
+
+可用输出空间 = 总窗口 - 输入 Token
+如果输入占了 190K tokens，输出最多只能生成 10K tokens
+```
+
+### 128K/200K tokens 的含义
+
+不同模型的上下文窗口大小差异很大。窗口越大，模型能"记住"的信息越多，但计算成本也越高（注意力计算复杂度是 O(n^2)）。
+
+| 模型 | 上下文窗口 | 约等于 | 适合场景 |
+|------|-----------|--------|---------|
+| GPT-3.5 | 4K / 16K | 3000 / 12000 字 | 简单对话、短文本 |
+| GPT-4 | 8K / 128K | 6000 / 100000 字 | 复杂分析、长文档 |
+| Claude 3.5 | 200K | 约 150000 字 | 超长代码库、整本书 |
+| Gemini 1.5 | 1M / 2M | 约 750000 字 | 视频、超大文档 |
+
+```text
+200K tokens 能装多少内容？
+
+- 约 15 万字中文（一本中等厚度的书）
+- 约 50 万字符代码（一个中型前端项目的全部源码）
+- 约 10 小时的音频转录文本
+- 约 200 页 PDF 文档
+```
+
+### 上下文窗口的限制
+
+上下文窗口不是"越大越好"。它有几个关键限制：
+
+```text
+限制 1：注意力稀释（Lost in the Middle）
+  当上下文很长时，模型对中间部分的注意力会下降
+  "开头"和"结尾"的内容被关注的概率最高
+  中间的 10 万 tokens 可能被"遗忘"
+
+限制 2：计算成本
+  注意力计算复杂度 = O(n^2)
+  200K tokens 的计算量是 10K tokens 的 400 倍
+  直接影响推理速度和 API 成本
+
+限制 3：幻觉增加
+  上下文越长，模型越容易"混淆"不同部分的信息
+  从 200K tokens 中精确提取信息比从 10K 中难得多
+
+限制 4：输入输出平衡
+  输入占用越多，留给输出的空间越少
+  塞满 190K 输入，输出最多只有 10K
+```
+
+### 如何优化上下文使用
+
+```javascript
+// 策略 1：只放需要的信息（选择性上下文注入）
+async function buildContext(userQuestion, allFiles) {
+  // 不要把所有文件都塞进去
+  // 用语义搜索找出最相关的文件
+  const relevantFiles = await vectorSearch(allFiles, userQuestion, { topK: 5 });
+  return relevantFiles.map(f => `// ${f.path}\n${f.content}`).join('\n\n');
+}
+
+// 策略 2：把重要信息放在开头或结尾
+function orderContext(sections) {
+  // 按重要性排序，最重要的放前面
+  // 因为模型对开头和结尾的注意力最强
+  return [
+    sections.important,     // 最重要的放最前面
+    sections.background,    // 背景信息放中间
+    sections.reference,     // 参考资料放最后
+  ].join('\n\n');
+}
+
+// 策略 3：压缩上下文（摘要链）
+async function compressContext(longDocument) {
+  // 先用 LLM 摘要，再把摘要作为上下文
+  const summary = await llm.invoke({
+    messages: [
+      { role: 'system', content: '用 200 字总结以下文档的核心要点。' },
+      { role: 'user', content: longDocument },
+    ],
+  });
+  return summary;
+}
+
+// 策略 4：滑动窗口（多轮对话）
+function slidingWindow(messages, maxTokens = 100000) {
+  const system = messages.filter(m => m.role === 'system');
+  const history = messages.filter(m => m.role !== 'system');
+
+  // 从最新的消息往前取，直到达到 Token 限制
+  let totalTokens = countTokens(system);
+  const recent = [];
+  for (let i = history.length - 1; i >= 0; i--) {
+    const msgTokens = countTokens(history[i]);
+    if (totalTokens + msgTokens > maxTokens) break;
+    recent.unshift(history[i]);
+    totalTokens += msgTokens;
+  }
+
+  return [...system, ...recent];
+}
+```
+
+<Note title="一句话总结">
+
+上下文窗口是 LLM 一次能处理的最大 Token 数，包含输入和输出的总和。窗口不是越大越好——注意力稀释、计算成本、幻觉增加都是大窗口的代价。优化策略是只放需要的信息、重要信息放首尾、长文档先压缩。
+
+</Note>
+
+---
+
+## Q5: LLM 推理过程
+
+LLM 的推理过程分为两个阶段：预填充（Prefill）和解码（Decode）。理解这两个阶段是理解 LLM 响应延迟和流式输出的基础。
+
+```text
+LLM 推理的两个阶段：
+
+┌─────────────────────────────────────────────────────────┐
+│  阶段 1：预填充（Prefill）                                │
+│                                                         │
+│  输入: [token1, token2, ..., tokenN]                    │
+│                                                         │
+│  并行计算所有输入 Token 的 Key 和 Value                   │
+│  生成第一个输出 Token                                     │
+│  特点：计算密集（GPU-bound），耗时与输入长度成正比           │
+└──────────────────────────┬──────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│  阶段 2：解码（Decode）                                   │
+│                                                         │
+│  逐个生成输出 Token（自回归生成）                          │
+│  每次只计算一个新 Token，但要读取所有历史 Token 的 K/V      │
+│  特点：内存密集（memory-bound），耗时与输出长度成正比        │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 预填充（Prefill）阶段
+
+预填充阶段处理整个输入序列，为每个 Token 计算 Key 和 Value 向量。这个阶段可以并行处理所有输入 Token，所以速度很快。
+
+```text
+预填充的关键特性：
+
+1. 并行计算：所有输入 Token 同时处理（GPU 并行）
+2. 计算密集：主要瓶颈是 GPU 计算能力
+3. KV Cache 生成：计算出的 K/V 向量被缓存，供解码阶段复用
+4. 耗时与输入长度线性相关：输入越长，预填充越慢
+```
+
+### 解码（Decode）阶段
+
+解码阶段逐个生成输出 Token。每生成一个新 Token，都需要读取所有历史 Token 的 K/V 向量，计算注意力，然后预测下一个 Token。
+
+```text
+解码的关键特性：
+
+1. 串行生成：每次只能生成一个 Token（自回归）
+2. 内存密集：主要瓶颈是读取 KV Cache 的带宽
+3. KV Cache 复用：每次只计算新 Token 的 K/V，历史的从缓存读取
+4. 耗时与输出长度线性相关：输出越长，总耗时越长
+```
+
+### 温度、Top-p、Top-k 参数
+
+这三个参数控制 LLM 输出的"创造性"和"确定性"。它们作用于模型输出的概率分布，决定下一个 Token 是怎么被选出来的。
+
+```text
+模型输出的概率分布（示例）：
+  "前端"  → 35%
+  "后端"  → 25%
+  "全栈"  → 15%
+  "开发"  → 10%
+  "测试"  → 8%
+  其他    → 7%
+
+temperature=0（贪婪）：总是选概率最高的 → "前端"
+temperature=1（标准）：按原始概率采样 → 大概率"前端"，偶尔"后端"
+temperature=2（高温）：概率分布变平坦 → "前端""后端""全栈"都有可能
+```
+
+```javascript
+// 温度（Temperature）：控制概率分布的"平坦程度"
+function applyTemperature(logits, temperature) {
+  // temperature → 0：概率分布极度尖锐，几乎总是选最高概率的 Token
+  // temperature = 1：原始概率分布
+  // temperature > 1：概率分布变平坦，增加随机性
+  return logits.map(logit => logit / temperature);
+}
+
+// Top-p（核采样）：只从累积概率达到 p 的 Token 中采样
+function topPSampling(probabilities, p = 0.9) {
+  // 按概率从高到低排序
+  const sorted = [...probabilities].sort((a, b) => b.prob - a.prob);
+
+  // 从最高概率开始累加，直到达到 p
+  let cumulative = 0;
+  const filtered = [];
+  for (const item of sorted) {
+    cumulative += item.prob;
+    filtered.push(item);
+    if (cumulative >= p) break;
+  }
+
+  // 只从这些 Token 中采样
+  return sampleFrom(filtered);
+}
+
+// Top-k：只从概率最高的 k 个 Token 中采样
+function topKSampling(probabilities, k = 50) {
+  const sorted = [...probabilities].sort((a, b) => b.prob - a.prob);
+  return sampleFrom(sorted.slice(0, k));
+}
+```
+
+| 参数 | 推荐值 | 适用场景 |
+|------|--------|---------|
+| `temperature=0` | 确定性 | 代码生成、数据提取、分类 |
+| `temperature=0.3-0.7` | 低随机 | 技术问答、摘要、分析 |
+| `temperature=0.7-1.0` | 中随机 | 创意写作、对话、头脑风暴 |
+| `top_p=0.9` | 通用 | 大多数场景的默认值 |
+| `top_p=0.1` | 高确定 | 需要高度一致的输出 |
+
+### 流式输出原理
+
+流式输出（Streaming）是 LLM API 的重要特性。它不是等模型生成完所有 Token 再一次性返回，而是每生成一个 Token 就立即返回给前端。
+
+```text
+非流式 vs 流式：
+
+非流式（一次性返回）：
+  用户发送请求 → 等待 10 秒 → 一次性看到完整回答
+  体验：白屏等待，不知道 AI 在干什么
+
+流式（逐 Token 返回）：
+  用户发送请求 → 0.1 秒后看到第一个字 → 逐字显示
+  体验：实时反馈，像在看 AI "打字"
+```
+
+```javascript
+// 前端流式输出的实现
+async function streamChat(messages) {
+  const response = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages, stream: true }),
+  });
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value, { stream: true });
+    // 解析 SSE 格式的数据
+    const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
+
+    for (const line of lines) {
+      const data = line.slice(6); // 去掉 "data: " 前缀
+      if (data === '[DONE]') break;
+
+      const parsed = JSON.parse(data);
+      const token = parsed.choices[0]?.delta?.content || '';
+      fullText += token;
+
+      // 实时更新 UI
+      updateUI(fullText);
+    }
+  }
+
+  return fullText;
+}
+```
+
+<Note title="一句话总结">
+
+LLM 推理分两阶段：预填充（并行处理所有输入，生成 KV Cache）和解码（逐个生成输出 Token）。温度控制输出随机性，Top-p/Top-k 限制候选 Token 范围，流式输出让前端能逐 Token 实时显示结果。
+
+</Note>
+
+---
+
+## Q6: LLM 的局限性
+
+理解 LLM 的局限性和理解它的能力同样重要。面试官问这个问题，是想看你是否能预判 AI 的行为边界，在实际项目中规避风险。
+
+### 幻觉（Hallucination）
+
+幻觉是 LLM 最严重的局限性——模型会"一本正经地编造"不存在的信息，而且编造得非常自信，让人难以分辨。
+
+```text
+幻觉的三种类型：
+
+1. 事实性幻觉：编造不存在的事实
+   "React 19 引入了 useSignal Hook"（React 19 没有这个 Hook）
+
+2. 引用幻觉：编造不存在的论文、链接、API
+   "根据 Smith et al. (2023) 的论文..."（这篇论文不存在）
+
+3. 推理幻觉：推理过程看起来合理，但结论错误
+   "因为 A > B 且 B > C，所以 C > A"（推理逻辑错误）
+```
+
+```javascript
+// 幻觉的检测和缓解策略
+
+// 策略 1：负面约束（减少但不消除）
+const prompt = `
+分析以下代码。
+不要编造不存在的 API 或方法。
+如果不确定，说"我不确定"而不是猜测。
+只分析你看到的代码，不要推测未提供的信息。
+`;
+
+// 策略 2：强制引用（方便验证）
+const prompt = `
+分析代码质量。每个结论必须引用具体的文件路径和行号。
+格式：
+- 结论：[你的分析]
+- 引用：[文件路径:行号]
+`;
+
+// 策略 3：RAG（从根源解决）
+// 先检索相关文档，再让 LLM 基于文档回答
+const context = await retriever.invoke(userQuestion);
+const prompt = `
+根据以下文档回答问题，不要编造文档中没有的信息：
+${context.map(doc => doc.pageContent).join('\n---\n')}
+问题：${userQuestion}
+`;
+
+// 策略 4：Reviewer 节点（双重检查）
+const reviewerPrompt = `
+检查以下分析报告是否有幻觉（编造的数据或不存在的依赖）：
+${output}
+如果发现问题，列出具体的问题。
+`;
+```
+
+### 知识截止日期
+
+LLM 的知识有截止日期。模型只"知道"训练数据中包含的信息，对于截止日期之后发生的事情一无所知。
+
+```text
+知识截止日期的影响：
+
+GPT-4（2023 年训练）：
+  ✅ 知道 React 18 的 Concurrent Features
+  ❌ 不知道 React 19 的新特性
+  ❌ 不知道 2024 年发布的新框架
+
+Claude（持续更新）：
+  ✅ 知识更新更频繁
+  但仍可能缺少最新发布的 API 文档
+
+解决方案：
+  1. RAG：把最新的文档检索出来给 LLM
+  2. Function Calling：让 LLM 调用搜索 API 获取最新信息
+  3. 提示词中提供最新信息："以下是 React 19 的新特性：..."
+```
+
+### 推理能力限制
+
+LLM 的推理能力是基于统计模式的，不是真正的逻辑推理。它在简单推理上表现良好，但在复杂推理上容易出错。
+
+```text
+LLM 擅长的推理：
+  ✅ 类比推理："A 之于 B，就像 C 之于 ?"
+  ✅ 常识推理："下雨了，地面会怎样？"
+  ✅ 模式匹配："这段代码有什么安全问题？"
+
+LLM 不擅长的推理：
+  ❌ 复杂数学计算："计算 12345 × 67890"
+  ❌ 多步逻辑推理："如果 A 则 B，如果 B 则 C，如果 C 则 D..."
+  ❌ 空间推理："这个 3D 物体旋转后是什么样子？"
+  ❌ 反事实推理："如果 React 没有发明 Virtual DOM..."
+```
+
+### 成本问题
+
+LLM API 的成本是一个实际工程问题。在生产环境中，AI 功能的成本可能占到运营成本的很大比例。
+
+```javascript
+// LLM API 成本分析（以 GPT-4o 为例）
+
+const pricing = {
+  'gpt-4o': {
+    input: 2.50,   // $2.50 / 1M tokens
+    output: 10.00, // $10.00 / 1M tokens
+  },
+  'gpt-4o-mini': {
+    input: 0.15,   // $0.15 / 1M tokens
+    output: 0.60,  // $0.60 / 1M tokens
+  },
+  'claude-3.5-sonnet': {
+    input: 3.00,   // $3.00 / 1M tokens
+    output: 15.00, // $15.00 / 1M tokens
+  },
+};
+
+// 日均 10 万次 API 调用的成本估算
+function estimateDailyCost(model, avgInputTokens, avgOutputTokens, dailyCalls) {
+  const price = pricing[model];
+  const inputCost = (dailyCalls * avgInputTokens / 1_000_000) * price.input;
+  const outputCost = (dailyCalls * avgOutputTokens / 1_000_000) * price.output;
+  return {
+    inputCost: `$${inputCost.toFixed(2)}`,
+    outputCost: `$${outputCost.toFixed(2)}`,
+    totalPerDay: `$${(inputCost + outputCost).toFixed(2)}`,
+    totalPerMonth: `$${((inputCost + outputCost) * 30).toFixed(2)}`,
+  };
+}
+
+// 示例：日均 10 万次调用，每次输入 2000 tokens，输出 500 tokens
+estimateDailyCost('gpt-4o', 2000, 500, 100000);
+// 输出：inputCost=$500, outputCost=$500, totalPerDay=$1000, totalPerMonth=$30,000
+
+// 优化后：用 gpt-4o-mini + Prompt Cache
+estimateDailyCost('gpt-4o-mini', 2000, 500, 100000);
+// 输出：inputCost=$30, outputCost=$30, totalPerDay=$60, totalPerMonth=$1,800
+```
+
+<Note title="一句话总结">
+
+LLM 的四大局限性：幻觉（编造信息，需要用 RAG + 强制引用缓解）、知识截止日期（不知道最新信息，需要 RAG + 搜索 API）、推理能力限制（复杂推理不可靠，需要分步 CoT + 外部工具）、成本问题（需要选择合适的模型 + Prompt Cache + 压缩上下文）。
+
+</Note>
+
+---
+
+## Q7: 高频面试题
+
+### 问题："解释一下 LLM 的推理过程，以及温度参数是怎么影响输出的？"
+
+**及格回答（60-70分）：**
+> "LLM 先把输入切成 Token，然后通过 Transformer 的注意力机制处理，最后逐个生成输出 Token。温度参数控制输出的随机性，温度越高越随机。"
+
+面试官评价：**知道流程但不理解机制**。
+
+**满分回答（90-100分）：**
+
+> "LLM 的推理分两个阶段。**预填充阶段**并行处理所有输入 Token，为每个 Token 计算 Key 和 Value 向量并缓存（KV Cache），然后生成第一个输出 Token。这个阶段是计算密集的，耗时与输入长度线性相关。<sup>[1]</sup>"
+
+> "**解码阶段**逐个生成输出 Token（自回归生成）。每次生成新 Token 时，只需要计算当前 Token 的 Q/K/V，历史 Token 的 K/V 从 KV Cache 读取。这个阶段是内存密集的，瓶颈在于读取 KV Cache 的带宽。流式输出就是利用这个特性——每生成一个 Token 就立即返回给前端。<sup>[2]</sup>"
+
+> "**温度参数**作用于模型输出的 Logits 层。模型对每个候选 Token 输出一个 Logit 分数，温度参数通过 `logit / temperature` 调整概率分布的形状。`temperature=0` 时概率分布极度尖锐，几乎总是选最高概率的 Token（贪婪解码），适合代码生成等确定性任务。`temperature=1` 是原始分布，`temperature>1` 让分布变平坦，增加随机性，适合创意任务。Top-p 和 Top-k 是额外的采样约束——Top-p=0.9 表示只从累积概率达到 90% 的 Token 中采样，排除低概率的异常 Token。<sup>[3]</sup>"
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="什么是 KV Cache?为什么它很重要?" icon="layer-group">
+
+**答题要点：**
+说出 KV Cache 的原理和它对推理性能的影响。
+
+**高分回答：**
+"KV Cache 是 Transformer 推理时的核心优化。在自注意力计算中，每个 Token 需要计算 Key 和 Value 向量。如果每次都重新计算所有历史 Token 的 K/V，计算量会随着生成长度的增加而急剧增长。
+
+KV Cache 把已经计算过的 K/V 向量缓存起来。解码阶段每生成一个新 Token，只需要计算当前 Token 的 K/V，历史的直接从缓存读取。这让解码的计算量从 O(n^2) 降到 O(n)。
+
+KV Cache 的代价是显存占用。每个 Token 的 K/V 向量需要占用固定大小的显存。200K 上下文窗口的模型，KV Cache 可能占用数十 GB 显存。这就是为什么大上下文窗口需要更多 GPU 显存的原因。Prompt Cache（如 Anthropic 提供的）就是在服务端持久化 KV Cache，让多个请求复用相同的前缀部分。"
+
+  </Accordion>
+
+  <Accordion title="为什么 LLM 会产生幻觉?怎么从根本上解决?" icon="stopwatch">
+
+**答题要点：**
+从训练机制解释幻觉的成因，从工程角度说缓解方案。
+
+**高分回答：**
+"幻觉的根本原因是 LLM 的训练目标——预测下一个 Token。模型学到的是'什么样的文本看起来像真的'，而不是'什么是真的'。当模型遇到它在训练数据中没见过的知识时，它会根据统计规律生成'看起来合理'但实际错误的内容。
+
+从工程角度，缓解幻觉有四种方案：1) **负面约束**——在 Prompt 中明确写'不要编造'，减少但不能消除幻觉。2) **RAG**——从根源解决，让 LLM 基于检索到的真实文档回答，不会编造文档中没有的信息。3) **强制引用**——要求每个结论引用具体的来源，方便人工验证。4) **Reviewer 节点**——用另一个 LLM 检查输出是否有幻觉。
+
+生产环境中推荐组合使用：RAG + 负面约束 + 强制引用。RAG 是核心，负面约束减少边界情况，强制引用让幻觉可被发现。"
+
+  </Accordion>
+
+  <Accordion title="BPE 算法是怎么工作的?为什么不用按字切分?" icon="stopwatch">
+
+**答题要点：**
+说出 BPE 的合并策略，对比按字切分的劣势。
+
+**高分回答：**
+"BPE（Byte Pair Encoding）从单个字符开始，反复合并出现频率最高的相邻字符对。初始词表是所有单个字节（256 个），然后逐步合并：'t' + 'h' → 'th'，'th' + 'e' → 'the'。直到词表达到目标大小（如 100K 个 Token）。
+
+为什么不用按字切分？三个原因：1) **词表爆炸**——按字切分，英文需要覆盖所有单词变体（run/running/ran/runs），词表会非常大。BPE 用子词组合，32K 词表就能覆盖几乎所有文本。2) **语义丢失**——'unhappy' 按字切分是 7 个独立字符，丢失了 'un-'（否定前缀）和 'happy'（快乐）的语义关系。BPE 切成 ['un', 'happy']，保留了语义。3) **未知词处理**——按字切分遇到没见过的词就无法处理。BPE 可以用已有的子词组合拼出新词。"
+
+  </Accordion>
+
+  <Accordion title="流式输出的 SSE 协议是怎么实现的?" icon="layer-group">
+
+**答题要点：**
+说出 SSE 的协议格式和前端处理方式。
+
+**高分回答：**
+"流式输出基于 SSE（Server-Sent Events）协议。服务端的 HTTP 响应头设置 `Content-Type: text/event-stream`，然后逐块发送数据。每块数据的格式是 `data: {JSON}\n\n`。
+
+前端处理流程：1) 用 `fetch` API 发起请求，获取 `ReadableStream`。2) 用 `getReader()` 获取读取器，循环调用 `read()` 读取数据块。3) 解析 SSE 格式（按行分割，提取 `data:` 开头的行）。4) 每个数据块包含一个 Token（或几个 Token），拼接到已有文本上。5) 当收到 `data: [DONE]` 时，流式结束。
+
+关键注意事项：Token 不是完整的字符——中文的一个字符可能被切成 2-3 个 Token，前端不能按字节切割，要按 Token 完整拼接。另外，网络抖动可能导致多个数据块被合并接收，需要正确处理缓冲区。"
+
+  </Accordion>
+
+  <Accordion title="注意力稀释（Lost in the Middle）是什么?怎么缓解?" icon="node">
+
+**答题要点：**
+说出注意力稀释的表现和工程缓解方案。
+
+**高分回答：**
+"注意力稀释是指当上下文很长时，模型对中间部分的注意力会下降。Stanford 的研究（Lost in the Middle, 2023）发现，LLM 对放在开头和结尾的信息关注度最高，中间部分的信息容易被'遗忘'。
+
+缓解方案：1) **重要信息放首尾**——把最关键的上下文放在 System Prompt（开头）或最近的对话（结尾），参考资料放中间。2) **重复关键信息**——在上下文的不同位置重复关键指令或约束。3) **结构化标记**——用明确的标题、分隔符标记不同部分，帮助模型定位信息。4) **减少上下文长度**——只放需要的信息，不要把无关内容塞进上下文。5) **选择支持长上下文的模型**——Claude 和 Gemini 对长上下文的处理能力更强。"
+
+  </Accordion>
+
+  <Accordion title="Decoder-only 架构为什么比 Encoder-Decoder 更适合生成任务?" icon="node">
+
+**答题要点：**
+从注意力机制和训练效率两个角度对比。
+
+**高分回答：**
+"Decoder-only（如 GPT）使用因果注意力掩码（Causal Attention Mask），每个 Token 只能看到它前面的 Token。这天然适合自回归生成——预测下一个 Token 时，模型只看到已生成的内容，不会'偷看'未来。
+
+Encoder-Decoder（如 T5）的编码器使用双向注意力，解码器使用因果注意力。这适合翻译等任务（编码器理解完整输入，解码器逐词生成），但有两个劣势：1) **训练效率低**——编码器和解码器需要分别训练，参数量更大。2) **规模化效果差**——Decoder-only 在同等参数量下，涌现能力更强。GPT-3 证明了 Decoder-only 的规模化潜力，后续的 GPT-4、Claude、LLaMA 都沿用了这个架构。
+
+此外，Decoder-only 的 KV Cache 更简单——只需要维护一个线性的历史序列，而 Encoder-Decoder 需要同时维护编码器和解码器的 KV Cache。"
+
+  </Accordion>
+
+  <Accordion title="如何选择合适的 LLM 模型?" icon="skull">
+
+**答题要点：**
+从任务类型、成本、延迟三个维度给出选择框架。
+
+**高分回答：**
+"选择 LLM 模型需要考虑三个维度：
+
+1. **任务类型**：简单任务（分类、提取、格式转换）用小模型（GPT-4o-mini、Claude Haiku），性价比高 10 倍以上。复杂推理（代码分析、架构设计）用大模型（GPT-4o、Claude Sonnet）。需要最新信息的任务配合 RAG 或搜索 API。
+
+2. **成本**：日均 10 万次调用，GPT-4o 月成本约 $30,000，GPT-4o-mini 约 $1,800。通过 Prompt Cache（节省 90% 输入费用）+ 选择性上下文注入（减少输入 Token）可以进一步优化。
+
+3. **延迟**：流式输出的首 Token 延迟（TTFT）和每 Token 延迟（TPS）是关键指标。小模型的 TTFT 通常 &lt; 500ms，大模型可能 1-3 秒。对实时交互场景，延迟比质量更重要。
+
+实践建议：先用小模型 + 好的 Prompt 试跑，如果质量不达标再升级到大模型。80% 的场景用小模型就够了。"
+
+  </Accordion>
+
+  <Accordion title="LLM 的涌现能力是什么?它对前端开发有什么影响?" icon="skull">
+
+**答题要点：**
+解释涌现能力的概念，说明它在前端场景中的体现。
+
+**高分回答：**
+"涌现能力（Emergent Abilities）是指模型规模达到某个临界点后，突然出现的、在小模型中不存在的能力。例如：GPT-2（1.5B 参数）不能做算术，GPT-3（175B 参数）突然能做简单的数学推理。这种能力不是设计出来的，而是规模带来的质变。
+
+对前端开发的影响：1) **代码理解**——大模型能理解整个组件的语义，不只是语法匹配。它能看懂 useEffect 的依赖数组为什么少了变量，而小模型只能做语法级别的补全。2) **复杂推理**——大模型能分析多个文件之间的依赖关系、数据流、性能瓶颈，这是小模型做不到的。3) **工具调用**——大模型能理解复杂的工具描述（如 MCP 协议），自主决定调用哪些工具、传什么参数。
+
+但涌现能力也有不确定性——你无法预测模型在某个任务上的表现，只能通过评测来验证。所以工程上必须做 Prompt 评测（100+ 测试用例），不能凭感觉判断模型能不能做某件事。"
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## 延伸阅读与引用参考
+
+- 📖 [Andrej Karpathy - Let's build GPT from scratch](https://www.youtube.com/watch?v=kCc8FmEb1nY)：*从零实现 GPT，理解 Transformer 和自回归生成的最好入门教程。* <sup>[1]</sup>
+- 📖 [Lilian Weng - Attention? Attention!](https://lilianweng.github.io/posts/2018-06-24-attention/)：*OpenAI 应用研究主管对注意力机制的系统性梳理，涵盖 Self-Attention、Multi-Head Attention、位置编码。* <sup>[2]</sup>
+- 📖 [Lilian Weng - Large Language Model Agents](https://lilianweng.github.io/posts/2023-06-23-agent/)：*对 LLM Agent 架构的深度分析，涵盖工具调用、规划、记忆。* <sup>[3]</sup>
+- 🔗 [OpenAI Tokenizer 工具](https://platform.openai.com/tokenizer)：*在线可视化 Token 化过程，理解不同文本的 Token 分布。* <sup>[4]</sup>
+- 🔗 [Anthropic Claude 文档 - Context Windows](https://docs.anthropic.com/en/docs/build-with-claude/context-windows)：*Anthropic 对上下文窗口管理的官方指南。* <sup>[5]</sup>
+- 📖 [Lost in the Middle 论文 (Stanford, 2023)](https://arxiv.org/abs/2307.03172)：*注意力稀释的经典研究，LLM 对上下文中间部分的关注度显著下降。* <sup>[6]</sup>
+- 📖 [Attention Is All You Need (Google, 2017)](https://arxiv.org/abs/1706.03762)：*Transformer 架构的原始论文，所有 LLM 的理论基础。* <sup>[7]</sup>
+- 🟢 [Anthropic Prompt Caching 文档](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching)：*Prompt Cache 机制的详细说明，KV Cache 的工程实现。* <sup>[8]</sup>
+- 📖 [OpenAI GPT-4 Technical Report](https://arxiv.org/abs/2303.08774)：*GPT-4 的技术报告，了解现代 LLM 的能力边界。*
+- 🧑‍💻 [Simon Willison 博客](https://simonwillison.net/)：*持续跟踪 LLM 领域的最新进展，对 Token 化、上下文窗口、幻觉等话题有深入分析。*

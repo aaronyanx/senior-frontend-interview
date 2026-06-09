@@ -27,7 +27,7 @@
     ]
   },
   "search": {
-    "prompt": false
+    "prompt": ""
   },
   "navigation": {
     "tabs": [
@@ -232,12 +232,6 @@
             "pages": [
               "docker/docker"
             ]
-          },
-          {
-            "group": "边缘计算",
-            "pages": [
-              "engineering/cloudflare-workers"
-            ]
           }
         ]
       },
@@ -269,10 +263,15 @@
         "tab": "AI 工程化",
         "groups": [
           {
-            "group": "基础概念",
+            "group": "LLM 基础",
             "pages": [
-              "ai/prompt",
-              "ai/mcp-skill"
+              "ai/llm"
+            ]
+          },
+          {
+            "group": "提示词工程",
+            "pages": [
+              "ai/prompt"
             ]
           },
           {
@@ -283,9 +282,15 @@
             ]
           },
           {
-            "group": "Agent 与多智能体",
+            "group": "Agent 架构",
             "pages": [
               "ai/agent",
+              "ai/mcp-skill"
+            ]
+          },
+          {
+            "group": "多智能体编排",
+            "pages": [
               "ai/multi-agent",
               "ai/agent-stability"
             ]

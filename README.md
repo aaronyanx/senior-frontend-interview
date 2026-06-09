@@ -10,6 +10,8 @@
 > 面向高级前端工程师的面试手册，讲底层原理，不讲 API 背诵。
 
 [![Senior Frontend Interview Guide Preview](./assets/site_screenshot.png)](https://opc-43d279b8.mintlify.app)
+<br/>
+[![Event Loop Deep Dive Preview](./assets/content_screenshot.png)](https://opc-43d279b8.mintlify.app/javascript/event-loop)
 
 ---
 
