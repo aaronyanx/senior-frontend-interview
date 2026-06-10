@@ -9,9 +9,9 @@
 
 > 面向高级前端工程师的面试手册，讲底层原理，不讲 API 背诵。覆盖 V8 引擎、React/Vue 源码、微前端架构，以及 AI Agent 编排与大模型工程化。
 
-![Senior Frontend Interview Guide Preview](https://i.ibb.co/nM64LFZ5/site-screenshot.png)
+![Senior Frontend Interview Guide Preview](./assets/site_screenshot.png)
 <br/>
-![Event Loop Deep Dive Preview](https://i.ibb.co/VWfMK3Dt/content-screenshot.png)
+![Event Loop Deep Dive Preview](./assets/content_screenshot.png)
 
 ---
 
