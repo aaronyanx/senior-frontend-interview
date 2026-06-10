@@ -1,9 +1,9 @@
 # Senior Frontend Interview Guide
 
-[Read Docs](https://opc-43d279b8.mintlify.app)
-[Built with Mintlify](https://mintlify.com)
-[PRs Welcome](http://makeapullrequest.com)
-[AI Friendly](/llms.txt)
+[![Read Docs](https://img.shields.io/badge/📖_Read-Online_Docs-10b981?style=flat-square)](https://opc-43d279b8.mintlify.app)
+[![Built with Mintlify](https://img.shields.io/badge/Built%20with-Mintlify-0969da?style=flat-square)](https://mintlify.com)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
+[![AI Friendly](https://img.shields.io/badge/AI-Friendly-8A2BE2?style=flat-square)](/llms.txt)
 
 👉 [在线阅读](https://opc-43d279b8.mintlify.app)
 
