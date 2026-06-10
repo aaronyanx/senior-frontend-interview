@@ -216,7 +216,7 @@ enum class LifecycleState {
 Virtual DOM 为什么能减少重排重绘？
 </div>
 
-很多人以为 Virtual DOM 的是比原生 DOM 快，这是一个外行的误解！原生 JS 哪怕是 `document.createElement` 也快得惊人，真正的慢永远来自于随后触发的浏览器渲染流程的 Layout 环节。Vue 和 React 的 Virtual DOM 在性能防御上的终极黑魔法，是**在内存中构建了一个绝对隔离的无副作用沙箱（也就是 vdom 树）**！当你的业务代码狂暴地修改了 100 次状态时，它们只是在这个内存沙箱里极速地打着补丁（Diff 计算），直到下一个宏/微任务节拍到来，框架会将这 100 次修改提纯、合并出**唯一的一套真实 DOM 物理指令集**，一次性扔给浏览器主线程执行。详见 [React 源码 packages/react-reconciler](https://github.com/facebook/react/tree/main/packages/react-reconciler)。
+很多人以为 Virtual DOM 的是比原生 DOM 快，这是一个外行的误解！原生 JS 哪怕是 `document.createElement` 也快得惊人，真正的慢永远来自于随后触发的浏览器渲染流程的 Layout 环节。Vue 和 React 的 Virtual DOM 在性能防御上的终极技巧，是**在内存中构建了一个绝对隔离的无副作用沙箱（也就是 vdom 树）**！当你的业务代码狂暴地修改了 100 次状态时，它们只是在这个内存沙箱里极速地打着补丁（Diff 计算），直到下一个宏/微任务节拍到来，框架会将这 100 次修改提纯、合并出**唯一的一套真实 DOM 物理指令集**，一次性扔给浏览器主线程执行。详见 [React 源码 packages/react-reconciler](https://github.com/facebook/react/tree/main/packages/react-reconciler)。
 
 ---
 
@@ -251,13 +251,13 @@ Virtual DOM 为什么能减少重排重绘？
 
   </Accordion>
 
-  <Accordion title="第二层: Vue 和 React 用什么黑魔法阻断了手动 DOM 操作带来的重排重绘灾难?" icon="stopwatch">
+  <Accordion title="第二层: Vue 和 React 用什么技巧阻断了手动 DOM 操作带来的重排重绘灾难?" icon="stopwatch">
 
   **答题要点：**
   结合 Virtual DOM 的"内存沙箱"机制解释。
 
   **高分回答：**
-  "很多人以为 Virtual DOM 的是比原生 DOM 快，这是一个外行的误解！原生 JS 哪怕是 `document.createElement` 也快得惊人，真正的慢永远来自于随后触发的浏览器渲染流程的 Layout 环节。Vue 和 React 的 Virtual DOM 在性能防御上的终极黑魔法，是**在内存中构建了一个绝对隔离的无副作用沙箱（也就是 vdom 树）**！当你的业务代码狂暴地修改了 100 次状态时，它们只是在这个内存沙箱里极速地打着补丁（Diff 计算），直到下一个宏/微任务节拍到来，框架会将这 100 次修改提纯、合并出**唯一的一套真实 DOM 物理指令集**，一次性扔给浏览器主线程执行。"
+  "很多人以为 Virtual DOM 的是比原生 DOM 快，这是一个外行的误解！原生 JS 哪怕是 `document.createElement` 也快得惊人，真正的慢永远来自于随后触发的浏览器渲染流程的 Layout 环节。Vue 和 React 的 Virtual DOM 在性能防御上的终极技巧，是**在内存中构建了一个绝对隔离的无副作用沙箱（也就是 vdom 树）**！当你的业务代码狂暴地修改了 100 次状态时，它们只是在这个内存沙箱里极速地打着补丁（Diff 计算），直到下一个宏/微任务节拍到来，框架会将这 100 次修改提纯、合并出**唯一的一套真实 DOM 物理指令集**，一次性扔给浏览器主线程执行。"
 
   </Accordion>
 

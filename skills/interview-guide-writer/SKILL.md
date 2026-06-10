@@ -11,12 +11,52 @@ Read the template at `_template.mdx`, then write your MDX following its exact st
 
 ## Workflows
 
+### Agent 完整工作流（每次执行必须遵循）
+
+**启动 Agent 时，必须在 prompt 中包含以下完整流程：**
+
+```
+第一步：读取知识库和规则（必须）
+- MINTLIFY_MDX_RULES.md — MDX 语法规则（写 MDX 前必须先读）
+- skills/interview-guide-writer/resources/terminologies.md — 术语词典
+- skills/interview-guide-writer/resources/frontend_ai_experts.md — 专家名录
+- skills/interview-guide-writer/resources/tech_company_blogs.md — 大厂博客库
+
+第二步：穷尽知识库（必须）
+- 根据当前主题，找出所有相关的专家和博客
+- 国内国外都要查，不能只引用国外来源
+- 联网搜索这些专家/博客的实际文章
+- 读取文章的实际内容
+
+第三步：基于文章内容写正文（必须）
+- 正文内容必须基于实际文章，不是从训练数据写
+- 引用格式：正文用 [1]，延伸阅读列出文章链接
+- 禁止"装饰性引用"
+
+第四步：知识库不够才联网补充
+- 如果知识库中的专家/博客没有相关内容，才用联网大模型补充
+
+第五步：Q 章节不够就延伸或新增
+- 如果知识库查到的内容在现有 Q 章节中没有覆盖，延伸 Q 章节
+- 如果知识库查到的内容是全新知识点，新增 Q 章节
+
+第六步：联网查到的新专家/博客 → 追加到知识库文件
+- terminologies.md：新术语
+- frontend_ai_experts.md：新专家
+- tech_company_blogs.md：新博客/团队
+
+第七步：每次写入后记录到 log.md
+
+第八步：验证流程
+- Mintlify 解析错误检查
+- 代码块关闭检查
+- 国内专家引用检查
+- 延伸阅读来源验证
+```
+
 ### Writing a new chapter
 
-1. **Knowledge Loading (MUST read all 3 files before writing):**
-   - `skills/interview-guide-writer/resources/terminologies.md` — 术语词典
-   - `skills/interview-guide-writer/resources/frontend_ai_experts.md` — 专家名录
-   - `skills/interview-guide-writer/resources/tech_company_blogs.md` — 大厂博客库
+1. Follow the Agent 完整工作流 above
 2. Read `_template.mdx` as the structural reference
 3. Read `javascript/event-loop.mdx` as the golden reference
 4. Research the topic: use web search for source code links, verify URLs aren't 404
@@ -26,10 +66,7 @@ Read the template at `_template.mdx`, then write your MDX following its exact st
 
 ### Rewriting an existing chapter
 
-1. **Knowledge Loading (MUST read all 3 files before writing):**
-   - `skills/interview-guide-writer/resources/terminologies.md` — 术语词典
-   - `skills/interview-guide-writer/resources/frontend_ai_experts.md` — 专家名录
-   - `skills/interview-guide-writer/resources/tech_company_blogs.md` — 大厂博客库
+1. Follow the Agent 完整工作流 above
 2. Read the existing file
 3. Read the template for structural reference
 4. Restructure to match template (add missing sections, fix component usage)
@@ -40,38 +77,47 @@ Read the template at `_template.mdx`, then write your MDX following its exact st
 
 ### Knowledge base: mandatory loading, research, and citation
 
-**STRICT RULE: Before writing or modifying any content, you MUST:**
+**STRICT RULE: 知识库是主要来源，不是装饰。每次写入必须遵循以下流程：**
 
-1. **Read all 3 knowledge base files:**
-   - `skills/interview-guide-writer/resources/terminologies.md` — 术语词典
-   - `skills/interview-guide-writer/resources/frontend_ai_experts.md` — 专家名录
-   - `skills/interview-guide-writer/resources/tech_company_blogs.md` — 大厂博客库
+**第一步：读取知识库（必须）**
+- `skills/interview-guide-writer/resources/terminologies.md` — 术语词典
+- `skills/interview-guide-writer/resources/frontend_ai_experts.md` — 专家名录
+- `skills/interview-guide-writer/resources/tech_company_blogs.md` — 大厂博客库
 
-2. **联网查询知识库中的专家和博客**，获取实际文章内容
-   - 根据当前主题，从知识库中选取相关的专家和博客
-   - 联网搜索这些专家/博客的实际文章
-   - 引用文章中的具体观点、数据、代码示例
+**第二步：穷尽知识库（必须）**
+- 根据当前主题，从知识库中找出**所有相关的专家和博客**
+- 国内国外都要查，不能只引用国外来源
+- 联网搜索这些专家/博客的**实际文章**
+- **读取文章的实际内容**，不是只记下文章标题
 
-3. **引用格式规则：**
-   - 正文中用 `[1]`、`[2]` 等上标引用，**不提具体专家姓名或博客名称**
-   - 底部延伸阅读列出具体来源（专家姓名 + 博客链接）
-   - 每个模块至少引用 3 个来源
+**第三步：基于文章内容写正文（必须）**
+- **正文内容必须基于实际文章**，不是从训练数据写
+- 引用格式：正文用 `[1]`，延伸阅读列出文章链接
+- **禁止"装饰性引用"**——不能自己写内容，然后找专家名字装饰
+
+**第四步：知识库不够才联网补充**
+- 如果知识库中的专家/博客没有相关内容，才用联网大模型补充
+- 联网查到的新专家/博客，**追加到知识库文件**
+
+**第四步：Q 章节不够就延伸或新增**
+- 如果知识库查到的内容在现有 Q 章节中没有覆盖，**延伸 Q 章节**
+- 如果知识库查到的内容是**全新知识点**，**新增 Q 章节**
+
+**引用格式规则：**
+- 正文中用 `[1]`、`[2]` 等上标引用，**不提具体专家姓名或博客名称**
+- 底部延伸阅读列出具体来源（专家姓名 + 博客链接）
+- 每个模块至少引用 3 个来源（国内国外各至少 1 个）
 
 **引用格式示例：**
 
 ```markdown
 正文：
-> Fiber 架构的核心是时间切片——每执行一个节点就检查剩余时间。<sup>[1]</sup>
+> [技术原理描述]。<sup>[1]</sup>
 
 延伸阅读：
-- 🔗 [Dan Abramov: Fiber Architecture](https://overreacted.io/)：React 核心团队对 Fiber 架构的设计思路。<sup>[1]</sup>
-- 📖 [Andrew Clark: Fiber Principles](https://github.com/acdlite)：Fiber 调度系统核心设计者的实现细节。<sup>[2]</sup>
+- 🔗 [专家姓名: 文章标题](链接)：[一句话说明文章价值]。<sup>[1]</sup>
+- 📖 [专家姓名: 文章标题](链接)：[一句话说明文章价值]。<sup>[2]</sup>
 ```
-
-**禁止使用的口语化表达：**
-- ❌ "卡死" → ✅ "阻塞" 或 "无响应"
-- ❌ "饿死" → ✅ "饥饿" 或 "资源饥饿"
-- ❌ "挂起" → ✅ "暂停" 或 "等待"（除非是技术术语 "suspend"）
 
 **禁止使用的口语化表达：**
 - ❌ "卡死" → ✅ "阻塞" 或 "无响应"
@@ -95,63 +141,24 @@ All navigation titles in `docs.json` and file `title` frontmatter must use **Chi
 
 ### MDX syntax safety (Mintlify MDX 2 规则)
 
+**写 MDX 文件前必须先读取 `MINTLIFY_MDX_RULES.md`。**
+
 To avoid "🚧 A parsing error occurred" on Mintlify, follow the rules in `MINTLIFY_MDX_RULES.md`. Key rules:
 
-1. **Never use bare `<` or `>` in text** — always wrap HTML tags in backticks: `` `<div>` `` 或用 HTML 实体 `&gt;` `&lt;`
+1. **Never use bare `<` or `>` in text** — always wrap HTML tags in backticks or use HTML entities
 2. **Always close JSX tags** — `<Warning>` must have `</Warning>`
-3. **Don't use curly quotes** — use straight quotes `"..."` not `"..."`
-4. **Use `class` not `className`** — MDX uses HTML attributes, not JSX
-5. **`<div class="follow-up">` must be real JSX, not backtick-wrapped code**
-6. **Code block closing must NOT have trailing characters** — ```` ```" ```` must be ```` ``` ```` (no trailing `"`)
-7. **Component tags must have blank lines** — `<Tip>`, `<Warning>`, `<Card>`, `<Accordion>`, `<Note>`, `<Info>` 等组件的标签和内容之间必须有空行
-8. **Quote nesting** — if title contains `"`, use `'` for outer attribute; if contains `'`, use `"` for outer attribute
+3. **Component tags must have blank lines** — `<Tip>`, `<Warning>`, `<Card>`, `<Accordion>`, `<Note>`, `<Info>` 等组件的标签和内容之间必须有空行
+4. **Code block closing must NOT have trailing characters** — ```` ```" ```` must be ```` ``` ```` (no trailing `"`)
+5. **No code block opening inside another code block**
+6. **Quote nesting** — if title contains `"`, use `'` for outer attribute; if contains `'`, use `"` for outer attribute
+7. **No 4-space indentation inside components**
+8. **No `<script>` tags** — use `[script]` instead
+9. **No `<!-- -->` comments** — use `&lt;!-- -->` instead
 
-**Mintlify 组件内部必须有空行：**
-
-```mdx
-<!-- ❌ 错误：组件标签和内容之间没有空行 -->
-<Tip>
-这是提示内容。
-</Tip>
-
-<!-- ✅ 正确：组件标签和内容之间有空行 -->
-<Tip>
-
-这是提示内容。
-
-</Tip>
-```
-
-**适用于所有 Mintlify 组件：** `<Accordion>`, `<Steps>`, `<Step>`, `<Tip>`, `<Warning>`, `<Card>`, `<Note>`, `<Info>`
-
-**JSX 属性中的引号嵌套：**
-
-```mdx
-<!-- ❌ 错误：属性值中包含双引号 -->
-<Accordion title="什么是 "闭包"？">
-
-<!-- ✅ 正确：使用单引号包裹属性 -->
-<Accordion title='什么是 "闭包"？'>
-<!-- 或者交换引号 -->
-<Accordion title="什么是 '闭包'？">
-```
-
-**组件内部不要缩进 4 个空格：**
-
-```mdx
-<!-- ❌ 错误：缩进 4 个空格会被解析为代码块 -->
-<Accordion title="Deep Dive">
-
-    这是第一段。
-</Accordion>
-
-<!-- ✅ 正确：不要缩进 -->
-<Accordion title="Deep Dive">
-
-这是第一段。
-
-</Accordion>
-```
+**禁止行为：**
+- ❌ 在已开启的代码块内再开启代码块（会导致解析错误）
+- ❌ 在组件标签内使用与外层相同的引号（如 `<Tip title="xxx "yyy"">`）
+- ❌ 使用 `sed`、`awk` 等批量工具修复 MDX 文件（会引入新错误）
 
 ### Banned words
 
@@ -200,12 +207,41 @@ Match `_template.mdx` exactly. The template has **two Q1 modes** — choose base
 - Bottom: `## 📚 延伸阅读与引用参考` with `<sup>` citations
 - **必须使用 `## 📚 延伸阅读与引用参考`**（带 📚 emoji），❌ 严禁使用 `## 延伸阅读与引用参考`（不带 emoji）
 
-### Analogies: knowledge + fun scenario
+### Analogies: knowledge + fun scenario (每个技术概念必须有)
 
+**每个技术概念必须同时包含图解和趣味比喻，不可省略。**
+
+**图解要求：**
+- 使用 ASCII 框线图（┌ ─ ┐ │ └ ┘ ▼ →）
+- 展示数据流、执行顺序、架构关系
+- 放在技术解释之前或之后
+
+**趣味比喻要求（必须有，不可省略）：**
 The `<Tip title="🎢 通俗比喻：...">` must have **two parts**:
 
 1. **知识**（1-2 句）：先用简洁的技术语言解释核心机制
 2. **趣味比喻**（2-3 句）：再用生活场景让概念更易记
+
+**比喻来源规则：**
+- **原文有比喻** → 直接引用，注明出处
+- **原文没有比喻** → 基于原文技术内容生成生活化比喻
+
+**示例（基于 Jake Archibald 的酒店比喻）：**
+```
+Jake Archibald 用酒店比喻解释 Event Loop：
+主线程像酒店经理，一次只能做一件事。
+宏任务像排期服务（叫醒、客房服务），按时间表执行。
+微任务像紧急投诉，必须立即处理，处理完才能做下一个排期服务。
+```
+
+**示例（基于技术内容生成的比喻）：**
+```
+BFC 就像给房间装隔音门——
+没有隔音门时，隔壁噪音传进来（margin 重叠）。
+装了隔音门后，噪音传不出去（margin 被隔离）。
+```
+
+**适用于所有技术概念：** 0-RTT、Fiber 架构、Proxy 响应式、BFC、Flex 布局等
 
 ### CardGroup: knowledge + fun scenario
 
@@ -267,7 +303,7 @@ Each paragraph must be a separate `>` block with a blank line between them. **3-
 3. **实际踩坑**（3-5 句）：真实项目中会遇到什么问题？**必须有具体的错误场景**
 4. **项目建议**（可选，2-3 句）：实际项目中怎么做？
 
-**每个段落必须有至少一个具体数字或源码函数名** — "Promise.then" 不够，要 "V8 的 `MicrotaskQueue::RunMicrotasks()` 用环形缓冲区实现"；"性能差" 不够，要 "每一帧最多给 JS 5ms，剩下 11ms 给浏览器渲染"。
+**每个段落必须有至少一个具体数字或源码函数名** — 不能只写 API 名称，要写底层实现细节；不能只写"性能差"，要写具体数字。
 
 **Format:**
 ```
@@ -359,8 +395,28 @@ Must link to specific function/method with line number, NOT just directory path:
 
 ### Follow-up questions: real sources, progressive difficulty
 
+**面试题必须来自真实题库，禁止凭空编造。**
+
+**题库来源（必须联网查询）：**
+- 牛客网面经
+- 掘金面经
+- GitHub 面经 repos（如 haizlin/fe-interview）
+- 字节跳动、腾讯、阿里、美团等大厂真实面试题
+
+**联网查询流程：**
+1. 搜索"[技术名] 面试题 牛客网"
+2. 搜索"[技术名] 面试题 掘金"
+3. 搜索"[技术名] 面试题 字节跳动"
+4. 提取真实题目
+5. 基于真实题目写答案
+
+**禁止行为：**
+- ❌ 从训练数据编造面试题
+- ❌ 使用"据业内专家所言"等泛泛引用
+- ❌ 不联网查询直接写题目
+
 The `<AccordionGroup>` follow-up questions must:
-1. Be sourced from real interview experiences (牛客网, 掘金, GitHub 面经 repos like haizlin/fe-interview)
+1. **Be sourced from real interview experiences** (牛客网, 掘金, GitHub 面经 repos like haizlin/fe-interview)
 2. Be ordered by progressive difficulty: basic → mechanism → scenario → hand-write/killer
 3. Each question should have: **答题要点：** + **高分回答：** with code examples
 4. **每个模块 8 个 Accordion**，覆盖 4 个难度层级，每个层级 2 个
@@ -406,7 +462,7 @@ When explaining a concept, **always start from the problem/pain point, then intr
 
 ### LLM Wiki 流程（严格执行）
 
-本项目遵循 Andrej Karpathy 的 LLM Wiki 模式——知识库是**持久化、可积累的活文档**，不是一次性生成的内容。
+本项目借鉴 Andrej Karpathy 的 RAG 架构（[karpathy/rag-from-scratch](https://github.com/karpathy/rag-from-scratch)），知识库是**持久化、可积累的活文档**，不是一次性生成的内容。
 
 **三层架构：**
 
@@ -415,6 +471,7 @@ When explaining a concept, **always start from the problem/pain point, then intr
 | **Raw Sources（原始资料）** | `terminologies.md`、`frontend_ai_experts.md`、`tech_company_blogs.md` | 不可修改，只读 |
 | **The Wiki（知识库）** | 所有 `.mdx` 文件 | LLM 持续维护、更新、交叉引用 |
 | **The Schema（配置）** | `SKILL.md` | 告诉 LLM 怎么维护 wiki |
+| **The Log（操作日志）** | `resources/log.md` | 记录所有摄入、查询、检查操作 |
 
 **严格流程（每次写入必须遵循）：**
 
@@ -446,3 +503,61 @@ When explaining a concept, **always start from the problem/pain point, then intr
 - ❌ 凭空捏造专家或博客引用
 - ❌ 只"借用"名单里的名字，不实际查询文章
 - ❌ 正文不加 `[1]`、`[2]` 引用标号
+- ❌ 在已开启的代码块内再开启代码块（会导致解析错误）
+- ❌ 在组件标签内使用与外层相同的引号（如 `<Tip title="xxx "yyy"">`）
+
+**日志记录规则：**
+- 每次写入/修改模块后，必须在 `resources/log.md` 中记录
+- 格式：`## [YYYY-MM-DD] action_type | description`
+- action_type：`ingest`（摄入新内容）、`query`（查询）、`lint`（检查）
+
+**新增模块规则：**
+- 创建新文件后，必须同步更新 `docs.json` 导航结构
+- 新模块必须放入正确的 Tab 和分组
+- 更新后验证 `docs.json` 格式正确（`python3 -c "import json; json.load(open('docs.json'))"`）
+
+### 验证流程（每次写入后必须执行，不可跳过）
+
+**写入完成后，必须执行以下验证：**
+
+1. **Mintlify 解析错误检查（必须）**
+   ```bash
+   pkill -9 -f "mintlify" 2>/dev/null || true
+   sleep 2
+   timeout 30 npx mintlify dev 2>&1 | grep -E "error|parsing|failed" | grep -v "favicon"
+   ```
+   - 如果有错误，必须立即修复后再提交
+   - 常见错误：引号嵌套、代码块尾随字符、组件缺空行
+
+2. **代码块关闭检查**
+   ```bash
+   grep '```"' <file>  # 应无输出
+   ```
+
+3. **引号嵌套检查**
+   ```bash
+   grep 'title="[^"]*"[^"]*"' <file>  # 应无输出
+   ```
+
+4. **国内专家引用检查**
+   - 检查正文中是否引用了国内专家
+   - 检查延伸阅读中是否有国内来源
+
+5. **延伸阅读来源验证**
+   - 检查引用的 URL 是否真实存在
+   - 检查专家姓名是否来自知识库
+   - 检查是否有国内国外各至少 1 个来源
+
+6. **记录到 log.md**
+   - 验证完成后，在 `resources/log.md` 中记录 lint 结果
+
+**常见解析错误及修复方法：**
+
+| 错误类型 | 原因 | 修复方法 |
+|---------|------|---------|
+| `Expected a closing tag for <Accordion>` | 代码块内有未闭合的标签 | 检查代码块内的标签是否正确闭合 |
+| `Unexpected character "` in attribute name | title 属性有嵌套引号 | 用单引号包裹属性 `title='xxx "yyy"'` |
+| `Could not parse expression with acorn` | 代码块内有特殊字符 | 转义或用 HTML 实体 |
+| `Expected closing tag for <script>` | log.md 中有 script 标签 | 用 `[script]` 替代 |
+
+**注意：** 引号嵌套检查脚本可能误报（如 Accordion 标题中的 `?` 被误认为引号）。实际检查时应排除 Accordion 标题。

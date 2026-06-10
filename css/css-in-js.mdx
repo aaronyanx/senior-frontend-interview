@@ -1,0 +1,534 @@
+---
+title: "CSS-in-JS (styled-components / Emotion)"
+---
+
+> **面试官为什么问这个？**
+>
+> 面试官问这个，本质上是在考察你是否理解"为什么要把 CSS 写进 JavaScript"这个看似疯狂的设计决策背后的工程动机，以及运行时 CSS-in-JS 方案在性能和 SSR 场景下的致命代价。如果你只会写 `styled.div` 但说不清它在运行时做了什么、为什么 React 官方推荐零运行时方案，说明你对 CSS 架构选型的理解停留在"会用"层面。
+
+---
+
+## Q1: CSS-in-JS 的历史？为什么要有它？
+
+<Steps>
+
+  <Step title="传统 CSS 的作用域失控 (2010 年代初)">
+
+  在组件化开发兴起之后，传统的全局 CSS 样式表成了一个巨大的工程隐患。当数十个开发者在同一个项目中各自编写 `.button`、`.container`、`.title` 等类名时，后写的样式会覆盖先写的——这就是臭名昭著的"CSS 全局作用域污染"问题。BEM 命名规范（`.block__element--modifier`）试图通过命名约定来缓解，但约定不是约束，总有开发者不遵守。大型团队的 CSS 代码库最终会退化成一团互相覆盖、不敢删除的意大利面条。
+
+  </Step>
+  <Step title="CSS-in-JS 的诞生 (2014-2016)">
+
+  2014 年，Christopher Chedeau 在 Nation.js 大会上发表了著名的演讲《CSS-in-JS》，指出传统 CSS 的 7 大工程问题：全局命名空间、依赖关系、死代码消除、压缩、常量共享、非确定性解析、隔离。随后，**styled-components**（2016）和 **Emotion**（2016）相继诞生。它们的核心理念是：既然 JavaScript 模块系统已经解决了作用域隔离问题（`import`/`export`），那把样式也变成 JavaScript 模块，就能借用模块系统天然解决 CSS 的所有工程问题。
+
+  </Step>
+  <Step title="运行时方案的性能反思 (2019-2021)">
+
+  随着 CSS-in-JS 的大规模采用，性能问题逐渐暴露。运行时方案（styled-components、Emotion）需要在用户浏览器中执行 JavaScript 来生成 CSS 字符串、注入到 `<style>` 标签中。这意味着：首屏渲染必须等待 JS 执行完成、每次组件重新渲染都可能触发样式重新计算、SSR 时需要额外的序列化和注水步骤。在性能敏感的大型应用中，这些开销变得不可接受。
+
+  </Step>
+  <Step title="零运行时方案的兴起 (2021 至今)">
+
+  社区开始转向"零运行时"或"编译时"的 CSS-in-JS 方案。**vanilla-extract**（2021）、**Panda CSS**（2023）、**StyleX**（Meta，2023）等方案在编译期将 CSS-in-JS 代码转化为静态 CSS 文件，运行时完全没有 JavaScript 开销。React 官方文档也从推荐 styled-components 转向推荐零运行时方案。CSS-in-JS 的演进方向从"运行时灵活"转向"编译时安全"。
+
+  </Step>
+
+</Steps>
+
+**CSS-in-JS 解决的核心问题：**
+
+```text
+问题：传统 CSS 全局作用域，组件化开发中的样式冲突、死代码、依赖混乱
+
+传统 CSS → .button { color: red; } ← 全局污染 → 组件 A 的样式覆盖组件 B
+
+解决：将样式作为 JavaScript 模块，借用模块系统实现作用域隔离
+
+styled-components → const Button = styled.button`color: red;` → 自动生成唯一类名 → 零冲突
+```
+
+<Note title="💡 一句话总结">
+
+CSS-in-JS 把样式变成了 JavaScript 模块，借用模块系统解决了全局作用域污染，但运行时方案的性能代价催生了零运行时方案的崛起。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 传统 CSS 全局作用域">
+
+数十个开发者各自编写 `.button`、`.container` 等全局类名，后写的覆盖先写的。BEM 命名规范试图缓解，但约定不是约束。修改一行样式需要"全局影响评估"——你永远不知道改了 `.title` 会破坏哪个页面。
+
+</Card>
+<Card title="✅ CSS-in-JS 组件级隔离">
+
+`const Title = styled.h1\`color: red;\`` 自动生成唯一类名（如 `.sc-bdVTJa`），样式与组件一一绑定。删除组件时样式自动消除，无死代码。TypeScript 类型检查覆盖样式属性，重构有保障。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么"（全局 CSS 在组件化开发中的工程痛点），再说"怎么解决"（JS 模块系统的作用域隔离），最后点出"代价"（运行时开销催生了零运行时方案）。面试官想考察的是你对 CSS 架构选型的全局思考，而不是背 styled-components 的语法。
+
+</Tip>
+
+---
+
+## Q2: styled-components / Emotion / CSS Modules 对比
+
+三者的本质差异在于**样式注入时机和运行时开销**：
+
+```text
+┌──────────────────────────────────────────────────────────────────────┐
+│                    CSS-in-JS 方案光谱                                 │
+├──────────────┬──────────────┬──────────────┬────────────────────────┤
+│  方案         │ 注入时机      │ 运行时开销    │ 类型安全               │
+├──────────────┼──────────────┼──────────────┼────────────────────────┤
+│ styled-comp  │ 运行时        │ 高           │ ✅ (TypeScript)        │
+│ Emotion      │ 运行时        │ 高           │ ✅ (TypeScript)        │
+│ CSS Modules  │ 编译时        │ 零           │ ✅ (TS + typed-css-mod)│
+│ vanilla-ext  │ 编译时        │ 零           │ ✅ (原生 TypeScript)   │
+│ StyleX       │ 编译时        │ 零           │ ✅ (原生 TypeScript)   │
+└──────────────┴──────────────┴──────────────┴────────────────────────┘
+```
+
+```javascript
+// styled-components —— 运行时生成样式
+import styled from 'styled-components';
+
+const Button = styled.button`
+  background: ${(props) => props.primary ? '#1890ff' : '#fff'};
+  color: ${(props) => props.primary ? '#fff' : '#333'};
+  padding: 8px 16px;
+  border-radius: 4px;
+
+  &:hover {
+    opacity: 0.8;
+  }
+`;
+
+// 使用：渲染时生成 CSS 字符串 → 注入 <style> 标签 → 生成唯一类名
+<Button primary>Click</Button>
+```
+
+```javascript
+// Emotion —— 运行时生成样式（与 styled-components 类似，但 API 更灵活）
+import { css } from '@emotion/react';
+
+const buttonStyle = css`
+  background: #1890ff;
+  color: #fff;
+  padding: 8px 16px;
+`;
+
+// css prop 方式：直接在 JSX 上写样式
+<button css={buttonStyle}>Click</button>
+```
+
+```css
+/* CSS Modules —— 编译时生成唯一类名，零运行时开销 */
+/* Button.module.css */
+.button {
+  background: #1890ff;
+  color: #fff;
+  padding: 8px 16px;
+}
+.button.primary {
+  background: #1890ff;
+}
+```
+
+```javascript
+// CSS Modules 使用：编译时将 .button 转换为 .Button_button_x7ks2
+import styles from './Button.module.css';
+<button className={`${styles.button} ${primary ? styles.primary : ''}`}>
+  Click
+</button>
+```
+
+<Warning title="⚠️ 核心机制: styled-components 的运行时注入过程">
+
+当 React 渲染 `<Button primary>` 时，styled-components 在运行时做了以下事情：(1) 根据 props 计算最终的 CSS 字符串；(2) 对 CSS 字符串做哈希生成唯一类名（如 `.sc-bdVTJa`）；(3) 将 CSS 字符串注入到 `<style>` 标签中（如果该样式还未注入）。这个过程在**每次组件渲染时都可能发生**（取决于 props 是否变化），是运行时 CSS-in-JS 方案的性能瓶颈所在。
+
+</Warning>
+
+### 基础梳理
+
+| 对比维度 | styled-components | Emotion | CSS Modules |
+|---------|-------------------|---------|-------------|
+| **诞生年份** | 2016 | 2016 | 2015 |
+| **样式注入** | 运行时（JS 生成 CSS） | 运行时（JS 生成 CSS） | 编译时（构建工具处理） |
+| **运行时开销** | 高（JS 执行 + DOM 注入） | 高（JS 执行 + DOM 注入） | 零 |
+| **SSR 支持** | 需额外配置 | 需额外配置 | 天然支持 |
+| **主题方案** | `ThemeProvider` | `ThemeProvider` | CSS 变量 / 全局类 |
+| **类型安全** | TypeScript 支持 | TypeScript 支持 | 需 typed-css-modules |
+| **动态样式** | ✅ 通过 props | ✅ 通过 props | ❌ 需配合 CSS 变量 |
+| **Bundle 大小** | ~12KB (gzip) | ~8KB (gzip) | 0KB |
+
+### 专家视角深度剖析
+
+很多候选人能背出上面的表格，但大厂面试官真正在意的是：**为什么 Meta（Facebook）自己不用 styled-components，而是造了 StyleX？**
+
+答案在于**原子化 CSS 的性能模型**。styled-components 为每个组件生成一个完整的样式块（如 `.sc-bdVTJa { color: red; font-size: 16px; padding: 8px; }`），当页面有 1000 个组件时，就有 1000 个样式块被注入到 DOM 中。而 StyleX 的思路完全不同——它在编译期将样式拆分为**原子化 CSS 类**（如 `.color_red`、`.font-size_16`、`.padding_8`），然后通过组合这些原子类来实现样式。由于原子类是可以复用的，1000 个组件可能只需要 200 个原子类，样式表体积大幅缩小。这就是 StyleX 在 Meta 的大规模应用中碾压 styled-components 的核心原因。
+
+---
+
+## Q3: CSS-in-JS 的原理（运行时 vs 编译时）
+
+### 运行时方案（styled-components / Emotion）
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                  styled-components 运行时流程                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  React 渲染 <Button primary>                                    │
+│       │                                                         │
+│       ▼                                                         │
+│  1. 调用 styled-components 的样式计算函数                         │
+│     → 接收 props: { primary: true }                              │
+│     → 计算 CSS 字符串: "background: #1890ff; color: #fff;"        │
+│       │                                                         │
+│       ▼                                                         │
+│  2. 哈希 CSS 字符串 → 生成唯一类名 ".sc-bdVTJa"                   │
+│       │                                                         │
+│       ▼                                                         │
+│  3. 检查缓存：该类名的样式是否已注入 <style> 标签？                  │
+│     → 已注入：跳过                                                │
+│     → 未注入：创建 <style> 标签并写入 CSS                          │
+│       │                                                         │
+│       ▼                                                         │
+│  4. 渲染 DOM: <button class="sc-bdVTJa">Click</button>           │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+```javascript
+// styled-components 核心原理（极度简化版）
+// 实际源码远比这复杂，涉及 CSS 的序列化、插入、缓存等
+
+// 1. 创建 styled 组件时，返回一个 React 组件
+function styled(tag) {
+  return (strings, ...interpolations) => {
+    // 返回一个 React 组件
+    return function StyledComponent(props) {
+      // 2. 运行时根据 props 计算 CSS 字符串
+      const cssString = strings.reduce((result, str, i) => {
+        const interpolation = interpolations[i];
+        const value = typeof interpolation === 'function'
+          ? interpolation(props)  // 动态值：根据 props 计算
+          : interpolation;
+        return result + str + (value || '');
+      }, '');
+
+      // 3. 哈希生成唯一类名
+      const className = hash(cssString);
+
+      // 4. 注入 <style> 标签（如果尚未注入）
+      if (!cache.has(className)) {
+        injectStyle(`.${className} { ${cssString} }`);
+        cache.set(className, true);
+      }
+
+      // 5. 渲染 DOM
+      return React.createElement(tag, { ...props, className });
+    };
+  };
+}
+```
+
+<Tip title="🎢 通俗比喻：运行时方案 vs 编译时方案">
+
+运行时 CSS-in-JS 就像一个**现场裁缝**——每次你要穿衣服（渲染组件），裁缝都要现场量尺寸（计算 props）、现场裁剪布料（生成 CSS 字符串）、现场缝制（注入 `<style>` 标签）。这当然灵活（可以根据你的胖瘦动态调整），但每次穿衣都很慢。编译时方案就像**成衣工厂**——衣服在出厂前就做好了（构建时生成 CSS 文件），你只需要穿上就行（渲染时只添加类名），速度极快，但无法根据你的实时胖瘦调整。
+
+</Tip>
+
+### 编译时方案（vanilla-extract / StyleX / Panda CSS）
+
+```javascript
+// vanilla-extract —— 编译时 CSS-in-JS
+// button.css.ts（TypeScript 文件，编译时执行，运行时不存在）
+import { style } from '@vanilla-extract/css';
+
+export const button = style({
+  background: '#1890ff',
+  color: '#fff',
+  padding: '8px 16px',
+  ':hover': { opacity: 0.8 }
+});
+
+// 编译后输出：Button_button_x7ks2.css
+// .Button_button_x7ks2 { background: #1890ff; color: #fff; ... }
+
+// 组件中使用（运行时零开销）
+import { button } from './button.css.ts';
+<button className={button}>Click</button>
+```
+
+```javascript
+// StyleX —— Meta 推出的编译时 CSS-in-JS（原子化 CSS）
+import * as stylex from '@stylexjs/stylex';
+
+const styles = stylex.create({
+  base: {
+    padding: 8,
+    borderRadius: 4,
+  },
+  primary: {
+    background: '#1890ff',
+    color: '#fff',
+  },
+});
+
+// 编译后：className 由多个原子类组成
+// <button class="x1 padding_8 borderRadius_4 background_1890ff color_fff">
+<button {...stylex.props(styles.base, styles.primary)}>Click</button>
+```
+
+---
+
+## Q4: CSS-in-JS 的性能问题（运行时开销、SSR）
+
+**运行时开销的根本原因：**
+styled-components 和 Emotion 在每次组件渲染时都需要执行 JS 来计算 CSS 字符串、哈希、注入。当页面有大量组件且频繁重渲染时，这些开销会显著影响性能。
+
+**SSR 的额外代价：**
+服务端渲染时，CSS-in-JS 需要在 Node.js 中执行样式计算、收集生成的 CSS、序列化为字符串嵌入 HTML。客户端注水时，还需要将服务端生成的 CSS 与客户端的样式计算结果进行比对，确保一致性。
+
+**关键区别：**
+
+| 性能维度 | 运行时方案 (styled-comp) | 编译时方案 (vanilla-extract) | CSS Modules |
+|---------|------------------------|---------------------------|-------------|
+| **首屏渲染** | 需等 JS 执行 | 直接用静态 CSS | 直接用静态 CSS |
+| **重渲染开销** | 高（重新计算 CSS） | 零（样式不变） | 零（样式不变） |
+| **SSR 复杂度** | 高（序列化 + 注水） | 低（静态文件） | 低（静态文件） |
+| **Bundle 增量** | +12KB (runtime) | +0KB | +0KB |
+| **CSS 文件体积** | 大（重复样式块） | 中 | 中 |
+
+**❌/✅ 代码对比（展示性能差异）：**
+
+```javascript
+// ❌ 运行时方案：每次渲染都重新计算 CSS
+const Button = styled.button`
+  background: ${(props) => props.variant === 'primary' ? '#1890ff' : '#fff'};
+  color: ${(props) => props.variant === 'primary' ? '#fff' : '#333'};
+  padding: ${(props) => props.size === 'large' ? '12px 24px' : '8px 16px'};
+`;
+// 父组件 setState → Button 重渲染 → styled-components 重新执行模板字符串函数
+// → 重新哈希 → 检查缓存 → 可能注入新 <style> 标签
+```
+
+```javascript
+// ✅ 编译时方案：编译期生成静态 CSS，运行时零开销
+import { button, buttonPrimary, buttonLarge } from './button.css.ts';
+
+function Button({ variant, size, children }) {
+  return (
+    <button className={clsx(
+      button,
+      variant === 'primary' && buttonPrimary,
+      size === 'large' && buttonLarge,
+    )}>
+      {children}
+    </button>
+  );
+}
+// 父组件 setState → Button 重渲染 → 只是拼接 className 字符串
+// → 无 CSS 计算、无哈希、无 <style> 注入
+```
+
+<Tip title="最佳实践: ">
+
+新项目应优先选择零运行时方案（vanilla-extract / StyleX / Panda CSS）。如果团队已经深度使用 styled-components 且迁移成本过高，可以通过以下优化降低运行时开销：(1) 将不依赖 props 的静态样式提取到组件外部（避免每次渲染重新计算）；(2) 使用 `attrs` 预计算默认值；(3) 使用 `useMemo` 缓存动态样式对象。React 18+ 的并发渲染特性使得运行时 CSS-in-JS 的重渲染开销更加敏感，应尽早规划向零运行时方案迁移。
+
+</Tip>
+
+---
+
+## 🔍 底层源码：styled-components 是如何工作的？
+
+<div class="follow-up">
+styled-components 的样式注入机制在浏览器中是怎么实现的？
+</div>
+
+styled-components 内部使用 **StyleSheet** 管理器来集中管理所有的 `<style>` 标签注入。它维护一个全局的样式缓存表（`cache`），以哈希后的类名为 key，CSS 字符串为 value。当一个新样式首次出现时，它会创建一个 `<style>` 标签（或使用 `insertRule` API 插入到已有的 `<style>` 标签中），并将 CSS 规则写入（详见 [styled-components 源码 packages/styled-components/src/sheet](https://github.com/styled-components/styled-components/tree/main/packages/styled-components/src/sheet)）：
+
+```javascript
+// styled-components 的 StyleSheet 管理器（极度简化版）
+
+class StyleSheet {
+  constructor() {
+    this.cache = new Map();       // 哈希类名 → CSS 字符串
+    this.sheet = null;            // <style> 标签的引用
+  }
+
+  // 获取或创建 <style> 标签
+  getStyleElement() {
+    if (!this.sheet) {
+      const style = document.createElement('style');
+      style.setAttribute('data-styled', 'active');
+      document.head.appendChild(style);
+      this.sheet = style.sheet;   // CSSStyleSheet 对象
+    }
+    return this.sheet;
+  }
+
+  // 注入 CSS 规则（核心方法）
+  insertRules(cssRules) {
+    if (this.cache.has(cssRules)) return; // 已注入，跳过
+    const sheet = this.getStyleElement();
+    // 使用 CSSStyleSheet.insertRule() API（比 innerHTML 更高效）
+    sheet.insertRule(cssRules, sheet.cssRules.length);
+    this.cache.set(cssRules, true);
+  }
+}
+```
+
+这段代码做了 3 件事：缓存（避免重复注入相同的 CSS 规则）、延迟创建（首次需要时才创建 `<style>` 标签）、高效注入（使用 `insertRule` API 而非 `innerHTML`，避免触发 DOM 解析和重排）。
+
+<div class="follow-up">
+Emotion 的注入机制与 styled-components 有何不同？
+</div>
+
+Emotion 使用类似的缓存和注入机制，但它额外支持了 `@keyframes` 和 `@font-face` 的序列化，并且在 SSR 场景中提供了更灵活的流式注入 API（`createCache` + `renderToStream`）。详见 [Emotion 源码 packages/cache/src](https://github.com/emotion-js/emotion/tree/main/packages/cache/src)。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："你在项目中是怎么做样式方案选型的？styled-components 和 CSS Modules 怎么选？"
+
+**及格回答（60-70分）：**
+> "我们用的 styled-components，因为它支持动态样式，写起来方便。CSS Modules 需要手动拼接类名，不太方便。"
+
+面试官评价：**只考虑了开发体验，忽略了性能和架构影响**。
+
+**满分回答（90-100分）：**
+
+> 样式方案选型的核心矛盾是**开发灵活性 vs 运行时性能**。styled-components 的优势在于动态样式——可以根据 props 实时计算 CSS 值，开发体验极佳。但它的代价是在运行时执行 JS 来生成 CSS 字符串、哈希、注入 `<style>` 标签。当页面有大量组件且频繁重渲染时，这些开销会显著拖慢渲染性能。<sup>[1]</sup>
+
+> CSS Modules 则完全相反——样式在构建时就被处理为静态 CSS 文件，运行时零开销。它的局限在于不支持基于 props 的动态样式，需要配合 CSS 变量或 `clsx` 条件类名来实现。但对于大多数场景，这种组合已经足够。<sup>[2]</sup>
+
+> 在我负责的 C 端项目中，我们最终选择了 **CSS Modules + CSS 变量** 的混合方案。核心逻辑是：静态样式用 CSS Modules（零运行时开销），动态主题用原生 CSS 变量（运行时改一个变量值即可），极少量需要基于 props 的动态样式用 `clsx` 条件类名。这种方案的运行时开销几乎为零，SSR 友好，同时通过 TypeScript + typed-css-modules 保证了类型安全。如果团队偏好 CSS-in-JS 的开发体验，我会推荐 vanilla-extract 或 StyleX 这类零运行时方案。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="styled-components 的 className 是怎么生成的？为什么不会冲突？" icon="layer-group">
+
+  **答题要点：**
+  解释哈希算法和唯一性保证机制。
+
+  **高分回答：**
+  "styled-components 使用一种确定性哈希算法（基于 murmurhash2），对 CSS 字符串内容进行哈希计算，生成一个 6-8 位的字母数字字符串（如 `.sc-bdVTJa`）。这个哈希值有两个关键特性：(1) **确定性**——相同的 CSS 字符串总是产生相同的哈希值，所以服务端和客户端渲染出的类名完全一致（这对 SSR 至关重要）；(2) **唯一性**——不同的 CSS 字符串几乎不可能产生相同的哈希值（哈希碰撞概率极低）。此外，styled-components 还会加上一个组件名前缀（如 `StyledButton`），让开发者工具中的类名可读性更好。"
+
+  </Accordion>
+
+  <Accordion title="CSS-in-JS 方案如何实现主题系统？ThemeProvider 的原理是什么？" icon="layer-group">
+
+  **答题要点：**
+  解释 React Context 注入机制。
+
+  **高分回答：**
+  "styled-components 的 `ThemeProvider` 基于 React Context 实现。`ThemeProvider` 接收一个 `theme` 对象，将其放入 React Context 中。当组件树中的 styled 组件被渲染时，它通过 `useContext` 读取当前的 theme 对象，然后在模板字符串的插值函数中使用：
+  ```javascript
+  const Button = styled.button`
+    background: ${(props) => props.theme.primary};
+  `;
+  ```
+  主题切换时，`ThemeProvider` 更新 Context 值 → 所有消费了 theme 的组件重新渲染 → styled-components 重新计算 CSS 字符串 → 注入新的样式。这个过程的开销与使用了 theme 的组件数量成正比。**优化技巧**：将不依赖 theme 的静态样式提取到组件外部，避免主题切换时不必要的重新计算。"
+
+  </Accordion>
+
+  <Accordion title="CSS-in-JS 在 SSR 中是怎么工作的？有什么坑？" icon="stopwatch">
+
+  **答题要点：**
+  解释服务端样式收集和客户端注水的流程。
+
+  **高分回答：**
+  "SSR 的流程是：(1) 服务端渲染组件树时，styled-components 同时在内存中计算并收集所有生成的 CSS 规则；(2) 将收集到的 CSS 序列化为字符串，注入到 HTML 的 `<style>` 标签中；(3) 客户端收到 HTML 后，React 注水（Hydration）时，styled-components 会比对服务端注入的样式与客户端计算的样式是否一致。
+  **常见坑**：(1) 服务端和客户端的随机数不一致导致类名不匹配（styled-components 通过确定性哈希避免了这个问题）；(2) `useLayoutEffect` 在服务端不执行，可能导致闪烁（styled-components 通过 `<style>` 标签预注入避免）；(3) 流式渲染（React 18 Streaming SSR）中，样式收集的时机变得复杂——组件可能在不同的时间点渲染，需要分批收集和注入样式。"
+
+  </Accordion>
+
+  <Accordion title="styled-components 和 Emotion 的核心区别是什么？" icon="stopwatch">
+
+  **答题要点：**
+  从 API 设计、性能特征、SSR 能力三个维度对比。
+
+  **高分回答：**
+  "两者的核心区别在于 API 设计哲学和底层实现细节：
+  **1. API 设计**：styled-components 以 tagged template literals 为主（`styled.div` + 模板字符串），Emotion 额外支持 `css` prop 方式（`<div css={css` + 模板字符串}>`），灵活性更高。
+  **2. 序列化方式**：Emotion 使用自己的序列化引擎，对 CSS 字符串的解析和转换更高效。在基准测试中，Emotion 的样式注入速度比 styled-components 快约 20-30%。
+  **3. 包体积**：styled-components ~12KB (gzip)，Emotion ~8KB (gzip)。
+  **4. SSR**：两者都支持 SSR，但 Emotion 的流式注入 API 更灵活（`createCache` + `renderToStream`）。
+  **5. 生态**：styled-components 的社区生态更大（更多的第三方库兼容），但 Emotion 在 React 社区的影响力也很大（MUI 从 v5 开始默认使用 Emotion）。"
+
+  </Accordion>
+
+  <Accordion title="CSS Modules 的实现原理是什么？构建工具是怎么处理的？" icon="node">
+
+  **答题要点：**
+  解释类名哈希映射和构建时转换过程。
+
+  **高分回答：**
+  "CSS Modules 的核心原理是**构建时的类名哈希映射**。当 Webpack 的 `css-loader` 处理一个 `.module.css` 文件时，它会：(1) 解析 CSS 文件中的所有类名；(2) 对每个类名进行哈希处理，生成唯一标识（如 `.button` → `.Button_button_x7ks2`）；(3) 输出一个 JS 对象，将原始类名映射到哈希后的类名。
+  ```javascript
+  // 导入 .module.css 文件时，实际得到的是一个映射对象
+  import styles from './Button.module.css';
+  // styles = { button: 'Button_button_x7ks2', primary: 'Button_primary_a3bc1' }
+  ```
+  在 JS 代码中，你通过 `styles.button` 访问哈希后的类名，而原始的 `.button` 类名在输出的 CSS 中被替换为 `.Button_button_x7ks2`。这种机制确保了每个组件的类名都是唯一的，不会与其他组件冲突。"
+
+  </Accordion>
+
+  <Accordion title="什么是原子化 CSS？为什么 Meta 推出了 StyleX？" icon="node">
+
+  **答题要点：**
+  解释原子化 CSS 的性能模型和 StyleX 的设计动机。
+
+  **高分回答：**
+  "原子化 CSS 的核心理念是：每个 CSS 类只包含一个属性（如 `.color_red { color: red }`、`.padding_8 { padding: 8px }`）。通过组合这些原子类来实现样式。优势在于：(1) CSS 文件体积极小——因为原子类是可复用的，1000 个组件可能只需要 200 个原子类；(2) 样式冲突为零——每个类只做一件事；(3) 缓存友好——原子类不会因组件修改而失效。
+  **Meta 推出 StyleX 的原因**：在 Facebook 的规模下（数十亿用户、数千个组件），styled-components 的运行时开销和 CSS 体积膨胀变得不可接受。StyleX 在编译期将样式拆分为原子类，运行时只做 className 拼接，性能接近零开销。同时，StyleX 的类型系统可以在编译期捕获无效的样式属性，提供比 styled-components 更强的类型安全保证。"
+
+  </Accordion>
+
+  <Accordion title="CSS-in-JS 和 Tailwind CSS 怎么选？各自的优劣是什么？" icon="skull">
+
+  **答题要点：**
+  从开发体验、性能、可维护性三个维度对比。
+
+  **高分回答：**
+  "CSS-in-JS 和 Tailwind CSS 代表了两种完全不同的样式哲学：
+  **CSS-in-JS**：样式与组件逻辑共存，支持完整的 JavaScript 编程能力（条件、循环、函数），适合复杂组件库的开发。缺点是运行时开销（styled-components）或学习成本（vanilla-extract 的 `.css.ts` 写法）。
+  **Tailwind CSS**：通过原子化的 utility class 在 HTML 中直接写样式，零运行时开销，JIT 模式下 CSS 体积极小。缺点是 HTML 可读性差（`class='flex items-center justify-between p-4 bg-white rounded-lg shadow-md'`），不适合需要复杂动态样式的场景。
+  **选型建议**：C 端产品（营销页、管理后台）用 Tailwind CSS（开发速度快、样式一致性好）；组件库用 CSS-in-JS（需要封装和类型安全）；大型团队用 StyleX（兼具原子化 CSS 的性能和 CSS-in-JS 的类型安全）。"
+
+  </Accordion>
+
+  <Accordion title="如何从 styled-components 迁移到零运行时方案？迁移策略是什么？" icon="skull">
+
+  **答题要点：**
+  给出渐进式迁移的实际策略。
+
+  **高分回答：**
+  "迁移策略应该是渐进式的，而不是一次性重写：
+  **第一步：隔离动态样式**。梳理所有使用了 props 动态计算的 styled 组件，将它们标记为'需要保留运行时'。将不依赖 props 的静态 styled 组件标记为'可迁移'。
+  **第二步：并行运行**。在项目中同时配置 styled-components 和目标零运行时方案（如 vanilla-extract）。新组件强制使用零运行时方案，旧组件保持不动。
+  **第三步：逐步替换**。按照页面或模块的优先级，将旧的 styled 组件逐步替换为零运行时方案。对于需要动态样式的组件，使用 CSS 变量 + `clsx` 条件类名来替代。
+  **第四步：清理**。当所有 styled 组件都被替换后，移除 styled-components 的依赖。
+  **注意事项**：迁移过程中，确保主题系统的一致性——可以在零运行时方案中继续使用 CSS 变量做主题，而不是依赖 ThemeProvider。"
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [styled-components 官方文档](https://styled-components.com/docs)：styled-components 的完整 API 参考和最佳实践。<sup>[1]</sup>
+- 📖 [Christopher Chedeau - CSS-in-JS 演讲](https://speakerdeck.com/vjeux/react-css-in-js)：CSS-in-JS 理念的开创性演讲，提出了传统 CSS 的 7 大工程问题。<sup>[2]</sup>
+- 🟢 [StyleX 官方文档](https://stylexjs.com/)：Meta 推出的编译时 CSS-in-JS 方案，详解原子化 CSS 的设计哲学。<sup>[3]</sup>

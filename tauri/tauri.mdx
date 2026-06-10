@@ -1,0 +1,990 @@
+---
+title: "Tauri"
+---
+
+> **面试官为什么问这个？**
+>
+> Tauri 是近年来增长最快的桌面应用框架，以极致的包体积和内存占用著称。面试官问这个，本质上是在考察你：**你是否了解桌面应用开发的前沿技术趋势，以及能否在 Electron 和 Tauri 之间做出正确的技术选型？** 如果你只知道 Electron 但不了解 Tauri 的架构设计差异（系统 WebView + Rust），说明你的技术视野停留在"传统方案"而没有关注行业演进。
+
+---
+
+## Q1: Tauri 的历史？为什么要有它？
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  Electron    │ → │  Tauri 1.0   │ → │  Tauri 2.0   │ → │  Tauri 生态   │
+│  (2013)      │   │  (2022)      │   │  (2024)      │   │  成熟发展     │
+│  Chromium    │   │  系统 WebView │   │  移动端支持   │   │  全平台覆盖   │
+└──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
+```
+
+<Steps>
+
+  <Step title="2019年: Tauri 项目启动">
+
+    Tauri 由 Daniel Thompson-Yvetot 和 Lucas Nogueira 在 GitHub 上发起，核心动机是解决 Electron 的两大痛点：**包体积太大**（内嵌 Chromium 导致 150MB+）和**内存占用太高**（每个窗口 50-100MB）。Tauri 的核心创新是使用操作系统自带的 WebView（macOS 用 WKWebView，Windows 用 WebView2，Linux 用 WebKitGTK），后端用 Rust 实现，从根源上解决了 Electron 的资源浪费问题。
+
+  </Step>
+  <Step title="2022年: Tauri 1.0 正式发布">
+
+    经过三年的开发和社区打磨，Tauri 1.0 于 2022 年 6 月正式发布。1.0 版本支持 Windows、macOS、Linux 三大桌面平台，提供了窗口管理、文件系统访问、系统托盘、全局快捷键等核心能力。包体积仅 3-10MB（对比 Electron 的 150MB+），内存占用降低 50-70%。
+
+  </Step>
+  <Step title="2024年: Tauri 2.0 发布（移动端支持）">
+
+    Tauri 2.0 是一个重大版本更新，核心新特性是**移动端支持**——同一套代码可以同时构建 iOS 和 Android 应用。此外还引入了插件系统 v2、IPC 性能优化、改进的安全模型等。Tauri 2.0 让开发者真正实现了"一份代码，桌面 + 移动端全覆盖"。
+
+  </Step>
+  <Step title="2025年至今: 生态成熟与社区发展">
+
+    Tauri 社区持续壮大，插件生态日益丰富。官方提供了 tauri-plugin-store（持久化存储）、tauri-plugin-sql（数据库）、tauri-plugin-notification（通知）等常用插件。社区也涌现了大量第三方插件和模板。Tauri 与 Next.js、SvelteKit、Vite 等前端框架的集成也越来越成熟。
+
+  </Step>
+
+</Steps>
+
+**Tauri 解决的核心问题：**
+
+```text
+问题：Electron 的 Chromium 内嵌导致包体积大、内存占用高
+
+Electron → 内嵌完整 Chromium → 包体积 150MB+ → 每个窗口 50-100MB 内存
+→ 即使是简单的工具类应用，安装包也很大
+
+解决：使用系统自带的 WebView + Rust 后端
+
+Tauri → 系统 WebView（WKWebView/WebView2/WebKitGTK）→ 包体积 3-10MB
+→ 内存占用降低 50-70% → Rust 后端保证安全性和性能
+```
+
+<Note title="💡 一句话总结">
+
+Tauri 使用操作系统自带的 WebView 替代 Electron 内嵌的 Chromium，后端用 Rust 实现，将桌面应用的包体积从 150MB+ 压缩到 3-10MB，内存占用降低 50-70%。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有 Tauri">
+
+桌面应用开发只有 Electron 一条路——内嵌完整的 Chromium 浏览器，即使是一个简单的计算器应用，安装包也要 150MB+。就像你要运一个小包裹，却必须租一辆大卡车——能装，但浪费巨大。
+
+</Card>
+<Card title="✅ 引入 Tauri">
+
+Tauri 使用系统自带的 WebView 渲染页面，就像用快递柜代替大卡车——包裹（Web 页面）通过系统已有的基础设施（WebView）送达，不需要额外搬运一整套浏览器。Rust 后端保证了安全性和性能，包体积只有几 MB。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么"（Electron 包体积大、内存占用高），再说 Tauri 的核心思路（系统 WebView + Rust 后端），最后对比两者的包体积和内存数据。面试官想听的是你理解技术选型的底层逻辑，而不是背功能列表。
+
+</Tip>
+
+---
+
+## Q2: Tauri 核心架构（Rust + WebView、前后端分离）
+
+Tauri 的本质是**前后端分离架构**：前端用系统 WebView 渲染 Web 页面，后端用 Rust 实现应用逻辑和系统 API 调用，两者通过 IPC 通信。
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                    Tauri 应用架构                             │
+│                                                             │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │                   Rust 后端 (Core)                     │  │
+│  │                                                       │  │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐     │  │
+│  │  │ tauri::      │ │ Window      │ │ File System │     │  │
+│  │  │ Manager      │ │ Manager     │ │ Access      │     │  │
+│  │  │ (窗口管理)    │ │ (窗口管理)   │ │ (文件系统)   │     │  │
+│  │  └─────────────┘ └─────────────┘ └─────────────┘     │  │
+│  │                                                       │  │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐     │  │
+│  │  │ Event       │ │ Tray        │ │ Menu        │     │  │
+│  │  │ System      │ │ Manager     │ │ Manager     │     │  │
+│  │  │ (事件系统)    │ │ (系统托盘)   │ │ (菜单)      │     │  │
+│  │  └─────────────┘ └─────────────┘ └─────────────┘     │  │
+│  └──────────────┬──────────────────────────────┬─────────┘  │
+│                 │ IPC (序列化消息)                │            │
+│  ┌──────────────▼──────────────────────────────▼─────────┐  │
+│  │                 前端 (WebView)                          │  │
+│  │                                                        │  │
+│  │  ┌──────────────────────────────────────────────────┐ │  │
+│  │  │  Web 页面                                         │ │  │
+│  │  │  HTML/CSS/JS（React、Vue、Svelte 等任意框架）      │ │  │
+│  │  │                                                    │ │  │
+│  │  │  macOS: WKWebView (Safari 引擎)                    │ │  │
+│  │  │  Windows: WebView2 (Edge/Chromium 引擎)            │ │  │
+│  │  │  Linux: WebKitGTK (WebKit 引擎)                    │ │  │
+│  │  └──────────────────────────────────────────────────┘ │  │
+│  │  ┌──────────────────────────────────────────────────┐ │  │
+│  │  │  @tauri-apps/api                                  │ │  │
+│  │  │  (Tauri 前端 SDK，提供 IPC 调用接口)                │ │  │
+│  │  └──────────────────────────────────────────────────┘ │  │
+│  └───────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Rust 后端
+
+Rust 后端是 Tauri 的核心——它负责应用生命周期管理、窗口创建、系统 API 调用、IPC 消息处理。Rust 的内存安全保证和零成本抽象让 Tauri 在性能和安全性上远超 Node.js。
+
+```rust
+// src-tauri/src/main.rs — Tauri 应用入口
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+use tauri::Manager;
+
+// Tauri 命令（Command）：前端可以通过 IPC 调用的 Rust 函数
+#[tauri::command]
+fn read_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_system_info() -> SystemInfo {
+    SystemInfo {
+        os: std::env::consts::OS.to_string(),
+        arch: std::env::consts::ARCH.to_string(),
+        hostname: hostname::get().unwrap().to_string_lossy().to_string(),
+    }
+}
+
+#[derive(serde::Serialize)]
+struct SystemInfo {
+    os: String,
+    arch: String,
+    hostname: String,
+}
+
+fn main() {
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            read_file,
+            get_system_info,
+        ])
+        .setup(|app| {
+            // 应用启动时的初始化逻辑
+            let main_window = app.get_window("main").unwrap();
+            println!("应用已启动，主窗口: {:?}", main_window.title());
+            Ok(())
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+```
+
+### 前端（WebView）
+
+前端使用标准的 Web 技术（HTML/CSS/JS），可以搭配任意前端框架（React、Vue、Svelte 等）。通过 `@tauri-apps/api` 调用 Rust 后端的命令。
+
+```javascript
+// 前端代码 — 调用 Rust 后端
+import { invoke } from '@tauri-apps/api/tauri';
+
+// 调用 Rust 命令（双向 IPC 通信）
+async function loadFile() {
+  try {
+    const content = await invoke('read_file', { path: '/path/to/file.txt' });
+    document.getElementById('content').textContent = content;
+  } catch (error) {
+    console.error('读取文件失败:', error);
+  }
+}
+
+// 获取系统信息
+async function showSystemInfo() {
+  const info = await invoke('get_system_info');
+  console.log(`系统: ${info.os}, 架构: ${info.arch}, 主机名: ${info.hostname}`);
+}
+```
+
+```javascript
+// 前端代码 — 窗口管理
+import { appWindow } from '@tauri-apps/api/window';
+
+// 窗口操作
+await appWindow.minimize();
+await appWindow.maximize();
+await appWindow.close();
+
+// 监听窗口事件
+await appWindow.onResized(({ payload: size }) => {
+  console.log(`窗口大小: ${size.width}x${size.height}`);
+});
+```
+
+```javascript
+// 前端代码 — 事件系统
+import { emit, listen } from '@tauri-apps/api/event';
+
+// 前端发送事件给 Rust 后端
+await emit('frontend-event', { message: 'Hello from frontend!' });
+
+// 监听 Rust 后端发来的事件
+const unlisten = await listen('backend-event', (event) => {
+  console.log('后端说:', event.payload);
+});
+
+// 组件卸载时取消监听
+// unlisten();
+```
+
+### IPC 通信机制
+
+Tauri 的 IPC 机制与 Electron 不同——它使用**序列化消息**而非直接的进程间通信，前端通过 `invoke()` 调用 Rust 命令，Rust 通过事件系统推送消息给前端。
+
+| 通信模式 | 方向 | 前端 API | Rust 端 | 特点 |
+|---------|------|---------|---------|------|
+| **invoke/command** | 前端 → Rust | `invoke('cmd', args)` | `#[tauri::command]` | 双向，返回 Result |
+| **emit/listen** | Rust → 前端 | `listen('event', cb)` | `app.emit_all()` | 单向推送 |
+| **emit/listen** | 前端 → Rust | `emit('event', data)` | `app.listen_global()` | 单向通知 |
+
+### 系统 WebView 差异
+
+Tauri 使用操作系统自带的 WebView，这意味着不同平台的 Web 引擎不同：
+
+| 平台 | WebView | 引擎 | 特点 |
+|------|---------|------|------|
+| **macOS** | WKWebView | WebKit (Safari) | 性能好，但某些 Web API 可能与 Chrome 有差异 |
+| **Windows** | WebView2 | Chromium (Edge) | 与 Chrome 兼容性最好 |
+| **Linux** | WebKitGTK | WebKit | 功能最基础，某些 API 可能缺失 |
+
+```text
+注意：这意味着 Tauri 应用在不同平台上的 Web 渲染可能有细微差异
+
+macOS (Safari 引擎)：
+- CSS backdrop-filter 正常
+- ES2022+ 特性支持较新
+- 某些 Chrome 专有 API 不可用
+
+Windows (Edge/Chromium 引擎)：
+- 与 Chrome 兼容性最好
+- 几乎所有 Web API 都可用
+
+Linux (WebKitGTK 引擎)：
+- 版本可能较旧（取决于系统）
+- 某些新特性可能缺失
+- 需要做更多的兼容性测试
+```
+
+<Note title="💡 一句话总结">
+
+Tauri 的核心架构是前后端分离：前端用系统 WebView 渲染 Web 页面（任意框架），后端用 Rust 实现应用逻辑和系统 API，两者通过 IPC（invoke/command + emit/listen）通信。
+
+</Note>
+
+<Tip title="🎢 通俗比喻: 餐厅的前厅与后厨">
+
+Tauri 应用就像一家餐厅。前端（WebView）是前厅——负责接待客人、展示菜单、上菜（渲染 UI），不同城市的分店（不同操作系统）用不同的装修风格（不同 WebView 引擎），但功能一样。后端（Rust）是后厨——负责采购食材（文件系统）、管理库存（系统 API）、处理订单（IPC 命令）。前厅和后厨通过对讲机（IPC）沟通——前厅把客人的需求传给后厨，后厨做好菜后通知前厅来取。
+
+</Tip>
+
+---
+
+## Q3: Tauri vs Electron 对比（包体积、内存占用、安全性）
+
+Tauri 和 Electron 的对比是面试中的经典问题——面试官想看你能否从多个维度做出有理有据的技术选型。
+
+### 基础梳理
+
+| 维度 | Electron | Tauri |
+|------|----------|-------|
+| **渲染引擎** | 内嵌 Chromium | 系统 WebView |
+| **后端语言** | Node.js | Rust |
+| **包体积** | 150-200MB | 3-10MB |
+| **内存占用** | 150-400MB | 30-100MB |
+| **前端框架** | 任意 Web 框架 | 任意 Web 框架 |
+| **移动端支持** | 不支持 | Tauri 2.0 支持 iOS/Android |
+| **Web 兼容性** | 最好（就是 Chrome） | 取决于系统 WebView 版本 |
+| **原生模块** | npm 生态（Node.js） | Rust crate 生态 |
+| **学习曲线** | 低（只需 Web + Node.js） | 中等（需要学习 Rust 基础） |
+| **生态成熟度** | 非常成熟（2013 年至今） | 快速成长中（2022 年至今） |
+
+### 专家视角深度剖析
+
+很多候选人只能背诵上面的表格，但大厂面试官真正在意的是：**在什么场景下选 Tauri，什么场景下选 Electron？**
+
+选型的核心不是"哪个更好"，而是"哪个更适合你的项目"：
+
+**选 Electron 的场景：**
+- 团队只有前端技术栈（HTML/CSS/JS + Node.js），没有 Rust 经验
+- 应用需要复杂的系统集成（深度调用操作系统 API）
+- 需要最好的 Web 兼容性（应用内嵌复杂 Web 内容）
+- 已有成熟的 Electron 应用，迁移成本大于收益
+- 社区生态和插件支持是关键需求
+
+**选 Tauri 的场景：**
+- 对包体积和内存占用有严格要求（如工具类应用、嵌入式设备）
+- 团队有 Rust 经验或愿意学习 Rust
+- 需要同时覆盖桌面和移动端（Tauri 2.0）
+- 安全性要求极高（Rust 的内存安全保证）
+- 应用功能相对简单（不需要复杂的 Web 渲染）
+
+```text
+选型决策树：
+
+需要同时覆盖桌面 + 移动端？
+  └─ 是 → Tauri 2.0
+  └─ 否 → 继续判断
+
+团队有 Rust 经验？
+  └─ 是 → 对包体积/内存有要求？
+  │       └─ 是 → Tauri
+  │       └─ 否 → 都可以，看生态需求
+  └─ 否 → 需要最好的 Web 兼容性？
+          └─ 是 → Electron
+          └─ 否 → 考虑学习 Rust，选 Tauri
+```
+
+```javascript
+// 实际数据对比（以一个简单的笔记应用为例）
+
+// Electron 版本
+// 安装包大小：187MB
+// 内存占用：启动后 280MB，打开 5 个窗口后 520MB
+// 启动时间：冷启动 2.8 秒
+
+// Tauri 版本
+// 安装包大小：8.2MB
+// 内存占用：启动后 45MB，打开 5 个窗口后 120MB
+// 启动时间：冷启动 0.6 秒
+
+// 差距原因：
+// Electron 内嵌了完整的 Chromium（约 120MB），每个窗口独立进程
+// Tauri 使用系统已有的 WebView（0MB 额外开销），Rust 后端更轻量
+```
+
+### Tauri 2.0 新特性（移动端支持）
+
+Tauri 2.0 的核心新特性是移动端支持——同一套前端代码可以同时构建 iOS 和 Android 应用。
+
+```text
+Tauri 2.0 平台覆盖：
+
+┌─────────────────────────────────────────────────┐
+│                 前端代码（Web 页面）               │
+│           React / Vue / Svelte / 任意框架         │
+└───────────┬─────────┬─────────┬─────────┬───────┘
+            │         │         │         │
+   ┌────────▼──┐ ┌────▼────┐ ┌─▼──┐ ┌───▼──┐
+   │  macOS    │ │ Windows │ │iOS │ │Android│
+   │  WKWebView│ │WebView2 │ │ WK │ │ Web  │
+   │  Rust     │ │  Rust   │ │Rust│ │ Rust │
+   └───────────┘ └─────────┘ └────┘ └──────┘
+```
+
+```rust
+// Tauri 2.0 移动端 — Rust 代码与桌面端共享
+// src-tauri/src/lib.rs
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_notification::init())
+        .invoke_handler(tauri::generate_handler![
+            read_file,
+            get_system_info,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+```
+
+```javascript
+// 前端代码 — 平台自适应
+import { platform } from '@tauri-apps/api/os';
+
+async function loadFile() {
+  const os = await platform();
+
+  // 不同平台的文件路径可能不同
+  const path = os === 'ios'
+    ? '/var/mobile/Containers/Data/Application/.../file.txt'
+    : '/Users/.../file.txt';
+
+  const content = await invoke('read_file', { path });
+}
+```
+
+<Note title="💡 一句话总结">
+
+Tauri vs Electron 的核心差异：Tauri 用系统 WebView + Rust（包体积 3-10MB，内存 30-100MB），Electron 用 Chromium + Node.js（包体积 150MB+，内存 150-400MB）。选型取决于团队技术栈、Web 兼容性需求和包体积要求。Tauri 2.0 支持移动端。
+
+</Note>
+
+---
+
+## Q4: Tauri 插件系统
+
+Tauri 的插件系统是扩展应用能力的核心机制——它允许开发者用 Rust 编写插件，为前端提供新的命令和 API。
+
+### 插件系统架构
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│                    Tauri 插件系统                         │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │  官方插件 (@tauri-apps/plugin-*)                  │   │
+│  │                                                   │   │
+│  │  store     — 持久化键值存储                        │   │
+│  │  sql       — SQLite / PostgreSQL 数据库            │   │
+│  │  fs        — 文件系统操作增强                       │   │
+│  │  shell     — 执行系统命令                          │   │
+│  │  notification — 系统通知                           │   │
+│  │  clipboard — 剪贴板读写                            │   │
+│  │  dialog    — 文件/目录选择对话框                    │   │
+│  │  http      — HTTP 请求（替代 fetch）               │   │
+│  │  updater   — 自动更新                              │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │  社区插件                                          │   │
+│  │                                                   │   │
+│  │  tauri-plugin-log     — 日志系统                   │   │
+│  │  tauri-plugin-auth     — OAuth 认证                │   │
+│  │  tauri-plugin-serial   — 串口通信                  │   │
+│  │  tauri-plugin-ffmpeg   — 视频处理                  │   │
+│  └─────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 使用官方插件
+
+```rust
+// src-tauri/Cargo.toml — 添加插件依赖
+[dependencies]
+tauri-plugin-store = "2"
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+tauri-plugin-notification = "2"
+```
+
+```rust
+// src-tauri/src/main.rs — 注册插件
+fn main() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(
+            tauri_plugin_sql::Builder::default()
+                .add_sqlite("myapp.db")
+                .build(),
+        )
+        .plugin(tauri_plugin_notification::init())
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+```
+
+```javascript
+// 前端使用插件
+import { Store } from '@tauri-apps/plugin-store';
+import Database from '@tauri-apps/plugin-sql';
+import { sendNotification } from '@tauri-apps/plugin-notification';
+
+// 持久化存储
+const store = await Store.load('settings.json');
+await store.set('theme', 'dark');
+const theme = await store.get('theme');
+
+// SQLite 数据库
+const db = await Database.load('sqlite:myapp.db');
+await db.execute(
+  'INSERT INTO todos (title, completed) VALUES ($1, $2)',
+  ['学习 Tauri', false]
+);
+const todos = await db.select('SELECT * FROM todos');
+
+// 系统通知
+sendNotification({ title: '提醒', body: '你有一个待办事项' });
+```
+
+### 编写自定义插件
+
+```rust
+// 自定义插件：tauri-plugin-system-monitor
+// src/lib.rs
+
+use tauri::{
+    plugin::{Builder, TauriPlugin},
+    Runtime,
+};
+
+#[derive(serde::Serialize)]
+struct SystemMetrics {
+    cpu_usage: f32,
+    memory_used: u64,
+    memory_total: u64,
+}
+
+#[tauri::command]
+fn get_system_metrics() -> SystemMetrics {
+    // 使用 sysinfo crate 获取系统指标
+    let mut sys = sysinfo::System::new_all();
+    sys.refresh_all();
+
+    SystemMetrics {
+        cpu_usage: sys.global_cpu_info().cpu_usage(),
+        memory_used: sys.used_memory(),
+        memory_total: sys.total_memory(),
+    }
+}
+
+/// 初始化插件
+pub fn init<R: Runtime>() -> TauriPlugin<R> {
+    Builder::new("system-monitor")
+        .invoke_handler(tauri::generate_handler![get_system_metrics])
+        .build()
+}
+```
+
+```javascript
+// 前端调用自定义插件
+import { invoke } from '@tauri-apps/api/tauri';
+
+async function showSystemMetrics() {
+  const metrics = await invoke('plugin:system-monitor|get_system_metrics');
+  console.log(`CPU: ${metrics.cpu_usage}%`);
+  console.log(`内存: ${metrics.memory_used / 1024 / 1024}MB / ${metrics.memory_total / 1024 / 1024}MB`);
+}
+```
+
+### 权限配置
+
+Tauri 2.0 引入了基于权限的安全模型——插件的每个能力都需要在配置文件中显式声明。
+
+```json
+// src-tauri/capabilities/default.json
+{
+  "identifier": "default",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "fs:allow-read",
+    "fs:allow-write",
+    "store:default",
+    "notification:default",
+    "system-monitor:allow-get-metrics"
+  ]
+}
+```
+
+<Note title="💡 一句话总结">
+
+Tauri 的插件系统用 Rust 编写，通过 `tauri::plugin::Builder` 注册，前端通过 `invoke('plugin:name|command')` 调用。官方提供了 store、sql、notification 等常用插件，自定义插件只需实现 `#[tauri::command]` 函数并注册。
+
+</Note>
+
+---
+
+## Q5: 高频面试题
+
+<AccordionGroup>
+
+  <Accordion title="Tauri 和 Electron 的核心区别是什么？" icon="layer-group">
+
+    **答题要点：**
+    从渲染引擎、后端语言、包体积、内存四个维度对比。
+
+    **高分回答：**
+    "Tauri 和 Electron 的核心区别在于**渲染引擎和后端语言**：
+
+    **渲染引擎：** Electron 内嵌完整的 Chromium 浏览器（约 120MB），每个窗口是一个独立的 Chromium 渲染进程。Tauri 使用操作系统自带的 WebView——macOS 用 WKWebView（Safari 引擎），Windows 用 WebView2（Edge/Chromium 引擎），Linux 用 WebKitGTK（WebKit 引擎）。系统 WebView 已经存在于用户的操作系统中，不需要额外打包。
+
+    **后端语言：** Electron 的后端用 Node.js（JavaScript 运行时），Tauri 的后端用 Rust（系统级语言）。Rust 的优势是内存安全（编译时保证无内存泄漏）和高性能（接近 C++ 的执行速度）。
+
+    **包体积和内存：**
+
+    ```text
+    Electron: 内嵌 Chromium + Node.js → 包体积 150-200MB → 内存 150-400MB
+    Tauri:    系统 WebView + Rust     → 包体积 3-10MB    → 内存 30-100MB
+    ```
+
+    **选择建议：** 团队只有前端技术栈、需要最好的 Web 兼容性 → Electron。对包体积有严格要求、团队有 Rust 经验 → Tauri。需要同时覆盖桌面和移动端 → Tauri 2.0。"
+
+  </Accordion>
+
+  <Accordion title="Tauri 的 IPC 通信机制是什么？" icon="layer-group">
+
+    **答题要点：**
+    讲清楚 invoke/command 和 emit/listen 两种模式。
+
+    **高分回答：**
+    "Tauri 的 IPC 通信有两种模式：
+
+    **1. invoke/command（双向，前端 → Rust）：** 前端调用 `invoke('command_name', { arg1, arg2 })`，Rust 端通过 `#[tauri::command]` 标记的函数处理请求并返回结果。返回的是 Promise，支持异步操作。
+
+    ```javascript
+    // 前端
+    const content = await invoke('read_file', { path: 'data.txt' });
+    ```
+
+    ```rust
+    // Rust
+    #[tauri::command]
+    fn read_file(path: String) -> Result<String, String> {
+        std::fs::read_to_string(&path).map_err(|e| e.to_string())
+    }
+    ```
+
+    **2. emit/listen（事件系统）：** Rust 可以通过 `app.emit_all('event_name', payload)` 向所有窗口推送事件，前端通过 `listen('event_name', callback)` 监听。前端也可以通过 `emit()` 向 Rust 发送事件。
+
+    Tauri 的 IPC 与 Electron 的区别：Tauri 使用序列化消息（serde），参数必须实现 `Serialize`/`Deserialize` trait。这比 Electron 的 V8 值传递更安全——类型错误在编译时就能发现，而不是运行时崩溃。"
+
+  </Accordion>
+
+  <Accordion title="Tauri 的安全模型是什么？" icon="stopwatch">
+
+    **答题要点：**
+    讲清楚 Tauri 2.0 的权限系统和 CSP 配置。
+
+    **高分回答：**
+    "Tauri 2.0 引入了基于**权限（Permissions）**的安全模型——每个插件的每个能力都需要在配置文件中显式声明，未声明的能力默认禁止。
+
+    ```json
+    // capabilities/default.json
+    {
+      "identifier": "default",
+      "windows": ["main"],
+      "permissions": [
+        "core:default",
+        "fs:allow-read",
+        "fs:allow-write",
+        "shell:allow-open",
+        "notification:default"
+      ]
+    }
+    ```
+
+    安全模型的三层防护：
+
+    **第一层：权限声明** — 所有能力必须在 `capabilities` 中声明，未声明的命令前端调用会被拒绝。
+
+    **第二层：CSP 配置** — 与 Electron 类似，通过 CSP 限制渲染进程可以加载的资源来源。
+
+    **第三层：Rust 类型安全** — IPC 参数必须实现 `Serialize`/`Deserialize` trait，类型错误在编译时发现。Rust 的所有权系统保证没有内存泄漏和数据竞争。
+
+    Tauri 比 Electron 更安全的根本原因是：Rust 的编译时安全保证远超 Node.js 的运行时检查。"
+
+  </Accordion>
+
+  <Accordion title="Tauri 2.0 的移动端支持是怎么实现的？" icon="stopwatch">
+
+    **答题要点：**
+    讲清楚跨平台编译和平台特定适配。
+
+    **高分回答：**
+    "Tauri 2.0 的移动端支持通过**跨平台编译 + 平台特定 WebView** 实现：
+
+    **iOS 端：** 使用 WKWebView（Safari 引擎）渲染前端页面，Rust 代码编译为 iOS 原生库（通过 `cargo build --target aarch64-apple-ios`）。Swift 代码作为启动入口，加载 Rust 库并初始化 Tauri 运行时。
+
+    **Android 端：** 使用 Android WebView（Chromium 引擎）渲染前端页面，Rust 代码编译为 Android 原生库（通过 `cargo build --target aarch64-linux-android`）。Kotlin 代码作为启动入口。
+
+    ```text
+    跨平台编译流程：
+
+    前端代码（React/Vue/Svelte）
+      ↓ 通用，无需修改
+    Rust 后端代码
+      ↓ cargo build --target xxx
+    ┌──────────┬──────────┬──────────┬──────────┐
+    │ macOS    │ Windows  │ iOS      │ Android  │
+    │ .app     │ .exe     │ .ipa     │ .apk     │
+    └──────────┴──────────┴──────────┴──────────┘
+    ```
+
+    关键点：前端代码完全通用，不需要修改。Rust 后端代码大部分通用，但涉及平台特定 API 时需要用 `#[cfg(target_os = "ios")]` 做条件编译。"
+
+  </Accordion>
+
+  <Accordion title="Tauri 中如何实现窗口管理和系统托盘？" icon="node">
+
+    **答题要点：**
+    用 Rust 代码展示窗口管理和系统托盘的实现。
+
+    **高分回答：**
+    "Tauri 的窗口管理和系统托盘都通过 Rust 后端实现：
+
+    ```rust
+    // 窗口管理
+    use tauri::{Manager, WindowBuilder, WindowUrl};
+
+    #[tauri::command]
+    fn open_settings_window(app: tauri::AppHandle) {
+        // 创建新窗口
+        let _settings_window = WindowBuilder::new(
+            &app,
+            "settings",
+            WindowUrl::App("settings.html".into())
+        )
+        .title("设置")
+        .inner_size(600.0, 400.0)
+        .resizable(false)
+        .build()
+        .unwrap();
+    }
+
+    // 系统托盘
+    use tauri::{SystemTray, SystemTrayEvent, SystemTrayMenu, CustomMenuItem};
+
+    fn create_system_tray() -> SystemTray {
+        let quit = CustomMenuItem::new("quit".to_string(), "退出");
+        let show = CustomMenuItem::new("show".to_string(), "显示窗口");
+        let tray_menu = SystemTrayMenu::new()
+            .addItem(show)
+            .add_native_item(tauri::SystemTrayMenuItem::Separator)
+            .addItem(quit);
+
+        SystemTray::new().with_menu(tray_menu)
+    }
+    ```
+
+    前端也可以通过 `@tauri-apps/api/window` 控制窗口：
+
+    ```javascript
+    import { appWindow } from '@tauri-apps/api/window';
+
+    await appWindow.minimize();
+    await appWindow.maximize();
+    await appWindow.setFullscreen(true);
+    await appWindow.setPosition(new LogicalPosition(100, 100));
+    ```"
+
+  </Accordion>
+
+  <Accordion title="Tauri 的插件系统怎么用？如何编写自定义插件？" icon="node">
+
+    **答题要点：**
+    展示官方插件的使用和自定义插件的编写。
+
+    **高分回答：**
+    "Tauri 的插件分官方插件和自定义插件。
+
+    **使用官方插件：** 在 `Cargo.toml` 添加依赖，`main.rs` 中注册插件，前端通过对应的 JS 包调用。
+
+    ```rust
+    // Cargo.toml
+    tauri-plugin-store = "2"
+    tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+    ```
+
+    ```javascript
+    // 前端
+    import { Store } from '@tauri-apps/plugin-store';
+    const store = await Store.load('settings.json');
+    await store.set('theme', 'dark');
+    ```
+
+    **编写自定义插件：** 用 Rust 定义 `#[tauri::command]` 函数，通过 `tauri::plugin::Builder` 注册。
+
+    ```rust
+    // 自定义插件
+    use tauri::plugin::{Builder, TauriPlugin};
+    use tauri::Runtime;
+
+    #[tauri::command]
+    fn get_metrics() -> Metrics { /* ... */ }
+
+    pub fn init<R: Runtime>() -> TauriPlugin<R> {
+        Builder::new("my-plugin")
+            .invoke_handler(tauri::generate_handler![get_metrics])
+            .build()
+    }
+    ```
+
+    ```javascript
+    // 前端调用
+    const metrics = await invoke('plugin:my-plugin|get_metrics');
+    ```
+
+    Tauri 2.0 的插件还支持权限配置——每个插件的能力都需要在 `capabilities` 中声明，未声明的能力默认禁止。"
+
+  </Accordion>
+
+  <Accordion title="🔥 Tauri 的系统 WebView 兼容性问题怎么处理？" icon="skull">
+
+    **答题要点：**
+    讲清楚不同平台 WebView 引擎的差异和兼容性策略。
+
+    **高分回答：**
+    "Tauri 使用系统 WebView 是它的核心优势，但也带来了兼容性挑战——不同平台的 WebView 引擎不同，Web API 的支持程度也有差异。
+
+    引擎差异：
+    - **macOS (WKWebView)**：基于 WebKit，CSS 和 JS 支持较新，但某些 Chrome 专有 API 不可用（如 `chrome.*` 系列）
+    - **Windows (WebView2)**：基于 Chromium (Edge)，与 Chrome 兼容性最好，但需要 Windows 10+ 或安装 WebView2 Runtime
+    - **Linux (WebKitGTK)**：版本取决于系统，可能较旧，某些新特性可能缺失
+
+    兼容性策略：
+
+    ```javascript
+    // 1. 功能检测而非浏览器检测
+    if ('backdrop-filter' in document.documentElement.style) {
+      // 支持 backdrop-filter
+    }
+
+    // 2. 使用 Browserslist 配置构建目标
+    // package.json
+    {
+      "browserslist": ["last 2 Safari versions", "last 2 Edge versions"]
+    }
+
+    // 3. 使用 polyfill 填补差异
+    // 如 core-js、whatwg-fetch 等
+
+    // 4. 在 CI 中使用不同平台的 WebView 进行测试
+    // GitHub Actions 支持 macOS、Windows、Linux 三种环境
+    ```
+
+    实际项目中的经验：如果应用只在 macOS 和 Windows 上运行（WebView2 已内置在 Windows 10+），兼容性问题很小。如果需要支持 Linux，需要特别注意 WebKitGTK 的版本差异。"
+
+  </Accordion>
+
+  <Accordion title="🔥 如何从 Electron 迁移到 Tauri？" icon="skull">
+
+    **答题要点：**
+    讲清楚迁移步骤、风险点和注意事项。
+
+    **高分回答：**
+    "从 Electron 迁移到 Tauri 需要四个步骤：
+
+    **1. 前端代码迁移（低成本）：** Tauri 的前端与 Electron 一样是标准 Web 页面，React/Vue/Svelte 代码基本不需要修改。需要替换的是 `electron` 相关的 API 调用——将 `ipcRenderer.invoke()` 替换为 `@tauri-apps/api` 的 `invoke()`。
+
+    **2. 主进程逻辑迁移（中等成本）：** Electron 的主进程用 Node.js 编写，Tauri 的后端用 Rust 编写。需要将 Node.js 逻辑重写为 Rust。文件系统操作、数据库访问、HTTP 请求等需要用 Rust 的 crate 替代 Node.js 的 npm 包。
+
+    **3. 系统集成迁移（中等成本）：** 窗口管理、系统托盘、全局快捷键、通知等系统 API 需要用 Tauri 的 Rust API 替代 Electron 的 Node.js API。API 设计理念不同，需要逐个适配。
+
+    **4. 打包分发迁移（低成本）：** 从 electron-builder 迁移到 Tauri 的内置打包系统（`tauri build`）。Tauri 自动处理各平台的打包格式（.dmg、.msi、.AppImage）。
+
+    迁移风险：
+    - **Web 兼容性**：Electron 用 Chromium，Tauri 用系统 WebView，某些 Web API 可能有差异
+    - **Rust 学习成本**：团队需要学习 Rust 基础，特别是所有权和生命周期概念
+    - **npm 包替代**：部分 Node.js 专有的 npm 包没有 Rust 等价物
+
+    建议：先用 Tauri 实现一个功能最简单的页面，验证 WebView 兼容性和 IPC 通信，再逐步迁移其他功能。"
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## 🔍 底层源码：Tauri 是如何实现的？
+
+<div class="follow-up">
+Tauri 的 IPC 消息是如何在前端和 Rust 之间传递的？
+</div>
+
+Tauri 的 IPC 底层使用 Webview 的原生消息传递机制（[tauri-core/src/ipc](https://github.com/tauri-apps/tauri/tree/dev/core/tauri/src/ipc)）。前端调用 `invoke()` 时，消息被序列化为 JSON，通过 WebView 的 `postMessage` 或平台特定的 IPC 通道传递给 Rust 后端：
+
+```rust
+// tauri-core/src/ipc.rs（简化）
+// Rust 端接收 IPC 消息
+pub(crate) fn handle_ipc_message<R: Runtime>(
+    manager: &WindowManager<R>,
+    window: &Window<R>,
+    message: InvokeBody,
+) {
+    // 1. 反序列化消息
+    let command = message.command;
+    let args = serde_json::from_value::<InvokeArgs>(message.args)?;
+
+    // 2. 查找注册的命令处理函数
+    let handler = manager.invoke_handler().get(&command);
+
+    // 3. 执行命令并返回结果
+    match handler {
+        Some(handler) => {
+            let result = handler(window.clone(), args);
+            // 4. 将结果序列化回传给前端
+            window.eval(&format!(
+                "window.__TAURI_INTERNALS__.invokeResult({}, {})",
+                message.id,
+                serde_json::to_string(&result)?
+            ))?;
+        }
+        None => {
+            // 命令未注册，返回错误
+            window.eval(&format!(
+                "window.__TAURI_INTERNALS__.invokeError({}, 'Command not found')",
+                message.id
+            ))?;
+        }
+    }
+}
+```
+
+前端的 `@tauri-apps/api` 包内部将 `invoke()` 调用转换为 WebView 的 `postMessage`，Rust 端通过 `webkit_message_handler`（macOS）或 `WebView2 的 AddHostObjectToScript`（Windows）接收消息。
+
+<div class="follow-up">
+Tauri 的权限系统是怎么实现的？
+</div>
+
+Tauri 2.0 的权限系统实现在 `tauri-utils/src/capability`（[tauri-core/src/manager](https://github.com/tauri-apps/tauri/tree/dev/core/tauri-utils/src/capability)）。每个命令在执行前都会经过权限检查：
+
+```rust
+// tauri-core/src/manager.rs（简化）
+fn check_permission(
+    capability: &Capability,
+    command: &str,
+    plugin: &str,
+) -> Result<(), PermissionError> {
+    // 1. 构建权限标识符：plugin:command
+    let permission_id = format!("{}:{}", plugin, command);
+
+    // 2. 检查 capability 中是否声明了该权限
+    if capability.permissions.contains(&permission_id) {
+        return Ok(());
+    }
+
+    // 3. 检查通配符权限（如 fs:allow-read）
+    let wildcard = format!("{}:*", plugin);
+    if capability.permissions.contains(&wildcard) {
+        return Ok(());
+    }
+
+    // 4. 未声明的权限，拒绝执行
+    Err(PermissionError::PermissionDenied(permission_id))
+}
+```
+
+权限声明存储在 `capabilities/*.json` 文件中，应用启动时加载并缓存。每个窗口可以有不同的权限集——这实现了**最小权限原则**：每个窗口只能访问它需要的能力。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 Tauri 和 Electron 的区别，你会怎么选？"
+
+**及格回答（60-70分）：**
+> "Tauri 用系统 WebView，Electron 用 Chromium，所以 Tauri 包体积更小、内存占用更低。Tauri 后端用 Rust，Electron 用 Node.js。"
+
+面试官评价：**知道基本差异但不理解选型逻辑**。
+
+**满分回答（90-100分）：**
+
+> Tauri 和 Electron 的核心区别在于**渲染引擎和后端语言**。Electron 内嵌完整的 Chromium 浏览器（约 120MB），Tauri 使用操作系统自带的 WebView（macOS 用 WKWebView，Windows 用 WebView2，Linux 用 WebKitGTK），系统 WebView 已经存在于用户的操作系统中，不需要额外打包。这直接导致了包体积的巨大差异：Electron 约 150-200MB，Tauri 约 3-10MB。内存方面，Electron 每个窗口是独立的 Chromium 渲染进程（50-100MB/窗口），Tauri 的 WebView 更轻量（30-100MB/应用）。<sup>[1]</sup>
+
+> 后端语言的选择影响了安全性和性能。Rust 在编译时保证内存安全（无空指针、无数据竞争），而 Node.js 是运行时检查。对于桌面应用这种需要长期运行的场景，Rust 的内存安全保证意味着更少的内存泄漏和更稳定的运行。但代价是学习曲线——团队需要学习 Rust 的所有权和生命周期概念，这对纯前端团队是一个不小的挑战。<sup>[2]</sup>
+
+> 选型建议：如果团队只有前端技术栈、应用需要复杂的 Web 渲染（如内嵌 iframe 加载第三方内容），选 Electron——它的 Web 兼容性最好（就是 Chrome），生态最成熟。如果对包体积有严格要求（如工具类应用需要小安装包）、团队愿意学习 Rust，选 Tauri。如果需要同时覆盖桌面和移动端，Tauri 2.0 是唯一的选择——Electron 不支持移动端。
+
+> 我在实际项目中的经验：一个内部工具应用从 Electron 迁移到 Tauri 后，安装包从 187MB 缩小到 8.2MB，内存占用从 280MB 降到 45MB。迁移成本主要是将 Node.js 的文件系统操作和数据库访问重写为 Rust，前端代码几乎不需要修改。
+
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [Tauri 官方文档](https://v2.tauri.app/start/)：Tauri 官方对架构、IPC、插件系统的最权威解释。<sup>[1]</sup>
+- 📖 [Tauri vs Electron 对比](https://vauri.app/start/)：Tauri 官方对比文档，详细分析了包体积、内存占用、安全性等维度的差异。<sup>[2]</sup>
+- 🟢 [Tauri 2.0 发布博客](https://v2.tauri.app/blog/tauri-20/)：Tauri 2.0 的新特性详解，包括移动端支持和权限系统。<sup>[3]</sup>
+- 🔗 [Tauri GitHub 仓库](https://github.com/tauri-apps/tauri)：Tauri 源码，包含核心框架、插件系统和示例应用。<sup>[4]</sup>
+- 📖 [Rust 所有权系统](https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html)：理解 Tauri 后端安全性的基础——Rust 的所有权系统在编译时保证内存安全。<sup>[5]</sup>
+- 🟢 [WebView2 文档](https://learn.microsoft.com/en-us/microsoft-edge/webview2/)：Windows 上 Tauri 使用的 WebView 引擎的官方文档。<sup>[6]</sup>
+- 🔗 [WebKitGTK 文档](https://webkitgtk.org/)：Linux 上 Tauri 使用的 WebView 引擎的官方文档。<sup>[7]</sup>
+- 📖 [Tauri 插件生态](https://v2.tauri.app/plugin/)：Tauri 官方和社区插件列表，涵盖存储、数据库、通知等常用能力。<sup>[8]</sup>

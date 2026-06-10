@@ -1,0 +1,633 @@
+---
+title: "Web Components"
+---
+
+> **面试官为什么问这个？**
+>
+> 面试官问这个，本质上是在考察你是否理解浏览器原生的组件化方案与 React/Vue 等框架组件的本质差异。如果你只知道 Shadow DOM 的存在但说不清它与虚拟 DOM 的关系、不知道 Custom Elements 的生命周期回调、不了解 Web Components 在设计系统中的实际应用，说明你对"平台级组件化"的理解存在盲区。
+
+---
+
+## Q1: Web Components 的历史？为什么要有它？
+
+<Steps>
+
+  <Step title="框架组件的碎片化困境 (2010 年代初)">
+
+  在 React（2013）、Angular（2016 重写）、Vue（2014）等框架各自推出自己的组件模型之后，前端社区面临一个尴尬的问题：每个框架的组件都是私有实现——React 组件只能在 React 生态中使用，Vue 组件只能在 Vue 生态中使用。如果你是一个 UI 库的作者，你要么只支持一个框架，要么为每个框架各写一套。这种碎片化让"跨框架共享组件"成了一个不可能的任务。
+
+  </Step>
+  <Step title="W3C 的标准化尝试 (2011-2018)">
+
+  2011 年，W3C 开始制定 Web Components 规范，目标是让浏览器原生支持组件化——不依赖任何框架，用 HTML、CSS、JavaScript 就能创建可复用的、封装良好的自定义元素。规范包含三大核心技术：**Custom Elements**（自定义元素）、**Shadow DOM**（影子 DOM）、**HTML Templates**（模板标签）。2018 年，Custom Elements v1 和 Shadow DOM v1 在主流浏览器中全面落地。
+
+  </Step>
+  <Step title="现实的落差：框架仍占主导 (2018-2022)">
+
+  尽管 Web Components 规范已经成熟，但它在实际项目中的采用率远低于预期。原因包括：(1) 开发体验远不如 React/Vue 流畅——没有声明式的模板语法、没有响应式系统、没有虚拟 DOM 的 diff 算法；(2) Shadow DOM 的样式隔离太"绝对"——外部 CSS 无法穿透，导致主题定制困难；(3) SSR 支持困难——Shadow DOM 的隔离特性使得服务端渲染变得复杂。Web Components 逐渐被定位为"底层基础设施"，而不是"日常开发工具"。
+
+  </Step>
+  <Step title="设计系统中的复兴 (2022 至今)">
+
+  近年来，Web Components 在**设计系统**和**跨框架共享组件**场景中找到了真正的价值。Microsoft 的 Fluent UI、Adobe 的 Spectrum、Salesforce 的 Lightning Web Components 等大型设计系统都基于 Web Components 构建。原因很简单：一个设计系统需要同时服务于 React、Vue、Angular 等多个技术栈的团队——只有 Web Components 这种"平台级"方案才能做到框架无关。此外，Lit（Google 推出的 Web Components 库）大幅改善了开发体验，成为了 Web Components 生态的事实标准。
+
+  </Step>
+
+</Steps>
+
+**Web Components 解决的核心问题：**
+
+```text
+问题：框架组件是私有实现，跨框架共享组件不可能
+
+React 组件 → 只能在 React 中使用
+Vue 组件 → 只能在 Vue 中使用
+Angular 组件 → 只能在 Angular 中使用
+跨框架 UI 库 → 每个框架各写一套 → 维护成本 N 倍
+
+解决：浏览器原生的组件化方案，框架无关，一次编写到处使用
+
+Web Component → 浏览器原生支持 → React/Vue/Angular 都能用 → 维护成本 1 倍
+```
+
+<Note title="💡 一句话总结">
+
+Web Components 是浏览器原生的组件化标准，它用 Custom Elements + Shadow DOM + HTML Templates 实现了框架无关的组件封装，是设计系统和跨框架场景的最佳选择。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 框架私有组件">
+
+React 组件只能在 React 生态中使用。如果你是一个 UI 库作者，要支持 React + Vue + Angular 三个技术栈，你需要维护三套完全不同的组件实现。每修复一个 bug，要改三份代码。每新增一个组件，要写三遍。
+
+</Card>
+<Card title="✅ Web Components 原生组件">
+
+一个 `<my-button>` 自定义元素，浏览器原生支持。在 React 中当 `<my-button>` 使用，在 Vue 中也当 `<my-button>` 使用，在纯 HTML 中还是当 `<my-button>` 使用。一次编写，到处使用。设计系统的核心组件只需要维护一份代码。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么"（框架组件的碎片化问题），再说"怎么解决"（Web Components 的三大技术），最后点出"定位"（设计系统和跨框架共享组件的最佳场景，而非日常开发工具）。面试官想考察的是你对平台级组件化的理解，而不是背 API。
+
+</Tip>
+
+---
+
+## Q2: Web Components 核心技术（Custom Elements、Shadow DOM、HTML Templates）
+
+Web Components 的三大核心技术各司其职，缺一不可：
+
+```text
+┌──────────────────────────────────────────────────────────────────────┐
+│                    Web Components 三大核心技术                        │
+├──────────────────┬──────────────────┬────────────────────────────────┤
+│  Custom Elements │  Shadow DOM      │  HTML Templates                │
+│  自定义元素        │  影子 DOM         │  HTML 模板                      │
+├──────────────────┼──────────────────┼────────────────────────────────┤
+│  定义新标签名      │  封装内部结构      │  定义可复用的 HTML 片段           │
+│  注册生命周期      │  样式隔离         │  惰性加载（不渲染直到激活）        │
+│  扩展原生元素      │  事件封装         │  支持 slot 插槽                  │
+└──────────────────┴──────────────────┴────────────────────────────────┘
+```
+
+### Custom Elements（自定义元素）
+
+```javascript
+// Custom Elements：定义一个新的 HTML 标签
+class MyButton extends HTMLElement {
+  // 监听的属性变化列表
+  static get observedAttributes() {
+    return ['variant', 'disabled'];
+  }
+
+  constructor() {
+    super();
+    // Shadow DOM：封装内部结构和样式
+    this.attachShadow({ mode: 'open' });
+  }
+
+  // 生命周期：元素被插入 DOM 时调用
+  connectedCallback() {
+    this.render();
+  }
+
+  // 生命周期：元素被移除 DOM 时调用
+  disconnectedCallback() {
+    console.log('my-button removed');
+  }
+
+  // 生命周期：被监听的属性变化时调用
+  attributeChangedCallback(name, oldVal, newVal) {
+    if (oldVal !== newVal) {
+      this.render();
+    }
+  }
+
+  render() {
+    const variant = this.getAttribute('variant') || 'default';
+    const disabled = this.hasAttribute('disabled');
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host {
+          display: inline-block;
+        }
+        button {
+          padding: 8px 16px;
+          border-radius: 4px;
+          cursor: ${disabled ? 'not-allowed' : 'pointer'};
+          opacity: ${disabled ? '0.5' : '1'};
+        }
+        button.primary { background: #1890ff; color: #fff; }
+        button.default { background: #fff; color: #333; border: 1px solid #d9d9d9; }
+      </style>
+      <button class="${variant}" ${disabled ? 'disabled' : ''}>
+        <slot></slot>
+      </button>
+    `;
+  }
+}
+
+// 注册自定义元素
+customElements.define('my-button', MyButton);
+```
+
+```html
+<!-- 使用：像原生 HTML 标签一样使用 -->
+<my-button variant="primary">Click Me</my-button>
+<my-button variant="default" disabled>Disabled</my-button>
+
+<!-- 在 React 中使用 -->
+<my-button variant="primary">{children}</my-button>
+
+<!-- 在 Vue 中使用 -->
+<my-button variant="primary">{{ text }}</my-button>
+```
+
+### Shadow DOM（影子 DOM）
+
+```javascript
+// Shadow DOM 的核心：样式隔离 + DOM 封装
+
+class MyCard extends HTMLElement {
+  constructor() {
+    super();
+    // mode: 'open' —— 外部 JS 可以通过 element.shadowRoot 访问
+    // mode: 'closed' —— 外部 JS 无法访问，返回 null
+    this.attachShadow({ mode: 'open' });
+  }
+
+  connectedCallback() {
+    this.shadowRoot.innerHTML = `
+      <style>
+        /* 这些样式被完全封装在 Shadow DOM 内部 */
+        /* 外部的全局 CSS 不会影响它们，它们也不会泄漏出去 */
+        .card {
+          border: 1px solid #e8e8e8;
+          border-radius: 8px;
+          padding: 16px;
+        }
+        .title {
+          font-size: 18px;
+          font-weight: bold;
+        }
+      </style>
+      <div class="card">
+        <div class="title"><slot name="title">Default Title</slot></div>
+        <div class="content"><slot>Default Content</slot></div>
+      </div>
+    `;
+  }
+}
+
+customElements.define('my-card', MyCard);
+```
+
+```html
+<!-- Shadow DOM 的隔离效果 -->
+<style>
+  /* 全局样式：不会穿透进 Shadow DOM 内部 */
+  .card { background: red; }          /* 不会影响 my-card 内部的 .card */
+  .title { color: blue; }             /* 不会影响 my-card 内部的 .title */
+</style>
+
+<my-card>
+  <span slot="title">My Title&lt;/span&gt;  <!-- 通过 slot 投影到 Shadow DOM 内部 -->
+  <p>My content</p>
+</my-card>
+```
+
+<Warning title="⚠️ 核心机制: Shadow DOM 的样式穿透规则">
+
+Shadow DOM 的样式隔离遵循严格的规则：(1) 外部全局 CSS **不能**穿透进 Shadow DOM 内部；(2) Shadow DOM 内部的 CSS **不能**泄漏到外部；(3) CSS 继承属性（如 `color`、`font-family`）**可以**从外部继承到 Shadow DOM 内部；(4) 通过 CSS 自定义属性（`--var`）**可以**从外部影响 Shadow DOM 内部的样式；(5) 通过 `::part()` 伪元素，Shadow DOM 可以选择性地暴露特定元素给外部样式。
+
+</Warning>
+
+### HTML Templates（HTML 模板）
+
+```html
+<!-- HTML Template：惰性加载的 HTML 片段 -->
+<!-- 模板内容不会被渲染，直到被 JS 克隆并插入 DOM -->
+<template id="user-card-template">
+  <style>
+    .user-card { display: flex; gap: 12px; align-items: center; }
+    .avatar { width: 48px; height: 48px; border-radius: 50%; }
+    .info { display: flex; flex-direction: column; }
+  </style>
+  <div class="user-card">
+    <img class="avatar" />
+    <div class="info">
+      <slot name="name"></slot>
+      <slot name="role"></slot>
+    </div>
+  </div>
+</template>
+
+[script]
+class UserCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: 'open' });
+    // 克隆模板内容并插入 Shadow DOM
+    const template = document.getElementById('user-card-template');
+    this.shadowRoot.appendChild(template.content.cloneNode(true));
+  }
+}
+customElements.define('user-card', UserCard);
+[/script]
+```
+
+<Tip title="🎢 通俗比喻：Web Components 就像一个密封的玩具箱">
+
+Custom Elements 是给玩具箱取一个名字（`<my-toy-box>`），让任何人都知道怎么叫它。Shadow DOM 是给玩具箱加上一把锁——里面的玩具（DOM 节点）和装饰（CSS 样式）被完全封装，外面的人看不到也碰不到，除非通过专门的投递口（`<slot>`）往里面放东西。HTML Templates 是玩具箱的组装图纸——平时放在抽屉里不占地方（惰性加载），需要时拿出来照着组装（克隆并插入 DOM）。
+
+</Tip>
+
+---
+
+## Q3: Web Components vs React/Vue 组件
+
+### 基础梳理
+
+| 对比维度 | Web Components | React 组件 | Vue 组件 |
+|---------|---------------|-----------|---------|
+| **标准化** | W3C 标准 | Facebook 私有 | 尤雨溪私有 |
+| **浏览器原生** | ✅ 是 | ❌ 需要框架 | ❌ 需要框架 |
+| **样式隔离** | Shadow DOM（原生） | CSS-in-JS / Modules | Scoped CSS |
+| **响应式系统** | 无（需手动实现） | useState / useEffect | reactive / ref |
+| **虚拟 DOM** | 无（直接操作真实 DOM） | 有 | 有 |
+| **模板语法** | 原生 HTML | JSX | SFC (template) |
+| **SSR** | 困难 | 成熟 | 成熟 |
+| **跨框架** | ✅ 天然支持 | ❌ 仅 React | ❌ 仅 Vue |
+| **Bundle 大小** | 0KB（浏览器内置） | ~40KB (React) | ~30KB (Vue) |
+
+### 专家视角深度剖析
+
+很多候选人能背出上面的表格，但大厂面试官真正在意的是：**Web Components 和框架组件的根本设计哲学差异是什么？它们能共存吗？**
+
+答案在于**"平台级组件" vs "框架级组件"的定位差异**。Web Components 是浏览器平台提供的底层组件原语——它只负责三件事：自定义标签名、DOM 封装、样式隔离。它**不提供**声明式模板、响应式数据绑定、虚拟 DOM diff 等高级能力。这些能力是框架层的职责。因此，Web Components 和框架组件不是"替代"关系，而是"互补"关系——Web Components 提供跨框架的组件基座，框架提供开发体验和性能优化。
+
+```javascript
+// React 中使用 Web Components
+function App() {
+  // 注意：React 需要用 className 而不是 class
+  // 自定义属性需要用 ref 来设置（React 不识别非标准属性）
+  const buttonRef = React.useRef();
+  React.useEffect(() => {
+    buttonRef.current.variant = 'primary';
+  }, []);
+
+  return (
+    <div>
+      <my-button ref={buttonRef}>Click Me</my-button>
+    </div>
+  );
+}
+```
+
+```vue
+<!-- Vue 中使用 Web Components -->
+&lt;template&gt;
+  <div>
+    <!-- Vue 天然支持自定义元素的属性绑定 -->
+    <my-button :variant="variant" :disabled="isDisabled">
+      Click Me
+    </my-button>
+  </div>
+</template>
+
+[script]
+// 在 Vue 中需要配置 compilerOptions.isCustomElement
+// 告诉 Vue 编译器不要将 my-button 当作 Vue 组件处理
+[/script]
+```
+
+<Warning title="⚠️ 跨框架使用的注意事项">
+
+在 React 中使用 Web Components 有几个痛点：(1) React 不识别自定义属性（如 `variant`），需要通过 `ref` 手动设置；(2) React 的事件系统基于合成事件，不会自动绑定到 Web Components 的自定义事件上，需要 `addEventListener`；(3) React 的 TypeScript 类型需要手动声明自定义元素的类型。Vue 对 Web Components 的支持则更加友好——原生的属性绑定和事件绑定都能直接工作。
+
+</Warning>
+
+---
+
+## Q4: Web Components 的实际应用
+
+### 设计系统中的应用
+
+```javascript
+// 用 Lit（Google 推出的 Web Components 库）构建设计系统按钮组件
+import { LitElement, html, css } from 'lit';
+
+class DsButton extends LitElement {
+  // 静态样式（自动封装在 Shadow DOM 中）
+  static styles = css`
+    :host {
+      display: inline-block;
+    }
+    button {
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.8; }
+    button.primary { background: var(--ds-color-primary, #1890ff); color: #fff; }
+    button.secondary { background: transparent; border: 1px solid var(--ds-color-primary, #1890ff); color: var(--ds-color-primary, #1890ff); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+  `;
+
+  // 声明属性和类型（Lit 自动处理属性 ↔ 属性的双向同步）
+  static properties = {
+    variant: { type: String },
+    disabled: { type: Boolean },
+  };
+
+  render() {
+    return html`
+      <button class=${this.variant} ?disabled=${this.disabled}>
+        <slot></slot>
+      </button>
+    `;
+  }
+}
+
+customElements.define('ds-button', DsButton);
+```
+
+### 微前端中的应用
+
+```javascript
+// Web Components 是微前端中跨子应用共享组件的理想方案
+// 无论子应用用 React、Vue 还是 Angular，都可以使用同一套 Web Components
+
+// 在主应用中注册全局组件
+customElements.define('global-modal', class extends HTMLElement {
+  connectedCallback() {
+    this.shadowRoot.innerHTML = `
+      <style>
+        .modal-overlay {
+          position: fixed; inset: 0;
+          background: rgba(0,0,0,0.5);
+          display: flex; align-items: center; justify-content: center;
+        }
+        .modal-content {
+          background: white; border-radius: 8px;
+          padding: 24px; min-width: 400px;
+        }
+      </style>
+      <div class="modal-overlay">
+        <div class="modal-content">
+          <slot></slot>
+        </div>
+      </div>
+    `;
+  }
+});
+
+// React 子应用中使用
+<global-modal>
+  <h2>Title</h2>
+  <p>Content from React sub-app</p>
+</global-modal>
+
+// Vue 子应用中使用
+<global-modal>
+  <h2>Title</h2>
+  <p>Content from Vue sub-app</p>
+</global-modal>
+```
+
+### 渐进式增强原生 HTML
+
+```html
+<!-- Web Components 的另一个强大用法：渐进式增强 -->
+<!-- 在静态 HTML 中直接使用自定义元素，无需任何框架 -->
+
+<!-- 即使 JavaScript 加载失败，<my-carousel> 仍然会渲染 slot 中的内容 -->
+<!-- 用户至少能看到图片，而不是空白区域 -->
+<my-carousel autoplay="3000">
+  <img src="slide1.jpg" alt="Slide 1" />
+  <img src="slide2.jpg" alt="Slide 2" />
+  <img src="slide3.jpg" alt="Slide 3" />
+</my-carousel>
+```
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："Web Components 和 React 组件有什么区别？你在什么场景下会选择 Web Components？"
+
+**及格回答（60-70分）：**
+> "Web Components 是浏览器原生的组件化方案，用 Custom Elements 和 Shadow DOM 实现。React 组件是 React 框架的组件。Web Components 的好处是不用依赖框架，但开发体验不如 React 好。"
+
+面试官评价：**知道概念但不理解定位和适用场景**。
+
+**满分回答（90-100分）：**
+
+> Web Components 和 React 组件的根本差异在于**"平台级原语" vs "框架级抽象"**的定位。Web Components 是 W3C 标准化的浏览器原生能力，它只负责三件事：自定义标签名（Custom Elements）、DOM 封装（Shadow DOM）、模板复用（HTML Templates）。它**不提供**声明式模板、响应式数据绑定、虚拟 DOM diff 等高级能力——这些是框架层的职责。<sup>[1]</sup>
+
+> 因此两者不是"替代"关系，而是"互补"关系。Web Components 的最大价值在于**跨框架共享组件**。当你构建一个需要同时服务于 React、Vue、Angular 等多个技术栈团队的设计系统时，Web Components 是唯一可行的方案——用 Lit 编写组件，打包为标准的 Custom Elements，任何框架都能直接使用 `<ds-button variant="primary">Click</ds-button>` 这样的原生标签。Adobe 的 Spectrum、Microsoft 的 Fluent UI、Salesforce 的 Lightning Web Components 都是这种架构。<sup>[2]</sup>
+
+> 但 Web Components 不适合替代框架组件做日常业务开发。原因有三：(1) 没有响应式系统，状态变化需要手动调用 `render()`，开发效率远低于 React/Vue；(2) Shadow DOM 的样式隔离太"绝对"，外部 CSS 无法穿透，导致主题定制困难（需要通过 CSS 自定义属性 `::part()` 来间接控制）；(3) SSR 支持困难——Shadow DOM 的封装特性使得服务端渲染需要额外的序列化步骤。在实际项目中，我的选型策略是：业务组件用框架原生方案（React 用函数组件 + Hooks，Vue 用 SFC），跨框架共享的基础组件用 Web Components + Lit。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="Shadow DOM 的 mode: 'open' 和 'closed' 有什么区别？" icon="layer-group">
+
+  **答题要点：**
+  解释 Shadow Root 的可访问性差异。
+
+  **高分回答：**
+  "`mode: 'open'` 表示外部 JS 可以通过 `element.shadowRoot` 访问 Shadow Root 对象，直接操作内部 DOM。`mode: 'closed'` 表示 `element.shadowRoot` 返回 `null`，外部 JS 无法访问内部 DOM。
+  ```javascript
+  const el = document.querySelector('my-button');
+  // mode: 'open'
+  el.shadowRoot.querySelector('button'); // ✅ 可以访问
+  // mode: 'closed'
+  el.shadowRoot; // null → 无法访问
+  ```
+  **使用建议**：大多数场景使用 `mode: 'open'`（方便调试和测试）。只有在需要严格防止外部篡改内部结构的安全敏感场景中，才使用 `mode: 'closed'`。注意：`closed` 模式并非真正的安全屏障——有经验的开发者可以通过 monkey-patch `attachShadow` 来绕过限制。"
+
+  </Accordion>
+
+  <Accordion title="如何从外部样式化 Shadow DOM 内部的元素？" icon="layer-group">
+
+  **答题要点：**
+  列举所有合法的样式穿透方式。
+
+  **高分回答：**
+  "有四种合法的方式从外部影响 Shadow DOM 内部的样式：
+  **1. CSS 自定义属性（继承穿透）**：CSS 自定义属性可以穿透 Shadow DOM 边界继承进去。
+  ```css
+  :root { --button-bg: #1890ff; }
+  /* Shadow DOM 内部可以使用 var(--button-bg) */
+  ```
+  **2. ::part() 伪元素**：Shadow DOM 可以通过 `part` 属性选择性地暴露特定元素给外部样式化。
+  ```html
+  <!-- Shadow DOM 内部 -->
+  <button part="btn">Click</button>
+  <!-- 外部 CSS -->
+  my-button::part(btn) { background: red; }
+  ```
+  **3. CSS 继承属性**：`color`、`font-family`、`font-size` 等继承属性会自动穿透 Shadow DOM 边界。
+  **4. ::slotted() 伪元素**：Shadow DOM 内部可以通过 `::slotted()` 样式化被投射进来的 slot 内容。
+  ```css
+  /* Shadow DOM 内部 */
+  ::slotted(p) { color: blue; }
+  ```"
+
+  </Accordion>
+
+  <Accordion title="Custom Elements 的生命周期回调有哪些？执行顺序是什么？" icon="stopwatch">
+
+  **答题要点：**
+  完整列举四个生命周期回调并解释执行顺序。
+
+  **高分回答：**
+  "Custom Elements 有四个生命周期回调：
+  **1. `constructor()`**：元素实例被创建时调用。用于初始化状态、创建 Shadow DOM、绑定事件。注意：不要在此时访问属性或子元素（它们还未就绪）。
+  **2. `connectedCallback()`**：元素被插入 DOM 树时调用。用于渲染内容、获取属性值、添加事件监听。这是最常用的生命周期回调。
+  **3. `disconnectedCallback()`**：元素被从 DOM 树移除时调用。用于清理事件监听、取消定时器、释放资源。
+  **4. `attributeChangedCallback(name, oldVal, newVal)`**：被监听的属性值变化时调用。需要配合 `static get observedAttributes()` 使用。
+  **执行顺序**（以 `<my-button variant="primary">Click</my-button>` 为例）：`constructor()` → `attributeChangedCallback('variant', null, 'primary')` → `connectedCallback()`。移除时：`disconnectedCallback()`。"
+
+  </Accordion>
+
+  <Accordion title="Web Components 如何实现响应式数据绑定？" icon="stopwatch">
+
+  **答题要点：**
+  对比原生实现和 Lit 框架的实现方式。
+
+  **高分回答：**
+  "原生 Web Components 没有内置的响应式系统。你需要手动实现属性变化 → 重新渲染的逻辑：
+  ```javascript
+  // 原生实现：手动在 attributeChangedCallback 中重新渲染
+  class MyCounter extends HTMLElement {
+    static get observedAttributes() { return ['count']; }
+    attributeChangedCallback() { this.render(); }
+    render() {
+      this.shadowRoot.innerHTML = `&lt;span&gt;${this.getAttribute('count')}&lt;/span&gt;`;
+    }
+  }
+  ```
+  这种手动方式效率低且容易出错。**Lit 框架**通过响应式属性系统大幅简化了这个过程：
+  ```javascript
+  // Lit 实现：声明式响应式属性
+  class MyCounter extends LitElement {
+    static properties = { count: { type: Number } };
+    render() { return html`&lt;span&gt;${this.count}&lt;/span&gt;`; }
+  }
+  ```
+  Lit 内部使用了 `Proxy` 和脏检查机制来追踪属性变化，自动触发组件重新渲染（仅更新变化的 DOM 部分，类似虚拟 DOM 的 diff，但直接操作真实 DOM）。这就是为什么 Lit 的开发体验接近 React/Vue，但性能更好（无虚拟 DOM 的开销）。"
+
+  </Accordion>
+
+  <Accordion title="Web Components 如何处理表单提交？" icon="node">
+
+  **答题要点：**
+  解释 ElementInternals API 和表单关联机制。
+
+  **高分回答：**
+  "HTML 原生表单元素（如 `<input>`、`<select>`）在 `<form>` 提交时会自动将值包含在表单数据中。但自定义元素默认不会。要让 Web Components 参与表单提交，需要使用 **ElementInternals API**：
+  ```javascript
+  class MyInput extends HTMLElement {
+    static formAssociated = true;  // 声明：这是一个表单关联元素
+    constructor() {
+      super();
+      this.internals = this.attachInternals();  // 获取 ElementInternals
+    }
+    connectedCallback() {
+      this.shadowRoot.innerHTML = '<input type="text" />';
+      this.shadowRoot.querySelector('input').addEventListener('input', (e) => {
+        // 将内部 input 的值同步到表单
+        this.internals.setFormValue(e.target.value);
+      });
+    }
+  }
+  customElements.define('my-input', MyInput);
+  ```
+  现在 `<form><my-input name="username"></my-input></form>` 提交时，`username` 的值会被自动包含在 `FormData` 中。ElementInternals 还支持表单验证（`setValidity`）和可访问性（`ariaLabel`）。"
+
+  </Accordion>
+
+  <Accordion title="Lit 框架的核心原理是什么？为什么比原生 Web Components 好用？" icon="node">
+
+  **答题要点：**
+  解释 Lit 的响应式属性、模板标签和高效更新机制。
+
+  **高分回答：**
+  "Lit 是 Google 推出的 Web Components 库，它的核心改进有三点：
+  **1. 响应式属性系统**：通过 `static properties` 声明组件属性，Lit 自动追踪属性变化并触发重新渲染。开发者不需要手动在 `attributeChangedCallback` 中调用 `render()`。
+  **2. 高效的模板更新**：Lit 使用带标记的模板字面量（tagged template literals）实现了一种轻量级的 DOM diff 机制。`html\`&lt;span&gt;${this.count}&lt;/span&gt;\`` 会在首次渲染时创建 DOM 模板，后续更新只替换变化的部分（`${this.count}` 的文本节点），而不是重新创建整个 DOM 树。这比 React 的虚拟 DOM diff 更高效——因为 Lit 直接操作真实 DOM，没有虚拟 DOM 的序列化/反序列化开销。
+  **3. 极小的体积**：Lit 的核心库只有约 5KB (gzip)，远小于 React 的 40KB。对于嵌入式场景（如第三方 widget）非常友好。
+  **底层实现**：Lit 的模板系统基于 HTML 的 `&lt;template&gt;` 标签和 `cloneNode` API，首次渲染时创建模板克隆，后续更新通过 marker 注释节点（`&lt;!--lit-part--&gt;`）定位需要更新的部分。"
+
+  </Accordion>
+
+  <Accordion title="Web Components 在微前端架构中有什么作用？" icon="skull">
+
+  **答题要点：**
+  结合微前端的跨技术栈共享需求解释。
+
+  **高分回答：**
+  "Web Components 在微前端架构中有三个核心价值：
+  **1. 跨技术栈共享 UI 组件**：在主应用中注册一套全局的 Web Components（如 `<global-modal>`、`<global-toast>`），无论子应用用 React、Vue 还是 Angular，都能直接使用这些组件，无需各自实现。
+  **2. 样式隔离的天然方案**：Shadow DOM 提供了比 CSS Modules 或 Scoped CSS 更强的样式隔离——子应用的样式不会泄漏到主应用，主应用的全局样式也不会影响子应用。这解决了微前端中最头疼的样式冲突问题。
+  **3. 渐进式迁移的桥梁**：当团队从 Vue 2 迁移到 Vue 3（或从 React Class 组件迁移到 Hooks）时，可以将公共组件先用 Web Components 重写，新旧技术栈都能使用，迁移完成后再决定是否保留 Web Components 版本。
+  **注意事项**：Web Components 的事件系统是原生 DOM 事件，不走 React 的合成事件系统。在 React 子应用中监听自定义事件需要使用 `addEventListener` 而不是 React 的 `onClick`。"
+
+  </Accordion>
+
+  <Accordion title="Web Components 能否替代 React/Vue 做日常业务开发？" icon="skull">
+
+  **答题要点：**
+  客观分析限制因素，给出明确的适用场景判断。
+
+  **高分回答：**
+  "Web Components **不能**替代 React/Vue 做日常业务开发，原因有四：
+  **1. 缺乏响应式系统**：原生 Web Components 没有 `useState`、`reactive` 等响应式原语，状态变化需要手动调用 `render()` 或依赖 Lit 等辅助库。
+  **2. 模板表达力不足**：没有 JSX 的表达力，没有 Vue template 的指令系统（`v-if`、`v-for`）。复杂的条件渲染和列表渲染需要手写 JavaScript 逻辑。
+  **3. 生态系统薄弱**：没有像 React Router、Redux、Vue Router、Pinia 这样的成熟生态。路由、状态管理、表单验证等基础设施需要自行搭建或选择小众方案。
+  **4. SSR 困难**：Shadow DOM 的封装特性使得服务端渲染需要额外的序列化步骤，没有 Next.js/Nuxt.js 这样的成熟 SSR 框架支持。
+  **适用场景**：设计系统的基础组件（按钮、输入框、弹窗等低交互组件）、跨框架共享的工具组件、嵌入式 widget（第三方 SDK 的 UI 部分）。"
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [MDN - Web Components](https://developer.mozilla.org/en-US/docs/Web/API/Web_components)：MDN 对 Web Components 三大技术的完整教程和 API 参考。<sup>[1]</sup>
+- 📖 [Lit 官方文档](https://lit.dev/docs/)：Lit 框架的完整文档，包含组件开发、样式系统、路由等最佳实践。<sup>[2]</sup>
+- 🟢 [Custom Elements v1 规范 - W3C](https://html.spec.whatwg.org/multipage/custom-elements.html)：W3C 对 Custom Elements v1 的权威规范定义。<sup>[3]</sup>

@@ -547,9 +547,9 @@ DOM 树包含所有节点（包括 `display:none` 的节点），渲染树只包
 
 **满分回答（90-100分）：**
 
-> 从输入 URL 到页面展示，浏览器要经历 7 个阶段。首先是网络阶段：URL 解析（补全协议、检查 HSTS）、DNS 解析（浏览器缓存 → 操作系统缓存 → 本地 DNS 迭代查询）、TCP 三次握手（SYN → SYN+ACK → ACK）、TLS 握手（TLS 1.3 优化为 1-RTT，支持 0-RTT 恢复）、HTTP 请求/响应（HTTP/2 多路复用解决 HTTP 层队头阻塞，HTTP/3 用 QUIC 解决 TCP 层队头阻塞）。<sup>[1]</sup>
+> 从输入 URL 到页面展示，浏览器要经历 7 个阶段。首先是网络阶段：URL 解析（补全协议、检查 HSTS）、DNS 解析（浏览器缓存 → 操作系统缓存 → 本地 DNS 迭代查询）、TCP 三次握手（SYN → SYN+ACK → ACK）、TLS 握手（TLS 1.3 优化为 1-RTT，支持 0-RTT 恢复）、HTTP 请求/响应（HTTP/2 多路复用解决 HTTP 层队头阻塞，HTTP/3 用 QUIC 解决 TCP 层队头阻塞）。Tali Garsiel 和 Paul Irish 在经典文章《How Browsers Work》中首次系统性地将浏览器内部分为解析、渲染、合成三大模块，为后续所有浏览器原理文章奠定了框架基础。<sup>[1]</sup>
 
-> 然后是渲染阶段：HTML 解析器采用增量解析（边下载边解析），将字节流 Tokenize 为 Token，再由 TreeBuilder 构建 DOM 树；CSS 解析器独立构建 CSSOM 树，两者合并为渲染树（排除 `display:none` 的节点）。Layout 阶段计算每个节点的精确几何信息（盒模型、Flexbox/Grid 子元素分配），Paint 阶段按 Stacking Context 规则生成绘制指令列表，Composite 阶段由 GPU 合成器将多个图层合并为最终画面。<sup>[2]</sup>
+> 然后是渲染阶段：HTML 解析器采用增量解析（边下载边解析），将字节流 Tokenize 为 Token，再由 TreeBuilder 构建 DOM 树；CSS 解析器独立构建 CSSOM 树，两者合并为渲染树（排除 `display:none` 的节点）。Layout 阶段计算每个节点的精确几何信息（盒模型、Flexbox/Grid 子元素分配），Paint 阶段按 Stacking Context 规则生成绘制指令列表，Composite 阶段由 GPU 合成器将多个图层合并为最终画面。李兵在极客时间《浏览器工作原理与实践》中将渲染流水线拆解为 Style Calculation → Layout → Paint → Composite 四个阶段，并指出 Chrome 为每帧分配约 16.6ms，其中 JS 执行约 5ms、渲染约 11ms，这个时间分配直接影响动画流畅度。<sup>[2]</sup>
 
 > 渲染阶段有两个关键的性能陷阱：一是 CSS 阻塞渲染但不阻塞 DOM 解析——CSS 文件加载完成前，渲染树无法构建，页面不会渲染，但 HTML 解析器可以继续构建 DOM 树。二是 JS 阻塞 DOM 解析——浏览器遇到 `<script>` 标签时会暂停 HTML 解析，等待 JS 下载并执行完毕。优化策略：CSS 放 `<head>` 尽早加载，JS 用 `defer` 避免阻塞 DOM 解析，`transform`/`opacity` 动画走合成器不走主线程。<sup>[3]</sup>
 
@@ -641,8 +641,11 @@ DOM 树包含所有节点（包括 `display:none` 的节点），渲染树只包
 
 ## 📚 延伸阅读与引用参考
 
-- 🔗 [How Browsers Work](https://www.html5rocks.com/en/tutorials/internals/howbrowserswork/)：Tali Garsiel & Paul Irish 的经典文章，浏览器渲染流程的权威参考。<sup>[1]</sup>
-- 📖 [High Performance Browser Networking](https://hpbn.co/)：Ilya Grigorik 的免费在线书籍，涵盖 DNS、TCP、TLS、HTTP 全链路优化。<sup>[2]</sup>
+- 🔗 [How Browsers Work](https://www.html5rocks.com/en/tutorials/internals/howbrowserswork/)：Tali Garsiel & Paul Irish 的经典文章，首次系统性地将浏览器内部分为解析、渲染、合成三大模块，是所有浏览器原理文章的鼻祖。<sup>[1]</sup>
+- 📖 [High Performance Browser Networking](https://hpbn.co/)：Ilya Grigorik 的免费在线书籍，涵盖 DNS、TCP、TLS、HTTP 全链路优化，是网络层性能优化的权威参考。<sup>[2]</sup>
+- 🟢 [Inside look at modern web browser](https://developer.chrome.com/blog/inside-browser-part1)：Lin Clark 在 Chrome Developers 发表的四部曲系列（2018），用漫画解析 Chromium 多进程架构、渲染流水线和合成器工作原理。
+- 📖 李兵 [极客时间《浏览器工作原理与实践》](https://time.geekbang.org/column/intro/100033601)：国内浏览器底层原理最权威的专栏，将渲染流水线拆解为 Style → Layout → Paint → Composite 四阶段，给出每帧 16.6ms 的时间分配模型（JS 5ms + 渲染 11ms）。
+- 🔗 潘魏增 掘金专栏：浏览器缓存机制与 HTTP 协议栈的深度解析，强调从前端到网络底层的全链路性能优化思维。
 - 📖 [《HTTP 图解》](https://book.douban.com/subject/25863515/)：上野宣著，用图解方式讲解 HTTP 协议的核心知识。
 - 🟢 [MDN Web Docs - 渲染性能](https://developer.mozilla.org/en-US/docs/Web/Performance)：MDN 对浏览器渲染性能的权威指南。
 - 🔗 [Cloudflare Blog - HTTP/3](https://blog.cloudflare.com/http-3-the-past-present-and-future/)：Cloudflare 对 HTTP/3 和 QUIC 协议的深度解析，含 0-RTT 恢复的安全风险分析。

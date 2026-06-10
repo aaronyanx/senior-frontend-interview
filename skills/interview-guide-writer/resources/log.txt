@@ -1,0 +1,123 @@
+# Interview Question Verification Log
+
+Date: 2026-06-08
+
+## Verification Process
+
+Each question was searched on:
+- 牛客网 (nowcoder.com)
+- 掘金 (juejin.cn)
+- GitHub haizlin/fe-interview
+- CSDN
+- Other Chinese tech communities
+
+## Results Summary
+
+**Total questions verified: 58 (across 7 files)**
+**Questions found in real databases: 58/58 (100%)**
+**Questions needing replacement: 0**
+
+All questions across all 7 files are confirmed to exist in real interview databases. No changes were needed.
+
+---
+
+## File-by-File Verification
+
+### 1. vue/vue-reactivity.mdx (8 questions)
+
+| # | Question | Status | Sources Found |
+|---|----------|--------|---------------|
+| 1 | reactive 解构为什么会丢失响应式?怎么解决? | KEEP | 牛客网, 掘金, haizlin/fe-interview |
+| 2 | 为什么 ref 需要 .value 而 reactive 不需要? | KEEP | haizlin/fe-interview, 掘金 |
+| 3 | computed 和 watch 的实现原理有什么区别? | KEEP | 牛客网, 掘金 |
+| 4 | effectScope 是什么?为什么需要它? | KEEP | 掘金 (Vue 3.2+ 高频题) |
+| 5 | nextTick 的实现原理?为什么不用 setTimeout? | KEEP | 牛客网, 掘金 |
+| 6 | watch 和 watchEffect 的区别?什么时候用哪个? | KEEP | 掘金, 牛客网 |
+| 7 | effect 和 ReactiveEffect 的关系?组件渲染是怎么用的? | KEEP | 掘金 (Vue 3 源码分析题) |
+| 8 | computed 的脏检查机制?连续修改 10 次会计算几次? | KEEP | 掘金 (Vue 3 源码分析题) |
+
+### 2. vue/vue-diff.mdx (8 questions)
+
+| # | Question | Status | Sources Found |
+|---|----------|--------|---------------|
+| 1 | 为什么不能用 index 做 key? | KEEP | 牛客网, 掘金, haizlin/fe-interview (Vue+React 通用高频题) |
+| 2 | Vue 3 的静态提升具体是怎么做的? | KEEP | 掘金 (Vue 3 编译优化题) |
+| 3 | Block Tree 的动态节点追踪是怎么实现的? | KEEP | 掘金 (Vue 3 编译优化题) |
+| 4 | Vue 3 的 diff 和 React 的 diff 有什么本质区别? | KEEP | 掘金, 牛客网 |
+| 5 | 没有 key 时 Vue 是怎么 diff 的? | KEEP | 牛客网, 掘金 |
+| 6 | PatchFlag 的位运算具体是怎么做的? | KEEP | 掘金 (Vue 3 编译优化题) |
+| 7 | v-if 和 v-for 对 Block Tree 有什么影响? | KEEP | 掘金 (Vue 3 编译优化题) |
+| 8 | 大型列表的 diff 性能优化有哪些实战方案? | KEEP | 掘金, 牛客网 (性能优化题) |
+
+### 3. vue/vue-template.mdx (8 questions)
+
+| # | Question | Status | Sources Found |
+|---|----------|--------|---------------|
+| 1 | v-model 的本质是什么? | KEEP | 牛客网, 掘金 (Vue 最高频题之一) |
+| 2 | nextTick 的原理?为什么能拿到更新后的 DOM? | KEEP | 牛客网, 掘金 |
+| 3 | 模板和 render 函数的性能差异? | KEEP | 掘金 (Vue 3 模板编译题) |
+| 4 | 编译器的静态提升是怎么实现的? | KEEP | 掘金 (Vue 3 编译器题) |
+| 5 | <script setup> 和普通 setup() 函数有什么区别? | KEEP | 掘金, 牛客网 |
+| 6 | v-show 和 v-if 在编译器中有什么区别? | KEEP | 牛客网, 掘金 (Vue 高频题) |
+| 7 | 编译器是怎么处理 slot 的? | KEEP | 掘金 (Vue 3 插槽原理题) |
+| 8 | Vue 3 的模板编译和 Vue 2 有什么区别? | KEEP | 牛客网, 掘金 |
+
+### 4. vue/vue-components.mdx (9 questions)
+
+| # | Question | Status | Sources Found |
+|---|----------|--------|---------------|
+| 1 | 生命周期钩子的执行顺序?父子组件的 mounted 谁先? | KEEP | 牛客网, 掘金 (Vue 最高频题之一) |
+| 2 | provide/inject 怎么保持响应式? | KEEP | 掘金, 牛客网 |
+| 3 | keep-alive 缓存了什么?LRU 是怎么实现的? | KEEP | 掘金, 牛客网 |
+| 4 | keep-alive 的 include/exclude 怎么匹配组件名? | KEEP | 掘金 (keep-alive 深入题) |
+| 5 | Vue 3 为什么移除了 Event Bus? | KEEP | 掘金, 牛客网 |
+| 6 | 全局注册和局部注册的区别?对 Tree-shaking 有什么影响? | KEEP | 牛客网, 掘金 |
+| 7 | 父子组件的 updated 钩子谁先执行? | KEEP | 牛客网, 掘金 (生命周期执行顺序题) |
+| 8 | setup() 和 created 谁先执行?为什么 setup 中没有 this? | KEEP | 牛客网, 掘金 |
+| 9 | props 的单向数据流是什么意思?为什么不能直接修改 props? | KEEP | 掘金, 牛客网 |
+
+### 5. react/react-fiber.mdx (9 questions)
+
+| # | Question | Status | Sources Found |
+|---|----------|--------|---------------|
+| 1 | Fiber 的时间切片为什么选择 MessageChannel 而不是 requestAnimationFrame? | KEEP | 掘金, 牛客网 |
+| 2 | Fiber 架构下的 Render 阶段为什么可能被执行多次? | KEEP | 掘金 (React Fiber 核心题) |
+| 3 | 什么是双缓冲树 (Double Buffering) ?为什么需要两棵树? | KEEP | 牛客网, 掘金 |
+| 4 | 如果在 Render 阶段调用 setState, 会发生什么? | KEEP | 掘金 (React 高频陷阱题) |
+| 5 | Fiber 的 beginWork 和 completeWork 分别做什么? | KEEP | 掘金 (React 源码分析题) |
+| 6 | React 为什么选择深度优先而不是广度优先遍历 Fiber 树? | KEEP | 牛客网, 掘金 |
+| 7 | flags 标记系统是怎么工作的? | KEEP | 掘金 (React 源码分析题) |
+| 8 | workInProgress 树和 current 树是怎么切换的? | KEEP | 牛客网, 掘金 |
+| 9 | Fiber 到底好在哪？解决了什么本质问题? | KEEP | 掘金, 牛客网 (React 核心面试题) |
+
+### 6. react/react-hooks.mdx (8 questions)
+
+| # | Question | Status | Sources Found |
+|---|----------|--------|---------------|
+| 1 | 为什么 Hooks 不能在条件语句或循环中使用? | KEEP | 掘金, 牛客网 (React Hooks 最高频题) |
+| 2 | useEffect 的依赖数组用 Object.is 而不是 === 是为什么? | KEEP | 掘金 (React 源码分析题) |
+| 3 | useEffect 的 cleanup 函数什么时候执行? | KEEP | 牛客网, 掘金 |
+| 4 | 如果 useEffect 的依赖数组写错了 (遗漏依赖) , 会怎样? | KEEP | 掘金, 牛客网 (Hooks 闭包陷阱题) |
+| 5 | useReducer 和 useState 怎么选? | KEEP | 掘金, 牛客网 |
+| 6 | useId 解决了什么问题? | KEEP | 掘金 (React 18 新特性题) |
+| 7 | useSyncExternalStore 解决了什么问题? | KEEP | 掘金 (React 18 新特性题) |
+| 8 | useEffect 中的异步操作为什么不能直接写 async? | KEEP | 牛客网, 掘金 (Hooks 高频陷阱题) |
+
+### 7. react/react-perf.mdx (8 questions)
+
+| # | Question | Status | Sources Found |
+|---|----------|--------|---------------|
+| 1 | React.memo 的浅比较和 shouldComponentUpdate 有什么区别? | KEEP | 牛客网, 掘金 |
+| 2 | 虚拟列表在快速滚动时出现白屏闪烁, 根因是什么?怎么优化? | KEEP | 牛客网, 掘金 (性能优化实战题) |
+| 3 | 万级节点的列表中, 切换主题色导致全量 re-render, 怎么排查和解决? | KEEP | 掘金 (Context 穿透题) |
+| 4 | useDeferredValue 和 debounce 有什么本质区别? | KEEP | 掘金 (React 18 并发特性题) |
+| 5 | React.memo 的第二个参数 (自定义比较函数) 怎么用? | KEEP | 掘金 |
+| 6 | 为什么 React 要默认让所有子组件跟着父组件 re-render? | KEEP | 掘金, 牛客网 |
+| 7 | useMemo 的缓存什么时候会被清除? | KEEP | 牛客网, 掘金 |
+| 8 | 大型应用中如何系统性地做 React 性能优化? | KEEP | 掘金, 牛客网 (性能优化方法论题) |
+
+---
+
+## Conclusion
+
+All 58 interview questions across all 7 files are verified to exist in real interview databases (牛客网, 掘金, haizlin/fe-interview, CSDN). No questions needed to be replaced. The questions are well-curated and cover the essential topics for both Vue and React frontend interviews.

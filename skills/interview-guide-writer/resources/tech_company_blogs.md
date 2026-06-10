@@ -132,4 +132,11 @@
 4. **n8n / Dify 官方博客**：探索可视化工作流构建 Agent 的最佳范例。n8n 展示了极致的自动化节点串联体系，而 Dify 则确立了构建企业级 LLM 应用、多模态编排与中间件接入的标准基建。
 5. **NousResearch / OpenClaw 社区**：体验开源模型与工具生态最前沿的极客精神。NousResearch 及其 Hermes 系列模型专门为 Tool Use 与 Agent 调度进行了极其硬核的微调，而 OpenClaw 则是开源本地智能体执行框架的先锋。
 6. **字节跳动 Coze 团队 / 阿里百炼团队**：如果您想了解工业级、长时间运行 (Long-running) 的企业级 Agent 是如何做权限边界收敛、状态异步恢复、复杂的被动 RAG 知识检索与主动 Skill 串联的，这两家平台的架构分享是国内首选。
-7. **Vercel AI 团队 / 蚂蚁通义前端团队**：探索前端“生成式 UI”、流式响应式渲染以及将复杂工具调用 (Function Calling) 丝滑融入现代 Web 交互的先驱。
+7. **Vercel AI 团队 / 蚂蚁通义前端团队**：探索前端”生成式 UI”、流式响应式渲染以及将复杂工具调用 (Function Calling) 丝滑融入现代 Web 交互的先驱。
+
+### 📱 Flutter / 鸿蒙跨端开发
+
+1. **Flutter 官方博客**：了解 Flutter 最新版本、Impeller 渲染引擎、跨平台（Web/Desktop/Embedded）演进的官方渠道。
+2. **闲鱼技术团队**：国内最早大规模落地 Flutter 的团队，在 Flutter 混合栈、动态化、性能优化上有深度实践。
+3. **华为鸿蒙开发者社区**：HarmonyOS NEXT 纯鸿蒙系统的官方技术文档和开发指南，ArkTS/ArkUI 的权威参考。
+4. **字节跳动 Flutter 团队**：在 Flutter 动态化、性能优化、混合栈上有深度实践。

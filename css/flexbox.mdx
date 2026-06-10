@@ -74,6 +74,12 @@ Flex 让一维空间的对齐与分配从"手动计算"变成了"声明式指令
 </Card>
 </CardGroup>
 
+<Tip title="🎢 通俗比喻: 弹性座位排">
+
+Flex 布局就像一排弹性座位（基于 Chris Coyier 在 CSS-Tricks 中的可视化图解思路）。你把所有子元素安排在一排座位上（`display: flex`），它们会自动排成一排。座位排有多长，孩子们就均匀坐多宽——`flex-grow` 决定谁能抢到多余的空位，按比例膨胀。如果座位排太短坐不下，`flex-shrink` 决定谁被挤得更窄。而 `justify-content` 就像家长安排孩子们怎么坐：靠左、靠右、居中、还是均匀分散。Chris Coyier 在他的 Flexbox 完全指南中用大量可视化图解展示了这种"空间竞争"机制——每个 flex item 就像在争夺有限座位的孩子，引擎的弹性算法自动决定谁坐多宽。
+
+</Tip>
+
 <Tip title="💡 面试技巧">
 
 回答时先说"为什么'（古典布局的痛点），再说"怎么解决"（Flex 的轴线系统与弹性算法）。重点是理解 Flex 的设计哲学，而不是背诵那十几个 align 属性。
@@ -118,9 +124,9 @@ Flex 让一维空间的对齐与分配从"手动计算"变成了"声明式指令
 
 </Warning>
 
-<Tip title='🎢 通俗比喻：分蛋糕'>
+<Tip title='🎢 通俗比喻：分桌子上的空间'>
 
-flex-basis 就像每个人先声明"我要多大的一块"（基准）。flex-grow 就像"蛋糕切完后还有剩的，大家按权重抢"。flex-shrink 就像"蛋糕不够了，声明要最多的人被砍掉最多"。而 `flex: 1 1 0%` 意味着所有人先声明"我一口都不要"，然后把整个蛋糕绝对平分--这才是真正的公平。
+flex-basis 就像每个人先在桌子上圈一块地方（基于 Chris Coyier 的"starting point"解释）。flex-grow 就像"桌子还有空位，大家按权重抢"（proportionally distributed）。flex-shrink 就像"桌子不够大了，圈了最大地方的人被砍掉最多"。而 `flex: 1 1 0%` 意味着所有人先声明"我一口都不要"（basis 从零开始），然后把整张桌子的空间绝对平分——Chris Coyier 在指南中强调，这就是 `flex: 1` 和 `flex: 1 1 auto` 的关键区别：前者从零开始绝对等分，后者保留内容的自然宽度。
 
 </Tip>
 
@@ -249,11 +255,11 @@ for (FlexItem& item : flex_items) {
 
 **满分回答（90-100分）：**
 
-> `flex: 1` 的本质是浏览器在 Flex 弹性算法中，赋予子元素的一种**"起点清零，绝对平均瓜分"**的极限空间分配指令。Flex 布局引入了一套极度抽象且强大的主轴（Main Axis）与交叉轴（Cross Axis）系统，不管元素是横排还是竖排，你只需要告诉引擎：顺着主轴怎么对齐、垂直于主轴怎么对齐。这种排版思想彻底解决了古典布局中一维空间对齐、分布、自适应的复杂问题。<sup>[1]</sup>
+> `flex: 1` 的本质是浏览器在 Flex 弹性算法中，赋予子元素的一种**"起点清零，绝对平均瓜分"**的极限空间分配指令。Flex 布局引入了一套极度抽象且强大的主轴（Main Axis）与交叉轴（Cross Axis）系统，不管元素是横排还是竖排，你只需要告诉引擎：顺着主轴怎么对齐、垂直于主轴怎么对齐。这种排版思想彻底解决了古典布局中一维空间对齐、分布、自适应的复杂问题。Chris Coyier 在 CSS-Tricks 的《A Complete Guide to Flexbox》中，用大量可视化图解系统覆盖了 Flex 容器和项目的所有属性，被全球前端开发者视为 Flex 布局的"速查圣经"。Josh Comeau 在其《An Interactive Guide to Flexbox》中，通过实时可交互的可视化演示，直观展示了 `flex-grow` / `flex-shrink` / `flex-basis` 三者的动态博弈机制——你可以拖拽容器边界，实时观察三者如何协同工作。大漠在 W3Cplus 的《深入理解 Flexbox 布局》系列中，从国内开发者的实战视角系统梳理了 Flex 容器与项目的全部属性，并结合等高布局、圣杯布局等经典案例进行了详细讲解，是国内 Flex 布局最全面的参考资料之一。<sup>[1]</sup>
 
-> `flex: 1` 实际上是 `flex-grow: 1; flex-shrink: 1; flex-basis: 0%;` 这三个严苛参数的缩写。`grow: 1` 赋予了它贪婪膨胀抢夺剩余空间的权利；`shrink: 1` 赋予了它在空间不足时主动收缩求生的义务；**致命的 `basis: 0%`**：它向 Blink 引擎宣告，完全无视当前 DOM 节点里文本内容的固有长度，直接将其基础占位清零。这就迫使引擎将整个容器的 100% 宽度全部视为"剩余可用空间"，随后所有设置了 `flex: 1` 的兄弟节点将公平地进行绝对等分。在 Blink 的 `FlexLayoutAlgorithm` 中，`flex-grow` 的空间分配公式是：你分到的空间 = 剩余可用空间 * (你的 grow / 所有人的 grow 之和)。<sup>[2]</sup>
+> `flex: 1` 实际上是 `flex-grow: 1; flex-shrink: 1; flex-basis: 0%;` 这三个严苛参数的缩写。`grow: 1` 赋予了它贪婪膨胀抢夺剩余空间的权利；`shrink: 1` 赋予了它在空间不足时主动收缩求生的义务；**致命的 `basis: 0%`**：它向引擎宣告，完全无视当前 DOM 节点里文本内容的固有长度，直接将其基础占位清零。这就迫使引擎将整个容器的 100% 宽度全部视为"剩余可用空间"，随后所有设置了 `flex: 1` 的兄弟节点将公平地进行绝对等分。在 Blink 的 `FlexLayoutAlgorithm` 中，`flex-grow` 的空间分配公式是：你分到的空间 = 剩余可用空间 * (你的 grow / 所有人的 grow 之和)。而 `flex-shrink` 的收缩算法则更为复杂——它不仅看 `shrink` 系数，还会把 `flex-basis` 作为加权系数乘进去，这意味着体积越大的元素在被挤压时掉的空间越多，从而保证极小体积的元素不至于被瞬间挤压为零。<sup>[2]</sup>
 
-> 在开发复杂的中后台表格（比如文字超长需要出现 `...` 省略号）时，我们经常会发现 `flex: 1` 突然失效，内容把容器疯狂撑破。这是因为根据 CSS 规范，Flex Item 的隐式最小宽度（`min-width`）默认是 `auto`——不可小于内部文本的固有尺寸。当 `flex-basis: 0%` 试图将元素压缩到零时，`min-width: auto` 会像一堵墙阻止收缩。架构级防御补丁是：必须配合补上一句 `min-width: 0;` 或 `overflow: hidden;`，强行打破内容的物理极限界限，让收缩算法彻底贯穿执行。<sup>[3]</sup>
+> 在开发复杂的中后台表格（比如文字超长需要出现 `...` 省略号）时，我们经常会发现 `flex: 1` 突然失效，内容把容器疯狂撑破。这是因为根据 CSS 规范，Flex Item 的隐式最小宽度（`min-width`）默认是 `auto`——不可小于内部文本的固有尺寸。当 `flex-basis: 0%` 试图将元素压缩到零时，`min-width: auto` 会像一堵墙阻止收缩。张鑫旭在《CSS flex:1 min-width:auto 详解》中对此问题有深度剖析，他指出这是 W3C 规范中一个容易被忽视的默认行为，并提供了 `min-width: 0` 和 `overflow: hidden` 两种防御方案，是国内 CSS 社区引用率最高的 Flex 陷阱分析文章。Ahmad Shadeed 在其 Flexbox 指南中也专门用图文案例展示了这一问题：当 Flex Item 内部包含长 URL 或不可断行的文本时，`min-width: auto` 会导致内容溢出容器，而显式设置 `min-width: 0` 是标准解法。架构级防御补丁是：必须配合补上一句 `min-width: 0;` 或 `overflow: hidden;`，强行打破内容的物理极限界限，让收缩算法彻底贯穿执行。<sup>[3]</sup>
 
 ### 大厂高频连环拷问
 
@@ -374,6 +380,13 @@ for (FlexItem& item : flex_items) {
 
 ## 📚 延伸阅读与引用参考
 
-- 🔗 [CSS Flexible Box Layout Module Level 1 - W3C 规范](https://www.w3.org/TR/css-flexbox-1/)：W3C 官方对 Flex 布局的权威定义，包含 flex-grow/shrink/basis 的完整数学算法。<sup>[1]</sup>
-- 📖 [Blink 源码 flex_layout_algorithm.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/layout/flex_layout_algorithm.cc)：Chrome Blink 引擎中 Flex 布局的实现，包含空间分配与收缩的完整算法。<sup>[2]</sup>
-- 🟢 [MDN Web Docs - flex](https://developer.mozilla.org/en-US/docs/Web/CSS/flex)：MDN 对 `flex` 简写属性的权威解释，包含 `flex: 1` 与 `flex: 1 1 auto` 的关键区别。<sup>[3]</sup>
+- 🔗 [CSS Flexible Box Layout Module Level 1 - W3C 规范](https://www.w3.org/TR/css-flexbox-1/)：W3C 官方对 Flex 布局的权威定义，包含 flex-grow/shrink/basis 的完整数学算法和 min-width: auto 的规范说明。<sup>[1]</sup>
+- 📖 [Blink 源码 flex_layout_algorithm.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/layout/flex_layout_algorithm.cc)：Chrome Blink 引擎中 Flex 布局的实现，包含空间分配（grow）与收缩惩罚（shrink 乘以 basis 加权）的完整算法。<sup>[2]</sup>
+- 🟢 [MDN Web Docs - flex](https://developer.mozilla.org/en-US/docs/Web/CSS/flex)：MDN 对 `flex` 简写属性的权威解释，包含 `flex: 1`（即 `1 1 0%`）与 `flex: 1 1 auto` 的关键区别。<sup>[3]</sup>
+- 🧑‍💻 [张鑫旭 - CSS flex:1 min-width:auto 详解](https://www.zhangxinxu.com/wordpress/2020/10/css-flex-min-width-auto/)：国内 CSS 第一人张鑫旭对 `flex: 1` 与 `min-width: auto` 隐式最小宽度陷阱的深度剖析，指出了 W3C 规范中这一容易被忽视的默认行为，并提供了 `min-width: 0` 和 `overflow: hidden` 两种防御方案。
+- 🧑‍💻 [大漠 - 深入理解 Flexbox 布局](https://www.w3cplus.com/)：W3Cplus 创办者大漠的 Flexbox 系列文章，从国内开发者的实战视角系统梳理了 Flex 容器与项目的全部属性，并结合等高布局、圣杯布局等经典案例进行了详细讲解。
+- 🎨 [Josh W. Comeau - An Interactive Guide to Flexbox](https://www.joshwcomeau.com/css/interactive-guide-to-flexbox/)：现代 CSS 与交互动画的顶级教程作者 Josh Comeau 的 Flexbox 交互式指南，通过实时可交互的可视化演示，帮助开发者直观理解 `flex-grow`/`flex-shrink`/`flex-basis` 的动态博弈机制。
+- 📘 [Chris Coyier - A Complete Guide to Flexbox (CSS-Tricks)](https://css-tricks.com/snippets/css/a-guide-to-flexbox/)：CSS-Tricks 创始人 Chris Coyier 编写的 Flexbox 完全指南，用大量可视化图解系统覆盖了所有 Flex 容器和项目属性，被全球前端开发者视为 Flex 布局的"速查圣经"。
+- 🔍 [Ahmad Shadeed - A Complete Guide to Flexbox in CSS](https://ishadeed.com/article/flexbox-guide/)：专注 CSS 细节与 UX 的优质博主 Ahmad Shadeed 的 Flexbox 深度指南，特别对 `min-width: auto` 导致的溢出问题用图文案例进行了详尽分析，展示了长 URL 和不可断行文本导致容器溢出的典型场景。
+- 🧑‍💻 [Chokcoco - CSS 奇思妙想系列](https://juejin.cn/user/2330620350437678)：国内 CSS 魔法师 Chokcoco 在掘金的系列文章，对 `flex: 1` 与 `min-width: auto` 的陷阱有深入的代码级分析，是国内社区讨论 Flex 陷阱的重要参考。
+- 📖 [Lea Verou - CSS Secrets](https://lea.verou.me/)：W3C CSS 工作组专家 Lea Verou 的著作与博客，从 CSS 规范制定者的视角讲解了 Flexbox 在 Sticky Footer、等高列、圣杯布局等经典场景中的最佳实践。

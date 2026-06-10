@@ -1,0 +1,691 @@
+---
+title: "E2E 测试"
+---
+
+> **面试官为什么问这个？**
+>
+> E2E（End-to-End）测试是验证"用户真实使用场景"的最后一道防线。面试官问这个，本质上是在考察你：**你是否有能力保证一个功能从用户点击到数据落库的整条链路都能正常工作？** 如果你只会写单元测试但不了解 E2E 测试的策略和陷阱，说明你对"软件质量"的理解还停留在函数级别，没有上升到系统级别。
+
+---
+
+## Q1: E2E 测试的历史？为什么要有它？
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  2004 年     │ → │  2014 年     │ → │  2017 年     │ → │  2020 年+    │
+│  Selenium    │ │  PhantomJS   │ │  Cypress     │ │  Playwright  │
+│  浏览器自动化│ │  无头浏览器  │ │  开发者体验  │ │  跨浏览器    │
+└──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
+```
+
+<Steps>
+
+  <Step title="2004 年: Selenium 开创浏览器自动化">
+
+    Selenium 通过 WebDriver 协议控制浏览器，是 E2E 测试的开山鼻祖。它支持多种语言和浏览器，但 API 繁琐、测试不稳定（Flaky Tests），被戏称为"午夜自动化测试"——因为经常要跑到半夜才能跑完。<sup>[1]</sup>
+
+  </Step>
+  <Step title="2014 年: PhantomJS 与无头浏览器时代">
+
+    PhantomJS 是第一个无头浏览器（Headless Browser），不需要打开真实浏览器窗口就能运行测试。速度快但渲染引擎和真实浏览器有差异，经常出现"测试通过但用户看到的是坏的"。后来被 Chrome Headless 模式取代。
+
+  </Step>
+  <Step title="2017 年: Cypress 重新定义开发体验">
+
+    Cypress 运行在浏览器内部（与被测应用同进程），解决了传统 E2E 工具的"时序问题"——不再需要 `sleep(2000)` 等待元素出现。内置断言、Mock、时间控制，开发者体验大幅提升。<sup>[2]</sup>
+
+  </Step>
+  <Step title="2020 年+: Playwright 统一跨浏览器测试">
+
+    Playwright 由微软开发，支持 Chromium、Firefox、WebKit 三大浏览器引擎。通过 CDP（Chrome DevTools Protocol）直接控制浏览器，比 Selenium 的 WebDriver 协议更快更稳定。自动等待、网络拦截、代码生成器等功能让 E2E 测试的编写成本大幅降低。<sup>[3]</sup>
+
+  </Step>
+
+</Steps>
+
+**E2E 测试解决的核心问题：**
+
+```text
+问题：单元测试覆盖了所有函数，但用户使用时功能还是坏了
+
+单元测试通过 → 集成测试通过 → 但真实浏览器中 CSS 选择器失效 → 用户看到空白页面
+
+解决：用真实浏览器模拟用户的完整操作流程，从打开页面到完成任务
+
+E2E 测试 → 打开浏览器 → 输入账号密码 → 点击登录 → 验证跳转到首页 → 验证用户头像显示
+```
+
+<Note title="💡 一句话总结">
+
+单元测试保证"每个零件合格"，E2E 测试保证"整台机器能正常运转"。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有 E2E 测试">
+
+你写了一个登录功能，单元测试覆盖了密码校验、Token 生成等逻辑。但上线后用户反馈"点击登录按钮没反应"——因为按钮的 CSS 类名在构建时被改了，事件绑定失效。单元测不了这种问题，因为它不涉及真实 DOM 和浏览器环境。就像检查了发动机、轮胎、刹车都合格，但没试过这辆车能不能上路。
+
+</Card>
+<Card title="✅ 引入 E2E 测试">
+
+E2E 测试用真实浏览器打开登录页，输入用户名密码，点击登录按钮，验证是否成功跳转。无论 CSS 类名怎么改、构建工具怎么换，只要用户操作流程断了，测试就会失败。就像在试车场上跑一圈，确认车能正常上路。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么需要 E2E"（单元测试覆盖不到真实浏览器环境），再说"怎么选工具"（Cypress vs Playwright 的核心差异）。面试官想听的是你理解 E2E 测试的定位是"端到端验证用户流程"，而不是"写更多测试"。
+
+</Tip>
+
+---
+
+## Q2: Cypress vs Playwright vs Puppeteer 对比
+
+E2E 工具的本质是**控制浏览器执行操作并验证结果**，核心差异在于架构设计：
+
+```text
+┌──────────────────────────────────────────────┐
+│              E2E 工具架构对比                  │
+│                                              │
+│  Selenium:   测试进程 ──WebDriver──→ 浏览器   │
+│  Cypress:    测试代码 ──同进程──→ 浏览器      │
+│  Playwright: 测试进程 ──CDP/自研协议──→ 浏览器│
+│  Puppeteer:  测试进程 ──CDP──→ Chrome         │
+└──────────────────────────────────────────────┘
+```
+
+| 维度 | Cypress | Playwright | Puppeteer |
+|------|---------|-----------|-----------|
+| **浏览器支持** | 仅 Chromium/WebKit/Firefox（有限） | Chromium + Firefox + WebKit（完整） | 仅 Chromium |
+| **运行位置** | 浏览器内部（同进程） | 外部进程（通过 CDP） | 外部进程（通过 CDP） |
+| **多标签页** | 不支持 | 原生支持 | 原生支持 |
+| **并行执行** | 需付费 Cloud 或插件 | 原生支持 Worker 并行 | 需手动管理 |
+| **自动等待** | 内置（重试断言） | 内置（auto-waiting） | 需手动等待 |
+| **调试体验** | 时间旅行、截图回放 | Trace Viewer、代码生成器 | Chrome DevTools |
+| **API 设计** | 链式调用（jQuery 风格） | async/await（现代风格） | async/await |
+| **适用场景** | 前端团队、单页应用 | 跨浏览器、复杂场景 | 爬虫、PDF 生成 |
+
+### 架构差异的根本原因
+
+Cypress 运行在浏览器内部意味着它能直接访问 DOM 和网络，但也意味着**不能跨域、不能控制多个标签页**。Playwright 和 Puppeteer 运行在外部进程，通过 CDP 协议控制浏览器，灵活度更高但有进程间通信的开销。
+
+```javascript
+// Cypress：链式 API，运行在浏览器内部
+cy.visit('/login');
+cy.get('#username').type('admin');
+cy.get('#password').type('123456');
+cy.get('button[type="submit"]').click();
+cy.url().should('include', '/dashboard');
+
+// Playwright：async/await，运行在外部进程
+await page.goto('/login');
+await page.fill('#username', 'admin');
+await page.fill('#password', '123456');
+await page.click('button[type="submit"]');
+await expect(page).toHaveURL(/dashboard/);
+```
+
+### 为什么大厂更倾向 Playwright？
+
+Playwright 在三个方面碾压 Cypress：**跨浏览器覆盖**（真正的 Chromium + Firefox + WebKit，不是模拟层）、**多标签页支持**（测试 OAuth 跳转、弹窗）、**并行执行能力**（1000 个测试用例用 10 个 Worker 并行跑，时间缩短 10 倍）。Cypress 的优势在于开发体验——时间旅行调试和实时预览对小团队更友好。<sup>[3]</sup>
+
+---
+
+## Q3: E2E 测试策略（页面对象模型、数据驱动）
+
+E2E 测试的代码量比单元测试大 10 倍，如果不做抽象，维护成本会指数增长。
+
+### 页面对象模型（Page Object Model）
+
+页面对象模型的核心思想是：**把页面的元素定位和操作封装成一个类，测试代码只调用类的方法**。当页面 UI 变更时，只需要改 Page Object，不需要改所有测试。
+
+```javascript
+// ❌ 错误做法：测试代码中直接写选择器
+test('用户登录', async () => {
+  await page.goto('https://example.com/login');
+  await page.fill('[data-testid="username-input"]', 'admin');
+  await page.fill('[data-testid="password-input"]', '123456');
+  await page.click('[data-testid="login-button"]');
+  await expect(page.locator('[data-testid="welcome-text"]')).toBeVisible();
+});
+// 如果登录页面重构，选择器全变了 → 100 个测试都要改
+
+// ✅ 正确做法：用 Page Object 封装
+class LoginPage {
+  constructor(page) {
+    this.page = page;
+    this.usernameInput = page.locator('[data-testid="username-input"]');
+    this.passwordInput = page.locator('[data-testid="password-input"]');
+    this.loginButton = page.locator('[data-testid="login-button"]');
+  }
+  async goto() {
+    await this.page.goto('https://example.com/login');
+  }
+  async login(username, password) {
+    await this.usernameInput.fill(username);
+    await this.passwordInput.fill(password);
+    await this.loginButton.click();
+  }
+}
+
+// 测试代码：只调用 Page Object 的方法
+test('用户登录', async () => {
+  const loginPage = new LoginPage(page);
+  await loginPage.goto();
+  await loginPage.login('admin', '123456');
+  await expect(page.locator('[data-testid="welcome-text"]')).toBeVisible();
+});
+// 页面重构时只需改 LoginPage 类，100 个测试不用动
+```
+
+### 数据驱动测试
+
+数据驱动测试的核心是：**测试逻辑只写一次，用不同的数据集驱动多次执行**。适合同一个流程有多种输入输出的场景。
+
+```javascript
+// 数据驱动：一组测试逻辑，多组数据
+const testCases = [
+  { input: { price: 100, discount: 0 }, expected: 100, desc: '无折扣' },
+  { input: { price: 100, discount: 20 }, expected: 80, desc: '8 折' },
+  { input: { price: 100, discount: 100 }, expected: 0, desc: '全免' },
+  { input: { price: 0, discount: 50 }, expected: 0, desc: '价格为 0' },
+];
+
+for (const { input, expected, desc } of testCases) {
+  test(`价格计算: ${desc}`, async () => {
+    const page = new CheckoutPage(page);
+    await page.goto();
+    await page.setPrice(input.price);
+    await page.applyDiscount(input.discount);
+    expect(await page.getTotalPrice()).toBe(expected);
+  });
+}
+```
+
+---
+
+## Q4: E2E 测试与 CI/CD 集成
+
+E2E 测试如果不集成到 CI/CD 中，就等于"写了但没人跑"。
+
+### CI/CD 中的 E2E 测试流水线
+
+```text
+┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐
+│ 代码提交 │ → │ 单元测试 │ → │ E2E 测试 │ → │ 部署     │
+│ git push │   │ 30 秒    │   │ 5-10 分钟│   │ 生产环境 │
+└──────────┘   └──────────┘   └──────────┘   └──────────┘
+                     │ 失败则阻断         │ 失败则阻断
+                     ▼                    ▼
+               不允许合并            不允许部署
+```
+
+```yaml
+# GitHub Actions 配置示例
+name: E2E Tests
+on: [push, pull_request]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Start dev server
+        run: npm run dev &
+
+      - name: Wait for server
+        run: npx wait-on http://localhost:3000
+
+      - name: Run E2E tests
+        run: npx playwright test
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+```
+
+### Docker 中运行 E2E 测试
+
+```dockerfile
+# Dockerfile.playwright
+FROM mcr.microsoft.com/playwright:v1.48.0-jammy
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npx playwright install --with-deps
+CMD ["npx", "playwright", "test"]
+```
+
+<Note title="💡 一句话总结">
+
+E2E 测试不跑在 CI 里就等于没写。CI 中的关键是"快速反馈"——用并行执行把 10 分钟压到 2 分钟，开发者才愿意等。
+
+</Note>
+
+---
+
+## Q5: E2E 测试的稳定性问题（Flaky Tests）
+
+Flaky Test（不稳定测试）是 E2E 测试的头号杀手——同一个测试有时通过有时失败，开发者开始不信任测试结果，最终把 E2E 测试当摆设。
+
+### Flaky Test 的常见原因
+
+```javascript
+// ❌ 原因 1: 硬编码等待时间
+test('加载数据后显示列表', async () => {
+  await page.goto('/products');
+  await page.waitForTimeout(3000);  // 等 3 秒——网络快时浪费时间，网络慢时不够
+  expect(await page.locator('.product-item').count()).toBeGreaterThan(0);
+});
+
+// ✅ 正确做法：等待具体条件
+test('加载数据后显示列表', async () => {
+  await page.goto('/products');
+  await page.waitForSelector('.product-item', { state: 'visible' });  // 等元素出现
+  expect(await page.locator('.product-item').count()).toBeGreaterThan(0);
+});
+
+// ❌ 原因 2: 测试之间有依赖（前一个测试的数据影响后一个）
+test('创建订单', async () => {
+  await createOrder({ product: 'iPhone' });
+});
+test('查询订单', async () => {
+  const orders = await getOrders();
+  expect(orders).toHaveLength(1);  // 如果"创建订单"失败了，这里也会失败
+});
+
+// ✅ 正确做法：每个测试独立准备数据
+test('查询订单', async () => {
+  await seedDatabase({ orders: [{ product: 'iPhone' }] });  // 自己准备数据
+  const orders = await getOrders();
+  expect(orders).toHaveLength(1);
+});
+
+// ❌ 原因 3: 动态数据导致断言不确定
+test('显示当前时间', async () => {
+  const time = await page.locator('.current-time').textContent();
+  expect(time).toBe('14:30:00');  // 每次运行时间不同，必然失败
+});
+
+// ✅ 正确做法：Mock 时间或用正则匹配
+test('显示当前时间', async () => {
+  await page.clock.setFixedTime(new Date('2024-01-01T14:30:00'));
+  const time = await page.locator('.current-time').textContent();
+  expect(time).toBe('14:30:00');
+});
+```
+
+### Playwright 的自动等待机制
+
+Playwright 内置了自动等待——在执行操作前自动检查元素是否可见、是否可点击、是否稳定（没有动画）。这是 Playwright 比 Selenium 稳定的核心原因：
+
+```text
+Playwright 点击按钮的等待流程：
+
+1. 元素存在于 DOM？         → 否 → 等待（最多 timeout）
+2. 元素可见？                → 否 → 等待
+3. 元素稳定（无动画）？      → 否 → 等待
+4. 元素可接收事件（无遮挡）？→ 否 → 等待
+5. 全部通过 → 执行点击
+```
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："你们项目的 E2E 测试是怎么做的？遇到过什么问题？"
+
+**及格回答（60-70分）：**
+
+> "我们用 Cypress 做 E2E 测试，覆盖了核心的登录、下单、支付流程。CI 中每次发版前会跑一遍。遇到过测试不稳定的问题，加了等待时间就好了。"
+
+面试官评价：**知道工具但不理解策略**。
+
+**满分回答（90-100分）：**
+
+> "E2E 测试的核心价值是验证用户真实操作流程，而不是替代单元测试。我在项目中遵循测试金字塔原则——单元测试覆盖核心业务逻辑（70%），集成测试覆盖模块协作（20%），E2E 测试只覆盖关键用户路径（10%）。比如电商项目只测'浏览商品 → 加购物车 → 下单 → 支付'这条主线，不测所有的边界条件。"<sup>[1]</sup>
+
+> "工具选型上，我们从 Cypress 迁移到了 Playwright。主要原因是 Cypress 不支持多标签页——我们的支付流程涉及第三方支付页面的跳转（OAuth 回调），Cypress 无法测试这种场景。Playwright 原生支持多标签页和多浏览器，而且并行执行能力让 1000 个测试用例从 15 分钟缩短到 3 分钟。"<sup>[3]</sup>
+
+> "稳定性方面，Flaky Test 是 E2E 测试最大的挑战。我们通过三个手段解决了 90% 的不稳定问题：第一，用 Playwright 的自动等待替代所有 `waitForTimeout`；第二，每个测试独立准备数据（`beforeEach` 中 seed 数据库），消除测试间依赖；第三，用 `page.clock` Mock 时间，避免时间相关的断言不确定。剩下 10% 的不稳定测试（主要是第三方支付沙箱偶尔超时），我们设置了重试策略——失败后自动重试 2 次，3 次都失败才标记为真正失败。"<sup>[2]</sup>
+
+### 大厂高频连环拷问
+
+> 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。每个模块 **8 个 Accordion**，覆盖 4 个难度层级。
+
+<AccordionGroup>
+
+  <Accordion title="E2E 测试和单元测试应该怎么分配比例？" icon="layer-group">
+
+    **答题要点：**
+    经典的"测试金字塔"问题。关键是理解不同层级测试的成本和收益比。
+
+    **高分回答：**
+
+    经典的测试金字塔建议 **70% 单元测试 + 20% 集成测试 + 10% E2E 测试**。但这个比例不是死的——Kent C. Dodds 提出了"测试奖杯"模型，认为集成测试应该占更大比例。
+
+    ```text
+    测试金字塔（经典）        测试奖杯（Kent C. Dodds）
+
+        /\                    ┌──────┐
+       /E2E\  10%             │ E2E  │  10%
+      /──────\                ├──────┤
+     /集成测试\ 20%           │ 集成 │  40%
+    /──────────\              ├──────┤
+    \ 单元测试 / 70%          │ 单元 │  30%
+     \________/               ├──────┤
+                              │ 静态 │  20%  (TypeScript + ESLint)
+                              └──────┘
+    ```
+
+    核心原则是：**越靠近用户层的测试，信心越高但成本也越高**。单元测试执行快（毫秒级）但只能验证单个函数；E2E 测试能验证完整流程但执行慢（秒级）且维护成本高。实际项目中，新功能先写集成测试（验证模块协作），核心业务逻辑补单元测试，关键用户路径补 E2E 测试。
+
+  </Accordion>
+
+  <Accordion title="Cypress 的 cy.intercept 和 Playwright 的 page.route 有什么区别？" icon="layer-group">
+
+    **答题要点：**
+    这道题考察你对网络拦截的理解。两者功能类似但实现机制不同。
+
+    **高分回答：**
+
+    `cy.intercept` 和 `page.route` 都用于拦截网络请求、Mock API 响应，但有三个核心区别：
+
+    ```javascript
+    // Cypress: cy.intercept — 运行在浏览器内部，拦截层在 Service Worker 级别
+    cy.intercept('GET', '/api/users', { fixture: 'users.json' }).as('getUsers');
+    cy.visit('/users');
+    cy.wait('@getUsers');  // 等待请求完成
+
+    // Playwright: page.route — 运行在外部进程，拦截层在浏览器协议级别
+    await page.route('**/api/users', (route) => {
+      route.fulfill({
+        status: 200,
+        body: JSON.stringify([{ id: 1, name: '张三' }]),
+      });
+    });
+    await page.goto('/users');
+    ```
+
+    区别一：**拦截时机**。Cypress 的 `intercept` 在浏览器内部拦截，某些跨域请求可能拦截不到。Playwright 的 `route` 在浏览器协议层拦截，所有请求都能拦截。
+
+    区别二：**灵活性**。Playwright 可以根据请求的 headers、body 动态决定返回什么；Cypress 也可以但语法更复杂。
+
+    区别三：**性能**。Playwright 的 `route` 不走浏览器的网络栈，Mock 响应几乎零延迟。
+
+  </Accordion>
+
+  <Accordion title="如何处理 E2E 测试中的第三方登录（OAuth/微信登录）？" icon="stopwatch">
+
+    **答题要点：**
+    第三方登录是 E2E 测试的经典难题——你无法控制第三方页面的 UI 和行为。核心策略是"绕过"而不是"模拟"。
+
+    **高分回答：**
+
+    测试第三方登录有三种策略，按推荐程度排序：
+
+    **策略一：测试环境注入 Token（推荐）。** 在测试环境中，跳过真实的 OAuth 流程，直接注入登录态。这是最稳定、最快的方式。
+
+    ```javascript
+    // Playwright：通过 Cookie/LocalStorage 注入登录态
+    test('已登录用户访问首页', async () => {
+      await page.context().addCookies([
+        { name: 'auth_token', value: 'test-token-123', domain: 'example.com' },
+      ]);
+      await page.goto('/');
+      await expect(page.locator('.user-name')).toHaveText('张三');
+    });
+    ```
+
+    **策略二：使用测试专用的 OAuth 服务。** 搭建一个模拟的 OAuth Provider，返回固定的测试用户。比真实第三方稳定，但需要额外维护。
+
+    **策略三：真实走 OAuth 流程（不推荐）。** 用 Playwright 操作真实的第三方页面。问题是：第三方页面可能改版、可能有验证码、可能限制自动化访问。测试极其不稳定。
+
+    核心原则：**E2E 测试的目标是验证你的应用逻辑，不是验证第三方服务是否正常工作。**
+
+  </Accordion>
+
+  <Accordion title="如何降低 E2E 测试的执行时间？" icon="stopwatch">
+
+    **答题要点：**
+    E2E 测试慢是团队放弃它的主要原因。核心优化方向是"并行化"和"减少不必要的测试"。
+
+    **高分回答：**
+
+    E2E 测试优化有四个方向：
+
+    ```javascript
+    // 1. 并行执行：Playwright 原生支持 Worker 并行
+    // playwright.config.ts
+    export default defineConfig({
+      fullyParallel: true,           // 所有测试并行执行
+      workers: process.env.CI ? 4 : 2,  // CI 用 4 个 Worker，本地用 2 个
+      retries: process.env.CI ? 2 : 0,  // CI 中失败重试 2 次
+    });
+    // 100 个测试，每个 10 秒，串行 1000 秒 → 并行（4 Worker）250 秒
+    ```
+
+    ```javascript
+    // 2. 只跑受影响的测试：通过 --grep 或 changed files 过滤
+    // 只跑和登录相关的测试
+    npx playwright test --grep "login"
+
+    // 3. 共享登录态：所有测试共用一次登录，避免每个测试都走登录流程
+    // global-setup.ts
+    async function globalSetup() {
+      const browser = await chromium.launch();
+      const page = await browser.newPage();
+      await page.goto('/login');
+      await page.fill('#username', 'admin');
+      await page.fill('#password', '123456');
+      await page.click('button[type="submit"]');
+      await page.context().storageState({ path: './auth.json' });
+      await browser.close();
+    }
+    ```
+
+    ```javascript
+    // 4. Mock 非核心 API：第三方接口用 Mock 替代，只测自己的逻辑
+    await page.route('**/api/analytics/**', (route) => route.abort());  // 埋点不测
+    await page.route('**/api/third-party/**', (route) => {
+      route.fulfill({ status: 200, body: '{}' });
+    });
+    ```
+
+    最有效的优化是**并行执行 + 共享登录态**，通常能把执行时间缩短 60%-80%。
+
+  </Accordion>
+
+  <Accordion title="如何设计 E2E 测试的测试数据管理？" icon="node">
+
+    **答题要点：**
+    测试数据管理是 E2E 测试中最容易被忽视但影响最大的问题。核心原则是"每个测试独立准备、独立清理"。
+
+    **高分回答：**
+
+    测试数据管理有三种策略：
+
+    **策略一：Seed 脚本（推荐）。** 在测试前执行数据库 seed 脚本，插入已知的测试数据。Playwright 的 `globalSetup` 或 `beforeEach` 中调用。
+
+    ```javascript
+    // seed.ts —— 准备测试数据
+    async function seedTestData() {
+      await db.user.create({ data: { id: 1, name: '张三', role: 'admin' } });
+      await db.product.create({ data: { id: 1, name: 'iPhone', price: 999 } });
+      await db.order.create({ data: { userId: 1, productId: 1, status: 'pending' } });
+    }
+
+    // 测试中使用
+    test.beforeEach(async () => {
+      await seedTestData();  // 每个测试前重置数据
+    });
+    ```
+
+    **策略二：API 创建。** 测试中通过 API 调用创建所需数据。灵活但慢（每个测试多一次网络请求）。
+
+    **策略三：Fixtures（快照数据）。** 准备好 JSON 文件，测试前导入。适合数据结构复杂的场景。
+
+    核心原则：**不要依赖上一个测试留下的数据**。每个测试必须能独立运行，单独执行和批量执行结果一致。
+
+  </Accordion>
+
+  <Accordion title="E2E 测试如何处理文件上传和下载？" icon="node">
+
+    **答题要点：**
+    文件操作是 E2E 测试的特殊场景。Playwright 和 Cypress 都提供了专门的 API。
+
+    **高分回答：**
+
+    ```javascript
+    // Playwright: 文件上传
+    test('上传头像', async () => {
+      const fileChooserPromise = page.waitForEvent('filechooser');
+      await page.click('button:has-text("上传头像")');
+      const fileChooser = await fileChooserPromise;
+      await fileChooser.setFiles('./test-assets/avatar.png');
+
+      await expect(page.locator('.avatar-preview')).toBeVisible();
+    });
+
+    // Playwright: 文件下载
+    test('下载 Excel 报表', async () => {
+      const downloadPromise = page.waitForEvent('download');
+      await page.click('button:has-text("导出报表")');
+      const download = await downloadPromise;
+
+      // 验证文件名
+      expect(download.suggestedFilename()).toMatch(/report.*\.xlsx/);
+
+      // 保存到临时目录并验证内容
+      const path = await download.path();
+      expect(fs.existsSync(path)).toBe(true);
+    });
+    ```
+
+    文件上传的核心是**监听 `filechooser` 事件**而不是直接操作 `<input type="file">`——因为很多上传按钮是自定义 UI，点击后才触发隐藏的 file input。文件下载的核心是**监听 `download` 事件**，获取下载路径后验证文件内容。
+
+  </Accordion>
+
+  <Accordion title="如何用 E2E 测试验证性能指标（LCP、FID、CLS）？" icon="skull">
+
+    **答题要点：**
+    这是一道进阶题。E2E 测试不仅能验证功能，还能验证性能。核心是利用 Performance API 和 Playwright 的性能钩子。
+
+    **高分回答：**
+
+    ```javascript
+    // Playwright: 测量页面加载性能
+    test('首页 LCP 应小于 2.5 秒', async () => {
+      await page.goto('/');
+
+      const lcp = await page.evaluate(() => {
+        return new Promise((resolve) => {
+          new PerformanceObserver((list) => {
+            const entries = list.getEntries();
+            resolve(entries[entries.length - 1].startTime);
+          }).observe({ type: 'largest-contentful-paint', buffered: true });
+        });
+      });
+
+      expect(lcp).toBeLessThan(2500);  // LCP < 2.5s
+    });
+
+    // Playwright: 用 Lighthouse 集成做完整的性能审计
+    test('Lighthouse 性能评分 >= 90', async () => {
+      const { playAudit } = require('playwright-lighthouse');
+      await page.goto('/');
+      await playAudit({
+        page,
+        thresholds: {
+          performance: 90,
+          accessibility: 90,
+          'best-practices': 90,
+        },
+      });
+    });
+    ```
+
+    性能测试放在 E2E 测试中有天然优势——它在真实浏览器环境中运行，测量的是用户真实感知到的性能，而不是实验室数据。但要注意：性能指标有波动性，建议设置合理的阈值范围（比如 LCP &lt; 2.5s 而不是 LCP === 1.2s），并在 CI 中用多次运行取中位数。
+
+  </Accordion>
+
+  <Accordion title="E2E 测试如何测试 WebSocket 和 Server-Sent Events？" icon="skull">
+
+    **答题要点：**
+    实时通信是 E2E 测试的难点——传统的请求-响应模型不适用。核心策略是"监听消息"和"发送消息"。
+
+    **高分回答：**
+
+    ```javascript
+    // Playwright: 测试 WebSocket 消息
+    test('实时聊天：发送消息后对方收到', async () => {
+      // 打开两个浏览器上下文模拟两个用户
+      const user1 = await browser.newContext();
+      const user2 = await browser.newContext();
+      const page1 = await user1.newPage();
+      const page2 = await user2.newPage();
+
+      await page1.goto('/chat/room-1');
+      await page2.goto('/chat/room-1');
+
+      // 用户 2 监听 WebSocket 消息
+      const messagePromise = page2.waitForEvent('websocket', (ws) => {
+        return ws.url().includes('/ws/chat');
+      });
+
+      // 用户 1 发送消息
+      await page1.fill('.message-input', '你好');
+      await page1.click('.send-button');
+
+      // 验证用户 2 收到消息
+      await expect(page2.locator('.message-content').last()).toHaveText('你好');
+    });
+
+    // Playwright: 测试 Server-Sent Events (SSE)
+    test('SSE 推送：订单状态实时更新', async () => {
+      await page.goto('/order/123');
+
+      // 通过 API 触发后端推送
+      await request.post('/api/admin/trigger-push', {
+        data: { orderId: 123, status: 'shipped' },
+      });
+
+      // 验证页面实时更新
+      await expect(page.locator('.order-status')).toHaveText('已发货');
+    });
+    ```
+
+    WebSocket 测试的关键是**监听 `websocket` 事件**获取 WebSocket 连接对象，然后监听消息。SSE 测试相对简单——通过 API 触发后端推送，然后验证页面是否更新。
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [Martin Fowler: TestPyramid](https://martinfowler.com/bliki/TestPyramid.html)：测试金字塔的经典定义，明确了不同层级测试的比例和定位。<sup>[1]</sup>
+- 📖 [Kent C. Dodds: Testing Implementation Details](https://kentcdodds.com/blog/testing-implementation-details)：Testing Library 的设计哲学，"测试行为不测试实现"的核心理念来源。<sup>[2]</sup>
+- 🟢 [Playwright 官方文档](https://playwright.dev/docs/intro)：Playwright 的自动等待、Trace Viewer、代码生成器等核心功能的权威参考。<sup>[3]</sup>
+- 🟢 [Cypress 官方文档](https://docs.cypress.io/)：Cypress 的时间旅行调试、cy.intercept 网络拦截等核心功能参考。<sup>[4]</sup>
+- 📖 [Gleb Bahmutov: Cypress vs Playwright](https://glebbahmutov.com/blog/cypress-vs-playwright/)：Cypress 核心贡献者对两个工具的深度对比分析。<sup>[5]</sup>
+- 📖 [阮一峰: E2E 测试框架 Playwright 入门](https://wangdoc.com/javascript/testing/playwright)：国内最通俗易懂的 Playwright 入门教程。<sup>[6]</sup>

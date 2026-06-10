@@ -5,6 +5,8 @@ title: "Webpack"
 > **面试官为什么问这个？**
 >
 > Webpack 是前端工程化的核心基础设施。面试官问这个，本质上是在考察你：**是否理解从源码到产物的完整编译流水线，以及 Loader 和 Plugin 的本质区别。** 如果你答不清楚，说明你对构建工具的使用停留在"会抄配置"而不是"知道为什么这么配"。
+>
+> **延伸方向：** 2024 年后，字节跳动 Web Infra 团队推出基于 Rust 的 Rspack，在保持 Webpack API 兼容性的同时，将构建速度提升 5-10 倍，标志着构建工具从 JavaScript 向系统级语言迁移的趋势。<sup>[4]</sup>
 
 ---
 
@@ -73,9 +75,9 @@ Webpack 把散落的前端资源自动分析、转换、打包成浏览器可运
 </Card>
 </CardGroup>
 
-<Tip title="💡 面试技巧">
+<Tip title="🎢 通俗比喻: 拼装乐高">
 
-回答时先说"为什么"（模块化缺失 + 依赖管理混乱），再说"怎么解决"（递归构建模块图 + Loader 转换 + Plugin 优化）。面试官想听的是你理解构建流程的本质，而不是背配置项。
+Webpack 就像乐高工厂的自动拼装线。散落的积木（模块文件）被传送带送进来，工人（Loader）把不同颜色的积木打磨成统一规格，质检员（Plugin）在流水线各环节检查和优化，最后拼成一个完整的模型（bundle）。你只需要告诉它从哪块积木开始拼（entry），它会自动找出所有需要的零件（依赖图）。
 
 </Tip>
 
@@ -224,6 +226,12 @@ Webpack 的完整编译流程分为五个阶段：
 5. 输出：遍历所有 assets 写入文件系统
 ```
 
+<Tip title="🎢 通俗比喻: 总经理 vs 项目经理">
+
+Compiler 就像公司总经理——整个公司只有一个，负责制定公司制度（全局配置）、管理人事（文件系统）、签发重要文件（生命周期钩子）。Compilation 就像项目经理——每个项目（每次编译）都会任命一个新的项目经理，他带着自己的项目计划书（模块列表）、团队名单（Chunk 列表）和进度表（依赖图）。项目结束后项目经理就解散了，下次编译再任命新的。
+
+</Tip>
+
 ### Watch 模式的工作原理
 
 当开启 `watch: true` 后，Webpack 用 chokidar 监听文件变化。每次文件变更触发重新编译时，会创建一个全新的 Compilation 实例来隔离本次编译的模块列表和依赖图。这就是为什么需要 Compiler 和 Compilation 两个类——Compiler 持久不变，Compilation 每次重建。
@@ -280,6 +288,12 @@ Tree-shaking 需要三个条件同时满足：1) 使用 ES Module 语法（`impo
 
 </Tip>
 
+<Tip title="🎢 通俗比喻: 行李箱打包">
+
+Tree-shaking 就像出门旅行前整理行李箱。你把所有衣服（模块）都摊在床上，然后对着出行清单（import 声明）一件件检查——清单上写了"短袖、长裤、外套"，那些没出现在清单上的"秋裤""棉袄"就被拿出来不带了（dead code 删除）。ES Module 就像清单写得清清楚楚的精简行李，CommonJS 就像一团乱塞的行李箱——你根本不知道里面有什么，自然也拿不出多余的东西。
+
+</Tip>
+
 ### sideEffects 的深度理解
 
 `sideEffects` 不仅仅是 `true`/`false`，还可以是文件列表：
@@ -315,6 +329,12 @@ cache: {
 // 缓存失效策略：文件 ETag 变更 / webpack.config.js 变更 / package.json 变更
 // 第二次构建提速 80%+
 ```
+
+<Note title="💡 一句话总结">
+
+Tree-shaking 的本质是编译期静态分析标记未使用导出（Marking），再由压缩工具清除死代码（Sweeping）。ES Module 的静态语法是前提，`sideEffects` 声明是加速器。
+
+</Note>
 
 ---
 
@@ -376,6 +396,8 @@ cache: {
 > "seal 阶段是核心优化阶段，依次执行：模块优化、Chunk 分组（SplitChunksPlugin 按条件提取共享模块）、Chunk 优化、依赖优化（FlagDependencyUsagePlugin 标记 usedExports 用于 Tree-shaking）、代码生成。输出阶段遍历所有 assets 写入文件系统。<sup>[2]</sup>"
 
 > "Loader 和 Plugin 的本质区别：Loader 是文件级别的管道转换（`pitch` 机制实现从右往左），Plugin 是构建生命周期级别的钩子介入（基于 Tapable 的动态代码生成）。理解 Compiler vs Compilation 的分离设计，是理解 watch 模式和增量编译的关键。"
+
+> "补充一个行业趋势：2024 年字节跳动 Web Infra 团队开源了 Rspack，用 Rust 重写了 Webpack 的核心编译流程，保持 API 兼容性的同时构建速度提升 5-10 倍。这说明 Webpack 的架构设计（Compiler/Compilation 分离、Plugin Hook 机制）经得起语言层面的重写，其模块依赖图和 seal 优化算法是跨语言可移植的。<sup>[4]</sup>"
 
 ### 大厂高频连环拷问
 
@@ -518,3 +540,5 @@ Plugin 是**构建生命周期级别的钩子**，基于 Tapable 的动态代码
 - 🔗 [Webpack 官方文档：Concepts](https://webpack.js.org/concepts/)：*Webpack 核心概念的权威解释，包含 Entry、Output、Loader、Plugin、Mode 的完整说明。* <sup>[1]</sup>
 - 📖 [Tapable 源码](https://github.com/webpack/tapable)：*Webpack 的事件系统底层实现，理解 Hook 的动态代码生成机制。* <sup>[2]</sup>
 - 🟢 [Webpack 源码解析（zhailuxu）](https://github.com/zhailuxu/webpack-source-code-analysis)：*中文社区最详细的 Webpack 源码逐行解析，覆盖编译流程、Tree-shaking、HMR 的底层实现。* <sup>[3]</sup>
+- 🟢 [Tecvan（范文杰）《聊聊 Webpack 5 核心原理》](https://juejin.cn/post/6971456754758496263)：*字节跳动前端技术专家的硬核 Webpack 5 源码级解析，覆盖模块化发展、编译流程、Tree-shaking 和持久化缓存的核心原理。* <sup>[4]</sup>
+- 🔗 [Rspack 官方文档](https://rspack.dev/)：*字节 Web Infra 团队用 Rust 重写的 Webpack 兼容打包器，理解从 JS 到 Rust 的构建工具迁移趋势。* <sup>[5]</sup>

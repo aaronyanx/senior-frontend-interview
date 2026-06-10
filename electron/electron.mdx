@@ -1,0 +1,1153 @@
+---
+title: "Electron"
+---
+
+> **面试官为什么问这个？**
+>
+> Electron 是目前最成熟的桌面应用开发框架，VS Code、Slack、Discord、Figma 桌面端都基于它构建。面试官问这个，本质上是在考察你：**你是否理解桌面应用与 Web 应用的本质差异，以及能否在真实项目中做出正确的架构决策和性能优化？** 如果你只会写渲染进程的页面代码，但说不清主进程和渲染进程的关系、IPC 通信机制、安全模型，说明你的理解停留在"会写网页"而不是"会做桌面应用"。
+
+---
+
+## Q1: Electron 的历史？为什么要有它？
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  NW.js       │ → │  Electron    │ → │  Electron    │ → │  Electron    │
+│  (2011)      │   │  (2013)      │   │  快速发展     │   │  现代生态     │
+│  io.js 项目  │   │  GitHub Atom │   │  VS Code     │   │  成熟稳定     │
+└──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
+```
+
+<Steps>
+
+  <Step title="2011年: NW.js 的前身探索">
+
+    Intel 开源技术中心的赵成和王文瑞发起了 node-webkit 项目（后更名 NW.js），核心思路是将 Chromium 和 Node.js 整合到一个运行时中，让 Web 开发者可以用 HTML/CSS/JS 开发桌面应用。NW.js 证明了"用 Web 技术做桌面应用"这个方向是可行的，但架构设计存在局限——Node.js 和浏览器共享同一个上下文，安全隔离不足。
+
+  </Step>
+  <Step title="2013年: Electron 诞生（GitHub Atom 编辑器）">
+
+    GitHub 为了开发 Atom 编辑器，由 Cheng Zhao（赵成，从 NW.js 项目转来）主导开发了 Electron（最初叫 Atom Shell）。Electron 的核心设计决策是**主进程和渲染进程分离**——主进程运行 Node.js 管理窗口和系统 API，每个窗口是一个独立的 Chromium 渲染进程。这个架构比 NW.js 更安全、更灵活。
+
+  </Step>
+  <Step title="2015-2018年: VS Code 推动 Electron 走向成熟">
+
+    微软选择基于 Electron 构建 VS Code，是 Electron 历史上的转折点。VS Code 证明了 Electron 不只是"能做玩具应用"，而是可以构建复杂、高性能的专业工具。微软投入大量资源优化 Electron 的性能和安全性，贡献了大量上游代码。同期 Slack、Discord、Figma 桌面端也纷纷采用 Electron。
+
+  </Step>
+  <Step title="2019年至今: 持续优化与生态成熟">
+
+    Electron 持续跟进 Chromium 和 Node.js 的版本更新（每个大版本跟随 Chromium 最新稳定版），引入了 contextIsolation（默认启用）、UtilityProcess（替代 remote 模块）、Electron Forge（官方脚手架）等重要特性。2023 年 Electron 28+ 默认支持 ESM（ES Modules），与现代前端生态对齐。
+
+  </Step>
+
+</Steps>
+
+**Electron 解决的核心问题：**
+
+```text
+问题：桌面应用开发要么用原生语言（C++/Swift/Kotlin），要么用 Web 技术但能力受限
+
+原生开发 → 每个平台各写一套（Windows 用 C++，macOS 用 Swift，Linux 用 GTK）→ 成本三倍
+传统 Web → 只能在浏览器沙箱中运行，无法访问文件系统、系统托盘、全局快捷键等原生能力
+
+解决：Chromium + Node.js 合体，Web 技术 + 原生能力
+
+Electron → 渲染进程跑 Web 页面（Chromium）→ 主进程跑 Node.js（系统 API）
+→ IPC 通信连接两者 → 一份代码，三个平台
+```
+
+<Note title="💡 一句话总结">
+
+Electron 将 Chromium 和 Node.js 整合在一个运行时中，让 Web 开发者可以用 HTML/CSS/JS 开发跨平台桌面应用，同时保留访问文件系统、系统托盘等原生能力。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有 Electron">
+
+桌面应用开发要么用 C++/Swift/Kotlin 等原生语言（三个平台三套代码，成本翻三倍），要么用传统 Web 技术但只能在浏览器沙箱中运行，无法访问文件系统和系统 API。就像你想开一家连锁店，要么请三个不同风格的装修队分别设计（成本高），只能用统一的简易装修（功能受限）。
+
+</Card>
+<Card title="✅ 引入 Electron">
+
+Electron 让你用 Web 技术写 UI（HTML/CSS/JS），同时通过 Node.js 访问文件系统、系统托盘、全局快捷键等原生能力。就像请了一个既懂 Web 设计又懂各平台装修规范的团队，用同一套设计图纸，分别适配 Windows、macOS、Linux 的原生体验。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么"（原生开发成本高 + Web 技术能力受限），再说 Electron 的核心思路（Chromium + Node.js 合体，主进程/渲染进程分离），最后提一句 VS Code 对 Electron 生态的推动作用。面试官想听的是你理解桌面应用的架构设计，而不是背 API。
+
+</Tip>
+
+---
+
+## Q2: Electron 核心架构（主进程/渲染进程、IPC 通信）
+
+Electron 的本质是**双进程架构**：一个主进程（Main Process）管理应用生命周期和系统 API，多个渲染进程（Renderer Process）各自运行一个 Web 页面。两者通过 IPC（Inter-Process Communication）通信。
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                    Electron 应用架构                          │
+│                                                             │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │                   主进程 (Main Process)                │  │
+│  │                                                       │  │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐     │  │
+│  │  │ BrowserWindow│ │   Tray      │ │  Menu       │     │  │
+│  │  │ (窗口管理)   │ │ (系统托盘)   │ │ (菜单)      │     │  │
+│  │  └─────────────┘ └─────────────┘ └─────────────┘     │  │
+│  │                                                       │  │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐     │  │
+│  │  │ ipcMain     │ │ dialog      │ │ shell       │     │  │
+│  │  │ (IPC 通信)   │ │ (系统对话框) │ │ (系统命令)   │     │  │
+│  │  └─────────────┘ └─────────────┘ └─────────────┘     │  │
+│  └──────────────┬──────────────────────────────┬─────────┘  │
+│                 │ IPC (进程间通信)                │            │
+│  ┌──────────────▼──────────┐  ┌───────────────▼─────────┐  │
+│  │    渲染进程 1            │  │    渲染进程 2            │  │
+│  │    (BrowserWindow)       │  │    (BrowserWindow)       │  │
+│  │                          │  │                          │  │
+│  │  ┌────────────────────┐ │  │  ┌────────────────────┐ │  │
+│  │  │  Web 页面           │ │  │  │  Web 页面           │ │  │
+│  │  │  HTML/CSS/JS        │ │  │  │  HTML/CSS/JS        │ │  │
+│  │  │  (Chromium 渲染)    │ │  │  │  (Chromium 渲染)    │ │  │
+│  │  └────────────────────┘ │  │  └────────────────────┘ │  │
+│  │  ┌────────────────────┐ │  │  ┌────────────────────┐ │  │
+│  │  │  preload.js         │ │  │  │  preload.js         │ │  │
+│  │  │  (安全桥接层)        │ │  │  │  (安全桥接层)        │ │  │
+│  │  └────────────────────┘ │  │  └────────────────────┘ │  │
+│  └─────────────────────────┘  └──────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 主进程（Main Process）
+
+主进程是 Electron 应用的入口，运行 Node.js 环境，负责：
+
+- **应用生命周期管理**：`app` 模块控制应用的启动、退出、激活等事件
+- **窗口管理**：`BrowserWindow` 创建和管理应用窗口
+- **系统 API 访问**：托盘（`Tray`）、菜单（`Menu`）、对话框（`dialog`）、全局快捷键（`globalShortcut`）
+- **IPC 通信枢纽**：通过 `ipcMain` 接收渲染进程的消息
+
+```javascript
+// main.js — 主进程入口
+const { app, BrowserWindow, ipcMain, Tray, Menu } = require('electron');
+const path = require('path');
+
+let mainWindow;
+let tray;
+
+app.whenReady().then(() => {
+  // 创建主窗口
+  mainWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'), // 安全桥接层
+      contextIsolation: true,   // 默认启用，渲染进程与 preload 隔离
+      nodeIntegration: false,   // 禁止渲染进程直接访问 Node.js
+    },
+  });
+
+  mainWindow.loadFile('index.html');
+
+  // 创建系统托盘
+  tray = new Tray(path.join(__dirname, 'icon.png'));
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: '显示窗口', click: () => mainWindow.show() },
+    { label: '退出', click: () => app.quit() },
+  ]));
+
+  // 监听渲染进程的 IPC 消息
+  ipcMain.handle('read-file', async (event, filePath) => {
+    const fs = require('fs').promises;
+    return await fs.readFile(filePath, 'utf-8');
+  });
+});
+
+// 应用生命周期事件
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    // macOS 点击 Dock 图标时重新创建窗口
+  }
+});
+```
+
+### 渲染进程（Renderer Process）
+
+每个 `BrowserWindow` 对应一个独立的渲染进程，运行 Chromium 渲染引擎，负责：
+
+- **渲染 Web 页面**：HTML/CSS/JS，和浏览器中运行的 Web 页面一样
+- **用户交互**：DOM 事件、表单输入、动画等
+- **通过 preload 脚本与主进程通信**：不能直接访问 Node.js API（安全考虑）
+
+```javascript
+// preload.js — 安全桥接层（运行在渲染进程，但有 Node.js 访问权限）
+const { contextBridge, ipcRenderer } = require('electron');
+
+// 通过 contextBridge 安全地暴露 API 给渲染进程
+contextBridge.exposeInMainWorld('electronAPI', {
+  // 调用主进程的方法（双向通信）
+  readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),
+
+  // 监听主进程的消息（单向通信）
+  onUpdateMessage: (callback) => {
+    ipcRenderer.on('update-message', (event, message) => callback(message));
+  },
+
+  // 发送消息给主进程（单向通信）
+  sendNotification: (message) => ipcRenderer.send('show-notification', message),
+});
+```
+
+```javascript
+// renderer.js — 渲染进程代码（普通 Web 页面中的 JS）
+// 通过 preload 暴露的 electronAPI 与主进程通信
+async function loadFile() {
+  const content = await window.electronAPI.readFile('/path/to/file.txt');
+  document.getElementById('content').textContent = content;
+}
+
+// 监听主进程推送的消息
+window.electronAPI.onUpdateMessage((message) => {
+  console.log('主进程说:', message);
+});
+```
+
+### IPC 通信机制
+
+IPC 是 Electron 的核心通信机制，有三种模式：
+
+| 通信模式 | 方向 | API | 特点 |
+|---------|------|-----|------|
+| **invoke/handle** | 渲染 → 主（双向） | `ipcRenderer.invoke()` / `ipcMain.handle()` | 返回 Promise，支持异步返回值 |
+| **send/on** | 渲染 → 主（单向） | `ipcRenderer.send()` / `ipcMain.on()` | fire-and-forget，不等待返回 |
+| **send/on** | 主 → 渲染（单向） | `webContents.send()` / `ipcRenderer.on()` | 主进程主动推送消息给渲染进程 |
+
+```javascript
+// IPC 通信模式 1：invoke/handle（推荐，双向通信）
+// 渲染进程
+const result = await window.electronAPI.readFile('data.txt');
+
+// 主进程
+ipcMain.handle('read-file', async (event, filePath) => {
+  return await fs.readFile(filePath, 'utf-8');
+});
+
+// IPC 通信模式 2：send/on（单向，渲染 → 主）
+// 渲染进程
+window.electronAPI.sendNotification('Hello from renderer!');
+
+// 主进程
+ipcMain.on('show-notification', (event, message) => {
+  new Notification({ title: '通知', body: message }).show();
+});
+
+// IPC 通信模式 3：send/on（单向，主 → 渲染）
+// 主进程
+mainWindow.webContents.send('update-message', 'Hello from main!');
+
+// 渲染进程
+window.electronAPI.onUpdateMessage((message) => {
+  console.log(message);
+});
+```
+
+### Preload 脚本的作用
+
+Preload 脚本是 Electron 安全模型的关键——它运行在渲染进程中，但拥有 Node.js 访问权限，同时通过 `contextBridge` 安全地暴露有限的 API 给 Web 页面。
+
+```text
+Web 页面（不可信）
+    ↓ 不能直接访问 Node.js
+Preload 脚本（半可信） ← contextBridge 暴露有限 API
+    ↓ 可以访问 Node.js 和 ipcRenderer
+主进程（可信） ← ipcMain.handle 处理请求
+```
+
+<Note title="💡 一句话总结">
+
+Electron 的核心架构是双进程模型：主进程（Node.js）管理窗口和系统 API，渲染进程（Chromium）渲染 Web 页面，两者通过 IPC 通信。Preload 脚本通过 contextBridge 安全地桥接两个世界。
+
+</Note>
+
+<Tip title="🎢 通俗比喻: 公司的管理层与员工">
+
+Electron 应用就像一家公司。主进程是管理层——负责公司的运营（应用生命周期）、人事（窗口管理）、对外关系（系统 API）。渲染进程是各个部门的员工——各自在自己的工位上（BrowserWindow）干活（渲染 Web 页面）。员工不能直接打电话给客户（不能直接访问系统 API），必须通过管理层审批（IPC 通信）。Preload 脚本是部门秘书——帮员工把需求转达给管理层，但会过滤掉不安全的请求。
+
+</Tip>
+
+### 主进程与渲染进程的职责对比
+
+| 维度 | 主进程 (Main Process) | 渲染进程 (Renderer Process) |
+|------|----------------------|---------------------------|
+| **运行环境** | Node.js | Chromium（Web 页面） |
+| **核心职责** | 窗口管理、系统 API、应用生命周期 | 渲染 UI、处理用户交互 |
+| **可用 API** | `app`、`BrowserWindow`、`ipcMain`、`dialog`、`Tray`、`Menu` | DOM API、Web API、`contextBridge` 暴露的有限 API |
+| **Node.js 访问** | 完整访问 | 默认不可访问（`contextIsolation: true`） |
+| **数量** | 1 个 | 每个窗口 1 个 |
+| **安全等级** | 高信任 | 低信任（可能加载外部内容） |
+
+---
+
+## Q3: Electron 性能优化（启动速度、内存占用、包体积）
+
+Electron 的性能问题是面试中最高频的追问——因为 Chromium + Node.js 的运行时天然比较重。理解优化策略是区分"能用"和"用好"的关键。
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│              Electron 性能优化三大维度                     │
+│                                                         │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │  启动速度      │  │  内存占用      │  │  包体积       │  │
+│  │              │  │              │  │              │  │
+│  │  按需加载     │  │  进程管理      │  │  精简依赖     │  │
+│  │  延迟初始化   │  │  内存回收      │  │  asar 打包    │  │
+│  │  预加载缓存   │  │  共享进程      │  │  Tree Shaking│  │
+│  └──────────────┘  └──────────────┘  └──────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 启动速度优化
+
+Electron 的启动链路：`app.launch` → 主进程初始化 → `BrowserWindow` 创建 → 渲染进程启动 → Web 页面加载 → 首屏渲染。每个阶段都有优化空间。
+
+```javascript
+// 优化 1：延迟创建 BrowserWindow
+// 不要在 app.whenReady() 中立即创建所有窗口
+app.whenReady().then(() => {
+  // 只创建主窗口，其他窗口按需创建
+  createMainWindow();
+
+  // 监听事件，按需创建其他窗口
+  ipcMain.handle('open-settings', () => {
+    if (!settingsWindow) {
+      settingsWindow = createSettingsWindow();
+    }
+    settingsWindow.show();
+  });
+});
+
+// 优化 2：使用 BrowserWindow 的 show: false 选项
+// 先隐藏窗口，页面加载完成后再显示（避免白屏闪烁）
+function createMainWindow() {
+  const win = new BrowserWindow({
+    show: false,  // 先不显示
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+    },
+  });
+
+  win.loadFile('index.html');
+
+  // 页面加载完成后再显示
+  win.once('ready-to-show', () => {
+    win.show();
+  });
+
+  return win;
+}
+
+// 优化 3：V8 代码缓存（Code Cache）
+// Electron 内置了 V8 代码缓存，首次启动后会缓存编译结果
+// 第二次启动时直接加载缓存，跳过编译阶段
+// 无需额外配置，但要确保 preload.js 和 renderer.js 不频繁变更
+
+// 优化 4：预加载关键数据
+// 在主进程启动时就开始加载关键数据，不等渲染进程请求
+let cachedData = null;
+app.whenReady().then(async () => {
+  cachedData = await loadCriticalData(); // 并行加载
+  createMainWindow();
+});
+
+ipcMain.handle('get-critical-data', () => {
+  return cachedData; // 渲染进程请求时直接返回缓存
+});
+```
+
+### 内存占用优化
+
+Electron 应用的内存占用通常在 150-400MB，因为每个 BrowserWindow 都是一个独立的 Chromium 渲染进程。
+
+```javascript
+// 优化 1：控制窗口数量
+// 每个 BrowserWindow 都是一个独立进程，消耗 50-100MB 内存
+// 策略：复用窗口，而不是每次创建新窗口
+let windowPool = {};
+
+function getWindow(name) {
+  if (windowPool[name] && !windowPool[name].isDestroyed()) {
+    windowPool[name].show();
+    return windowPool[name];
+  }
+  windowPool[name] = createWindow(name);
+  return windowPool[name];
+}
+
+// 优化 2：隐藏时释放资源
+// 窗口最小化或隐藏时，通知渲染进程释放资源
+win.on('minimize', () => {
+  win.webContents.send('window-minimized');
+});
+
+// 渲染进程
+window.electronAPI.onWindowMinimized(() => {
+  // 暂停动画、取消定时器、释放大图片等
+  clearInterval(dataRefreshTimer);
+  stopAnimations();
+});
+
+// 优化 3：使用 webContents.session 清理缓存
+// 定期清理磁盘缓存和内存缓存
+session.defaultSession.clearCache(() => {
+  console.log('缓存已清理');
+});
+
+// 优化 4：限制渲染进程的内存
+// 通过 Chromium 的 --js-flags 限制 V8 堆大小
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512');
+```
+
+### 包体积优化
+
+Electron 应用的默认打包体积约 150-200MB（包含完整的 Chromium 和 Node.js），优化空间很大。
+
+```javascript
+// electron-builder.yml 配置优化
+// 1. 使用 asar 打包（将应用代码打包为单个文件）
+asar: true
+
+// 2. 排除不需要的文件
+files:
+  - "dist/**/*"
+  - "package.json"
+  - "!node_modules/**/{test,tests,__tests__}/**"
+  - "!node_modules/**/*.{md,ts,map}"
+  - "!**/*.{map,ts}"
+
+// 3. 精简 node_modules
+// 只安装 production 依赖
+// npm install --production
+// 或在 package.json 中将开发依赖放到 devDependencies
+
+// 4. 使用 Rebuild 原生模块
+// 确保原生模块（如 better-sqlite3）匹配 Electron 的 Node.js 版本
+// electron-builder 会自动处理，但需要配置
+
+// 5. 压缩资源文件
+// 图片用 WebP/AVIF 格式，字体子集化
+// 将大图片放在远程服务器，按需加载
+```
+
+### asar 打包机制
+
+asar（Atom Shell Archive）是 Electron 的打包格式，将应用代码打包为单个文件，类似于 tar 但支持随机读取。
+
+```text
+普通打包：
+app/
+├── main.js
+├── preload.js
+├── renderer.js
+├── index.html
+└── node_modules/
+    ├── express/
+    ├── lodash/
+    └── ...（数千个文件）
+
+asar 打包：
+app.asar（单个文件，内部结构不变）
+├── main.js
+├── preload.js
+├── renderer.js
+├── index.html
+└── node_modules/
+```
+
+<Note title="💡 一句话总结">
+
+Electron 性能优化三大策略：启动速度用延迟创建窗口 + show: false 避免白屏；内存占用控制窗口数量 + 隐藏时释放资源；包体积用 asar 打包 + 精简依赖 + 资源外置。
+
+</Note>
+
+---
+
+## Q4: Electron 安全问题（CSP、nodeIntegration、contextIsolation）
+
+Electron 的安全模型是面试中的高频考点——因为桌面应用的安全边界比 Web 应用更复杂，一旦配置不当可能导致远程代码执行（RCE）。
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                 Electron 安全模型                             │
+│                                                             │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  主进程 (高信任)                                       │  │
+│  │  可以访问：Node.js API、文件系统、系统 API              │  │
+│  │  安全策略：只加载本地代码，不加载远程内容                │  │
+│  └──────────────────────┬───────────────────────────────┘  │
+│                         │ IPC（经过验证的消息）               │
+│  ┌──────────────────────▼───────────────────────────────┐  │
+│  │  Preload 脚本 (半信任)                                 │  │
+│  │  可以访问：Node.js API（有限）、ipcRenderer             │  │
+│  │  安全策略：通过 contextBridge 暴露有限 API              │  │
+│  └──────────────────────┬───────────────────────────────┘  │
+│                         │ contextBridge（只暴露白名单 API）  │
+│  ┌──────────────────────▼───────────────────────────────┐  │
+│  │  渲染进程 (低信任)                                      │  │
+│  │  可以访问：DOM API、Web API                            │  │
+│  │  安全策略：CSP 限制、不能访问 Node.js                   │  │
+│  └──────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 关键安全配置
+
+```javascript
+// main.js — 安全的 BrowserWindow 配置
+const win = new BrowserWindow({
+  webPreferences: {
+    // ✅ contextIsolation: true（默认启用）
+    // 渲染进程的 JS 上下文与 preload 脚本隔离
+    // 防止恶意网页篡改 preload 暴露的 API
+    contextIsolation: true,
+
+    // ❌ nodeIntegration: false（必须禁用）
+    // 如果启用，渲染进程中的 Web 页面可以直接访问 Node.js API
+    // 恶意脚本可以通过 require('child_process').exec() 执行任意命令
+    nodeIntegration: false,
+
+    // ✅ sandbox: true（Electron 20+ 默认启用）
+    // 渲染进程运行在 Chromium 沙箱中，进一步限制系统访问
+    sandbox: true,
+
+    // ✅ webSecurity: true（默认启用）
+    // 保持同源策略，禁止跨域请求
+    // 不要为了方便而设置为 false
+    webSecurity: true,
+
+    // ✅ 指定 preload 脚本
+    preload: path.join(__dirname, 'preload.js'),
+  },
+});
+```
+
+### CSP（Content Security Policy）
+
+CSP 是防御 XSS 攻击的核心机制——限制渲染进程可以加载和执行的资源来源。
+
+```html
+<!-- index.html — 严格 CSP 配置 -->
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'self';
+           script-src 'self';
+           style-src 'self' 'unsafe-inline';
+           img-src 'self' data:;
+           connect-src 'self' https://api.example.com;">
+```
+
+```javascript
+// ❌ 危险配置：允许内联脚本和 eval
+// 'unsafe-inline' 允许 <script> 标签中的内联脚本
+// 'unsafe-eval' 允许 eval()、new Function() 等动态代码执行
+// 这两者都会让 XSS 攻击变得容易
+"script-src 'self' 'unsafe-inline' 'unsafe-eval'"  // 极度危险！
+
+// ✅ 安全配置：只允许加载外部脚本文件
+"script-src 'self'"  // 只允许 <script src="file.js"> 加载本地文件
+
+// ✅ 使用 nonce 允许特定内联脚本
+// 生成随机 nonce，只有带 nonce 的 <script> 标签才能执行
+const nonce = crypto.randomBytes(16).toString('base64');
+"script-src 'self' 'nonce-${nonce}'"
+```
+
+### 常见安全漏洞与防范
+
+```javascript
+// 漏洞 1：nodeIntegration 开启导致 RCE
+// ❌ 极度危险：渲染进程可以直接执行系统命令
+const win = new BrowserWindow({
+  webPreferences: { nodeIntegration: true }, // 千万不要！
+});
+// 如果页面加载了外部内容（如 iframe 嵌入第三方页面），
+// 恶意脚本可以通过 require('child_process').exec('rm -rf /') 删除文件
+
+// 漏洞 2：remote 模块（已废弃）
+// 旧版本 Electron 的 remote 模块允许渲染进程直接调用主进程 API
+// 这相当于绕过了 IPC 安全检查，已被废弃
+// 替代方案：通过 ipcRenderer.invoke() + ipcMain.handle() 安全通信
+
+// 漏洞 3：target=_blank 链接未设置 rel="noopener"
+// 恶意页面可以通过 window.opener 访问父页面
+// ❌ <a href="https://evil.com" target="_blank">
+// ✅ <a href="https://evil.com" target="_blank" rel="noopener noreferrer">
+
+// 在主进程中全局拦截新窗口创建
+app.on('web-contents-created', (event, contents) => {
+  contents.setWindowOpenHandler(({ url }) => {
+    // 只允许打开白名单域名
+    if (isAllowedURL(url)) {
+      shell.openExternal(url); // 用系统默认浏览器打开
+    }
+    return { action: 'deny' }; // 禁止在应用内打开
+  });
+});
+```
+
+<Warning title="⚠️ 核心安全规则">
+
+Electron 安全的三条铁律：
+
+- **永远不要启用 `nodeIntegration`**：渲染进程不应直接访问 Node.js API
+- **永远保持 `contextIsolation: true`**：渲染进程 JS 上下文必须与 preload 隔离
+- **永远使用 CSP 限制脚本来源**：防止 XSS 攻击执行恶意代码
+
+这三条规则违反任何一条，都可能导致远程代码执行（RCE）漏洞。
+
+</Warning>
+
+<Note title="💡 一句话总结">
+
+Electron 安全模型的核心是三层隔离：主进程（高信任，访问系统 API）→ Preload（半信任，通过 contextBridge 暴露有限 API）→ 渲染进程（低信任，只能访问 Web API）。关键配置：`contextIsolation: true` + `nodeIntegration: false` + 严格 CSP。
+
+</Note>
+
+---
+
+## Q5: Electron 打包分发（electron-builder、auto-update）
+
+Electron 应用的打包分发是工程化的最后一步——将源码打包为可安装的平台格式（.exe、.dmg、.AppImage），并实现自动更新。
+
+### 打包工具对比
+
+| 工具 | 维护方 | 特点 | 推荐度 |
+|------|--------|------|--------|
+| **Electron Forge** | Electron 官方 | 官方推荐的脚手架，集成打包、发布、插件系统 | 新项目首选 |
+| **electron-builder** | 社区 | 功能最全面，支持多平台、自动更新、代码签名 | 成熟项目首选 |
+| **electron-packager** | 社区 | 最简单的打包工具，只做打包不做分发 | 小型项目 |
+
+### electron-builder 配置
+
+```javascript
+// package.json 中配置
+{
+  "build": {
+    "appId": "com.example.myapp",
+    "productName": "MyApp",
+    "directories": {
+      "output": "release"  // 输出目录
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": ["dmg", "zip"],
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,     // macOS 安全加固
+      "gatekeeperAssess": false
+    },
+    "win": {
+      "target": ["nsis", "portable"],
+      "icon": "build/icon.ico"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "build/icon.png",
+      "category": "Utility"
+    },
+    "nsis": {
+      "oneClick": false,           // 非一键安装，允许选择安装路径
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
+  }
+}
+```
+
+### 自动更新（autoUpdater）
+
+Electron 的自动更新通过 `electron-updater` 实现，基于 Squirrel 更新框架。
+
+```javascript
+// main.js — 自动更新逻辑
+const { autoUpdater } = require('electron-updater');
+const log = require('electron-log');
+
+// 配置日志
+autoUpdater.logger = log;
+autoUpdater.logger.transports.file.level = 'info';
+
+// 检查更新
+autoUpdater.checkForUpdatesAndNotify();
+
+// 更新事件监听
+autoUpdater.on('checking-for-update', () => {
+  log.info('检查更新中...');
+});
+
+autoUpdater.on('update-available', (info) => {
+  log.info('发现新版本:', info.version);
+  // 通知渲染进程
+  mainWindow.webContents.send('update-available', info);
+});
+
+autoUpdater.on('update-not-available', () => {
+  log.info('当前已是最新版本');
+});
+
+autoUpdater.on('download-progress', (progress) => {
+  log.info(`下载进度: ${progress.percent.toFixed(1)}%`);
+  mainWindow.webContents.send('download-progress', progress);
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+  log.info('更新下载完成，准备安装');
+  // 提示用户重启应用以完成更新
+  dialog.showMessageBox({
+    type: 'info',
+    title: '更新就绪',
+    message: '新版本已下载完成，是否立即重启应用？',
+    buttons: ['立即重启', '稍后'],
+  }).then((result) => {
+    if (result.response === 0) {
+      autoUpdater.quitAndInstall(); // 退出并安装
+    }
+  });
+});
+
+autoUpdater.on('error', (error) => {
+  log.error('更新出错:', error);
+});
+```
+
+```javascript
+// 渲染进程 — 更新 UI
+window.electronAPI.onUpdateAvailable((info) => {
+  showUpdateBanner(`发现新版本 ${info.version}，正在下载...`);
+});
+
+window.electronAPI.onDownloadProgress((progress) => {
+  updateProgressBar(progress.percent);
+});
+```
+
+### 代码签名
+
+代码签名是分发桌面应用的必要步骤——Windows 需要代码签名证书，macOS 需要 Apple Developer 证书。
+
+```text
+代码签名的作用：
+
+未签名的应用 → 用户下载后弹出安全警告 → 大部分用户不敢安装
+已签名的应用 → 系统验证签名有效 → 正常安装，无警告
+
+macOS 签名流程：
+1. 注册 Apple Developer Program（$99/年）
+2. 获取 Developer ID 证书
+3. electron-builder 自动签名（配置 CSC_LINK 和 CSC_KEY_PASSWORD 环境变量）
+4. 公证（Notarization）：上传到 Apple 服务器验证无恶意代码
+
+Windows 签名流程：
+1. 购买代码签名证书（DigiCert、Sectigo 等）
+2. 配置证书文件和密码
+3. electron-builder 自动签名
+```
+
+<Note title="💡 一句话总结">
+
+Electron 打包分发推荐 electron-builder（成熟项目）或 Electron Forge（新项目），自动更新通过 electron-updater 实现（检查 → 下载 → 通知重启），代码签名是分发的必要步骤。
+
+</Note>
+
+---
+
+## 🔍 底层源码：Electron 是如何实现的？
+
+<div class="follow-up">
+Electron 的主进程和渲染进程是如何隔离的？
+</div>
+
+Electron 在 Chromium 的多进程架构基础上，通过 `BrowserWindow` 的 `webPreferences` 配置实现进程隔离。核心实现在 `electron::RendererClientBase`（[electron/shell/renderer](https://github.com/electron/electron/tree/main/shell/renderer)）：
+
+```cpp
+// Electron 的渲染进程初始化（简化）
+// renderer_client_base.cc
+void RendererClientBase::RenderFrameCreated(
+    content::RenderFrame* render_frame) {
+  // 1. 创建 Node.js 绑定（如果启用）
+  if (node_integration_) {
+    node::Environment* env = node::CreateEnvironment(
+      render_frame->GetWebFrame()->MainWorldScriptContext(),
+      node::CreateEventLoop(uv_default_loop()));
+  }
+
+  // 2. 注入 preload 脚本
+  if (!preload_script_.empty()) {
+    render_frame->ExecuteScript(preload_script_);
+  }
+
+  // 3. 如果启用 contextIsolation，创建隔离的 JS 上下文
+  if (context_isolation_) {
+    // preload 脚本运行在一个独立的 V8 Context 中
+    // 通过 contextBridge 在两个 Context 之间安全传递数据
+  }
+}
+```
+
+<div class="follow-up">
+contextBridge 是怎么实现跨上下文安全通信的？
+</div>
+
+`contextBridge` 的核心实现在 `electron::ContextBridge`（[electron/shell/renderer/api](https://github.com/electron/electron/tree/main/shell/renderer/api)）。它使用 V8 的 `Global` 对象在两个隔离的 JS 上下文之间传递值，通过深拷贝和代理（Proxy）实现：
+
+```cpp
+// context_bridge.cc（简化）
+// 将 preload 上下文的值转换为渲染进程上下文可用的代理对象
+v8::Local<v8::Value> ContextBridge::PassValueToOtherContext(
+    v8::Local<v8::Context> source_context,
+    v8::Local<v8::Context> destination_context,
+    v8::Local<v8::Value> value) {
+  // 如果是函数，创建一个代理函数
+  // 调用时通过 IPC 传递参数和返回值
+  if (value->IsFunction()) {
+    return CreateFunctionProxy(source_context, destination_context,
+                               value.As<v8::Function>());
+  }
+
+  // 如果是对象，递归创建代理对象
+  if (value->IsObject()) {
+    return CreateObjectProxy(source_context, destination_context,
+                             value.As<v8::Object>());
+  }
+
+  // 基本类型（string, number, boolean）直接深拷贝
+  return v8::JSON::Parse(destination_context,
+                         v8::JSON::Stringify(source_context, value)
+                             .ToLocalChecked());
+}
+```
+
+`contextBridge` 的安全保证：渲染进程拿到的是一个代理对象，访问属性或调用函数时会经过安全检查，不会直接引用 preload 上下文中的原始对象。
+
+<div class="follow-up">
+IPC 消息是如何在主进程和渲染进程之间传递的？
+</div>
+
+Electron 的 IPC 底层基于 Chromium 的 `mojo` IPC 系统（[mojo/public/cpp](https://chromium.googlesource.com/chromium/src/+/main/mojo/)）。当渲染进程调用 `ipcRenderer.invoke('channel', data)` 时：
+
+```cpp
+// electron_api_ipc.cc（简化）
+// 渲染进程侧
+void IPCRenderer::Invoke(const std::string& channel,
+                         v8::Local<v8::Value> arguments) {
+  // 1. 将 V8 值序列化为 mojo 消息
+  blink::CloneableMessage message;
+  SerializeV8Value(arguments, &message);
+
+  // 2. 通过 mojo 管道发送给主进程
+  electron_remote_->Invoke(channel, message,
+    base::BindOnce(&IPCRenderer::OnInvokeResponse, weak_factory_.GetWeakPtr()));
+}
+
+// 主进程侧
+void IPCMain::HandleInvoke(const std::string& channel,
+                           blink::CloneableMessage arguments,
+                           InvokeCallback callback) {
+  // 1. 反序列化消息
+  v8::Local<v8::Value> args = DeserializeMessage(arguments);
+
+  // 2. 调用注册的 handler
+  v8::Local<v8::Value> result = handler_map_[channel]->Call(args);
+
+  // 3. 将结果序列化回传
+  blink::CloneableMessage response;
+  SerializeV8Value(result, &response);
+  std::move(callback).Run(response);
+}
+```
+
+mojo 是 Chromium 的跨进程通信框架，比传统的 IPC 更高效——它支持共享内存、零拷贝传递大块数据，并且有完善的类型安全保证。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："说说 Electron 的主进程和渲染进程，以及如何通信？"
+
+**及格回答（60-70分）：**
+> "Electron 有主进程和渲染进程。主进程运行 Node.js，管理窗口；渲染进程运行 Web 页面。它们通过 IPC 通信，用 ipcMain 和 ipcRenderer。"
+
+面试官评价：**知道基本概念但不理解安全模型**。
+
+**满分回答（90-100分）：**
+
+> Electron 的核心架构是**双进程模型**：主进程运行 Node.js 环境，负责应用生命周期、窗口管理（`BrowserWindow`）和系统 API（托盘、菜单、对话框）；每个窗口对应一个独立的 Chromium 渲染进程，运行 Web 页面。两者通过 IPC（Inter-Process Communication）通信，推荐使用 `ipcRenderer.invoke()` + `ipcMain.handle()` 的双向异步模式。<sup>[1]</sup>
+
+> 安全模型是 Electron 架构设计的核心。渲染进程中的 Web 页面**不能直接访问 Node.js API**（`nodeIntegration: false`），必须通过 preload 脚本桥接。Preload 脚本运行在渲染进程中但拥有 Node.js 权限，通过 `contextBridge.exposeInMainWorld()` 安全地暴露有限的 API 给 Web 页面。`contextIsolation: true` 确保渲染进程的 JS 上下文与 preload 隔离，防止恶意网页篡改 preload 暴露的 API。<sup>[2]</sup>
+
+> 我在实际项目中遇到过的坑：早期为了方便启用了 `nodeIntegration: true`，结果因为页面嵌入了第三方 iframe，导致外部脚本可以通过 `require('child_process')` 执行系统命令。修复方案是：禁用 `nodeIntegration`，启用 `contextIsolation`，所有系统调用通过 `ipcMain.handle()` 在主进程执行，preload 脚本只暴露白名单 API。同时配置严格的 CSP（`script-src 'self'`），防止 XSS 攻击。
+
+> 项目建议：新项目直接用 Electron Forge 脚手架，它的默认配置就是安全的。老项目如果还有 `nodeIntegration: true`，应该优先迁移——这是安全红线。
+
+### 大厂高频连环拷问
+
+> 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。每个模块 **8 个 Accordion**，覆盖 4 个难度层级。
+
+<AccordionGroup>
+
+  <Accordion title="Electron 的主进程和渲染进程有什么区别？" icon="layer-group">
+
+    **答题要点：**
+    从运行环境、可用 API、安全等级三个维度对比。
+
+    **高分回答：**
+    "主进程运行 Node.js 环境，负责应用生命周期管理（`app` 模块）、窗口创建和管理（`BrowserWindow`）、系统 API 访问（`Tray`、`Menu`、`dialog`、`globalShortcut`）。整个应用只有一个主进程。
+
+    每个 `BrowserWindow` 对应一个独立的渲染进程，运行 Chromium 渲染引擎，负责渲染 Web 页面（HTML/CSS/JS）和处理用户交互。渲染进程**不能直接访问 Node.js API**（`contextIsolation: true` + `nodeIntegration: false`），必须通过 preload 脚本和 `contextBridge` 安全桥接。
+
+    ```text
+    主进程（1个）：Node.js 环境 → app、BrowserWindow、ipcMain、dialog、Tray
+    渲染进程（N个）：Chromium 环境 → DOM API、Web API、contextBridge 暴露的有限 API
+    ```
+
+    安全等级不同：主进程是高信任的（可以执行系统命令），渲染进程是低信任的（可能加载外部内容）。所以系统操作必须在主进程执行，渲染进程通过 IPC 请求主进程完成。"
+
+  </Accordion>
+
+  <Accordion title="Electron 中 IPC 通信有几种方式？分别适用什么场景？" icon="layer-group">
+
+    **答题要点：**
+    要讲清楚三种 IPC 模式的区别和适用场景。
+
+    **高分回答：**
+    "Electron 有三种 IPC 通信模式：
+
+    **1. invoke/handle（推荐，双向异步）：** 渲染进程调用 `ipcRenderer.invoke('channel', data)`，主进程通过 `ipcMain.handle('channel', handler)` 处理并返回结果。返回 Promise，适用于需要获取返回值的场景（如读取文件、数据库查询）。
+
+    **2. send/on（单向，渲染 → 主）：** 渲染进程调用 `ipcRenderer.send('channel', data)`，主进程通过 `ipcMain.on('channel', handler)` 监听。fire-and-forget，不等待返回值，适用于通知类场景（如发送通知、记录日志）。
+
+    **3. webContents.send/on（单向，主 → 渲染）：** 主进程调用 `mainWindow.webContents.send('channel', data)`，渲染进程通过 `ipcRenderer.on('channel', handler)` 监听。适用于主进程主动推送数据给渲染进程（如更新通知、数据变更）。
+
+    ```javascript
+    // 推荐模式：invoke/handle
+    // 渲染进程
+    const result = await window.electronAPI.readFile('data.txt');
+    // 主进程
+    ipcMain.handle('read-file', async (event, path) => {
+      return await fs.readFile(path, 'utf-8');
+    });
+    ```
+
+    注意：所有 IPC 消息都应经过验证——主进程不应该盲目信任渲染进程发来的数据，需要验证参数类型和合法性。"
+
+  </Accordion>
+
+  <Accordion title="Electron 的安全模型是什么？如何防止 XSS 和 RCE？" icon="stopwatch">
+
+    **答题要点：**
+    要讲清楚三层安全模型和关键配置。
+
+    **高分回答：**
+    "Electron 的安全模型是三层隔离：
+
+    **第一层：进程隔离** — 主进程（高信任）和渲染进程（低信任）是独立的操作系统进程，内存空间隔离。渲染进程崩溃不会影响主进程。
+
+    **第二层：上下文隔离** — `contextIsolation: true` 确保渲染进程的 JS 上下文与 preload 脚本隔离。恶意网页无法篡改 preload 暴露的 API。
+
+    **第三层：CSP 限制** — Content Security Policy 限制渲染进程可以加载和执行的资源来源。`script-src 'self'` 只允许加载本地脚本文件，防止 XSS 注入执行。
+
+    防止 RCE 的关键配置：
+    - `nodeIntegration: false`：渲染进程不能直接访问 Node.js API
+    - `contextIsolation: true`：渲染进程与 preload 上下文隔离
+    - `sandbox: true`：渲染进程运行在 Chromium 沙箱中
+    - preload 脚本通过 `contextBridge` 只暴露白名单 API
+
+    ```javascript
+    // ❌ 极度危险：nodeIntegration 开启
+    // 恶意脚本可以通过 require('child_process').exec('rm -rf /')
+    { nodeIntegration: true }
+
+    // ✅ 安全配置
+    { nodeIntegration: false, contextIsolation: true, sandbox: true }
+    ```"
+
+  </Accordion>
+
+  <Accordion title="Electron 中 preload 脚本的作用是什么？为什么需要它？" icon="stopwatch">
+
+    **答题要点：**
+    要讲清楚 preload 在安全模型中的位置和 contextBridge 的作用。
+
+    **高分回答：**
+    "Preload 脚本是 Electron 安全模型的关键——它运行在渲染进程中，但拥有 Node.js 访问权限，同时通过 `contextBridge` 安全地暴露有限的 API 给 Web 页面。
+
+    为什么需要 preload？因为渲染进程中的 Web 页面不能直接访问 Node.js API（安全考虑），但某些功能需要调用系统 API（如读取文件、发送 IPC 消息）。Preload 脚本作为'中间人'，可以访问 Node.js 和 `ipcRenderer`，然后通过 `contextBridge.exposeInMainWorld()` 将安全封装的 API 暴露给 Web 页面。
+
+    ```javascript
+    // preload.js
+    const { contextBridge, ipcRenderer } = require('electron');
+
+    // 安全地暴露 API 给渲染进程
+    contextBridge.exposeInMainWorld('electronAPI', {
+      readFile: (path) => ipcRenderer.invoke('read-file', path),
+      onUpdate: (callback) => ipcRenderer.on('update', (e, data) => callback(data)),
+    });
+    ```
+
+    `contextBridge` 的安全保证：渲染进程拿到的是一个**代理对象**，不是 preload 上下文中的原始对象。即使恶意代码试图修改这个代理对象，也只影响渲染进程自己的上下文，不会影响 preload 或主进程。"
+
+  </Accordion>
+
+  <Accordion title="Electron 应用的启动流程是什么？如何优化启动速度？" icon="node">
+
+    **答题要点：**
+    按时间顺序讲清楚启动链路，给出具体优化点。
+
+    **高分回答：**
+    "Electron 应用的启动流程分为 5 个阶段：
+
+    ```text
+    1. app.launch → 主进程启动（100-200ms）
+    2. app.whenReady → 应用初始化（创建窗口、注册事件）
+    3. BrowserWindow 创建 → 渲染进程启动（200-500ms）
+    4. loadFile/loadURL → Web 页面加载（100-500ms）
+    5. DOMContentLoaded → 首屏渲染（取决于页面复杂度）
+    ```
+
+    优化手段：
+
+    | 阶段 | 优化策略 | 效果 |
+    |------|---------|------|
+    | 主进程初始化 | 延迟加载非关键模块 | 减少 50-100ms |
+    | 窗口创建 | `show: false` + `ready-to-show` | 避免白屏闪烁 |
+    | 渲染进程 | 按需创建窗口，复用已有窗口 | 减少进程创建开销 |
+    | Web 页面 | 代码拆分、延迟加载非首屏资源 | 减少页面加载时间 |
+    | V8 缓存 | 首次启动后自动缓存编译结果 | 第二次启动提速 30-50% |
+
+    ```javascript
+    // 最佳实践：show: false + ready-to-show
+    const win = new BrowserWindow({ show: false });
+    win.loadFile('index.html');
+    win.once('ready-to-show', () => win.show());
+    ```"
+
+  </Accordion>
+
+  <Accordion title="Electron 中如何实现自动更新？" icon="node">
+
+    **答题要点：**
+    讲清楚更新流程和 electron-updater 的使用。
+
+    **高分回答：**
+    "Electron 的自动更新通过 `electron-updater` 实现，基于 Squirrel 更新框架。流程是：应用启动时检查服务器是否有新版本 → 有则后台下载 → 下载完成后通知用户重启应用。
+
+    ```javascript
+    const { autoUpdater } = require('electron-updater');
+
+    // 启动时检查更新
+    autoUpdater.checkForUpdatesAndNotify();
+
+    // 事件监听
+    autoUpdater.on('update-available', (info) => {
+      mainWindow.webContents.send('update-available', info);
+    });
+
+    autoUpdater.on('update-downloaded', () => {
+      dialog.showMessageBox({
+        type: 'info',
+        title: '更新就绪',
+        message: '新版本已下载，是否立即重启？',
+        buttons: ['立即重启', '稍后'],
+      }).then((result) => {
+        if (result.response === 0) {
+          autoUpdater.quitAndInstall();
+        }
+      });
+    });
+    ```
+
+    注意事项：
+    1. **代码签名**：macOS 和 Windows 都需要代码签名，否则更新会被系统阻止
+    2. **增量更新**：electron-updater 支持增量更新（只下载变更的部分），减少下载量
+    3. **回滚机制**：保留上一个稳定版本，更新失败时可以回滚
+    4. **静默更新**：可以配置为后台下载、下次启动时自动安装，不打扰用户"
+
+  </Accordion>
+
+  <Accordion title="🔥 Electron 和 Tauri 有什么区别？如何选择？" icon="skull">
+
+    **答题要点：**
+    从架构、性能、生态、适用场景四个维度对比。
+
+    **高分回答：**
+    "Electron 和 Tauri 是两种不同的桌面应用开发方案，核心区别在于**渲染方式**：
+
+    **Electron** 内嵌完整的 Chromium 浏览器，所有窗口都用 Chromium 渲染。优点是 Web 兼容性最好（就是 Chrome），缺点是包体积大（150-200MB）、内存占用高（每个窗口 50-100MB）。
+
+    **Tauri** 使用操作系统自带的 WebView（macOS 用 WKWebView，Windows 用 WebView2，Linux 用 WebKitGTK），后端用 Rust 实现。优点是包体积小（几 MB）、内存占用低，缺点是不同平台的 WebView 渲染可能有细微差异。
+
+    ```text
+    Electron: Chromium + Node.js → 包体积 150MB+ → 内存 150-400MB
+    Tauri:    系统 WebView + Rust → 包体积 3-10MB  → 内存 30-100MB
+    ```
+
+    选择建议：
+    - 需要 Web 兼容性最好、团队只有前端技术栈 → Electron
+    - 追求极致包体积和内存、团队有 Rust 经验 → Tauri
+    - 需要访问原生 API、复杂系统集成 → 两者都行，看团队技术栈"
+
+  </Accordion>
+
+  <Accordion title="🔥 如何优化 Electron 应用的内存占用？" icon="skull">
+
+    **答题要点：**
+    要从进程管理、资源释放、Chromium 配置三个维度给出方案。
+
+    **高分回答：**
+    "Electron 应用的内存优化需要从三个维度入手：
+
+    **1. 进程管理：** 每个 BrowserWindow 都是一个独立的 Chromium 渲染进程，消耗 50-100MB 内存。策略是：复用窗口（不要每次打开都创建新窗口），隐藏时释放资源（暂停动画、取消定时器），限制并发窗口数量。
+
+    **2. 渲染进程优化：** 使用 `webContents.session.clearCache()` 定期清理缓存；大图片用懒加载和 WebP 格式；避免在渲染进程中存储大量数据，通过 IPC 按需从主进程获取。
+
+    **3. Chromium 配置：** 通过命令行参数优化 Chromium 的内存使用。
+
+    ```javascript
+    // 限制 V8 堆大小
+    app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512');
+
+    // 禁用 GPU 缓存（如果不需要 GPU 加速）
+    app.commandLine.appendSwitch('disable-gpu-cache');
+
+    // 限制渲染进程数量
+    app.commandLine.appendSwitch('renderer-process-limit', '4');
+    ```
+
+    实际项目中，最有效的优化是**控制窗口数量**和**隐藏时释放资源**。一个典型优化案例：将 10 个功能页面从 10 个 BrowserWindow 改为 1 个 BrowserWindow + SPA 路由切换，内存从 800MB 降到 200MB。"
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [Electron 官方文档](https://www.electronjs.org/docs)：Electron 官方对主进程、渲染进程、IPC 通信的最权威解释。<sup>[1]</sup>
+- 📖 [Electron 安全最佳实践](https://www.electronjs.org/docs/latest/tutorial/security)：官方安全指南，涵盖 CSP、contextIsolation、nodeIntegration 等关键配置。<sup>[2]</sup>
+- 🟢 [Electron Forge 官方文档](https://www.electronforge.io/)：Electron 官方推荐的脚手架工具，集成打包、发布、插件系统。<sup>[3]</sup>
+- 🔗 [electron-builder 文档](https://www.electron.build/)：功能最全面的 Electron 打包工具，支持多平台、自动更新、代码签名。<sup>[4]</sup>
+- 📖 [electron-updater 文档](https://www.electron.build/auto-update)：Electron 自动更新方案的官方指南。<sup>[5]</sup>
+- 🟢 [Chromium 多进程架构](https://www.chromium.org/developers/design-documents/multi-process-architecture/)：理解 Electron 双进程模型的底层基础。<sup>[6]</sup>
+- 🔗 [VS Code 的 Electron 优化实践](https://code.visualstudio.com/blogs/2018/03/23/text-buffer-reimplementation)：微软分享的 VS Code 性能优化经验，对 Electron 应用开发有很强的参考价值。<sup>[7]</sup>

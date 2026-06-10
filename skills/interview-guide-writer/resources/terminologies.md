@@ -110,6 +110,15 @@
 *   **JSI (JavaScript Interface)**: JSI（跨过 Bridge 直接在 C++ 层调用 JS 引擎的接口）
 *   **Yoga**: Yoga（跨平台 Flexbox 布局引擎）
 *   **UI Thread / JS Thread**: UI 线程 / JS 线程
+*   **Flutter**: Flutter（Google 推出的跨平台 UI 框架，使用 Dart 语言，自研渲染引擎 Impeller/Skia）
+*   **Dart**: Dart（Flutter 使用的编程语言，支持 AOT 编译为原生代码）
+*   **Widget / Element / RenderObject**: Widget / Element / RenderObject（Flutter 的三棵树架构）
+*   **Impeller / Skia**: Impeller / Skia（Flutter 的渲染引擎，Impeller 是 Skia 的替代品）
+*   **HarmonyOS / 鸿蒙**: HarmonyOS / 鸿蒙（华为自研的操作系统，使用 ArkTS/ArkUI 开发）
+*   **ArkTS**: ArkTS（鸿蒙的应用开发语言，基于 TypeScript 扩展）
+*   **ArkUI**: ArkUI（鸿蒙的声明式 UI 框架）
+*   **ArkCompiler**: ArkCompiler（鸿蒙的方舟编译器，支持 AOT 编译）
+*   **分布式软总线**: 分布式软总线（鸿蒙的跨设备通信机制）
 
 ## 11. 容器化与运维 (Docker / DevOps) (参考：Docker 官方文档)
 *   **Image / Container**: 镜像 / 容器

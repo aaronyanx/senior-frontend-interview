@@ -244,7 +244,30 @@
 
 ---
 
-## 9. Taro (多端与小程序框架生态)
+## 9. Flutter / 鸿蒙 (跨端开发)
+
+**Flutter 国际社区：**
+1. **Tim Sneath** - [Flutter 官方博客](https://flutter.dev/) - Google Flutter 产品负责人，推动 Flutter 从移动跨端到全平台（Web、Desktop、嵌入式）的战略演进。
+2. **Eric Seidel** - Flutter 创始人，自研渲染引擎 Impeller 的核心推动者。
+3. **Filip Hráček** - Flutter Developer Relations，高质量 Flutter 教程作者。
+4. **Andrea Bizzotto** - [codewithandrea.com](https://codewithandrea.com/) - 《Flutter Complete Reference》作者，Flutter 状态管理（Riverpod）专家。
+5. **Remi Rousselet** - Riverpod、Provider 作者，Flutter 状态管理核心贡献者。
+
+**Flutter 国内社区：**
+6. **郭树煜 (GSYTech / 恋猫de小郭)** - [GitHub (CarGuo)](https://github.com/CarGuo) - 国内跨端领域（Flutter & React Native）顶级开源大佬，GSY 系列开源项目作者。
+7. **Flutter 中文网团队** - [Flutter 中文网](https://flutter.cn/) - Flutter 官方文档中文翻译团队。
+8. **闲鱼技术团队** - 国内最早大规模落地 Flutter 的团队，在 Flutter 混合栈、动态化、性能优化上有深度实践。
+9. **字节跳动 Flutter 团队** - 在 Flutter 动态化、性能优化、混合栈上有深度实践。
+
+**鸿蒙国内社区：**
+10. **华为鸿蒙开发团队** - HarmonyOS 核心架构设计团队，ArkTS/ArkUI/ArkCompiler 的缔造者。
+11. **鸿蒙开发者社区** - [鸿蒙开发者社区](https://developer.huawei.com/) - 鸿蒙官方开发者文档和技术分享。
+12. **卢祐民** - 华为鸿蒙系统架构专家。
+13. **杨志勇** - HarmonyOS 应用开发方向专家。
+
+---
+
+## 10. Taro (多端与小程序框架生态)
 
 **核心架构与原生团队：**
 1. **李伟** - Taro 框架创始人，前京东凹凸实验室（O2Team）核心成员，国内多端统一开发方案的奠基人之一。

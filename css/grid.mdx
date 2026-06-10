@@ -29,7 +29,7 @@ title: "Grid 网格布局"
   </Step>
   <Step title="fr 单位与轨道构建机制">
 
-  Grid 引入了颠覆性的 `fr`（Fraction）单位，它是在引擎物理减去了所有 `gap` 和固定 `px` 占位之后，专门用来公平瓜分"绝对剩余空间'的尚方宝剑，比百分比优越一万倍。配合 `repeat(auto-fill, minmax(200px, 1fr))` 这行黑魔法，引擎会根据屏幕宽度自动计算最多能塞入几列，直接干掉几十行繁琐的媒体查询，实现极致流畅的响应式降级。
+  Grid 引入了颠覆性的 `fr`（Fraction）单位，它是在引擎物理减去了所有 `gap` 和固定 `px` 占位之后，专门用来公平瓜分"绝对剩余空间'的尚方宝剑，比百分比优越一万倍。配合 `repeat(auto-fill, minmax(200px, 1fr))` 这行代码，引擎会根据屏幕宽度自动计算最多能塞入几列，直接干掉几十行繁琐的媒体查询，实现极致流畅的响应式降级。
 
   </Step>
   <Step title="关键洞察: auto-fill 与 auto-fit 的幽灵轨道">
@@ -74,6 +74,12 @@ Grid 让二维空间的布局从"嵌套一维容器"变成了"直接声明坐标
 </Card>
 </CardGroup>
 
+<Tip title="🎢 通俗比喻: 城市规划图">
+
+Grid 布局就像城市规划师在白纸上画的规划图。你先用 `grid-template-columns` 和 `grid-template-rows` 画好马路和街区（行列轨道），然后把商场、公园、住宅（子元素）精确地放进指定的格子里。`fr` 单位就像"按比例分配土地"——先扣掉公共设施（gap 和固定尺寸），剩下的按比例公平瓜分。跟 Flex 的"由内向外"不同，Grid 是"先规划再塞人"，骨架纹丝不动。
+
+</Tip>
+
 <Tip title="💡 面试技巧">
 
 回答时先说"为什么'（Flex 一维的矩阵困境），再说"怎么解决"（Grid 的二维坐标系统）。重点是理解 Grid 的设计哲学--"从外向内"的绝对统治，而不是背诵属性。
@@ -82,7 +88,7 @@ Grid 让二维空间的布局从"嵌套一维容器"变成了"直接声明坐标
 
 ---
 
-## Q2: fr 单位与 auto-fill 的黑魔法
+## Q2: fr 单位与 auto-fill 的技巧
 
 Grid 布局引入了一个颠覆所有经典单位（如 `px`, `%`）的顶级空间分配单位：**`fr` (Fraction，分数)**。
 
@@ -229,11 +235,11 @@ fr 单位在 Blink 中是怎么计算的？
 
 **满分回答（90-100分）：**
 
-> Flex 和 Grid 的主要区别，是**"内容驱动的空间妥协"与"容器驱动的绝对统治"**的排版思想对立。Flexbox 是一维布局系统的王者——它的思想是"把元素像烤串一样串在主轴上"，换行后新行对上行无感知。Grid 是 CSS 历史上第一个纯粹的二维布局系统——你就像上帝一样俯视整个屏幕，直接用画笔在虚空中划定行与列的钢铁防线。<sup>[1]</sup>
+> Flex 和 Grid 的主要区别，是**"内容驱动的空间妥协"与"容器驱动的绝对统治"**的排版思想对立。Flexbox 是一维布局系统的王者——它的思想是"把元素像烤串一样串在主轴上"，换行后新行对上行无感知。Grid 是 CSS 历史上第一个纯粹的二维布局系统——你就像上帝一样俯视整个屏幕，直接用画笔在虚空中划定行与列的钢铁防线。Rachel Andrew 在 Grid by Example 中将这一思想总结为"Grid 让你从容器的维度思考布局，而非从内容出发"。Chris Coyier 在 CSS-Tricks 的《A Complete Guide to Grid》中则将其称为"CSS 布局的最终形态"。<sup>[1]</sup>
 
 > 在 Blink 的 `FlexLayoutAlgorithm` 中，子元素就像充气气球，容器的最终形态往往受到内部内容尺寸的剧烈影响（由内向外）。而在 `GridLayoutAlgorithm` 中，父容器在第一阶段就会构建严密的拓扑轨道网络（Explicit Tracks），子元素只是被无情塞入预先划定好尺寸的物理牢笼之中（由外向内），哪怕内容极度膨胀溢出，网格的钢铁骨架也绝不轻易变形。Grid 还引入了颠覆性的 `fr`（Fraction）单位，它是在引擎物理减去了所有 `gap` 和固定 `px` 占位之后，专门用来公平瓜分"绝对剩余空间"的尚方宝剑。<sup>[2]</sup>
 
-> 选型铁律是：对于组件级别的、流式的、需要随内容自适应折行的局部模块（如评论列表、Tag 标签堆叠），坚决使用 Flex。而对于宏观页面骨架结构（如后台管理面板 Dashboard）、以及必须绝对规整对齐的二维矩阵（如商品缩略图列表），坚决启用 Grid。特别是 `repeat(auto-fill, minmax(X, 1fr))` 黑魔法，它能在不需要一句 CSS 媒体查询的情况下，在底层引擎中实现全终端的响应式列数自动降级伸缩。当子元素填不满容器时，`auto-fill` 会继续创建不可见的"幽灵轨道"，而 `auto-fit` 会将空闲轨道折叠为 0，把空间交还给已有元素。<sup>[3]</sup>
+> 选型铁律是：对于组件级别的、流式的、需要随内容自适应折行的局部模块（如评论列表、Tag 标签堆叠），坚决使用 Flex。而对于宏观页面骨架结构（如后台管理面板 Dashboard）、以及必须绝对规整对齐的二维矩阵（如商品缩略图列表），坚决启用 Grid。特别是 `repeat(auto-fill, minmax(X, 1fr))` 这行代码，它能在不需要一句 CSS 媒体查询的情况下，在底层引擎中实现全终端的响应式列数自动降级伸缩。Rachel Andrew 在 Grid by Example 中对此机制有权威的可视化对比：当子元素填不满容器时，`auto-fill` 会继续创建不可见的"幽灵轨道"，而 `auto-fit` 会将空闲轨道折叠为 0，把空间交还给已有元素。大漠在 W3cplus 上的 Grid 系列文章则为中文社区提供了系统性的理解路径。<sup>[3]</sup>
 
 ### 大厂高频连环拷问
 
@@ -381,3 +387,8 @@ fr 单位在 Blink 中是怎么计算的？
 - 🔗 [CSS Grid Layout Module Level 2 - W3C 规范](https://www.w3.org/TR/css-grid-2/)：W3C 官方对 Grid 布局的权威定义，包含 fr 单位、auto-fill/auto-fit 的完整算法。<sup>[1]</sup>
 - 📖 [Blink 源码 grid_layout_algorithm.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/layout/grid_layout_algorithm.cc)：Chrome Blink 引擎中 Grid 布局的实现，包含 4 阶段轨道构建算法。<sup>[2]</sup>
 - 🟢 [MDN Web Docs - Grid](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_grid_layout)：MDN 对 Grid 布局的全面教程，包含 auto-fill 与 auto-fit 的可视化对比。<sup>[3]</sup>
+- 📐 [Rachel Andrew - Grid by Example: auto-fill vs auto-fit](https://gridbyexample.com/)：CSS Grid 布局顶级布道师 Rachel Andrew 创建的 Grid 示例库，包含 auto-fill 与 auto-fit "幽灵轨道"差异的权威可视化对比，是理解 Grid 响应式布局的核心参考。
+- 📘 [Chris Coyier - A Complete Guide to Grid (CSS-Tricks)](https://css-tricks.com/snippets/css/complete-guide-grid/)：CSS-Tricks 创始人 Chris Coyier 编写的 Grid 完全指南，被全球前端开发者视为 Grid 布局的"速查圣经"，涵盖所有属性的可视化图解。
+- 🎨 [Josh W. Comeau - An Interactive Guide to Grid](https://www.joshwcomeau.com/css/interactive-guide-to-grid/)：Josh Comeau 的 Grid 交互式教程，通过可视化拖拽帮助开发者直观理解 `fr` 单位与轨道构建机制。
+- 🔍 [大漠 (W3cplus) - CSS Grid 布局系列](https://www.w3cplus.com/css3/css-grid.html)：国内最大的前端与 CSS 资源站创办者大漠对 CSS Grid 布局的系统性中文讲解，涵盖 fr 单位、auto-fill/auto-fit、grid-template-areas 等核心概念。
+- 🧑‍💻 [张鑫旭 - display:flow-root 详解](https://www.zhangxinxu.com/wordpress/2016/11/css-display-flow-root/)：张鑫旭对 `display: flow-root` 的深度剖析，帮助理解 Grid/Flex 容器与 BFC 的关系。

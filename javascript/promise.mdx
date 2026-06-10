@@ -58,6 +58,12 @@ Promise 将异步操作的控制权从第三方接管回了调用者手中，并
 
 </Note>
 
+<Tip title="🎢 通俗比喻: 任务委托书">
+
+Promise 就像一份任务委托书（基于 Dan Abramov 的类比）。以前的回调模式是你把家钥匙给第三方（控制反转），你完全不知道他会不会去、去几次。Dan Abramov 在 overreacted.io 中指出，Promise 的设计哲学和 React 的 setState 如出一辙——它们本身不知道具体要做什么，只是一个通用的协调机制。Promise 就像一份委托书：第三方只负责填写"成功"或"失败"的结果，而你自己决定拿到结果后做什么。主动权从第三方手中夺回来了——这就是"控制反转的再反转"。
+
+</Tip>
+
 <CardGroup cols={2}>
 
 <Card title="🚫 没有 Promise (回调时代) ">
@@ -102,9 +108,9 @@ Promise 的本质是一个**状态机**，核心逻辑只有 3 步：
 
 </Warning>
 
-<Tip title="🎢 通俗比喻: 泼出去的水">
+<Tip title="🎢 通俗比喻: 不可撤回的快递单">
 
-Promise 的状态就像泼出去的水，一旦 `resolve` 或者 `reject` 了，这碗水就结成了死冰。不管你再怎么折腾它，它的值和状态都永远定格在那一瞬间了。
+Promise 的状态就像一张已经签收的快递单。一旦 `resolve`（签收成功）或者 `reject`（拒收退回），这张单据就定格了——你再打电话给快递员让他改状态，他也改不了（状态吸收）。Dan Abramov 用 Promise 来类比 React 的 setState，正是因为两者共享同一个设计哲学：状态一旦确定，就不可逆转，后续的修改请求会被静默忽略。
 
 
 </Tip>
@@ -177,6 +183,12 @@ function safeAsync() {
 }
 // 调用者可以确定：then 回调一定在当前同步代码之后执行
 ```
+
+<Tip title="🎢 通俗比喻: 咖啡店的统一出杯规则">
+
+then 回调强制异步就像咖啡店的出杯规则（引用自 Jake Archibald）。不管你点的拿铁咖啡师已经做好了没有（Promise 是否已 fulfilled），他绝对不会在你点单的同一秒就把咖啡递给你。他一定会先把当前手头的活干完（执行完当前同步代码），然后统一把做好的咖啡放到取餐台（清空微任务队列）。这样不管咖啡做得快还是慢，出杯的节奏永远一致，不会出现"有时候同步递给你、有时候又让你等"的混乱。Jake Archibald 在其文章中通过交互式 Demo 证明了这一点：即使 Promise 已经瞬间 resolve，`.then` 回调也绝不插队，必须等当前同步代码执行完毕。
+
+</Tip>
 
 ### 微任务队列的入队时机
 
@@ -432,6 +444,12 @@ function* fetchData() {
 // + 一个自动执行器，用 Promise 链驱动 generator
 ```
 
+<Tip title="🎢 通俗比喻: 自动扶梯">
+
+async/await 就像坐自动扶梯（基于 Dan Abramov 对 Promise 委托模式的解释）。`await` 是你踏上扶梯的那一刻——你不需要自己走（手动写 .then 链），扶梯会自动把你送到下一层（Promise resolve 后自动恢复执行）。如果扶梯突然故障（Promise reject），你会被安全弹出到旁边的楼梯间（try/catch 捕获错误）。本质上，async/await 只是给 Generator 这台"手动扶梯"装了个自动驱动马达——正如 Dan Abramov 所说，Promise 本身不知道具体要做什么，它只是一个通用的协调机制，而 async/await 让这个协调过程变得像同步代码一样自然。
+
+</Tip>
+
 `await` 的本质是 `yield` + `Promise.resolve(value).then()`。当 Promise resolve 后，自动执行器调用 `gen.next(value)` 恢复执行。错误通过 `gen.throw(err)` 注入到 generator 内部，所以 `await` 的错误能被 `try/catch` 捕获。
 
 ### async/await 的执行顺序
@@ -557,9 +575,9 @@ new Promise((resolve, reject) => {
 
 </Warning>
 
-<Tip title="🎢 通俗比喻: 一次性快照">
+<Tip title="🎢 通俗比喻: 盖了章的审批单">
 
-Promise 的状态吸收就像拍了一张不可修改的快照。一旦快门按下（`resolve` 或 `reject`），画面就定格了。你再怎么在镜头前挥舞手臂（后续调用 `resolve`/`reject`），快照里的画面不会有任何变化。唯一能改变结果的机会，是在快门按下之前。
+Promise 的状态吸收就像一张已经盖了"已批准"或"已拒绝"章的审批单。一旦印章落下（`resolve` 或 `reject`），这张单据的状态就永久定格了。你再提交多少次修改申请（后续调用 `resolve`/`reject`），审批系统都会静默吞掉——不报错、不提醒、不改变。Dan Abramov 在 overreacted.io 中用类似的思路解释了 React 的 setState：状态更新的"知识"不在 setState 本身，而是在框架内部的协调机制中——Promise 也是如此，状态吸收的逻辑隐藏在引擎内部，调用者无感知。
 
 </Tip>
 
@@ -1213,6 +1231,8 @@ if (err) {
 
 ## 📚 延伸阅读与引用参考
 
-- 🔗 [ECMAScript 规范：Promise Objects](https://tc39.es/ecma262/#sec-promise-objects)：*官方规范，定义了 Promise 状态机与 `PerformPromiseThen` 算法。* <sup>[1]</sup>
-- 📖 [V8 Blog: Fast async/await](https://v8.dev/blog/fast-async)：*V8 团队官方博文，解释了针对 async/await 所做的底层极致优化。* <sup>[2]</sup>
-- 🟢 [Jake Archibald: Tasks, microtasks, queues and schedules](https://jakearchibald.com/2015/tasks-microtasks-queues-and-schedules/)：*Chrome 开发者布道师写的神作，深刻讲解了 Promise 微任务的执行时序。* <sup>[3]</sup>
+- 🔗 [ECMAScript 规范：Promise Objects](https://tc39.es/ecma262/#sec-promise-objects)：ECMA-262 官方规范，定义了 Promise 状态机、`PerformPromiseThen` 算法与 `PromiseReactionJobTask` 微任务入队机制。<sup>[1]</sup>
+- 📖 [V8 Blog: Faster async/await with promises](https://v8.dev/blog/fast-async)：V8 团队 2018 年发布的官方博文，解释了引入"fast async"字节码后 async/await 性能提升 2 倍的底层优化原理。<sup>[2]</sup>
+- 🟢 [Jake Archibald: Tasks, microtasks, queues and schedules](https://jakearchibald.com/2015/tasks-microtasks-queues-and-schedules/)：Chrome 开发者布道师 2015 年的神作，用交互式 Demo 深刻讲解了 Promise 微任务的执行时序与浏览器渲染的交错关系。<sup>[3]</sup>
+- 📘 [Promises/A+ 规范](https://promisesaplus.com/)：社区标准，定义了 `.then` 方法的行为准则、thenable 展平机制与循环引用检测，手写 Promise 的权威参考。
+- 📗 [Dan Abramov: How Does setState Know What to Do?](https://overreacted.io/how-does-setstate-know-what-to-do/)：Dan Abramov 在 overreacted.io 上的深度博文，用 Promise 类比解释了 React 的命令模式与状态注入机制。

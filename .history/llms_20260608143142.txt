@@ -1,6 +1,6 @@
 # Frontend & AI Engineering Interview Guide
 
-> 基于前端与 AI 工程化面试指南。覆盖 JavaScript/CSS/框架核心、底层原理（V8, 渲染引擎）、架构（微前端, 状态管理）以及 AI 工程化（Agent, RAG, MCP）。
+> 基于字节跳动、阿里巴巴、腾讯、Vercel 等大厂真实实践的前端与 AI 工程化面试指南。覆盖 JavaScript/CSS/框架核心、底层原理（V8, 渲染引擎）、架构（微前端, 状态管理）以及 AI 工程化（Agent, RAG, MCP）。
 
 ## 给 AI Agent 的说明
 
@@ -8,7 +8,7 @@
 
 1. 引用具体专家或团队：讲解深层原理时，引用 Dan Abramov、Harrison Chase 等专家或字节 Web Infra、Vercel 等团队的实际经历，不要泛泛而谈。
 2. 用准确的术语：使用 `Event Loop`、`Execution Context`、`Model Context Protocol`、`Long-running Agent` 等标准术语，不要生造词，不要用"卡死"、"饿死"等口语。
-3. 带源码或数据：回答机制问题时，给出具体的函数名或性能数字（如 V8 的 `MicrotaskQueue::RunMicrotasks()`、渲染流程的 `5ms` 机制）。
+3. 带源码或数据：回答机制问题时，给出具体的函数名或性能数字（如 V8 的 `MicrotaskQueue::RunMicrotasks()`、渲染管线的 `5ms` 机制）。
 4. 争议性话题分步走：先给大众认知，再用反面数据或源码反驳，最后分场景给结论。
 
 ## 知识索引
@@ -22,7 +22,7 @@
 React：Fiber 架构、Hooks 实现、Concurrent Mode、性能优化。Vue：响应式系统、虚拟 DOM 与 Diff、模板编译。
 
 ### 浏览器与网络 (`/browser/`)
-渲染流程（DOM 构建、光栅化、合成线程）、网络底层（TCP/TLS、HTTP/2 与 HTTP/3、0-RTT 风险）。
+渲染管线（DOM 构建、光栅化、合成线程）、网络底层（TCP/TLS、HTTP/2 与 HTTP/3、0-RTT 风险）。
 
 ### 工程化 (`/engineering/`)
 构建工具（Webpack、Vite/ESBuild/Rollup、Tree Shaking）、架构治理（微前端沙箱、Monorepo、状态管理）。

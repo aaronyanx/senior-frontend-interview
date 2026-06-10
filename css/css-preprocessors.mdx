@@ -1,0 +1,542 @@
+---
+title: "CSS 预处理器 (SASS/LESS/PostCSS)"
+---
+
+> **面试官为什么问这个？**
+>
+> 面试官问这个，本质上是在考察你是否理解 CSS 工程化的历史演进脉络以及"原生 CSS 逐步吞噬预处理器领地"的趋势。如果你还在无脑用 Sass 嵌套十层、把 Mixin 当万能胶水，说明你不了解 CSS 原生变量、`@layer`、`@container` 等现代特性已经让预处理器的多数能力变成了历史遗产。
+
+---
+
+## Q1: CSS 预处理器的历史？为什么要有它？
+
+<Steps>
+
+  <Step title="原始 CSS 的蛮荒时代 (2000 年代初)">
+
+  在 Web 开发的早期，CSS 只是一堆扁平的、没有变量、没有函数、没有嵌套的纯文本规则。开发者在几百行的小项目中尚能应付，但一旦项目规模膨胀到数万行，维护就变成了一场噩梦。你无法定义一个颜色变量在全局复用，无法把一段常用样式抽象成可调用的函数，也无法通过嵌套来表达父子选择器之间的归属关系。每个页面都要手写完整的路径选择器，`#header .nav .item a:hover` 这样的选择器堆满了整个样式表，修改一处牵动全身。
+
+  </Step>
+  <Step title="CSS 预处理器的诞生 (2006-2009)">
+
+  2006 年，Hampton Catlin 发布了 **Sass**（Syntactically Awesome Style Sheets），引入了变量、嵌套、Mixin 等编程概念。2009 年，Alexis Sellier 发布了 **LESS**，语法更接近原生 CSS，学习成本更低。2013 年，PostCSS 登场，它不是一个预处理器，而是一个 CSS 转换平台——通过插件体系实现了从 Autoprefixer 到 CSS Modules 等一切 CSS 后处理能力。三者共同构成了 CSS 工程化的"三驾马车"。
+
+  </Step>
+  <Step title="繁荣与标准化反噬 (2015-2020)">
+
+  随着 CSS 预处理器的大规模采用，W3C 和浏览器厂商看到了开发者的强烈需求。CSS Variables（自定义属性）、`calc()`、`@supports`、`@layer` 等原生特性被逐步纳入规范并落地到浏览器中。曾经必须依赖预处理器才能实现的"变量"和"函数计算"，现在原生 CSS 就能做。预处理器的核心卖点被一个个蚕食，它的角色从"必需品"降级为"可选项"。
+
+  </Step>
+  <Step title="现代格局：PostCSS 胜出 (2020 至今)">
+
+  在今天，Sass 和 LESS 的使用率在下降，而 PostCSS 凭借其插件化架构成为事实上的 CSS 工程化标准。Tailwind CSS 通过 PostCSS 插件实现、Autoprefixer 通过 PostCSS 插件实现、CSS Modules 也通过 PostCSS 插件实现。预处理器不再是"必装工具"，而是"按需选用的功能模块"。理解这段历史，才能在面试中展现你对 CSS 工程化全貌的把握。
+
+  </Step>
+
+</Steps>
+
+**CSS 预处理器解决的核心问题：**
+
+```text
+问题：原生 CSS 没有变量、没有函数、没有嵌套，大型项目维护成本指数级增长
+
+原生 CSS → 手写 #header .nav .item a:hover → 修改一处牵动全身 → 无法复用
+
+解决：引入编程语言的变量、函数、嵌套等特性，编译为原生 CSS
+
+Sass/LESS → $primary: red; + @mixin → 编译为原生 CSS → 浏览器执行
+```
+
+<Note title="💡 一句话总结">
+
+CSS 预处理器是"编译期的编程语言"，它解决了原生 CSS 缺乏变量和函数的问题，但现代 CSS 原生特性正在逐步吞噬它的核心功能。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有预处理器">
+
+原生 CSS 没有变量、没有嵌套、没有 Mixin。在大型项目中，开发者必须手动维护数千行重复的样式规则。改一个品牌色，全局搜索替换 200 个 `#ff0000` 字面量，极易遗漏和出错。
+
+</Card>
+<Card title="✅ 引入预处理器">
+
+通过 `$primary-color: #ff0000` 定义变量，`@mixin` 封装复用逻辑，嵌套语法表达 DOM 层级关系。编译器将高级语法转化为原生 CSS，开发效率提升数倍。改一个变量，全站生效。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么"（原生 CSS 缺乏编程能力的痛点），再说"怎么解决"（预处理器的变量/嵌套/函数机制），最后点出"趋势"（原生 CSS 逐步取代预处理器）。面试官想考察的是你对 CSS 工程化演进的理解，而不是背 Sass 语法。
+
+</Tip>
+
+---
+
+## Q2: SASS/LESS/PostCSS 对比
+
+三者的本质差异不在语法，而在**架构设计哲学**：
+
+```text
+┌───────────────────────────────────────────────────────────────┐
+│                    CSS 预处理器生态                             │
+├──────────┬──────────┬──────────┬──────────────────────────────┤
+│          │  Sass     │  LESS    │  PostCSS                    │
+├──────────┼──────────┼──────────┼──────────────────────────────┤
+│ 定位     │ 预处理器  │ 预处理器  │ 转换平台                     │
+│ 架构     │ 语言      │ 语言     │ 插件系统                     │
+│ 执行时机  │ 编译期    │ 编译期   │ 编译期（但可做后处理）         │
+│ 可扩展性  │ 低（固定语法）│ 低   │ 极高（任意插件）              │
+│ 原生替代  │ 部分可替代 │ 部分可替代│ 不可替代（Autoprefixer等）    │
+└──────────┴──────────┴──────────┴──────────────────────────────┘
+```
+
+```scss
+// Sass (SCSS 语法) —— 功能最强的预处理器
+$primary: #1890ff;               // 变量
+$spacing: 8px;
+
+@mixin flex-center {             // Mixin（可复用的样式块）
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+@function grid-width($col) {     // 函数
+  @return $col / 12 * 100%;
+}
+
+.container {
+  @include flex-center;          // 调用 Mixin
+  width: grid-width(6);          // 调用函数
+
+  .child {                       // 嵌套（表达 DOM 层级）
+    color: $primary;
+    &:hover { opacity: 0.8; }    // & 代表父选择器
+  }
+
+  @if $spacing > 4px {           // 控制流
+    padding: $spacing;
+  }
+}
+```
+
+```less
+// LESS —— 语法最接近原生 CSS
+@primary: #1890ff;
+
+.flex-center() {                 // Mixin（带括号，不会输出到 CSS）
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.container {
+  .flex-center();                // 调用 Mixin
+  width: percentage(6 / 12);     // 内置函数
+
+  .child {
+    color: @primary;
+  }
+}
+```
+
+```javascript
+// postcss.config.js —— PostCSS 是插件平台，不是语言
+module.exports = {
+  plugins: [
+    require('autoprefixer'),      // 自动添加浏览器前缀
+    require('postcss-nested'),    // 支持嵌套（Sass 的嵌套功能）
+    require('postcss-custom-properties'), // 内联 CSS 变量
+    require('tailwindcss'),       // Tailwind CSS 就是 PostCSS 插件
+  ]
+}
+```
+
+<Warning title="⚠️ 核心机制: PostCSS 不是预处理器">
+
+PostCSS 的本质是一个 **CSS-to-CSS 的转换平台**。它把 CSS 解析为 AST（抽象语法树），然后通过插件链依次对 AST 进行转换，最后输出新的 CSS。它不发明新语法，只做转换。这意味着你可以用 PostCSS 实现 Sass 的全部功能（通过 postcss-nested、postcss-simple-vars 等插件），也可以实现 Sass 无法做到的事（如 Autoprefixer 的浏览器前缀自动补全）。
+
+</Warning>
+
+### 基础梳理
+
+| 对比维度 | Sass (SCSS) | LESS | PostCSS |
+|---------|-------------|------|---------|
+| **诞生年份** | 2006 | 2009 | 2013 |
+| **变量** | `$var`（编译期） | `@var`（编译期） | `--var`（通过插件） |
+| **嵌套** | 支持 | 支持 | 通过插件支持 |
+| **Mixin** | `@mixin` / `@include` | `.mixin()` | 通过插件支持 |
+| **函数** | `@function` + `@return` | 内置函数 | 通过插件支持 |
+| **控制流** | `@if` / `@for` / `@each` | 有限支持 | 无（需自定义插件） |
+| **可扩展性** | 有限（自定义函数） | 有限 | 极高（插件架构） |
+| **生态规模** | 大 | 中 | 极大（工具链标准） |
+
+### 专家视角深度剖析
+
+很多候选人能背出上面的表格，但大厂面试官真正在意的是：**为什么 PostCSS 在现代工程中胜出了？**
+
+答案在于**架构设计的可组合性**。Sass 和 LESS 是"一体式语言"——变量、嵌套、Mixin 都被硬编码在编译器中，你无法移除或替换其中任何一部分。而 PostCSS 是"插件平台"——每个功能都是独立插件，你可以自由组合。这意味着：当 CSS 原生支持了嵌套（2023 年浏览器已全面支持 `&` 嵌套），你只需移除 `postcss-nested` 插件，零代码改动。但如果你用了 Sass 的嵌套，迁移成本巨大。PostCSS 的插件架构让它能随着 CSS 规范的演进而"瘦身"，而 Sass/LESS 则背负着历史包袱无法卸载。
+
+---
+
+## Q3: SASS 核心功能（变量、嵌套、Mixin、函数）
+
+### 变量系统
+
+```scss
+// Sass 变量：编译期的文本宏替换
+$primary-color: #1890ff;
+$font-stack: 'Helvetica Neue', sans-serif;
+$breakpoint-md: 768px;
+
+// 变量作用域（块级作用域）
+$global-var: 10px;
+
+.container {
+  $local-var: 20px;       // 只在 .container 内部有效
+  padding: $local-var;    // ✅ 20px
+  color: $primary-color;  // ✅ 可以访问全局变量
+}
+
+.child {
+  padding: $local-var;    // ❌ 编译报错！$local-var 不在此作用域
+  color: $primary-color;  // ✅ 全局变量始终可用
+}
+```
+
+### 嵌套语法
+
+```scss
+// 嵌套：用缩进表达 DOM 层级关系
+.nav {
+  background: #fff;
+
+  .item {                         // .nav .item
+    display: inline-block;
+    padding: 0 16px;
+
+    a {                           // .nav .item a
+      color: #333;
+      text-decoration: none;
+
+      &:hover {                   // .nav .item a:hover
+        color: $primary-color;
+      }
+    }
+
+    &.active {                    // .nav .item.active
+      border-bottom: 2px solid $primary-color;
+    }
+  }
+
+  // 属性嵌套（Sass 独有）
+  border: {
+    top: 1px solid #eee;
+    bottom: 1px solid #eee;
+  }
+  // 编译后：border-top: 1px solid #eee; border-bottom: 1px solid #eee;
+}
+```
+
+<Warning title="⚠️ 嵌套陷阱: 过度嵌套导致选择器地狱">
+
+Sass 允许你无限嵌套，但这会产生极深的选择器路径（如 `#app .main .content .card .title .text`），导致选择器优先级过高、难以覆盖、性能下降。**工业规范：嵌套不超过 3 层。** 深层嵌套意味着你的 CSS 结构与 DOM 结构高度耦合，违反了关注点分离原则。
+
+</Warning>
+
+### Mixin 与函数
+
+```scss
+// Mixin：可复用的样式块（可包含任意 CSS 规则）
+@mixin text-ellipsis($lines: 1) {
+  overflow: hidden;
+  @if $lines == 1 {
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  } @else {
+    display: -webkit-box;
+    -webkit-line-clamp: $lines;
+    -webkit-box-orient: vertical;
+  }
+}
+
+// 函数：返回一个值（不能包含 CSS 规则）
+@function strip-unit($value) {
+  @return $value / ($value * 0 + 1);
+}
+
+@function rem($px) {
+  @return strip-unit($px) / 16 * 1rem;
+}
+
+.title {
+  @include text-ellipsis(2);        // 两行文本溢出省略
+  font-size: rem(24px);             // 24px → 1.5rem
+  margin-bottom: rem(16px);
+}
+```
+
+<Tip title="🎢 通俗比喻：Mixin 是菜谱，函数是计算器">
+
+Mixin 就像一份菜谱——你告诉厨师"做一道红烧肉"（`@include`），他就按步骤执行一系列操作（输出一堆 CSS 规则）。函数则像一台计算器——你输入"24 除以 16"（`rem(24px)`），它只返回一个结果值（`1.5rem`），不会产生额外的操作步骤。菜谱（Mixin）能输出成品菜（CSS 规则块），计算器（函数）只能输出一个数字（单个值）。
+
+</Tip>
+
+### 继承与组合
+
+```scss
+// @extend：继承（共享选择器，减少重复）
+%message-shared {               // 占位符选择器（不会单独输出）
+  padding: 12px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.success { @extend %message-shared; background: #f6ffed; border: 1px solid #b7eb8f; }
+.warning { @extend %message-shared; background: #fffbe6; border: 1px solid #ffe58f; }
+.error   { @extend %message-shared; background: #fff2f0; border: 1px solid #ffccc7; }
+
+// 编译后：.success, .warning, .error { padding: 12px 16px; ... }
+// 三个选择器共享同一份基础规则，减少 CSS 体积
+```
+
+---
+
+## Q4: CSS 预处理器的局限性（为什么被 CSS 原生特性替代）
+
+**预处理器变量 vs 原生 CSS 变量：**
+预处理器变量在编译期被"焊死"为普通文本，运行时不存在。而原生 CSS 变量是运行时的活体对象，支持 JS 动态读写、继承层叠、`transition` 动画（配合 `@property`）。
+
+**嵌套 vs 原生 `&` 嵌套：**
+2023 年 CSS 原生支持了 `&` 选择器嵌套（Nesting 规范），且 Chrome 120+、Safari 17.2+、Firefox 117+ 全面支持。Sass 的嵌套不再是"唯一选择"。
+
+**计算 vs `calc()`：**
+原生 CSS 的 `calc()` 函数支持混合单位计算（`calc(100% - 20px)`），Sass 在编译期无法处理不同单位的混合运算。
+
+**关键区别：**
+
+| 功能 | Sass/LESS | 原生 CSS 替代方案 | 迁移难度 |
+|------|-----------|-----------------|---------|
+| 变量 | `$var` / `@var` | `--var` (Custom Properties) | 低 |
+| 嵌套 | 原生支持 | `&` 嵌套 (2023+) | 低 |
+| 计算 | `math.div()` | `calc()` / `min()` / `max()` | 低 |
+| 颜色函数 | `darken()` / `lighten()` | `color-mix()` (2023+) | 中 |
+| Mixin | `@mixin` / `@include` | CSS 原生不支持 | 高 |
+| 控制流 | `@if` / `@for` / `@each` | CSS 原生不支持 | 高 |
+
+**❌/✅ 代码对比（展示原生替代）：**
+
+```scss
+// ❌ Sass 方式：必须依赖编译器
+$primary: #1890ff;
+@mixin flex-center {
+  display: flex;
+  justify-content: center;
+}
+.box {
+  @include flex-center;
+  color: lighten($primary, 20%);
+  width: calc(100% / 3);       // Sass 的 calc 有坑：可能提前计算
+}
+```
+
+```css
+/* ✅ 原生 CSS：零编译，浏览器直接执行 */
+:root { --primary: #1890ff; }
+
+.box {
+  display: flex;
+  justify-content: center;
+  color: color-mix(in srgb, var(--primary) 80%, white);
+  width: calc(100% / 3);       /* 浏览器原生计算，无歧义 */
+}
+```
+
+<Tip title="最佳实践: 2025 年的 CSS 工程策略">
+
+新项目应优先使用原生 CSS 变量 + 原生嵌套 + `calc()` + `color-mix()`。只有在需要 Mixin、控制流等"编程能力"时才引入 Sass。PostCSS 作为构建层始终保留（用于 Autoprefixer、CSS Modules 等后处理能力）。渐进式迁移老项目：先替换变量（`$` → `--`），再替换嵌套，最后清理 Mixin。
+
+</Tip>
+
+---
+
+## 🔍 底层源码：PostCSS 是如何工作的？
+
+<div class="follow-up">
+PostCSS 把 CSS 转换成什么？插件链是如何工作的？
+</div>
+
+PostCSS 的核心是一个 **CSS Parser → AST → Plugin Chain → Stringifier** 的管线。它使用 `postcss-parser` 将 CSS 文本解析为一棵抽象语法树（AST），然后将 AST 依次传递给每个插件进行转换，最后通过 `stringify` 将修改后的 AST 还原为 CSS 文本（详见 [PostCSS 源码 lib/parse.js](https://github.com/postcss/postcss/blob/main/lib/parse.js)）：
+
+```javascript
+// PostCSS 核心管线（极度简化版）
+// 1. 解析阶段：CSS 文本 → AST
+const ast = postcss.parse(`
+  .container { color: red; }
+`);
+// ast = { type: 'root', nodes: [{ type: 'rule', selector: '.container', ... }] }
+
+// 2. 插件链：依次对 AST 进行转换
+// 每个插件就是一个 visitor 模式函数
+const autoprefixer = (root) => {
+  root.walkDecls('display', (decl) => {
+    if (decl.value === 'flex') {
+      decl.cloneBefore({ prop: 'display', value: '-webkit-flex' });
+    }
+  });
+};
+
+// 3. 序列化：AST → CSS 文本
+// PostCSS 会自动处理缩进、分号、空格等格式化细节
+```
+
+这段管线做了 3 件事：解析（CSS 文本转为可操作的树结构）、转换（插件链依次修改树节点）、序列化（将修改后的树还原为 CSS 文本）。每个插件都是一个纯函数，接收 AST 并就地修改它。
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："Sass 和 PostCSS 有什么区别？你在项目中是怎么做 CSS 工程化的？"
+
+**及格回答（60-70分）：**
+> "Sass 是 CSS 预处理器，支持变量、嵌套、Mixin。PostCSS 是一个后处理工具，可以加浏览器前缀。我们项目用 Sass 写样式，PostCSS 做 autoprefixer。"
+
+面试官评价：**知道工具但不理解架构差异**。
+
+**满分回答（90-100分）：**
+
+> Sass 和 PostCSS 的本质区别不在语法，而在**架构设计哲学**。Sass 是"一体式语言"——变量、嵌套、Mixin 被硬编码在编译器中，你无法移除或替换其中任何一部分。而 PostCSS 是"插件平台"——它把 CSS 解析为 AST，然后通过插件链依次对 AST 进行转换。每个功能（嵌套、变量、前缀补全）都是独立插件，你可以自由组合。<sup>[1]</sup>
+
+> 这种架构差异决定了它们面对 CSS 规范演进时的命运。当 CSS 原生支持了嵌套（2023 年 Nesting 规范），你只需从 PostCSS 配置中移除 `postcss-nested` 插件，零代码改动。但如果你用了 Sass 的嵌套语法，迁移成本巨大——因为 Sass 的嵌套是编译器内建的，你无法"关闭"它而不影响其他功能。PostCSS 的插件架构让它能随着 CSS 规范的演进自然"瘦身"。<sup>[2]</sup>
+
+> 在我负责的项目中，CSS 工程化策略是：原生 CSS 变量做主题系统（运行时动态切换），Sass 仅用于 Mixin 和控制流（`@for` 批量生成工具类），PostCSS 做后处理（Autoprefixer + CSS Modules + Tailwind）。这种"原生为主、Sass 为辅、PostCSS 兜底"的分层架构，既保证了运行时性能，又保留了编译期的编程能力。
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="Sass 的 @extend 和 @mixin 有什么区别？什么时候用哪个？" icon="layer-group">
+
+  **答题要点：**
+  指出 `@extend` 生成组合选择器（体积小但不灵活），`@mixin` 生成重复代码（体积大但灵活）。
+
+  **高分回答：**
+  "`@extend` 的原理是将多个选择器合并为一条规则（`.a, .b { 共享样式 }`），减少 CSS 体积，但它的缺点是：不能传参数、不能包含动态逻辑、在媒体查询中有致命 bug（不能跨 `@media` 边界 extend）。`@mixin` 则是在每个 `@include` 处复制一份完整的样式块，体积更大，但支持传参、条件判断、循环等编程能力。**经验法则**：不需要传参的静态共享样式用 `@extend`（如 `.success`、`.warning` 共享基础样式）；需要传参或包含动态逻辑的用 `@mixin`（如 `@include text-ellipsis(2)`）。"
+
+  </Accordion>
+
+  <Accordion title="Sass 的编译流程是什么？.sass 和 .scss 有什么区别？" icon="layer-group">
+
+  **答题要点：**
+  区分两种语法的文件格式差异和编译流程。
+
+  **高分回答：**
+  "Sass 有两种语法格式：`.sass` 使用缩进语法（类似 Python，无花括号和分号），`.scss` 使用花括号语法（与原生 CSS 完全兼容）。编译流程是：源文件 → 词法分析（Tokenization）→ 语法分析（Parsing）→ AST → 代码生成（Code Generation）→ 输出 `.css` 文件。`.scss` 是推荐格式，因为它与原生 CSS 语法兼容，你可以直接将一个 `.css` 文件重命名为 `.scss` 而不需要修改任何代码。在构建工具中（Webpack 的 `sass-loader`、Vite 内置支持），编译过程是自动化的，开发者只需关注 `.scss` 源文件。"
+
+  </Accordion>
+
+  <Accordion title="PostCSS 的插件机制是怎么工作的？如何编写一个自定义插件？" icon="stopwatch">
+
+  **答题要点：**
+  必须解释 Visitor 模式的 AST 操作。
+
+  **高分回答：**
+  "PostCSS 的插件本质上是一个函数，接收一个 AST 根节点（`Root`），然后通过 Visitor 模式遍历和修改树节点。每个插件通过 `walkRules`、`walkDecls`、`walkAtRules` 等方法遍历特定类型的节点，然后就地修改它们。例如编写一个自动添加 `!important` 的插件：
+  ```javascript
+  const postcss = require('postcss');
+  module.exports = postcss.plugin('add-important', () => {
+    return (root) => {
+      root.walkDecls((decl) => { decl.important = true; });
+    };
+  });
+  ```
+  关键点：PostCSS 的插件是**就地修改 AST**（mutating），不是返回新树。这意味着插件的执行顺序很重要——先执行的插件会改变后续插件看到的 AST 状态。这也是为什么 `postcss.config.js` 中插件的数组顺序需要精心安排。"
+
+  </Accordion>
+
+  <Accordion title="Sass 的 @for、@each、@each 在实际项目中怎么用？" icon="stopwatch">
+
+  **答题要点：**
+  结合实际场景（批量生成工具类）解释控制流。
+
+  **高分回答：**
+  "Sass 的控制流在批量生成 CSS 工具类时非常有用。例如批量生成间距工具类：
+  ```scss
+  @for $i from 1 through 12 {
+    .mt-#{$i} { margin-top: $i * 4px; }
+    .mb-#{$i} { margin-bottom: $i * 4px; }
+  }
+  @each $name, $color in (primary: #1890ff, success: #52c41a, warning: #faad14, error: #f5222d) {
+    .text-#{$name} { color: $color; }
+    .bg-#{$name} { background-color: $color; }
+  }
+  ```
+  编译后会自动生成 48 个间距类和 8 个颜色类。但要注意：这种批量生成会显著增大 CSS 体积。现代方案中，Tailwind CSS 的 JIT 模式通过按需生成解决了这个问题——只生成你实际使用的类，而不是预生成所有组合。"
+
+  </Accordion>
+
+  <Accordion title="为什么说 Sass 的变量不能做主题切换？有没有变通方案？" icon="node">
+
+  **答题要点：**
+  必须分场景讨论！编译期变量 vs 运行时变量的根本差异。
+
+  **高分回答：**
+  "Sass 变量在编译期被替换为普通文本，运行时根本不存在。这意味着你无法通过 JS 动态修改一个 Sass 变量的值来切换主题。变通方案有三种：
+  **1. Class 切换方案**：预编译多套主题的 CSS 文件（`.theme-dark`、`.theme-light`），通过切换 class 激活不同主题。缺点是 CSS 体积翻倍。
+  **2. CSS 变量混合方案**：Sass 变量用于编译期的静态计算（如 `rem()` 函数），主题相关的变量改用原生 CSS 变量（`--primary: #1890ff`）。这是最实用的方案。
+  **3. CSS-in-JS 方案**：彻底放弃 Sass，用 styled-components 或 Emotion 做运行时主题切换。
+  **工业规范**：方案 2 是主流选择——Sass 负责编译期的编程能力（Mixin、函数、控制流），原生 CSS 变量负责运行时的动态主题。"
+
+  </Accordion>
+
+  <Accordion title="PostCSS 和 Babel 的设计理念有什么相似之处？" icon="node">
+
+  **答题要点：**
+  对比"AST 转换平台"的共同设计哲学。
+
+  **高分回答：**
+  "PostCSS 和 Babel 在架构上是同一类东西——**基于 AST 的转换平台**。Babel 将 JavaScript 源码解析为 AST（通过 `@babel/parser`），然后通过插件链（如 `@babel/plugin-transform-arrow-functions`）对 AST 进行转换，最后将修改后的 AST 还原为 JS 代码。PostCSS 对 CSS 做同样的事：CSS 文本 → AST → 插件链转换 → CSS 文本。两者的共同设计哲学是：**平台不提供功能，插件提供功能**。平台只负责解析和序列化，所有实际的转换逻辑都由插件实现。这种架构的美妙之处在于可组合性——你可以自由组合任意插件，创建出无限种构建管线。"
+
+  </Accordion>
+
+  <Accordion title="Sass 的 @use 和 @import 有什么区别？为什么 @import 被废弃了？" icon="skull">
+
+  **答题要点：**
+  解释模块化系统的命名空间隔离机制。
+
+  **高分回答：**
+  "`@import` 是 Sass 早期的模块导入方式，它有一个致命缺陷：**没有命名空间隔离**。当你 `@import 'button'` 时，`button.scss` 中的所有变量、Mixin、函数都会被注入到当前文件的全局作用域，极易产生命名冲突。`@use` 是 Sass 推出的新模块系统（Dart Sass 1.0+），它引入了命名空间隔离：
+  ```scss
+  @use 'button' as btn;   // 导入并创建命名空间 btn
+  .container { @include btn.mixins(); }
+  ```
+  `@use` 的优势：命名空间隔离、只加载一次（避免重复编译）、支持 `@forward` 转发模块。Sass 官方已废弃 `@import`，新项目应全面使用 `@use`。迁移时需要注意：`@import` 的变量是全局可用的，而 `@use` 的变量必须通过命名空间访问。"
+
+  </Accordion>
+
+  <Accordion title="在 Monorepo 中，多个包如何共享 Sass 变量和 Mixin？" icon="skull">
+
+  **答题要点：**
+  结合 Monorepo 工程化架构解释样式共享方案。
+
+  **高分回答：**
+  "在 Monorepo 中共享 Sass 工具集有三种方案：
+  **1. 共享包方案**：创建一个 `@repo/styles` 包，将变量、Mixin、函数放在其中，其他包通过 `@use '@repo/styles'` 导入。需要在 `package.json` 中配置 `sassOptions.includePaths` 指向 `node_modules`。
+  **2. Symbolic Link 方案**：通过 `pnpm workspace` 的软链接机制，让多个包共享同一份样式源文件。修改即生效，无需发版。
+  **3. CSS 变量方案**：将主题变量从 Sass 迁移到原生 CSS 变量（`:root` 定义），通过 CSS 的继承机制自然共享，不依赖 Sass 的模块系统。
+  **最佳实践**：方案 3 + 方案 1 组合。运行时主题变量用原生 CSS 变量（跨技术栈共享），编译期工具函数（如 `rem()`、`text-ellipsis`）用 Sass 的 `@use` 模块系统。"
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [Sass 官方文档](https://sass-lang.com/documentation/)：Sass 语言的权威参考，包含 `@use` 模块系统的完整规范。<sup>[1]</sup>
+- 📖 [PostCSS 插件开发指南](https://github.com/postcss/postcss/blob/main/docs/writing-a-plugin.md)：PostCSS 核心团队编写的插件开发教程，详解 AST 操作 API。<sup>[2]</sup>
+- 🟢 [CSS Nesting 规范 - W3C](https://www.w3.org/TR/css-nesting-1/)：W3C 官方对 CSS 原生嵌套的规范定义，解释了 `&` 选择器的语法规则。<sup>[3]</sup>

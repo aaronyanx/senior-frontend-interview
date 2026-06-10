@@ -73,6 +73,12 @@ title: "模板编译与渲染"
 </Card>
 </CardGroup>
 
+<Tip title="🎢 通俗比喻: 菜谱翻译官">
+
+模板编译就像一个"菜谱翻译官"。你用中文写菜谱（模板语法），翻译官把它翻译成英文（渲染函数），外国厨师（浏览器）按英文菜谱做菜（渲染 DOM）。翻译官还会在菜谱上标注"这道菜的口味可能会变"（PatchFlag）和"这些配料是固定的"（静态提升），这样厨师下次只需要重新调味，不用从头开始做。
+
+</Tip>
+
 <Tip title="💡 面试技巧">
 
 回答时重点说**编译器做了什么优化**（PatchFlag、静态提升、Block Tree），不要只说"模板变成渲染函数'--面试官想听的是你理解为什么模板比手写 render 函数性能好。
@@ -163,6 +169,12 @@ v-model 的本质是"两条独立线路的语法糖"--编译器把它拆成 `val
 
 </Tip>
 
+<Note title="💡 一句话总结">
+
+v-model 是编译器语法糖——原生元素编译为 `value` + `input` 事件，组件编译为 `modelValue` + `update:modelValue` 事件。
+
+</Note>
+
 ---
 
 ## Q3: nextTick 的原理？为什么能拿到更新后的 DOM？
@@ -242,25 +254,25 @@ nextTick 的本质是"等批量更新完成后再执行"--Vue 把多个数据修
 
 ---
 
-## Q4: `<script setup>` 到底做了什么？
+## Q4: `[script setup]` 到底做了什么？
 
-`<script setup>` 是 `setup()` 函数的语法糖。编译器会自动做以下事情：
+`[script setup]` 是 `setup()` 函数的语法糖。编译器会自动做以下事情：
 
 1. **自动暴露**：顶层变量（ref、reactive、函数）自动暴露给模板，不需要手动 return
 2. **自动导入**：编译器会把 import 的组件自动注册，不需要 components 选项
-3. **编译为 setup 函数**：`<script setup>` 的代码被编译为 `setup()` 函数的函数体
+3. **编译为 setup 函数**：`[script setup]` 的代码被编译为 `setup()` 函数的函数体
 
 ```vue
 <!-- 你写的 -->
-<script setup>
+[script setup]
 import { ref } from 'vue';
 import MyButton from './MyButton.vue';
 const count = ref(0);
 function increment() { count.value++; }
-</script>
+[/script]
 
 <!-- 编译器转换后（简化） -->
-<script>
+[script]
 import { ref } from 'vue';
 import MyButton from './MyButton.vue';
 export default {
@@ -271,32 +283,32 @@ export default {
   },
   components: { MyButton }
 }
-</script>
+[/script]
 ```
 
 <Warning title="⚠️ script setup 的限制">
 
-`<script setup>` 中不能使用以下选项：`name`、`inheritAttrs`、`props`（用 `defineProps`）、`emits`（用 `defineEmits`）。如果需要这些选项，可以用两个 `<script>` 块--一个普通 `<script>` 定义选项，一个 `<script setup>` 定义逻辑。
+`[script setup]` 中不能使用以下选项：`name`、`inheritAttrs`、`props`（用 `defineProps`）、`emits`（用 `defineEmits`）。如果需要这些选项，可以用两个 `[script]` 块--一个普通 `[script]` 定义选项，一个 `[script setup]` 定义逻辑。
 
 </Warning>
 
 ### script setup 到底做了什么？（编译时转换详解）
 
-`<script setup>` 不是运行时 API，而是**编译时语法糖**。它在编译阶段被 Vue 的编译器转换为标准的 `setup()` 函数，同时做了四件事：
+`[script setup]` 不是运行时 API，而是**编译时语法糖**。它在编译阶段被 Vue 的编译器转换为标准的 `setup()` 函数，同时做了四件事：
 
 ```text
-<script setup> 的编译时转换：
+[script setup] 的编译时转换：
 
 你写的：
-  <script setup>
+  [script setup]
   import { ref } from 'vue'
   import MyButton from './MyButton.vue'
   const count = ref(0)
   function increment() { count.value++ }
-  </script>
+  [/script]
 
 编译器转换后（简化）：
-  <script>
+  [script]
   import { ref } from 'vue'
   import MyButton from './MyButton.vue'
   export default {
@@ -307,7 +319,7 @@ export default {
     },
     components: { MyButton }
   }
-  </script>
+  [/script]
 ```
 
 **编译器自动做的四件事：**
@@ -335,19 +347,25 @@ export default {
 
 <Warning title="⚠️ script setup 的性能优势">
 
-`<script setup>` 相比普通 `setup()` 有三个性能优势：
+`[script setup]` 相比普通 `setup()` 有三个性能优势：
 
 1. **更好的 Tree Shaking**：编译器在编译时就知道哪些 import 被模板使用了，未使用的 import 可以被 Tree Shaking 删除
-2. **更精确的类型推断**：TypeScript 可以直接分析 `<script setup>` 中的类型，不需要通过 `defineComponent` 包装
+2. **更精确的类型推断**：TypeScript 可以直接分析 `[script setup]` 中的类型，不需要通过 `defineComponent` 包装
 3. **更少的运行时开销**：自动暴露是编译时生成的 `return` 语句，运行时没有额外的代理或反射开销
 
 </Warning>
 
 <Tip title="🎢 通俗比喻: 代码生成器">
 
-`<script setup>` 就像一个智能代码生成器。你只需要写核心逻辑（ref、函数、import），它自动帮你生成样板代码（return、components、directives）。就像你填一个表单的几个关键字段，系统自动生成完整的合同——你不用手动填写每个条款，但最终合同是完整的。
+`[script setup]` 就像一个智能代码生成器。你只需要写核心逻辑（ref、函数、import），它自动帮你生成样板代码（return、components、directives）。就像你填一个表单的几个关键字段，系统自动生成完整的合同——你不用手动填写每个条款，但最终合同是完整的。
 
 </Tip>
+
+<Note title="💡 一句话总结">
+
+`[script setup]` 是 `setup()` 的编译时语法糖——编译器自动暴露顶层变量、注册导入组件、处理 defineProps/defineEmits 编译器宏。
+
+</Note>
 
 ---
 
@@ -393,6 +411,16 @@ h('div', [
 Vue 官方推荐用模板而不是手写 render 函数。如果你需要动态组件、高阶组件等复杂场景，可以用 render 函数，但要意识到你放弃了编译器的所有优化。
 
 </Tip>
+
+<Tip title="🎢 通俗比喻: 手写作业 vs 印刷厂">
+
+render 函数就像手写作业——你必须一笔一画地描述每个字（手动创建 VNode），老师（浏览器）也不知道哪些字是重点、哪些是废话。模板就像交给印刷厂（编译器）——你只需要提供原稿（模板），印刷厂会自动帮你用红色标注重点（PatchFlag）、把不变的标题做成铅字模板（静态提升）、把动态内容单独排版（Block Tree），印刷效率远高于手抄。
+
+</Tip>
+
+### 编译时优化的本质：让编译器做尽可能多的工作
+
+Vue 3 的设计理念是"让编译器做尽可能多的优化，减轻运行时的负担"。尤雨溪在 Vue 3 RFC 中明确表示：模板的"受限语法"不是缺点，而是优势——正是因为模板的结构是可预测的，编译器才能在编译时提取出优化信息。React 的 JSX 是任意 JavaScript 表达式，编译器无法静态分析哪些是动态部分，所以只能在运行时全量比较。
 
 ---
 
@@ -546,17 +574,17 @@ v-model 的编译实现在 `packages/compiler-core/src/transforms/vModel.ts` 中
 
   </Accordion>
 
-  <Accordion title="<script setup> 和普通 setup() 函数有什么区别?" icon="layer-group">
+  <Accordion title="[script setup] 和普通 setup() 函数有什么区别?" icon="layer-group">
 
   **答题要点：** script setup 是编译时语法糖，自动暴露顶层变量和导入的组件。
 
   **高分回答：**
-  "`<script setup>` 是 `setup()` 函数的编译时语法糖，编译器会自动做三件事：
+  "`[script setup]` 是 `setup()` 函数的编译时语法糖，编译器会自动做三件事：
   1. **自动暴露**：顶层变量（ref、reactive、函数）自动暴露给模板，不需要手动 return。
   2. **自动注册组件**：import 的组件自动注册，不需要 components 选项。
   3. **编译为 setup 函数**：代码被编译为 `setup()` 的函数体。
 
-  性能优势：`<script setup>` 编译后的代码有更好的 tree-shaking 和类型推断。因为编译器在编译时就知道哪些变量被模板使用了，可以精确地生成代码。普通 `setup()` 是运行时函数，编译器无法静态分析。"
+  性能优势：`[script setup]` 编译后的代码有更好的 tree-shaking 和类型推断。因为编译器在编译时就知道哪些变量被模板使用了，可以精确地生成代码。普通 `setup()` 是运行时函数，编译器无法静态分析。"
 
   </Accordion>
 
@@ -618,4 +646,6 @@ Composition API 的详细对比和 Composables 最佳实践等内容，详见 [V
 - 🔗 [Vue 3 编译器源码 packages/compiler-core](https://github.com/vuejs/core/tree/main/packages/compiler-core)：Vue 3 模板编译器的核心实现，包含 parse、transform、generate 三个阶段。<sup>[1]</sup>
 - 📖 [Vue 3 源码 packages/compiler-core/src/transforms/vModel.ts](https://github.com/vuejs/core/blob/main/packages/compiler-core/src/transforms/vModel.ts)：v-model 的编译实现。<sup>[2]</sup>
 - 📖 [Vue 3 源码 packages/runtime-core/src/scheduler.ts](https://github.com/vuejs/core/blob/main/packages/runtime-core/src/scheduler.ts)：nextTick 和 queueJob 的实现。<sup>[3]</sup>
-- 🟢 [Vue 3 官方文档 - 渲染机制](https://vuejs.org/guide/extras/rendering-mechanism.html)：Vue 官方对模板编译和渲染机制的深度解析。
+- 🟢 [Vue 3 官方文档 - 渲染机制](https://vuejs.org/guide/extras/rendering-mechanism.html)：尤雨溪对模板编译和渲染机制的深度解析，包含 PatchFlag、Block Tree、静态提升的完整说明。
+- 📖 [霍春阳《Vue.js 设计与实现》](https://book.douban.com/subject/35768338/)：从编译器 parse 到渲染器 patch 的完整源码剖析，包含模板编译三阶段的详细实现。
+- 📖 [黄轶《Vue.js 技术揭秘》](https://ustbhuangyi.github.io/vue-analysis/)：从 Vue 2 编译器到 Vue 3 编译器的演进脉络，对 v-model 的编译转换有源码级分析。

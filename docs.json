@@ -73,6 +73,13 @@
               "javascript/dom-events",
               "javascript/regex-engine"
             ]
+          },
+          {
+            "group": "测试",
+            "pages": [
+              "testing/unit-test",
+              "testing/e2e"
+            ]
           }
         ]
       },
@@ -107,6 +114,14 @@
             "pages": [
               "css/css-variables",
               "css/responsive"
+            ]
+          },
+          {
+            "group": "CSS 工程化",
+            "pages": [
+              "css/css-preprocessors",
+              "css/css-in-js",
+              "css/web-components"
             ]
           }
         ]
@@ -244,6 +259,19 @@
             "pages": [
               "docker/docker"
             ]
+          },
+          {
+            "group": "微前端",
+            "pages": [
+              "micro-frontend/micro-frontend"
+            ]
+          },
+          {
+            "group": "桌面端",
+            "pages": [
+              "electron/electron",
+              "tauri/tauri"
+            ]
           }
         ]
       },
@@ -257,16 +285,22 @@
             ]
           },
           {
+            "group": "Flutter",
+            "pages": [
+              "flutter/flutter"
+            ]
+          },
+          {
+            "group": "鸿蒙",
+            "pages": [
+              "harmonyos/harmonyos"
+            ]
+          },
+          {
             "group": "小程序框架",
             "pages": [
               "taro/taro",
               "uni-app/uni-app"
-            ]
-          },
-          {
-            "group": "微前端",
-            "pages": [
-              "micro-frontend/micro-frontend"
             ]
           }
         ]
@@ -275,9 +309,10 @@
         "tab": "AI 工程化",
         "groups": [
           {
-            "group": "LLM 基础",
+            "group": "LLM 基础与训练",
             "pages": [
-              "ai/llm"
+              "ai/llm",
+              "ai/llm-training"
             ]
           },
           {
@@ -290,7 +325,8 @@
             "group": "RAG 与知识库",
             "pages": [
               "ai/rag",
-              "ai/langchain"
+              "ai/langchain",
+              "ai/embedding"
             ]
           },
           {
