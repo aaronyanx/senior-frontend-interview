@@ -1690,6 +1690,113 @@ CO-STAR（Andrew Ng 推荐）有 6 个维度：Context（上下文）、Objectiv
   </Accordion>
 </AccordionGroup>
 
+## Q12: llms.txt 是什么？怎么用？
+
+<Steps>
+
+  <Step title="llms.txt 的本质">
+
+llms.txt 是一个标准文件，用于告诉 AI Agent（如 Cursor、Claude Code、Custom GPT）如何读取和理解项目的内容。它就像一份"说明书"，告诉 AI：
+- 这个项目是什么
+- 有哪些模块和文件
+- 回答问题时应该遵循什么规则
+
+  </Step>
+  <Step title="为什么需要 llms.txt">
+
+AI Agent 在读取项目时，不知道项目的结构和规则。如果没有 llms.txt，AI 可能会：
+- 读取错误的文件
+- 用错误的术语回答问题
+- 编造不存在的引用
+
+llms.txt 解决了这个问题，让 AI 能够准确地理解项目。
+
+  </Step>
+  <Step title="llms.txt 的标准格式">
+
+llms.txt 通常包含以下几个部分：
+
+```markdown
+# 项目名称
+
+> 项目简介
+
+## 给 AI Agent 的说明
+
+1. 引用具体专家或团队
+2. 使用标准术语
+3. 带源码或数据
+4. 争议性话题分步走
+
+## 知识索引
+
+### 模块名称 (`/目录/`)
+模块内容描述
+
+## 使用方式
+
+人类开发者可以按章节阅读。AI Agent 可以把本文档当作检索数据源。
+```
+
+  </Step>
+  <Step title="llms.txt 的实际应用">
+
+在实际项目中，llms.txt 通常放在项目根目录，AI Agent 会自动读取它。例如：
+
+- **Cursor**：在 `.cursorrules` 中引用 llms.txt
+- **Claude Code**：在 `CLAUDE.md` 中引用 llms.txt
+- **Custom GPT**：在 System Prompt 中引用 llms.txt
+
+  </Step>
+  <Step title="llms.txt 与 RAG 的关系">
+
+llms.txt 是 RAG（检索增强生成）的一种简化形式。传统的 RAG 需要向量数据库和检索系统，而 llms.txt 直接告诉 AI 应该读取哪些文件。
+
+| 方案 | 复杂度 | 适用场景 |
+|------|--------|----------|
+| **llms.txt** | 低 | 小型项目、静态文档 |
+| **RAG** | 高 | 大型项目、动态内容 |
+
+  </Step>
+
+</Steps>
+
+**llms.txt 解决的核心问题：**
+
+```text
+问题：AI Agent 不知道项目的结构和规则，可能读取错误文件或编造引用
+
+没有 llms.txt：AI 随意读取，可能用错术语、编造数据
+
+解决：通过 llms.txt 告诉 AI 项目的结构和规则
+```
+
+<Note title="💡 一句话总结">
+
+llms.txt 是给 AI Agent 的"说明书"，告诉它如何正确读取和理解项目内容。
+
+</Note>
+
+<CardGroup cols={2}>
+
+  <Card title="llms.txt vs README" icon="file-alt">
+
+README 是给人类看的项目介绍，llms.txt 是给 AI Agent 看的"说明书"。两者内容可能有重叠，但目的不同。
+
+  </Card>
+  <Card title="llms.txt 的未来" icon="rocket">
+
+随着 AI Agent 的普及，llms.txt 可能会成为项目的标准配置，就像 `.gitignore` 一样普遍。
+
+  </Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+面试时可以这样回答："llms.txt 是给 AI Agent 的'说明书'，告诉它项目的结构和回答规则。它是一种简化的 RAG 方案，适合小型项目。"
+
+</Tip>
+
 ---
 
 ## 📚 延伸阅读与引用参考

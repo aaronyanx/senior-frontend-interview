@@ -6,6 +6,7 @@
     "description": "专为高级前端工程师打造的面试与进阶手册。全面深度解析 V8 底层机制、React Fiber 源码、微前端架构，以及最新的 AI 工程化（LangGraph/Agent/MCP）落地实践。",
     "keywords": ["高级前端面试", "前端面试宝典", "前端架构", "V8引擎", "React源码", "Vue原理", "微前端", "AI工程化", "Agent", "前端进阶"]
   },
+  "head": "<meta name=\"google-site-verification\" content=\"Lw5hytF6244ZY_C07aPkZ8H80Hr9O5VAI2aOuLXTaOs\" />",
   "theme": "mint",
   "favicon": "/favicon.png",
   "logo": {
