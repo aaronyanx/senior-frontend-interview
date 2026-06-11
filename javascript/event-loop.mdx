@@ -497,28 +497,78 @@ new Promise((resolve) => {
 console.log('7');
 ```
 
-**逐步分析：**
+**逐步分析（带代码注释）：**
+
+```javascript
+// ====== 第一步：执行同步代码（调用栈） ======
+console.log('1');           // → 输出 1（同步）
+
+setTimeout(() =>            // → setTimeout 整体推入宏任务队列（不执行回调）
+  console.log('2'), 0);
+
+Promise.resolve()           // Promise.resolve() 立刻返回 fulfilled Promise
+  .then(() =>               // → .then 回调推入微任务队列 1
+    console.log('3'))
+  .then(() =>               // → 注意：这个 .then 还没注册，要等上面的微任务执行完才注册
+    console.log('4'));
+
+new Promise((resolve) => {  // → executor 是同步的！立刻执行！
+  console.log('5');         // → 输出 5（同步，不是微任务！）
+  resolve();                // → resolve 后，.then 回调推入微任务队列 2
+}).then(() =>
+  console.log('6'));
+
+console.log('7');           // → 输出 7（同步）
+```
 
 ```text
-第一步：执行同步代码（调用栈）
-  console.log('1')           → 输出 1
-  setTimeout(...)            → 推入宏任务队列
-  Promise.resolve().then(...)| → 推入微任务队列 1
-  new Promise(executor)      → executor 是同步的！
-    console.log('5')         → 输出 5
-    resolve()                → .then 推入微任务队列 2
-  console.log('7')           → 输出 7
+第一步执行完的状态：
 
-第二步：清空微任务队列
-  执行微任务 1：console.log('3') → 输出 3
-    .then 返回新 Promise，推入微任务队列 3
-  执行微任务 2：console.log('6') → 输出 6
-  执行微任务 3：console.log('4') → 输出 4
+调用栈：  已清空 ✅
+输出：    1 → 5 → 7
 
-第三步：执行宏任务
-  执行 setTimeout：console.log('2') → 输出 2
+微任务队列：[ log('3'), log('6') ]
+宏任务队列：[ setTimeout(log('2')) ]
 
-最终输出：1 → 5 → 7 → 3 → 6 → 4 → 2
+注意：log('4') 此时还没注册！它要等 log('3') 的微任务执行完才注册
+      （因为 .then 返回新 Promise，第二个 .then 挂在新 Promise 上）
+```
+
+```javascript
+// ====== 第二步：清空微任务队列（按入队顺序逐个执行） ======
+// 微任务 1：console.log('3') → 输出 3
+//   └─ 执行完后，它的 .then(() => console.log('4')) 被注册为新的微任务 3
+// 微任务 2：console.log('6') → 输出 6
+// 微任务 3：console.log('4') → 输出 4（是微任务 1 执行时新产生的！）
+//   └─ 如果此时又有新的微任务产生，继续清空——直到队列彻底为空
+
+// ====== 第三步：执行宏任务（每次只取一个） ======
+// 执行 setTimeout 回调：console.log('2') → 输出 2
+// 执行完后回到第一步，开始下一轮循环（本题没有更多宏任务了）
+```
+
+```text
+最终输出顺序：1 → 5 → 7 → 3 → 6 → 4 → 2
+               ├──同步──┤  ├─微任务─┤  ├宏任务┤
+```
+
+**解题口诀（逐行注释版）：**
+
+```text
+遇到输出顺序题，按以下 4 步走：
+
+第 1 步：从上到下扫描代码，标记每一行属于什么类型
+  ├── console.log(...)         → 同步，立刻输出
+  ├── setTimeout(...)          → 宏任务队列（只注册，不执行回调）
+  ├── Promise.resolve().then() → 微任务队列（只注册回调）
+  ├── new Promise(executor)    → executor 是同步的！立刻执行！
+  └── await 右边的表达式       → 同步执行；await 下面的代码 → 微任务
+
+第 2 步：执行完所有同步代码后，记录输出结果
+
+第 3 步：清空微任务队列（包括微任务执行过程中新产生的微任务！）
+
+第 4 步：取一个宏任务执行，执行完回到第 1 步（开始下一轮循环）
 ```
 
 <Tip title="🎢 通俗比喻: 话剧彩排">

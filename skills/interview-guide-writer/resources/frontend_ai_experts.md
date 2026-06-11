@@ -212,6 +212,39 @@
 25. **n8n / Dify 核心团队** - 顶级开源可视化工作流编排者。n8n 定义了节点自动化的标杆，Dify 则提供了 LLM 应用全栈开发的范本。
 26. **字节跳动 Coze 团队 / 阿里百炼团队** - 国内”企业级 Agent”编排的先驱，深谙权限收敛、审计容错、复杂 RAG 知识检索与 Skill 主动调度的最佳实践。
 27. **Sourcegraph Amp 团队** - 推出 AI 编程 Agent Amp，2025-05-07 宣布支持 AGENT.md 配置文件，推动 Agent 配置文件标准化。
+28. **Figma MCP 团队** - 推出 Figma MCP 服务，允许 AI 工具直接读取 Figma 设计文件，推动 Design to Code 标准化。
+29. **Vercel V0 团队** - 推出 AI 代码生成工具 V0，从文本描述生成 React/Next.js/Tailwind CSS 代码。
+30. **GitHub Copilot 团队** - 推出 AI 编程助手 Copilot，代码补全 + Chat + Workspace。
+31. **Windsurf 团队** - 推出 AI 代码编辑器 Windsurf，Cascade 模式支持多文件编辑。
+
+---
+
+## 8.5 测试与质量保障
+
+1. **Kent C. Dodds** - [kentcdodds.com](https://kentcdodds.com/) - Epic React 作者，Testing Library 创始人，推动"测试行为不测试实现"的理念。
+2. **Jest 团队** - Meta 推出的 JavaScript 测试框架，零配置、内置断言、Mock、快照测试。
+3. **Vitest 团队** - 基于 Vite 的测试框架，兼容 Jest API，速度更快。
+4. **Playwright 团队** - Microsoft 推出的 E2E 测试框架，支持多浏览器、自动等待。
+5. **Cypress 团队** - E2E 测试框架，实时重载、时间旅行调试。
+
+---
+
+## 8.6 桌面端开发
+
+1. **Electron 团队** - GitHub 推出的桌面应用框架，基于 Chromium + Node.js。
+2. **Tauri 团队** - 基于 Rust + WebView 的桌面应用框架，包体积更小、性能更好。
+3. **GitHub Desktop 团队** - 基于 Electron 的 GitHub 桌面客户端。
+
+---
+
+## 8.7 CSS 工程化
+
+1. **SASS 团队** - CSS 预处理器，支持变量、嵌套、Mixin。
+2. **PostCSS 团队** - CSS 后处理器，插件化架构。
+3. **styled-components 团队** - CSS-in-JS 库，运行时方案。
+4. **Emotion 团队** - CSS-in-JS 库，性能优于 styled-components。
+5. **Lit 团队** - Google 推出的 Web Components 库，轻量级、高性能。
+
 ---
 
 ## 8. React Native (跨端开发)

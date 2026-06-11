@@ -85,6 +85,15 @@
 *   **Codex / Claude Code**: Codex（OpenAI 早期开创性的代码生成大模型底座） / Claude Code（Anthropic 推出的一款深度集成在终端 CLI 中的现代自主编程 Agent）
 *   **AGENT.md / CLAUDE.md / AGENTS.md**: Agent 配置文件（为 AI Agent 提供项目级持久化指令的标准文件格式。AGENT.md 是通用格式，CLAUDE.md 是 Anthropic 专有，AGENTS.md 是 OpenAI 专有。2025-05-07 Sourcegraph Amp 宣布支持 AGENT.md）
 *   **Amp**: Amp（Sourcegraph 推出的 AI 编程 Agent，支持 AGENT.md 配置文件）
+*   **Design to Code**: 设计转代码（将设计稿自动转换为前端代码的技术，Figma MCP、V0、Locofy、Anima 等工具实现）
+*   **PRD to Code**: 需求文档转代码（从产品需求文档自动生成前端代码的端到端工作流）
+*   **Figma MCP**: Figma 模型上下文协议（Figma 推出的 MCP 服务，允许 AI 工具直接读取 Figma 设计文件）
+*   **V0**: Vercel 推出的 AI 代码生成工具（从文本描述生成 React/Next.js/Tailwind CSS 代码）
+*   **Locofy**: Figma 插件（将设计稿转换为 React、Vue、Next.js 等框架代码）
+*   **Anima**: 设计转代码工具（支持 Figma、Sketch、Adobe XD 设计稿转换）
+*   **GitHub Copilot**: GitHub 的 AI 编程助手（代码补全 + Chat + Workspace）
+*   **Cursor**: AI-first 代码编辑器（Fork VS Code，内置 AI 对话和代码编辑）
+*   **Windsurf**: AI 代码编辑器（Cascade 模式，支持多文件编辑）
 
 ## 8. Node.js 服务端生态 (参考：Node.js 官方文档、《深入浅出 Node.js》)
 *   **Event Loop**: 事件循环（Node.js 特有的 6 个阶段：Timers, Pending, Idle/Prepare, Poll, Check, Close）

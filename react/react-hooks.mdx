@@ -131,17 +131,42 @@ function useFetch(url) {
 ```
 
 ```text
-┌───────────────────────────────────────────────────────────────┐
-│                     Commit 阶段                                │
-├──────────────┬───────────────────┬────────────────────────────┤
-│  Mutation    │    Layout         │     Passive Effects        │
-│  (DOM 操作)   │ useLayoutEffect  │      useEffect             │
-│              │ (同步执行)         │    (异步执行)               │
-└──────────────┴───────────────────┴────────────────────────────┘
-                ↑                                       ↑
-                │                                       │
-          DOM 已更新                               浏览器可能已绘制
-          浏览器尚未绘制                            用户已看到新 UI
+useEffect vs useLayoutEffect 的执行时序图：
+
+  setState 触发
+       │
+       ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                     Render 阶段（可中断）                        │
+  │  beginWork → completeWork → 生成 workInProgress 树              │
+  └─────────────────────────────────────────────────────────────────┘
+       │
+       ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                     Commit 阶段（不可中断）                      │
+  │                                                                 │
+  │  ┌──────────────┬───────────────────┬────────────────────────┐ │
+  │  │  Mutation    │    Layout         │     Passive Effects    │ │
+  │  │  DOM 插入/   │ useLayoutEffect   │      useEffect         │ │
+  │  │  更新/删除    │ (同步执行)         │    (异步调度)           │ │
+  │  └──────────────┴───────────────────┴────────────────────────┘ │
+  │                   ↑                     ↑                       │
+  │                   │                     │                       │
+  │             DOM 已更新              浏览器已绘制                  │
+  │             浏览器尚未绘制          用户已看到新 UI               │
+  └─────────────────────────────────────────────────────────────────┘
+
+  实际执行时序：
+  ─────────────────────────────────────────────────────────────→ 时间
+  │                    │                      │
+  │ DOM 更新完成        │ useLayoutEffect      │ useEffect
+  │                    │ 同步执行（阻塞绘制）    │ 通过 MessageChannel
+  │                    │ 可以测量 DOM 尺寸      │ 异步执行（不阻塞）
+  │                    │ 可以同步修改样式        │ 浏览器可能已绘制一帧
+  │                    │                      │
+  │                    ↓                      ↓
+  │              浏览器绘制开始            如果样式不对
+  │              看到正确的 UI            会闪烁一帧
 ```
 
 ```javascript
@@ -303,18 +328,74 @@ Hooks 在 Fiber 节点上是怎么存储的？
 
 在 React 源码中，每个 Hook 是一个链表节点，存储在 Fiber 节点的 `memoizedState` 上。详见 [React 源码 packages/react-reconciler/src/ReactFiberHooks.js](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/ReactFiberHooks.js)。
 
+```text
+Hooks 链表在 Fiber 节点上的存储结构图解：
+
+  Fiber 节点（函数组件 Counter）
+  ┌──────────────────────────────────────────────────────────┐
+  │  tag: FunctionComponent                                   │
+  │  type: Counter                                            │
+  │  memoizedState: ──┐  ← Hook 链表的头节点                   │
+  │  ...              │                                       │
+  └───────────────────┼───────────────────────────────────────┘
+                      ▼
+              Hook1 (useState)
+              ┌──────────────────┐
+              │ memoizedState: 0 │  ← count 的当前值
+              │ queue: {pending} │  ← 更新队列（环形链表）
+              │ next: ──────────┼──┐
+              └──────────────────┘  │
+                                    ▼
+              Hook2 (useState)
+              ┌──────────────────┐
+              │ memoizedState: ''│  ← name 的当前值
+              │ queue: {pending} │
+              │ next: ──────────┼──┐
+              └──────────────────┘  │
+                                    ▼
+              Hook3 (useEffect)
+              ┌──────────────────┐
+              │ memoizedState: { │  ← effect 的依赖和回调
+              │   deps: [count], │
+              │   create: fn,    │
+              │   destroy: fn    │
+              │ }                │
+              │ next: null       │  ← 链表结尾
+              └──────────────────┘
+
+  首次渲染时 React 的执行过程：
+  ┌─────────────────────────────────────────────────────────────┐
+  │ 1. useState(0)   → 创建 Hook1，挂到 fiber.memoizedState     │
+  │ 2. useState('')  → 创建 Hook2，Hook1.next = Hook2           │
+  │ 3. useEffect(fn) → 创建 Hook3，Hook2.next = Hook3           │
+  └─────────────────────────────────────────────────────────────┘
+
+  二次渲染时 React 的执行过程：
+  ┌─────────────────────────────────────────────────────────────┐
+  │ 1. useState(0)   → 读取 Hook1，返回 memoizedState (0)       │
+  │ 2. useState('')  → 读取 Hook1.next = Hook2，返回 ''         │
+  │ 3. useEffect(fn) → 读取 Hook2.next = Hook3，比较依赖         │
+  │                                                              │
+  │ ⚠️ 如果条件语句跳过了 Hook2：                                 │
+  │ 1. useState(0)   → 读取 Hook1 ✅ 正确                        │
+  │ 2. useEffect(fn) → 读取 Hook1.next = Hook2 → 拿到 '' ❌ 错了！│
+  └─────────────────────────────────────────────────────────────┘
+```
+
 ```javascript
-// Hook 的数据结构
+// Hook 的数据结构（每行注释）
 type Hook = {
-  memoizedState: any,        // 当前值（useState 的值、useEffect 的依赖等）
-  baseState: any,            // 基础状态
-  baseQueue: Update<any> | null, // 基础更新队列
-  queue: UpdateQueue<any> | null, // 更新队列
-  next: Hook | null,         // 指向下一个 Hook（链表）
+  memoizedState: any,            // 当前值（useState 的值、useEffect 的依赖等）
+  baseState: any,                // 基础状态（跳过中间更新时的起点）
+  baseQueue: Update<any> | null, // 被跳过的低优先级更新队列
+  queue: UpdateQueue<any> | null,// 更新队列（存放 setState 的更新）
+  next: Hook | null,             // 指向下一个 Hook（链表的 next 指针）
 };
 
 // Fiber 节点上的 memoizedState 就是 Hook 链表的头节点
 // fiber.memoizedState → Hook1(useState) → Hook2(useEffect) → Hook3(useMemo) → null
+//
+// 关键：React 按调用顺序遍历链表，所以 Hook 不能放在条件语句中！
 ```
 
 这段代码揭示了 Hooks 的核心秘密：Hook 不是存在"函数里"，而是存在 Fiber 节点的 `memoizedState` 链表上。`next` 指针将所有 Hook 串联起来，React 通过 `workInProgressHook` 指针按顺序遍历。崔健（卡颂）在《React 技术揭秘》中详细剖析了这一机制：Fiber 节点的 `memoizedState` 字段指向一个单向链表，链表中的每个节点对应一个 Hook，Hook 的执行顺序决定了其在链表中的位置[4]。
@@ -327,24 +408,53 @@ useState 的更新队列是怎么实现的？
 
 详见 [React 源码 packages/react-reconciler/src/ReactFiberHooks.js 的 dispatchAction 函数](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/ReactFiberHooks.js)：
 
+```text
+setState 更新队列的环形链表图解：
+
+  第一次 setCount(1)：
+  queue.pending = ──┐
+       ┌────────────┘
+       ▼
+  ┌──────────┐
+  │ action:1 │
+  │ next: ───┼──→ 自己（环形）
+  └──────────┘
+
+  第二次 setCount(c => c + 1)：
+  queue.pending = ──┐
+       ┌────────────┘
+       ▼
+  ┌──────────┐    ┌──────────┐
+  │ action:  │    │ action:  │
+  │ c => c+1 │    │ 1        │
+  │ next: ───┼──→ │ next: ───┼──→ 回到 pending
+  └──────────┘    └──────────┘
+
+  Render 阶段批量消费：
+  从 pending.next 开始，沿着 next 指针遍历
+  action: 1 → 最终值: 1
+  action: c => c+1 → 最终值: 2
+  → 一次渲染拿到最终状态 2
+```
+
 ```javascript
-// dispatch 的实现（简化版）
+// dispatch 的实现（简化版，每行注释）
 function dispatchAction(fiber, queue, action) {
-  // 创建更新对象
-  const update = { action, next: null };
+  const update = { action, next: null }; // 创建更新对象
 
   // 把更新加入环形链表队列
-  const pending = queue.pending;
+  const pending = queue.pending;         // 队列尾部
   if (pending === null) {
-    update.next = update; // 自己指向自己
+    update.next = update;                // 队列为空，自己指向自己（环形）
   } else {
-    update.next = pending.next;
-    pending.next = update;
+    update.next = pending.next;          // 新节点指向队列头部
+    pending.next = update;               // 尾部指向新节点
   }
-  queue.pending = update;
+  queue.pending = update;                // 更新尾部指针
 
-  // 调度一次渲染
+  // 调度一次渲染（不会立即执行，而是安排微任务）
   scheduleUpdateOnFiber(fiber);
+  // Render 阶段会批量消费队列中的所有更新
 }
 ```
 

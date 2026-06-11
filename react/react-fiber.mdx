@@ -122,32 +122,74 @@ App → List → Item → (Item 没有 child) → (Item 没有 sibling)
 → 回到 List → (List 没有 sibling) → 回到 App → Footer → 回到 App → 结束
 ```
 
+```text
+Fiber 链表遍历的完整路径图解（深度优先）：
+
+  Fiber 树结构：
+       App
+      /   \
+    List   Footer
+    /  \
+  Item1 Item2
+
+  链表指针连接：
+  ┌─────────────────┐
+  │     App Fiber   │
+  └────────┬─▲──────┘
+    child  │ │ return
+           ▼ │
+  ┌─────────────────┐       sibling        ┌─────────────────┐
+  │    List Fiber   ├──────────────────────►│  Footer Fiber   │
+  └────────┬─▲──────┘                      └────────▲────────┘
+    child  │ │ return                                │ return
+           ▼ │                                       │
+  ┌─────────────────┐       sibling        ┌────────┴────────┐
+  │   Item1 Fiber   ├──────────────────────►│   Item2 Fiber   │
+  └─────────────────┘                      └─────────────────┘
+
+  遍历顺序（时间切片执行路径）：
+  ┌───┐   ┌───┐   ┌─────┐   ┌─────┐   ┌───┐   ┌────────┐
+  │App│ → │Lst│ → │Item1│ ←sib→ │Item2│ ←ret→ │  List   │
+  └───┘   └───┘   └─────┘   └─────┘   └───┘   └────────┘
+   begin   begin   begin     begin     complete  complete
+   Work    Work    Work      Work      Work      Work
+                                                  │
+                            ┌────────┐   ┌───┐    │ret
+                            │ Footer │ ← │App│ ←──┘
+                            └────────┘   └───┘
+                            beginWork    complete
+                            + complete   Work
+```
+
 ```javascript
-// Fiber 的核心遍历算法（简化版）
+// Fiber 的核心遍历算法（简化版，每行注释）
 function workLoop(deadline) {
   while (nextUnitOfWork !== null && !shouldYield()) {
-    // 执行当前 Fiber 节点的工作
+    // shouldYield() 检查是否还有剩余时间（5ms 切片）
+    // 没有时间了就跳出循环，让出主线程给浏览器渲染
     nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
   }
 
-  // 如果没有剩余时间，让出主线程
+  // 如果还有未处理的 Fiber 节点，安排下一帧继续
   if (nextUnitOfWork !== null) {
-    requestIdleCallback(workLoop);
+    requestHostCallback(workLoop); // 通过 MessageChannel 安排宏任务
   }
+  // 如果 nextUnitOfWork === null，所有节点处理完毕，进入 Commit 阶段
 }
 
 function performUnitOfWork(fiber) {
-  // 1. 处理当前节点（beginWork）
+  // 1. 处理当前节点（beginWork）：创建/复用 Fiber，reconcile 子节点，打 flags
   beginWork(fiber);
 
-  // 2. 返回下一个要处理的节点
-  if (fiber.child) return fiber.child;       // 优先找子节点
+  // 2. 返回下一个要处理的节点（深度优先的遍历顺序）
+  if (fiber.child) return fiber.child;       // 优先：找子节点（向下走）
+
   let next = fiber;
   while (next) {
-    if (next.sibling) return next.sibling;   // 再找兄弟节点
-    next = next.return;                       // 最后回到父节点
+    if (next.sibling) return next.sibling;   // 其次：找兄弟节点（向右走）
+    next = next.return;                       // 最后：回到父节点（向上回溯）
   }
-  return null;
+  return null; // 回到根节点，遍历结束
 }
 ```
 
@@ -574,43 +616,76 @@ Andrew Clark 在 Fiber Architecture 文档中引用了 React 的设计原则："
 
 ### shouldYield 的实现
 
+```text
+时间切片的执行时序图：
+
+  事件循环的一轮：
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  宏任务 (MessageChannel 回调)                                     │
+  │  ┌────────────────────────────────────────────────────────────┐ │
+  │  │ performWorkUntilDeadline()                                 │ │
+  │  │  deadline = now + 5ms                                      │ │
+  │  │  while (workInProgress && !shouldYield()) {               │ │
+  │  │    performUnitOfWork(fiber1)  ← 1ms                        │ │
+  │  │    performUnitOfWork(fiber2)  ← 1ms                        │ │
+  │  │    performUnitOfWork(fiber3)  ← 1ms                        │ │
+  │  │    performUnitOfWork(fiber4)  ← 1ms                        │ │
+  │  │    performUnitOfWork(fiber5)  ← 0.5ms                      │ │
+  │  │    shouldYield() → true! 时间到了！                         │ │
+  │  │  }                                                         │ │
+  │  │  还有工作 → port.postMessage(null) → 安排下一个宏任务         │ │
+  │  └────────────────────────────────────────────────────────────┘ │
+  │                                                                  │
+  │  微任务队列 (Promise callbacks)                                   │
+  │                                                                  │
+  │  浏览器渲染 (Layout → Paint → Composite)                         │
+  │  ┌────────────────────────────────────────────────────────────┐ │
+  │  │ 计算样式 → 计算布局 → 绘制像素 → 合成图层                     │ │
+  │  └────────────────────────────────────────────────────────────┘ │
+  │                                                                  │
+  │  下一个宏任务 (MessageChannel 回调)                               │
+  │  ┌────────────────────────────────────────────────────────────┐ │
+  │  │ performWorkUntilDeadline()                                 │ │
+  │  │  从 fiber6 恢复（nextUnitOfWork 指针还在！）                  │ │
+  │  │  继续执行剩余的 Fiber 节点...                                │ │
+  │  │  所有节点完成 → 进入 Commit 阶段 → DOM 更新                   │ │
+  │  └────────────────────────────────────────────────────────────┘ │
+  └──────────────────────────────────────────────────────────────────┘
+```
+
 ```javascript
-// React 源码中的 shouldYield 实现
+// React 源码中的 shouldYield 实现（每行注释）
 // 来源：packages/scheduler/src/forks/Scheduler.js
 
-let deadline = 0;
-const yieldInterval = 5; // 5ms 的切片单位
+let deadline = 0;               // 当前帧的截止时间
+const yieldInterval = 5;        // 每个切片的时长：5ms
 
 function shouldYieldToHost() {
   const currentTime = getCurrentTime();
-  // 如果距离帧截止时间不足 5ms，就让出主线程
+  // 如果当前时间已经超过截止时间，应该让出主线程
   if (currentTime >= deadline) {
-    // 没有时间了，让出主线程
-    return true;
+    return true;  // 没时间了，让浏览器渲染
   }
-  return false;
+  return false;   // 还有时间，继续执行 Fiber 节点
 }
 
-// 调度器使用 MessageChannel 创建宏任务
+// 调度器使用 MessageChannel 创建宏任务（不用 setTimeout 的原因见下方）
 const channel = new MessageChannel();
 const port = channel.port2;
-channel.port1.onmessage = performWorkUntilDeadline;
+channel.port1.onmessage = performWorkUntilDeadline; // 收到消息时执行工作
 
 function requestHostCallback(callback) {
   scheduledHostCallback = callback;
-  // 通过 MessageChannel 发送消息，触发宏任务
-  port.postMessage(null);
+  port.postMessage(null); // 发送消息 → 触发宏任务 → 执行 performWorkUntilDeadline
 }
 
 function performWorkUntilDeadline() {
   if (scheduledHostCallback !== null) {
     const currentTime = getCurrentTime();
-    // 设置截止时间：当前时间 + 5ms
-    deadline = currentTime + yieldInterval;
-    const hasMoreWork = scheduledHostCallback(currentTime);
+    deadline = currentTime + yieldInterval; // 设置截止时间：当前 + 5ms
+    const hasMoreWork = scheduledHostCallback(currentTime); // 执行一轮工作
     if (hasMoreWork) {
-      // 还有工作，继续调度
-      port.postMessage(null);
+      port.postMessage(null); // 还有工作，安排下一个宏任务继续
     }
   }
 }

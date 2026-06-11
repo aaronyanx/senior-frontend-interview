@@ -1,0 +1,609 @@
+---
+title: "AI 代码生成"
+---
+
+> **面试官为什么问这个？**
+>
+> AI 代码生成已经从"锦上添花"的辅助功能变成了前端工程师日常工作流的核心环节。面试官问这个，本质上是在考察你：**是否理解 AI 代码生成的技术原理和工具差异，能不能在实际工程中正确使用这些工具，以及是否清楚它们的边界和风险。** 如果你答不清楚，说明你对 AI 工具的使用停留在"Tab 补全"而不是"系统化工程实践"。
+
+---
+
+## Q1: AI 代码生成是如何演进的？它解决了什么问题？
+
+```text
+┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐
+│ 关键字   │ → │ 代码     │ → │ 上下文   │ → │ 自主     │
+│ 补全     │   │ 片段生成 │   │ 感知生成 │   │ 编码代理 │
+└──────────┘   └──────────┘   └──────────┘   └──────────┘
+  2010s         2021            2023            2025
+  IDE 自动      Copilot         Cursor          Claude Code
+  感知          整行补全        多文件理解      端到端自主完成
+```
+
+<Steps>
+
+  <Step title="2010s: IDE 关键字补全时代">
+
+    早期的代码补全完全基于**静态分析**——IDE 解析 AST（抽象语法树），根据变量类型和方法签名提供建议。Visual Studio 的 IntelliSense、Eclipse 的 Content Assist 都属于这一阶段。补全范围局限于当前文件的已知符号，无法理解上下文语义。
+
+  </Step>
+  <Step title="2021: GitHub Copilot 开启 LLM 代码补全">
+
+    GitHub 联合 OpenAI 发布 Copilot，基于 Codex 模型（GPT-3 的代码微调版本）。它不再局限于 AST 符号，而是根据**当前文件内容和光标位置**预测下一行甚至整个函数。这是第一次 LLM 大规模应用于代码生成，开发者首次体验到"AI 写代码"的可能性。
+
+  </Step>
+  <Step title="2023: 上下文感知的多文件理解">
+
+    Cursor、Codeium（后来的 Windsurf）等工具出现，核心突破是**跨文件上下文理解**。它们不只看当前文件，还会索引整个项目的文件树、依赖关系、TypeScript 类型定义，甚至 Git 历史。模型也从 Codex 升级到 GPT-4、Claude，推理能力大幅提升。
+
+  </Step>
+  <Step title="2024: MCP 标准化与 Agent 模式兴起">
+
+    Anthropic 推出 MCP（Model Context Protocol），标准化了 AI 与外部工具的通信协议。Cursor 的 Composer 模式、Claude Code 的终端 Agent 模式，让 AI 从"补全代码"进化到"理解任务 → 规划步骤 → 执行修改 → 运行测试"的完整工作流。
+
+  </Step>
+  <Step title="2025: 自主编码代理成为主流">
+
+    Claude Code、GitHub Copilot Workspace、Windsurf Cascade 等自主编码代理（Autonomous Coding Agent）进入生产环境。它们能独立完成从需求分析到代码提交的完整流程——搜索代码库、规划实现方案、跨多文件修改、运行测试、修复 lint 错误、提交 Git。Andrej Karpathy 将此趋势称为"vibe coding"——开发者用自然语言描述意图，AI 负责实现。<sup>[1]</sup>
+
+  </Step>
+
+</Steps>
+
+---
+
+### AI 代码生成解决的核心问题
+
+```text
+问题：重复性编码消耗大量时间
+
+传统流程：
+  开发者 → 查文档 → 查 Stack Overflow → 手写样板代码 → 调试
+  一个 CRUD 接口可能需要 2 小时
+
+AI 辅助流程：
+  开发者描述意图 → AI 生成代码 → 开发者审查修改 → 提交
+  同样的 CRUD 接口可能只需 20 分钟
+```
+
+<Note title="💡 一句话总结">
+
+AI 代码生成的本质是**把开发者的角色从"写代码"转变为"审查和引导代码"**——从体力劳动转向脑力决策。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="🚫 没有 AI 代码生成">
+
+开发者需要手动编写每一行样板代码：组件骨架、API 请求、类型定义、单元测试。一个中等复杂度的 React 组件可能需要 1-2 小时，其中 60% 的时间花在重复性代码上。
+
+</Card>
+<Card title="✅ 引入 AI 代码生成">
+
+开发者用自然语言描述需求（"创建一个带搜索和分页的用户列表组件"），AI 生成完整代码骨架。开发者只需审查逻辑正确性、调整样式细节、补充边界处理。同样的组件 15 分钟完成，效率提升 3-5 倍。
+
+</Card>
+</CardGroup>
+
+<Tip title="💡 面试技巧">
+
+回答时先说"为什么需要 AI 代码生成"（重复性编码的痛点），再说"它经历了哪些阶段"（从关键字补全到自主代理的演进），最后说"它的核心价值"（角色转变）。面试官想听的是你理解技术演进的驱动力，而不是背诵产品发布时间线。
+
+</Tip>
+
+---
+
+## Q2: AI 代码生成的原理是什么？它和传统代码补全有什么区别？
+
+AI 代码生成的核心是**大语言模型对代码序列的概率预测**。与传统 AST 补全的本质区别在于：传统补全理解"语法结构"，LLM 理解"语义意图"。
+
+```text
+┌─────────────────────────────────────────────────┐
+│              用户输入（Prompt / 代码上下文）        │  ← 当前文件 + 光标位置 + 项目上下文
+└────────────────────────┬────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────┐
+│              上下文构建层                          │  ← 文件树索引 + 类型定义 + Git 历史
+│  收集相关文件、类型信息、依赖关系，拼接成 prompt    │
+└────────────────────────┬────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────┐
+│              LLM 推理层                           │  ← GPT-4 / Claude / Codex
+│  基于 Transformer 架构，预测下一个 token 序列      │
+└────────────────────────┬────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────┐
+│              后处理层                              │  ← 格式化 + 语法检查 + 类型检查
+│  过滤不合法代码、对齐缩进、插入到编辑器             │
+└─────────────────────────────────────────────────┘
+```
+
+```javascript
+// 简化版：AI 代码补全的核心流程（伪代码）
+async function generateCode(context) {
+  // 1. 构建上下文：收集当前文件、相关文件、类型定义
+  const prompt = buildPrompt({
+    currentFile: context.file,          // 当前打开的文件
+    cursorPosition: context.cursor,     // 光标位置
+    relatedFiles: context.getRelatedFiles(), // import 链上的相关文件
+    typeDefinitions: context.getTypes(),     // TypeScript 类型定义
+    gitHistory: context.getRecentChanges(),  // 最近的 Git 提交
+  });
+
+  // 2. 调用 LLM 生成代码
+  const completion = await llm.predict(prompt, {
+    temperature: 0.2,  // 低温度 = 更确定性的输出
+    maxTokens: 512,
+    stopSequences: ['\n\n'],  // 遇到空行停止
+  });
+
+  // 3. 后处理：语法检查、格式化
+  const validCode = validateSyntax(completion);
+  return formatCode(validCode);
+}
+```
+
+<Warning title="⚠️ 核心机制: Token 预测 vs 语法分析">
+
+传统补全和 LLM 补全的底层机制完全不同：
+
+- **传统补全**：解析 AST → 查符号表 → 返回精确匹配。优点是零幻觉，缺点是只能补全已知符号。
+- **LLM 补全**：将代码转为 token 序列 → Transformer 计算注意力 → 预测概率最高的下一个 token。优点是能生成新代码，缺点是可能产生幻觉（编造不存在的 API）。
+- **关键区别**：LLM 不"理解"代码，它是在做**统计模式匹配**。当训练数据中某种模式出现频率高时，模型倾向于复现该模式——这既是优势（生成常见模式），也是风险（复现常见 bug）。
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 翻译官 vs 词典">
+
+传统代码补全就像查词典——你输入一个单词，它精确返回定义。你输入 `document.get`，它返回 `getElementById`、`getElementsByClassName` 等已知 API。LLM 代码生成就像请翻译官——你用中文描述意图（"获取页面上所有 class 为 active 的按钮"），翻译官根据语境生成完整表达（`document.querySelectorAll('button.active')`）。翻译官的优势是能处理模糊表达，风险是偶尔会"翻译错"——生成语法正确但逻辑有误的代码。
+
+</Tip>
+
+### 代码补全 vs 代码生成
+
+很多候选人混淆"代码补全"和"代码生成"，但它们是两个不同的层次：
+
+| 维度 | 代码补全 (Completion) | 代码生成 (Generation) |
+|------|----------------------|----------------------|
+| 输入 | 当前行的部分代码 | 自然语言描述或多文件上下文 |
+| 输出 | 1-10 行的续写 | 完整函数、组件、甚至整个文件 |
+| 模型 | 轻量级（Codex-davinci、StarCoder） | 重量级（GPT-4、Claude Opus） |
+| 延迟 | &lt; 100ms（实时补全） | 1-10s（需要等待生成） |
+| 典型工具 | Copilot Tab 补全、Codeium | Cursor Composer、Claude Code |
+| 上下文范围 | 当前文件 + 光标前内容 | 整个项目 + 外部文档 |
+
+### 上下文理解的三个层次
+
+AI 代码生成的质量**高度依赖上下文的质量**。上下文理解分三个层次：
+
+1. **文件级上下文**：当前文件的代码内容、光标位置、编辑历史。这是最基本的层次，所有工具都支持。
+2. **项目级上下文**：文件树结构、`tsconfig.json` 配置、`package.json` 依赖、TypeScript 类型定义。Cursor 和 Claude Code 在这个层次做得最好——它们会自动索引项目文件，构建依赖图谱。
+3. **语义级上下文**：理解业务逻辑、设计模式、团队编码规范。这是最前沿的层次，目前主要通过 `CLAUDE.md` / `AGENT.md` 等配置文件实现——开发者在配置文件中描述项目架构、编码规范、禁止行为，AI 读取后遵循执行。
+
+### 模型选择对代码生成质量的影响
+
+| 模型 | 代码能力 | 延迟 | 适用场景 |
+|------|---------|------|---------|
+| GPT-4o | 强，通用性好 | 中等 | 多语言项目、复杂推理 |
+| Claude Sonnet 4 | 极强，长上下文优秀 | 中等 | 大型代码库重构、多文件编辑 |
+| Claude Opus 4 | 最强，推理最深 | 较慢 | 架构设计、复杂算法 |
+| Codex / StarCoder | 中等，速度快 | 极快 | 实时 Tab 补全 |
+| Gemini 2.5 Pro | 强，多模态 | 中等 | 设计稿转代码、跨模态任务 |
+
+---
+
+## Q3: 主流 AI 编码工具有哪些？它们有什么区别？
+
+### 基础梳理
+
+| 工具 | 类型 | 核心模型 | 上下文能力 | 价格（月） | 适用场景 |
+|------|------|---------|-----------|-----------|---------|
+| **GitHub Copilot** | IDE 插件 | GPT-4o / Codex | 文件级 + 有限项目级 | 免费 / $10 / $39 | 实时补全、快速原型 |
+| **Cursor** | 独立 IDE | GPT-4 / Claude | 项目级（自动索引） | 免费 / $20 / $40 | 多文件编辑、重构 |
+| **Claude Code** | 终端 Agent | Claude Sonnet/Opus | 项目级 + CLAUDE.md | $20-$200（订阅） | 复杂重构、自主编码 |
+| **Windsurf** | 独立 IDE | 多模型 | 项目级（Cascade） | 免费 / $15 | 全栈开发、自动化 |
+
+### 专家视角深度剖析
+
+很多候选人能背诵上面的表格，但大厂面试官真正在意的是：**这些工具的底层架构差异是什么？为什么不同工具对同一个任务的生成质量差异很大？**
+
+底层差异在于**上下文窗口管理策略**。Cursor 使用的是"主动索引 + 智能检索"——它会预先 Embedding 项目的文件内容，当用户提问时，通过向量检索找到最相关的代码片段作为 prompt 的一部分。Claude Code 使用的是"工具调用 + 渐进探索"——它不会预先索引整个项目，而是通过 MCP 工具（read_file、grep、glob）按需探索代码库，像人类开发者一样"先看目录结构，再看相关文件，最后理解代码逻辑"。<sup>[2]</sup>
+
+这两种策略各有优劣：
+
+```javascript
+// Cursor 策略：预先索引 + 向量检索
+const cursorApproach = {
+  // 1. 项目打开时，预先 Embedding 所有文件
+  async onProjectOpen(project) {
+    const files = await project.getAllFiles();
+    const embeddings = await embed(files);  // 预计算向量
+    this.vectorStore.add(embeddings);
+  },
+  // 2. 用户提问时，向量检索相关文件
+  async onUserQuery(query) {
+    const relevantFiles = await this.vectorStore.search(query, { topK: 5 });
+    return buildPrompt(query, relevantFiles);
+  },
+  // 优势：响应快（检索 &lt; 100ms），适合实时补全
+  // 劣势：可能漏掉语义相关但关键词不匹配的文件
+};
+
+// Claude Code 策略：工具调用 + 渐进探索
+const claudeCodeApproach = {
+  // 1. 不预先索引，通过工具按需探索
+  async onUserQuery(query) {
+    // 第一步：看目录结构
+    const tree = await this.tools.glob('**/*.{ts,tsx}');
+    // 第二步：读取可能相关的文件
+    const files = await this.tools.readFile(tree.suspectedFiles);
+    // 第三步：基于理解再深入
+    const deeperFiles = await this.tools.grep('UserList', { include: '*.ts' });
+    return buildPrompt(query, [...files, ...deeperFiles]);
+  },
+  // 优势：理解更深（像人一样逐步探索），适合复杂重构
+  // 劣势：延迟更高（多次工具调用），成本更高
+};
+```
+
+### 各工具的核心差异化特性
+
+**GitHub Copilot 的 Agent 模式（2025）**
+
+Copilot 在 2025 年推出了 Coding Agent——它能直接读取 GitHub Issue，自动创建分支、实现代码、运行测试、提交 PR。核心优势是与 GitHub 生态深度集成，适合团队协作场景。
+
+**Cursor 的 Composer 模式**
+
+Composer 是 Cursor 的核心差异化功能——它允许 AI 在一次对话中同时修改多个文件，并以 diff 形式展示所有变更。开发者可以逐个审查、接受或拒绝每个文件的修改。这种"全局视图 + 精细控制"的体验是 Cursor 受欢迎的关键原因。
+
+**Claude Code 的 CLAUDE.md 配置**
+
+Claude Code 独创了 `CLAUDE.md` 配置文件机制——开发者在项目根目录放置 `CLAUDE.md`，描述项目架构、编码规范、禁止行为、常用命令。AI 每次启动时读取该文件，将其作为系统级指令遵循。这解决了"AI 不了解项目上下文"的核心痛点。<sup>[3]</sup>
+
+**Windsurf 的 Cascade 模式**
+
+Windsurf 的 Cascade 是一个自主 AI 流水线——它能自动规划任务步骤、调用终端命令、管理文件操作、运行测试。与 Claude Code 类似，但深度集成在 IDE 中，提供可视化的工作流面板。
+
+---
+
+## Q4: AI 代码生成的最佳实践是什么？
+
+### 场景 1: Prompt 质量决定生成质量
+
+AI 代码生成的质量**80% 取决于 Prompt 的质量**。模糊的 prompt 生成模糊的代码，精确的 prompt 生成精确的代码。
+
+### 场景 2: 上下文不足导致幻觉
+
+当 AI 缺少足够的上下文时，它会"编造"看起来合理但实际不存在的 API 或参数。这是 AI 代码生成最常见的坑。
+
+### 场景 3: 不验证直接使用
+
+很多开发者直接接受 AI 生成的代码，不验证就提交。这会导致隐蔽的逻辑 bug、安全漏洞和性能问题。
+
+**❌/✅ 代码对比（Prompt 质量对生成结果的影响）：**
+
+```javascript
+// ❌ 模糊 Prompt：AI 只能猜你的意图
+// Prompt: "帮我写一个用户列表组件"
+// AI 生成的结果：可能用 class 组件、可能没有分页、可能没有类型定义
+function UserList() {
+  // AI 自行决定的技术选型，可能不符合项目规范
+  const [users, setUsers] = useState([]);
+  // ... 省略，AI 生成的代码可能有 200 行
+}
+
+// ✅ 精确 Prompt：AI 知道你的具体要求
+// Prompt: "用 React + TypeScript 写一个用户列表组件。
+//   - 使用函数组件 + Hooks
+//   - 支持搜索（防抖 300ms）和分页（每页 20 条）
+//   - 使用项目已有的 useRequest hook 发请求
+//   - 遵循 Ant Design 的 Table 组件规范
+//   - 添加 loading 和空状态处理"
+function UserList() {
+  const [keyword, setKeyword] = useState('');
+  const [page, setPage] = useState(1);
+  const { data, loading } = useRequest(() => fetchUsers({ keyword, page }));
+  // ... AI 生成的代码完全符合项目规范
+}
+```
+
+<Tip title="最佳实践: 如何写好 Prompt">
+
+1. **明确技术栈**：告诉 AI 你用的是 React 还是 Vue、TypeScript 还是 JavaScript、哪个 UI 库。
+2. **描述输入输出**：函数接收什么参数、返回什么值、异常情况如何处理。
+3. **给出约束条件**：性能要求（"列表需要虚拟滚动"）、兼容性要求（"支持 IE11"）、编码规范（"使用 ESLint Airbnb 配置"）。
+4. **提供示例**：如果项目中有类似的组件，告诉 AI "参考 `UserTable.tsx` 的写法"。
+5. **分步生成**：复杂功能不要一次性生成，分步骤引导 AI——先生成数据层，再生成 UI 层，最后生成测试。
+
+</Tip>
+
+### 如何提供有效上下文
+
+```text
+┌─────────────────────────────────────────────────┐
+│           有效上下文的金字塔结构                    │
+├─────────────────────────────────────────────────┤
+│  Level 3: CLAUDE.md / AGENT.md 配置文件          │  ← 项目架构、编码规范、禁止行为
+│  Level 2: 相关文件（import 链、类型定义、测试）     │  ← 直接相关的代码文件
+│  Level 1: 当前文件 + 光标位置                     │  ← 基础上下文
+└─────────────────────────────────────────────────┘
+```
+
+**提供上下文的具体方法：**
+
+1. **使用 `@` 引用文件**（Cursor）：在对话中用 `@filename` 引用相关文件，AI 会自动读取其内容作为上下文。
+2. **编写 CLAUDE.md**（Claude Code）：在项目根目录创建 `CLAUDE.md`，描述项目架构、常用命令、编码规范。
+3. **粘贴相关代码**：如果某个工具不支持自动索引，手动将相关代码粘贴到 prompt 中。
+4. **描述业务背景**：告诉 AI "这是电商后台的订单管理模块"，比单纯说"写一个表格组件"效果好得多。
+
+### 如何验证 AI 生成的代码
+
+AI 生成的代码**必须经过验证**，验证分为四个层次：
+
+| 层次 | 验证方式 | 工具 | 发现的问题类型 |
+|------|---------|------|--------------|
+| 1. 语法检查 | ESLint / TypeScript | 编辑器实时检查 | 类型错误、语法错误 |
+| 2. 逻辑验证 | 单元测试 | Jest / Vitest | 逻辑 bug、边界情况 |
+| 3. 安全扫描 | SAST 工具 | Semgrep / CodeQL | SQL 注入、XSS、硬编码密钥 |
+| 4. 性能分析 | Lighthouse / Profiler | Chrome DevTools | 渲染性能、内存泄漏 |
+
+### 如何处理 AI 生成的错误
+
+当 AI 生成的代码出错时，不要直接告诉 AI "代码有 bug"，而是提供**完整的错误信息和期望行为**：
+
+```javascript
+// ❌ 低效的错误反馈
+// "这段代码有问题，帮我修一下"
+
+// ✅ 高效的错误反馈
+// "这段代码在运行时报错：TypeError: Cannot read property 'map' of undefined。
+//   原因是 data 在第一次渲染时是 undefined。
+//   期望行为：在 data 加载完成前显示 loading 状态。
+//   请使用可选链操作符和条件渲染修复。"
+```
+
+---
+
+## Q5: AI 代码生成有哪些局限性？
+
+### 表面上的答案
+
+AI 代码生成能大幅提升开发效率，是前端工程师的"超级助手"。
+
+### 反面的证据
+
+但 AI 生成的代码存在三类核心风险，忽视这些风险可能导致严重的生产事故。
+
+**风险一：生成的代码可能有隐蔽 bug**
+
+AI 生成的代码**语法几乎总是正确的**，但**逻辑不一定正确**。斯坦福大学 2023 年的研究发现，使用 AI 助手的开发者生成的代码中，**46% 存在安全漏洞**——因为 AI 会生成"看起来正确"但实际有安全缺陷的代码。<sup>[4]</sup>
+
+```javascript
+// AI 生成的代码：看起来正确，但有隐蔽的 XSS 漏洞
+function UserProfile({ user }) {
+  // ❌ AI 没有转义用户输入，直接渲染 HTML
+  return <div dangerouslySetInnerHTML={{ __html: user.bio }} />;
+}
+
+// ✅ 正确做法：使用 React 的自动转义或显式转义
+function UserProfile({ user }) {
+  return <div>{user.bio}</div>;  // React 自动转义
+}
+```
+
+**风险二：依赖幻觉——编造不存在的 API**
+
+LLM 的训练数据有截止日期，且模型可能"记忆错误"。它可能生成调用不存在的 API、使用已废弃的参数、或者引用不存在的 npm 包。
+
+```javascript
+// ❌ AI 编造的 API：Array.prototype.groupBy 在部分环境中不存在
+const grouped = users.groupBy(u => u.role);
+
+// ✅ 安全做法：使用标准 API 或确认 polyfill
+const grouped = Object.groupBy(users, u => u.role);  // ES2024，需确认兼容性
+// 或使用 lodash
+const grouped = _.groupBy(users, 'role');
+```
+
+**风险三：性能问题——生成的代码可能不优化**
+
+AI 倾向于生成"能跑"的代码，但不一定是最优的代码。它可能在循环中创建不必要的渲染、使用低效的数据结构、或者忽略 memoization。
+
+```javascript
+// ❌ AI 生成的低效代码：每次渲染都创建新函数
+function UserList({ users }) {
+  return users.map(user => (
+    <UserCard
+      key={user.id}
+      user={user}
+      onClick={() => handleClick(user.id)}  // 每次渲染创建新函数
+    />
+  ));
+}
+
+// ✅ 优化后：使用 useCallback 避免不必要的重渲染
+function UserList({ users }) {
+  const handleClick = useCallback((id) => {
+    // 处理点击
+  }, []);
+
+  return users.map(user => (
+    <UserCard key={user.id} user={user} onClick={handleClick} />
+  ));
+}
+```
+
+### 你的判断
+
+AI 代码生成是一把双刃剑——**它是"初级开发者"级别的代码生成器，而不是"资深架构师"级别的决策者**。正确使用方式是：让 AI 生成初稿，由人类开发者负责审查、优化和架构决策。
+
+### 升华
+
+从更深层看，AI 代码生成正在重新定义"软件工程师"的角色。正如 Andrej Karpathy 所说，未来工程师的核心能力不再是"写代码"，而是"审查代码、设计架构、定义需求"——从"编码者"转变为"技术决策者"。<sup>[1]</sup>
+
+---
+
+## 🔍 底层源码：AI 编码工具是如何实现的？
+
+<div class="follow-up">
+Claude Code 的终端 Agent 是怎么实现的？
+</div>
+
+Claude Code 的核心是一个**工具调用循环（Tool Use Loop）**——它接收用户的自然语言指令，通过多轮工具调用逐步完成任务。每一轮，模型决定调用哪个工具（read_file、write_file、bash、grep 等），执行后将结果反馈给模型，模型再决定下一步操作，直到任务完成。<sup>[3]</sup>
+
+```text
+用户指令 → Claude 模型 → 决定调用工具 → 执行工具 → 返回结果 → Claude 模型 → ...
+   │                          │                          │
+   │    "重构 UserList 组件"   │  read_file("UserList.tsx") │  文件内容
+   │                          │                          │
+   │                          │  read_file("types.ts")   │  类型定义
+   │                          │                          │
+   │                          │  write_file(...)          │  修改后的文件
+   │                          │                          │
+   │                          │  bash("npm test")         │  测试结果
+```
+
+<div class="follow-up">
+Cursor 的多文件编辑是怎么实现的？
+</div>
+
+Cursor 的 Composer 模式核心是**Diff-based 多文件编辑**——它将多个文件的内容拼接成一个长 prompt，让模型生成完整的修改后文件内容，然后通过 diff 算法计算出变更行，以交互式 diff 视图展示给用户。用户可以逐行审查、接受或拒绝每个变更。
+
+详见 [Cursor 官方文档](https://docs.cursor.com/)：
+
+```text
+[文件 A 原始内容] + [文件 B 原始内容] + [用户指令]
+                        │
+                        ▼
+              LLM 生成完整修改后的文件
+                        │
+                        ▼
+           Diff 算法计算逐行变更
+                        │
+                        ▼
+        交互式 diff 视图（用户审查）
+```
+
+---
+
+## 十、面试官视角：满分回答 vs 及格回答
+
+### 问题："你平时用什么 AI 编码工具？它们的原理和区别是什么？"
+
+**及格回答（60-70分）：**
+> "我用 GitHub Copilot 写代码，它能自动补全代码。也用过 Cursor，它支持多文件编辑。Claude Code 是终端里的 AI 工具，能帮我写代码。"
+
+面试官评价：**知道工具名字，但不理解底层差异**。
+
+**满分回答（90-100分）：**
+
+> "AI 编码工具的核心原理是 LLM 对代码序列的概率预测。和传统的 AST 补全不同，LLM 能理解语义意图而不仅仅是语法结构。但不同工具的**上下文管理策略**差异很大——Cursor 用向量检索预先索引项目文件，响应快但可能漏掉语义相关文件；Claude Code 用工具调用渐进探索代码库，理解更深但延迟更高。<sup>[2]</sup>"
+
+> "我在团队中同时使用 Copilot 和 Claude Code。Copilot 负责日常的实时补全——写样板代码、生成类型定义、补全 import 语句。Claude Code 负责复杂的重构任务——上周我用它完成了一个跨 12 个文件的状态管理重构，它自动读取了所有相关文件、理解了数据流向、生成了完整的修改方案，我只需要审查 diff 和运行测试。<sup>[3]</sup>"
+
+> "但 AI 生成的代码不能盲目信任。我遇到过 AI 编造不存在的 API（`Array.prototype.groupBy` 在旧浏览器不支持）、生成有 XSS 漏洞的代码（直接用 `dangerouslySetInnerHTML` 渲染用户输入）、以及生成性能低下的代码（在循环中创建不必要的闭包）。所以我的工作流是：AI 生成 → ESLint 检查 → TypeScript 类型检查 → 单元测试 → 人工审查，五步验证后才提交。<sup>[4]</sup>"
+
+### 大厂高频连环拷问
+
+> 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。每个模块 **8 个 Accordion**，覆盖 4 个难度层级。
+
+<AccordionGroup>
+
+  <Accordion title="AI 代码补全和代码生成有什么区别？" icon="layer-group">
+
+    **答题要点：**
+    很多人混淆这两个概念，需要从输入、输出、模型规模、上下文范围四个维度对比。
+
+    **高分回答：**
+    代码补全是"续写"——你写了半行代码，AI 预测接下来的几个 token，输出通常是 1-10 行。它基于轻量级模型（如 Codex），延迟在 100ms 以内，上下文局限于当前文件。代码生成是"创作"——你用自然语言描述需求，AI 生成完整函数甚至整个文件。它基于重量级模型（GPT-4、Claude），延迟 1-10 秒，上下文可以覆盖整个项目。简单来说，补全是"你写一半 AI 写一半"，生成是"你说需求 AI 写全部"。在实际工作中，补全用于高频的日常编码（写变量名、调用 API），生成用于低频但高价值的任务（创建新组件、重构模块）。
+
+  </Accordion>
+
+  <Accordion title="AI 是怎么理解你的代码上下文的？" icon="layer-group">
+
+    **答题要点：**
+    从 tokenization、注意力机制、上下文窗口三个层次解释。
+
+    **高分回答：**
+    AI 理解代码上下文分三步。第一步是 Tokenization——代码被拆分为 token 序列，比如 `const user =` 被拆为 `["const", " user", " =", ...]`。第二步是注意力计算——Transformer 的 Self-Attention 机制让模型能捕捉 token 之间的长距离依赖关系，比如函数开头的 `interface User` 和第 50 行的 `user.name` 之间的类型关联。第三步是上下文窗口管理——模型有 token 上限（Claude 支持 200K tokens），工具需要智能选择哪些文件放入上下文。Cursor 用向量检索选择相关文件，Claude Code 用工具调用渐进探索。关键限制是：超出上下文窗口的信息模型完全看不到，所以"提供什么上下文"比"用什么模型"更重要。
+
+  </Accordion>
+
+  <Accordion title="Cursor 和 Claude Code 的上下文管理策略有什么本质区别？" icon="stopwatch">
+
+    **答题要点：**
+    从预索引 vs 渐进探索的角度对比，说明各自的适用场景。
+
+    **高分回答：**
+    Cursor 用的是"预计算 + 向量检索"策略——项目打开时 Embedding 所有文件，用户提问时通过向量相似度检索最相关的 5-10 个文件。优势是响应快（检索 &lt; 100ms），适合实时补全场景。劣势是向量检索基于关键词相似度，可能漏掉语义相关但用词不同的文件。Claude Code 用的是"工具调用 + 渐进探索"策略——不预先索引，而是通过 read_file、grep、glob 等 MCP 工具按需探索代码库，像人类开发者一样"先看目录 → 再看相关文件 → 最后理解逻辑"。优势是理解更深、更灵活，劣势是延迟更高（多次工具调用）、API 成本更高。选择哪种取决于任务类型：日常编码用 Cursor（快），复杂重构用 Claude Code（深）。
+
+  </Accordion>
+
+  <Accordion title="CLAUDE.md 配置文件的设计思路是什么？它解决了什么问题？" icon="stopwatch">
+
+    **答题要点：**
+    从"AI 不了解项目上下文"的痛点出发，解释配置文件如何作为持久化的系统指令。
+
+    **高分回答：**
+    CLAUDE.md 解决的核心问题是：AI 每次启动时都从零开始，不了解你的项目架构、编码规范、禁止行为。CLAUDE.md 是放在项目根目录的 Markdown 配置文件，Claude Code 每次启动时自动读取它，将其内容作为系统级指令注入 prompt。典型内容包括：项目架构描述（"这是一个 Monorepo，使用 pnpm workspace"）、编码规范（"使用函数组件 + Hooks，禁止 class 组件"）、禁止行为（"不要使用 any 类型，不要直接修改 state"）、常用命令（"运行测试用 `pnpm test`"）。这本质上是一种**持久化的 Prompt Engineering**——把最佳实践写在配置文件里，让 AI 每次都遵循。类似的机制还有 AGENT.md（OpenAI）和 AGENTS.md（Sourcegraph），行业正在向标准化配置文件格式演进。
+
+  </Accordion>
+
+  <Accordion title="AI 生成的代码有哪些常见的安全风险？如何防范？" icon="node">
+
+    **答题要点：**
+    必须分场景讨论——XSS、注入、依赖风险、硬编码密钥，每种给出具体代码和防范措施。
+
+    **高分回答：**
+    AI 生成的代码有四类安全风险。第一是 XSS——AI 可能用 `dangerouslySetInnerHTML` 直接渲染用户输入，防范方法是强制使用 React 的自动转义或 DOMPurify。第二是注入攻击——AI 生成的数据库查询可能直接拼接用户输入，防范方法是使用参数化查询。第三是依赖风险——AI 可能推荐已知有漏洞的 npm 包，防范方法是在 `npm install` 后运行 `npm audit`。第四是硬编码密钥——AI 可能在代码中直接写入 API Key，防范方法是使用环境变量和 `.env` 文件。最有效的防线是将 SAST 工具（Semgrep、CodeQL）集成到 CI/CD 流水线，对所有 AI 生成的代码自动扫描。2023 年斯坦福的研究表明，使用 AI 助手的开发者生成的代码中 46% 存在安全漏洞，这个数字说明人工审查不可省略。
+
+  </Accordion>
+
+  <Accordion title="在大型项目中如何组织 AI 编码的工作流？" icon="node">
+
+    **答题要点：**
+    从团队协作角度，讨论 prompt 管理、上下文共享、代码审查流程。
+
+    **高分回答：**
+    大型项目中 AI 编码工作流需要三个关键设计。第一是 **Prompt 版本管理**——把有效的 prompt 模板（如"创建新组件"、"编写单元测试"、"重构 Hook"）写成团队共享的模板文件，存入 Git 仓库，避免每个人重新发明轮子。第二是 **CLAUDE.md 团队协作**——将项目的编码规范、架构约束、禁止行为写入 CLAUDE.md，提交到仓库，确保团队所有成员使用 AI 时遵循相同标准。第三是 **AI 代码审查流程**——AI 生成的代码在 PR 中需要标记为"AI-generated"，审查者需要额外关注安全漏洞和性能问题。部分团队还会在 CI 中添加专门的 AI 代码检查步骤，运行更严格的 lint 规则和安全扫描。
+
+  </Accordion>
+
+  <Accordion title="AI 代码生成的 'vibe coding' 是什么？它适合生产环境吗？" icon="skull">
+
+    **答题要点：**
+    解释 Karpathy 提出的概念，分析其适用场景和风险，给出明确判断。
+
+    **高分回答：**
+    "Vibe coding" 是 Andrej Karpathy 在 2025 年初提出的概念——开发者用自然语言描述意图，完全信任 AI 的输出，不做深度审查就接受代码。它的核心理念是"让 AI 做主，人只负责描述需求"。适合的场景：个人原型项目、hackathon、一次性脚本、学习新技术时快速实验。不适合的场景：生产环境代码、涉及安全的模块、性能敏感的核心路径、团队协作的共享代码库。我的判断是：vibe coding 在探索阶段有价值，但在工程化阶段必须回归严格的代码审查。它更像是"高级版的 Stack Overflow 复制粘贴"——能快速得到可用代码，但质量和安全性无法保证。正确用法是用 vibe coding 快速验证想法，然后用工程化流程（测试、审查、安全扫描）将代码提升到生产级别。
+
+  </Accordion>
+
+  <Accordion title="🔥 如何评估一个 AI 编码工具是否适合你的团队？" icon="skull">
+
+    **答题要点：**
+    从技术维度（模型能力、上下文管理、IDE 集成）和组织维度（安全合规、成本、学习曲线）全面评估。
+
+    **高分回答：**
+    评估 AI 编码工具需要考虑六个维度。第一是**模型能力**——用团队真实的代码任务测试，而不是用 hello world。让 3 个开发者分别用工具完成同一个重构任务，对比生成质量和修改量。第二是**上下文管理**——测试工具在大型 Monorepo（1000+ 文件）中的表现，它能否正确理解跨模块的依赖关系。第三是**安全合规**——确认代码是否发送到外部服务器、是否有数据保留政策、是否符合公司的安全审计要求。这是很多企业选择自部署方案的核心原因。第四是**成本模型**——按座位收费（Copilot $10/月）vs 按 token 收费（Claude Code API），50 人团队的年度成本可能相差 5-10 倍。第五是**学习曲线**——Cursor 需要学习快捷键和 Composer 模式，Claude Code 需要学习终端操作和 CLAUDE.md 配置。第六是**生态集成**——是否支持团队的 CI/CD 流程、代码审查工具、项目管理工具。建议先在小范围（3-5 人）试点 2 周，收集效率数据和安全反馈，再决定全团队推广。
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [Andrej Karpathy: Software is changing](https://x.com/karpathy/status/1886498126702567467)：Karpathy 关于 AI 重塑软件工程的核心论述，提出了 "vibe coding" 概念。<sup>[1]</sup>
+- 📖 [Simon Willison: Tips for using LLMs for code](https://simonwillison.net/)：Simon Willison 持续记录的 LLM 编码最佳实践，涵盖 prompt 技巧、安全审查、工具选择。<sup>[2]</sup>
+- 🟢 [Anthropic: Claude Code 官方文档](https://docs.anthropic.com/en/docs/claude-code)：Claude Code 的完整功能文档，包括 CLAUDE.md 配置、工具调用机制、安全特性。<sup>[3]</sup>
+- 📖 [Stanford Study: Do Users Write More Insecure Code with AI Assistants?](https://sites.google.com/view/aiassiststudy)：斯坦福大学关于 AI 助手生成代码安全性的实证研究，发现 46% 的 AI 辅助代码存在安全漏洞。<sup>[4]</sup>
+- 🔗 [GitHub: Copilot 官方文档](https://docs.github.com/en/copilot)：GitHub Copilot 的功能介绍、定价方案和 Agent 模式说明。<sup>[5]</sup>
+- 📖 [Cursor 官方文档](https://docs.cursor.com/)：Cursor IDE 的核心功能文档，包括 Composer 模式、上下文管理、多文件编辑。<sup>[6]</sup>
+- 🟢 [Addy Osmani: AI Pair Programming](https://addyosmani.com/)：Addy Osmani 关于 AI 配对编程最佳实践的系列文章，来自 Chrome 团队的工程视角。<sup>[7]</sup>
+- 📖 [LangChain Blog: AI Code Generation](https://blog.langchain.dev/)：LangChain 团队关于 AI 代码生成工具链和 Agent 架构的技术分析。<sup>[8]</sup>

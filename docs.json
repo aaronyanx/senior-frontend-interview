@@ -306,7 +306,7 @@
         ]
       },
       {
-        "tab": "AI 工程化",
+        "tab": "大模型应用",
         "groups": [
           {
             "group": "LLM 基础与训练",
@@ -347,6 +347,18 @@
             "group": "AI 工程化实践",
             "pages": [
               "ai/ai-engineering"
+            ]
+          },
+          {
+            "group": "AI 代码生成",
+            "pages": [
+              "ai/ai-code-generation"
+            ]
+          },
+          {
+            "group": "Design to Code",
+            "pages": [
+              "ai/design-to-code"
             ]
           }
         ]

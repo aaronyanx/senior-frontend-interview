@@ -75,56 +75,164 @@ title: "手写题"
 </Card>
 </CardGroup>
 
+### call 的实现图解
+
+call 的核心原理只有一句话：**把函数变成目标对象的临时方法，然后通过 `obj.fn()` 的方式调用**。
+
+```text
+myCall(obj, a, b) 的执行流程：
+
+  第 1 步：创建临时属性          第 2 步：通过对象调用          第 3 步：清理
+  ┌──────────────┐              ┌──────────────┐              ┌──────────────┐
+  │ obj[fn] = this│  ──────→    │ obj[fn](a,b) │  ──────→    │ delete obj[fn]│
+  │              │              │ this = obj ✅ │              │ 恢复原状      │
+  └──────────────┘              └──────────────┘              └──────────────┘
+
+  关键洞察：obj.fn() 调用时，this 自然指向 obj（隐式绑定规则）
+  用 Symbol 避免和 obj 上已有的属性名冲突
+```
+
 ```javascript
 /**
  * 手写 call：改变函数的 this 指向并立即执行
- * 核心原理：把函数作为目标对象的临时方法执行，利用"方法调用时 this 指向该对象"的规则
+ *
+ * 核心原理图解：
+ *   1. 把函数"伪装"成目标对象的一个临时方法  →  ctx[fn] = this
+ *   2. 通过对象方法的形式调用函数            →  ctx[fn](...args)
+ *      （利用"obj.fn() 时 this 指向 obj"的隐式绑定规则）
+ *   3. 调用完删除临时方法，不污染目标对象     →  delete ctx[fn]
+ *
+ * 趣味比喻：
+ *   call 就像"借壳上市"——你想用 obj 的身份（this）来执行一个函数，
+ *   临时把函数挂到 obj 的门牌下（ctx[fn] = this），
+ *   调用完赶紧把门牌摘掉（delete ctx[fn]），假装什么都没发生过。
+ *
  * @param {*} ctx - this 指向的目标对象，null/undefined 时指向全局对象
  * @param  {...any} args - 传给函数的参数列表
  * @returns {*} 函数的返回值
  */
 Function.prototype.myCall = function(ctx, ...args) {
-  // 处理 ctx 为 null/undefined 的情况，指向全局对象
-  // Object(ctx) 将基本类型包装为对象（如 1 → Number(1)）
+  // Step 1: 处理边界情况
+  // ctx 为 null/undefined 时指向全局对象（ES 规范行为）
+  // Object(ctx) 将基本类型包装为对象（如 1 → Number(1), 'str' → String('str)')
   ctx = ctx == null ? globalThis : Object(ctx);
-  const fn = Symbol();                   // 用 Symbol 作为临时属性名，避免与已有属性冲突
-  ctx[fn] = this;                        // 把当前函数挂在目标对象上
-  const result = ctx[fn](...args);       // 通过对象方法调用，this 自然指向 ctx
-  delete ctx[fn];                        // 删除临时属性，不污染目标对象
-  return result;                         // 返回函数执行结果
-};
 
+  // Step 2: 把当前函数挂在目标对象上
+  // 用 Symbol() 作为临时属性名——Symbol 值是唯一的，绝不会和已有属性冲突
+  // 如果用字符串 'tempFn'，万一 obj 上本来就有这个属性就炸了
+  const fn = Symbol();
+  ctx[fn] = this;                   // this 就是调用 myCall 的那个函数
+
+  // Step 3: 通过对象方法调用，this 自然指向 ctx（隐式绑定规则生效）
+  // 这一步是整个 call 的灵魂——利用 JS 的 this 绑定规则
+  const result = ctx[fn](...args);
+
+  // Step 4: 用完即弃——删除临时属性，不污染目标对象
+  delete ctx[fn];
+
+  // Step 5: 返回原函数的执行结果
+  return result;
+};
+```
+
+### apply 的实现图解
+
+apply 和 call 的唯一区别：**参数是数组**。
+
+```text
+call(obj, 1, 2, 3)     →  参数平铺传入
+apply(obj, [1, 2, 3])  →  参数数组传入，内部展开后效果相同
+
+apply 的实现 = 调用 call + 展开数组
+```
+
+```javascript
 /**
  * 手写 apply：和 call 一样，只是参数以数组形式传入
+ *
+ * 一句话理解：apply = call + 数组展开
+ * call 接收参数列表 (a, b, c)，apply 接收参数数组 [a, b, c]
+ * 内部只需要把数组展开成参数列表，然后交给 call 处理
+ *
  * @param {*} ctx - this 指向的目标对象
  * @param {Array} args - 参数数组
  * @returns {*} 函数的返回值
  */
 Function.prototype.myApply = function(ctx, args = []) {
-  // 直接复用 myCall，用展开运算符将数组转为参数列表
+  // 直接复用 myCall，用展开运算符 ...args 将数组转为参数列表
+  // myCall(ctx, ...[1,2,3])  →  myCall(ctx, 1, 2, 3)
   return this.myCall(ctx, ...args);
 };
+```
 
+### bind 的实现图解
+
+bind 是三者中最复杂的——它返回一个新函数，而且要处理 `new` 的优先级问题。
+
+```text
+bind 的核心难点：new 的优先级高于 bind
+
+场景 1：普通调用 → this 指向绑定的 obj
+  const boundFn = fn.bind(obj)
+  boundFn(a, b)     →  this = obj（绑定生效）
+
+场景 2：new 调用 → this 指向新实例，绑定的 obj 被忽略！
+  const boundFn = fn.bind(obj)
+  new boundFn(a, b) →  this = 新实例 {}（new 覆盖了 bind）
+
+为什么？ES 规范要求 [[Construct]] 内部方法会强制覆盖 this 上下文
+```
+
+```javascript
 /**
  * 手写 bind：返回一个绑定了 this 和部分参数的新函数（不立即执行）
- * 关键难点：如果返回的函数被 new 调用，this 应该指向新实例而非绑定的 ctx
+ *
+ * 核心原理图解：
+ *   fn.bind(obj, presetA)  返回  boundFn
+ *   boundFn(callB)  →  fn.call(obj, presetA, callB)    ← 普通调用
+ *   new boundFn(callB)  →  new fn(presetA, callB)       ← new 调用，忽略 obj
+ *
+ * 趣味比喻：
+ *   bind 就像用胶带把麦克风粘在某人手上（this 被锁定）。
+ *   但 new 关键字是个"拆弹专家"——它能强行把胶带撕开，
+ *   把麦克风抢过来给新创建的实例。
+ *
  * @param {*} ctx - this 指向的目标对象
- * @param  {...any} bindArgs - 预设的参数（柯里化）
+ * @param  {...any} bindArgs - 预设的参数（柯里化，提前固定部分参数）
  * @returns {Function} 绑定后的新函数
  */
 Function.prototype.myBind = function(ctx, ...bindArgs) {
-  const fn = this;                       // 保存原始函数引用
+  const fn = this;                    // 保存原始函数引用（闭包捕获）
+
+  // 返回一个新函数（闭包）
+  // 这个新函数"记住"了 fn 和 ctx（闭包的魔法）
   return function boundFn(...callArgs) {
-    // new.target 检测：如果是通过 new 调用的，this 指向新实例
-    // 这是 ES 规范要求——new 的优先级高于 bind
+    // 关键检测：是否通过 new 调用？
+    // new.target 是 ES6 引入的——如果函数是 new 调用的，new.target 指向构造函数
     if (new.target) {
-      return new fn(...bindArgs, ...callArgs); // 用原函数构造，忽略绑定的 ctx
+      // new 调用：忽略绑定的 ctx，用原函数构造新实例
+      // 合并预设参数和调用参数：bindArgs 是 bind 时传的，callArgs 是 new 时传的
+      return new fn(...bindArgs, ...callArgs);
     }
     // 普通调用：合并预设参数和调用参数，用 call 绑定 this
     return fn.call(ctx, ...bindArgs, ...callArgs);
   };
 };
 ```
+
+<Note title="💡 一句话总结">
+
+call/apply/bind 的本质是利用"对象方法调用"的 this 规则，bind 额外需要处理 new 的优先级。call 立即执行，apply 立即执行（参数是数组），bind 返回新函数（延迟执行）。
+
+</Note>
+
+### call/apply/bind 三者对比速查表
+
+| 方法 | 是否立即执行 | 参数形式 | 返回值 | 是否能被 new 覆盖 |
+|------|------------|---------|--------|-----------------|
+| call | 是 | 参数列表 `(a, b, c)` | 函数执行结果 | 不适用 |
+| apply | 是 | 参数数组 `[a, b, c]` | 函数执行结果 | 不适用 |
+| bind | 否（返回新函数） | 支持柯里化 | 新函数 | 是（new 优先级 > bind） |
 
 <Note title="💡 一句话总结">
 

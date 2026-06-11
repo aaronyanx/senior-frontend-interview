@@ -134,6 +134,13 @@
 6. **字节跳动 Coze 团队 / 阿里百炼团队**：如果您想了解工业级、长时间运行 (Long-running) 的企业级 Agent 是如何做权限边界收敛、状态异步恢复、复杂的被动 RAG 知识检索与主动 Skill 串联的，这两家平台的架构分享是国内首选。
 7. **Vercel AI 团队 / 蚂蚁通义前端团队**：探索前端”生成式 UI”、流式响应式渲染以及将复杂工具调用 (Function Calling) 丝滑融入现代 Web 交互的先驱。
 
+### 🎨 Design to Code 与 AI 代码生成
+1. **Figma MCP 团队**：推出 Figma MCP 服务，允许 AI 工具直接读取 Figma 设计文件，推动 Design to Code 标准化。
+2. **Vercel V0 团队**：推出 AI 代码生成工具 V0，从文本描述生成 React/Next.js/Tailwind CSS 代码。
+3. **GitHub Copilot 团队**：推出 AI 编程助手 Copilot，代码补全 + Chat + Workspace。
+4. **Cursor 团队**：推出 AI-first 代码编辑器 Cursor，内置 AI 对话和代码编辑。
+5. **Windsurf 团队**：推出 AI 代码编辑器 Windsurf，Cascade 模式支持多文件编辑。
+
 ### 📱 Flutter / 鸿蒙跨端开发
 
 1. **Flutter 官方博客**：了解 Flutter 最新版本、Impeller 渲染引擎、跨平台（Web/Desktop/Embedded）演进的官方渠道。

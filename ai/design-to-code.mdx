@@ -1,0 +1,804 @@
+---
+title: "Design to Code"
+---
+
+> **面试官为什么问这个？**
+>
+> Design to Code 是前端工程化与 AI 结合的典型场景。面试官问这个，本质上是在考察你：**是否理解设计稿到代码的自动化链路，以及能不能在实际项目中利用 Figma MCP、V0 等工具提升研发效率。** 如果你答不清楚，说明你对前端工程化的理解还停留在"手动切图"阶段。
+
+---
+
+## Q1: Design to Code 的历史？为什么需要它？
+
+<Steps>
+
+  <Step title="2005-2012: 手动切图时代">
+
+    设计师用 Photoshop 输出 PSD 文件，前端开发者手动量尺寸、取色值、写 CSS。一个 10 页面的设计稿，切图需要 2-3 天，像素还原度全靠经验和耐心。
+
+  </Step>
+  <Step title="2013-2017: Sketch + 标注工具">
+
+    Sketch 取代 PS 成为主流设计工具，配合 Zeplin 等标注工具，开发者可以查看尺寸、色值、间距。但代码仍然需要手动编写，标注工具只解决了"量"的问题，没有解决"写"的问题。
+
+  </Step>
+  <Step title="2018-2022: Figma + Dev Mode">
+
+    Figma 统一了设计协作市场。2023 年推出的 Dev Mode 让开发者可以直接在设计稿上查看 CSS 代码、导出资源、获取组件属性。但 Dev Mode 生成的代码是静态的 CSS 片段，不包含组件结构和交互逻辑。
+
+  </Step>
+  <Step title="2023-2024: AI 生成代码工具涌现">
+
+    Vercel 推出 V0（文本生成 UI），Locofy 和 Anima 实现了 Figma 设计稿到 React/Vue 代码的一键转换。这些工具利用 AI 理解设计意图，生成可运行的组件代码，将"设计到代码"从手动劳动变成了自动化流程。
+
+  </Step>
+  <Step title="2025: Figma MCP 标准化协议">
+
+    Anthropic 和 Figma 联合发布了官方 Figma MCP Server，基于 Model Context Protocol 标准，让 Claude、Cursor 等 AI 助手直接读取 Figma 设计文件，提取设计令牌、布局信息、组件结构，生成生产级代码。Design to Code 进入了协议标准化时代。
+
+  </Step>
+
+</Steps>
+
+**Design to Code 解决的核心问题：**
+
+```text
+问题：设计到代码的手动转换效率低、误差大
+
+手动切图时代：
+设计稿 → 人工量尺寸 → 人工取色值 → 人工写 CSS → 人工还原布局
+耗时：2-3 天/10 页，像素误差 2-5px
+
+解决：AI 自动解析设计文件，生成可运行代码
+
+Figma MCP 时代：
+Figma 设计稿 → MCP Server 解析节点树 → 提取设计令牌 → AI 生成组件代码
+耗时：分钟级，像素误差 &lt; 1px
+```
+
+<Note title="一句话总结">
+
+Design to Code 的本质是用 AI 和标准化协议消除设计与开发之间的手动转换环节，让设计师的稿子直接变成可运行的代码。
+
+</Note>
+
+<CardGroup cols={2}>
+
+<Card title="手动切图时代">
+
+设计师用 PS 画完稿子，导出 PSD 文件给前端。前端开发者打开 PS，用标尺量每个元素的尺寸、间距、色值，然后手写 CSS 还原。就像翻译官拿着一本纸质词典逐词翻译——能用，但慢、容易出错、改一次设计稿就要重新量一遍。
+
+</Card>
+<Card title="Figma MCP 时代">
+
+设计师在 Figma 里用 Auto Layout 画稿子，前端开发者用 AI 助手通过 MCP 协议直接读取设计文件，自动提取布局结构、颜色变量、字体样式，生成 React/Vue 组件代码。就像有了同声传译——设计稿一改，代码自动更新，不需要手动同步。
+
+</Card>
+</CardGroup>
+
+<Tip title="面试技巧">
+
+回答时先说"为什么"（手动切图效率低、误差大），再说"怎么解决"（AI + 标准化协议）。面试官想听的是你理解 Design to Code 的演进逻辑，而不是背工具名称。
+
+</Tip>
+
+---
+
+## Q2: Design to Code 的原理
+
+Design to Code 的本质是**将设计文件的结构化数据转换为前端代码**，核心逻辑只有 4 步：
+
+```text
+┌───────────────────────────────────────┐
+│        设计文件解析                     │  ← Figma REST API / MCP Server
+│        读取 JSON 节点树                │
+└─────────────────┬─────────────────────┘
+                  │ 节点树遍历
+                  ▼
+┌───────────────────────────────────────┐
+│        布局分析                        │  ← Auto Layout → Flexbox / Grid
+│        识别嵌套关系和对齐方式           │
+└─────────────────┬─────────────────────┘
+                  │ 布局规则映射
+                  ▼
+┌───────────────────────────────────────┐
+│        样式提取                        │  ← 设计令牌 → CSS Variables
+│        颜色、字体、间距、阴影           │
+└─────────────────┬─────────────────────┘
+                  │ 令牌标准化
+                  ▼
+┌───────────────────────────────────────┐
+│        代码生成                        │  ← AI 模型生成组件代码
+│        React / Vue / HTML + CSS        │
+└───────────────────────────────────────┘
+```
+
+```javascript
+// Figma API 返回的节点树结构（简化）
+{
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "1:2",
+        "name": "Page 1",
+        "type": "CANVAS",
+        "children": [
+          {
+            "id": "2:3",
+            "name": "Button/Primary/Large",
+            "type": "COMPONENT",
+            "layoutMode": "HORIZONTAL",
+            "itemSpacing": 8,
+            "paddingLeft": 16,
+            "paddingRight": 16,
+            "paddingTop": 12,
+            "paddingBottom": 12,
+            "fills": [{ "type": "SOLID", "color": { "r": 0.2, "g": 0.4, "b": 1 } }],
+            "children": [
+              {
+                "id": "2:4",
+                "name": "Label",
+                "type": "TEXT",
+                "characters": "Click me",
+                "style": { "fontSize": 16, "fontWeight": 600 }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+<Warning title="核心机制: Auto Layout 到 CSS 的映射规则">
+
+Figma 的 Auto Layout 本质上就是 CSS Flexbox 的设计侧表达。映射规则如下：
+
+- `layoutMode: "HORIZONTAL"` → `display: flex; flex-direction: row`
+- `layoutMode: "VERTICAL"` → `display: flex; flex-direction: column`
+- `itemSpacing` → `gap`
+- `paddingLeft/Right/Top/Bottom` → `padding`
+- `primaryAxisAlignItems: "CENTER"` → `justify-content: center`
+- `counterAxisAlignItems: "CENTER"` → `align-items: center`
+- `layoutWrap: "WRAP"` → `flex-wrap: wrap`
+
+</Warning>
+
+<Tip title="通俗比喻: 乐高说明书">
+
+Design to Code 的原理就像把乐高说明书翻译成生产图纸。设计文件解析是"看懂说明书上的零件清单"——Figma 的 JSON 节点树列出了每个零件（Frame、Text、Component）的规格。布局分析是"理解零件怎么拼装"——Auto Layout 的方向、间距、对齐方式告诉你怎么组合零件。样式提取是"记录每个零件的颜色和材质"——设计令牌（Design Tokens）把颜色、字体、间距标准化。代码生成是"把拼装方案写成工厂能执行的生产图纸"——AI 根据解析结果生成 React/Vue 组件代码。
+
+</Tip>
+
+### Figma 节点类型与代码映射
+
+Figma 的节点树是 Design to Code 的数据源。每种节点类型对应不同的代码结构：
+
+| Figma 节点类型 | 说明 | 对应代码结构 |
+|---------------|------|-------------|
+| **FRAME** | 容器，可开启 Auto Layout | `div`（Flexbox 容器） |
+| **COMPONENT** | 可复用组件定义 | React 组件 / Vue 组件 |
+| **INSTANCE** | 组件的实例 | 组件调用（传 props） |
+| **TEXT** | 文本图层 | `span` / `p` / `h1-h6` |
+| **RECTANGLE** | 矩形 | `div`（带宽高） |
+| **ELLIPSE** | 圆形/椭圆 | `div`（border-radius: 50%） |
+| **VECTOR** | 矢量图形 | `svg` / `img` |
+| **GROUP** | 分组（无 Auto Layout） | `div`（position: relative） |
+
+### 设计令牌（Design Tokens）提取
+
+设计令牌是 Design to Code 的核心概念——它把设计决策（颜色、字体、间距）抽象为可复用的变量，确保设计和代码使用同一套值。
+
+```javascript
+// Figma 中的设计令牌 → CSS Variables
+// 颜色令牌
+--color-primary: #3366FF;
+--color-secondary: #6C5CE7;
+--color-text-primary: #1A1A2E;
+--color-text-secondary: #6B7280;
+--color-background: #FFFFFF;
+--color-surface: #F9FAFB;
+
+// 间距令牌（基于 4px 网格）
+--spacing-xs: 4px;
+--spacing-sm: 8px;
+--spacing-md: 16px;
+--spacing-lg: 24px;
+--spacing-xl: 32px;
+--spacing-2xl: 48px;
+
+// 字体令牌
+--font-size-sm: 14px;
+--font-size-md: 16px;
+--font-size-lg: 20px;
+--font-size-xl: 24px;
+--font-weight-regular: 400;
+--font-weight-semibold: 600;
+--font-weight-bold: 700;
+```
+
+### 组件识别与复用
+
+AI 在解析设计稿时，会识别重复出现的 UI 模式，将其提取为可复用组件。识别策略包括：相同的图层结构、相同的命名模式（如 `Button/Primary`、`Button/Secondary`）、相同的样式属性组合。
+
+```text
+组件识别流程：
+
+设计稿中的重复模式
+├── Button/Primary/Large  ×12  →  提取为 <Button variant="primary" size="large" />
+├── Button/Primary/Small  ×8   →  同一组件的不同 variant
+├── Card/Product          ×6   →  提取为 <ProductCard />
+└── Avatar/User           ×20  →  提取为 <Avatar />
+
+识别后：
+1 个 Button 组件 + 2 个 props（variant, size）= 替代 20 个重复图层
+```
+
+---
+
+## Q3: Figma MCP 详解
+
+### 什么是 Figma MCP
+
+Figma MCP（Model Context Protocol）是 Anthropic 和 Figma 在 2025 年 5 月联合发布的官方 MCP Server。它基于 MCP 协议标准，让 AI 助手（Claude、Cursor、Windsurf 等）可以直接读取 Figma 设计文件，提取设计信息，生成生产级代码。
+
+```text
+┌───────────────────────────────────────┐
+│        AI 助手（Claude / Cursor）      │
+└─────────────────┬─────────────────────┘
+                  │ MCP 协议（JSON-RPC over stdio）
+                  ▼
+┌───────────────────────────────────────┐
+│        Figma MCP Server               │  ← 官方开源：github.com/figma/figma-mcp
+│        读取 Figma 设计文件             │
+└─────────────────┬─────────────────────┘
+                  │ Figma REST API
+                  ▼
+┌───────────────────────────────────────┐
+│        Figma 设计文件                  │  ← 节点树、样式、组件、变量
+└───────────────────────────────────────┘
+```
+
+<Note title="一句话总结">
+
+Figma MCP 是连接 Figma 设计文件和 AI 编码助手的标准化桥梁——AI 通过 MCP 协议直接读取设计稿，不需要手动复制粘贴设计信息。
+
+</Note>
+
+### MCP 对节点的要求
+
+要让 Figma MCP 生成高质量代码，设计稿需要遵循以下规范：
+
+<Warning title="核心机制: 设计稿规范要求">
+
+**命名规范：**
+- 组件使用语义化命名：`Button/Primary/Large`（不是 `Frame 123`）
+- 图层使用功能化命名：`card-header`、`avatar-image`（不是 `Group 5`、`Rectangle 3`）
+- 使用斜杠分隔层级：`Navigation/Item/Active`
+
+**Auto Layout 规范：**
+- 所有布局容器必须开启 Auto Layout（不要用绝对定位）
+- 使用 `HORIZONTAL` / `VERTICAL` 方向，不要用 Group
+- 设置合理的 `itemSpacing` 和 `padding`
+- 使用 `primaryAxisAlignItems` 和 `counterAxisAlignItems` 控制对齐
+
+**组件规范：**
+- 使用 Component（不是普通 Frame）定义可复用元素
+- 使用 Variants 管理状态（Default / Hover / Disabled）
+- 使用 Boolean Properties 控制可选元素的显隐
+- Instance 覆盖只修改内容（文本、图标），不修改结构
+
+</Warning>
+
+### Figma MCP 工作原理
+
+Figma MCP Server 的工作流程分为 3 个阶段：
+
+```text
+阶段 1: 连接与认证
+├── AI 助手通过 stdio 启动 Figma MCP Server
+├── MCP Server 使用 Figma Personal Access Token 认证
+└── 建立与 Figma API 的连接
+
+阶段 2: 设计文件读取
+├── AI 发送 Figma 文件 URL 或 node-id
+├── MCP Server 调用 Figma REST API 获取节点树
+├── 解析节点类型、布局属性、样式信息
+└── 提取设计令牌（颜色、字体、间距）
+
+阶段 3: 代码生成
+├── MCP Server 将解析结果返回给 AI
+├── AI 根据节点树结构生成组件代码
+├── Auto Layout 属性映射为 CSS Flexbox
+└── 设计令牌映射为 CSS Variables
+```
+
+### 代码示例
+
+以下是一个完整的 Figma MCP 配置和使用示例：
+
+```json
+// MCP 配置文件（如 .cursor/mcp.json 或 Claude Desktop 配置）
+{
+  "mcpServers": {
+    "figma": {
+      "command": "npx",
+      "args": ["-y", "@anthropic-ai/figma-mcp"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_xxxxxxxxxxxxx"
+      }
+    }
+  }
+}
+```
+
+配置完成后，AI 助手可以直接读取 Figma 文件：
+
+```text
+用户: 帮我把这个 Figma 设计稿转成 React 组件
+      https://www.figma.com/file/xxxxx/Page-Design
+
+AI 助手（通过 MCP 调用）:
+1. 读取 Figma 文件 → 获取节点树
+2. 识别组件结构 → Button、Card、Navigation
+3. 提取设计令牌 → 颜色、间距、字体
+4. 生成 React 代码 → 使用 Tailwind CSS + 设计令牌
+```
+
+AI 生成的代码示例：
+
+```jsx
+// AI 根据 Figma 设计稿生成的 React 组件
+function ProductCard({ product }) {
+  return (
+    <div className="bg-surface rounded-lg p-md shadow-sm">
+      <img
+        src={product.image}
+        alt={product.name}
+        className="w-full h-48 object-cover rounded-md"
+      />
+      <div className="mt-md">
+        <h3 className="text-text-primary font-semibold text-lg">
+          {product.name}
+        </h3>
+        <p className="text-text-secondary text-sm mt-xs">
+          {product.description}
+        </p>
+        <div className="flex items-center justify-between mt-md">
+          <span className="text-primary font-bold text-xl">
+            {product.price}
+          </span>
+          <Button variant="primary" size="sm">
+            加入购物车
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+<Tip title="通俗比喻: 无障碍坡道">
+
+Figma MCP 就像给建筑加了无障碍坡道。以前设计师画完稿子（建筑建好了），开发者要自己爬楼梯进去看（手动打开 Figma 量尺寸）。有了 MCP 这个坡道，AI 助手可以直接"推门进去"——通过标准化协议读取设计文件的所有信息（节点树、样式、组件），不需要人工介入。坡道的标准（MCP 协议）是通用的，不管是 Claude 还是 Cursor 都能用同一个坡道进去。
+
+</Tip>
+
+---
+
+## Q4: Design to Code 工具对比
+
+### 基础梳理
+
+| 工具 | 开发商 | 输入方式 | 输出框架 | AI 能力 | 价格 |
+|------|--------|---------|---------|---------|------|
+| **V0** | Vercel | 文本提示词 | React + Tailwind + shadcn/ui | 生成式 AI | 免费 / Pro $20/月 |
+| **Locofy** | Locofy.ai | Figma / XD 设计稿 | React / Vue / HTML | 设计解析 + AI | 免费 / Pro $15/月 |
+| **Anima** | Anima | Figma / XD 设计稿 | React / Vue / HTML / Swift | 设计解析 + AI | 免费 / Pro $16/月 |
+| **Figma Dev Mode** | Figma | Figma 设计稿 | CSS 片段 | 无 AI | $25/编辑者/月 |
+| **Figma MCP** | Anthropic + Figma | Figma 设计稿（MCP 协议） | 任意框架（AI 决定） | 生成式 AI | 免费（开源） |
+
+### 专家视角深度剖析
+
+很多候选人能说出"V0 是文本生成代码，Locofy 是设计稿转代码"，但大厂面试官真正在意的是：**这些工具的本质区别是什么？在什么场景下选哪个？**
+
+V0 的本质是**生成式 AI**——你用文本描述想要的 UI，它生成 React 组件代码。它不读取设计稿，而是从零生成。适合快速原型、从想法到代码的场景。缺点是生成的代码不一定和设计师的稿子完全一致。
+
+Locofy 和 Anima 的本质是**设计解析 + 代码转换**——它们读取 Figma 的节点树，解析布局和样式，转换为前端代码。适合设计稿已经存在、需要精确还原的场景。缺点是对设计稿的规范要求高（必须用 Auto Layout、语义化命名）。
+
+Figma MCP 的本质是**协议标准化**——它不自己生成代码，而是把设计信息通过 MCP 协议暴露给 AI 助手，由 AI 决定生成什么代码。适合需要灵活控制代码风格、集成到现有 AI 工作流的场景。
+
+```javascript
+// V0 的工作方式：文本 → 代码
+// 用户输入: "一个带有图片、标题、描述和价格的产品卡片"
+// V0 输出: React + Tailwind CSS 组件代码
+
+// Locofy 的工作方式：设计稿 → 代码
+// 输入: Figma 设计稿 URL
+// Locofy 读取节点树 → 解析布局 → 生成 React/Vue 代码
+
+// Figma MCP 的工作方式：设计稿 → AI → 代码
+// AI 通过 MCP 读取 Figma → 理解设计意图 → 生成任意框架代码
+```
+
+### 工具选择决策树
+
+```text
+你的场景是什么？
+├── 有设计稿，需要精确还原
+│   ├── 需要多框架支持（Vue/React/HTML）→ Locofy / Anima
+│   ├── 需要集成到 AI 工作流 → Figma MCP
+│   └── 只需要查看 CSS 属性 → Figma Dev Mode
+│
+├── 没有设计稿，从想法开始
+│   ├── 需要 React + Tailwind → V0
+│   └── 需要其他框架 → Figma MCP + AI 助手
+│
+└── 企业级设计系统
+    ├── 需要设计令牌管理 → Figma Variables + MCP
+    └── 需要组件库同步 → Figma MCP + 自定义 Skill
+```
+
+---
+
+## Q5: Design to Code 的最佳实践
+
+<Tip title="通俗比喻: 建筑施工规范">
+
+Design to Code 的最佳实践就像建筑施工规范。设计师画图纸时要遵循建筑规范（命名规范、Auto Layout、组件化），施工队（AI）才能准确施工。图纸不规范（乱命名、不用 Auto Layout），施工队再厉害也建不出你要的房子。代码生成后还需要质检（代码优化）和验收（设计系统集成）。
+
+</Tip>
+
+### 设计稿规范
+
+设计稿的质量直接决定代码生成的质量。以下是三个核心规范：
+
+**命名规范：**
+
+```text
+❌ 错误命名（AI 无法理解意图）：
+Frame 123、Group 5、Rectangle 3、Text 7
+
+✅ 正确命名（语义化、可映射到代码）：
+Navigation/TabBar/Home
+Button/Primary/Large
+Card/Product/Image
+Avatar/User/Online
+```
+
+**Auto Layout 规范：**
+
+```text
+❌ 错误做法：用绝对定位布局
+所有元素用 x/y 坐标定位，不用 Auto Layout
+→ AI 生成 position: absolute 代码，无法响应式
+
+✅ 正确做法：全部使用 Auto Layout
+容器用 HORIZONTAL / VERTICAL 方向
+设置 itemSpacing（gap）和 padding
+→ AI 生成 Flexbox 代码，天然响应式
+```
+
+**组件化规范：**
+
+```text
+❌ 错误做法：重复图层
+同一个按钮在 10 个页面各画一遍，样式微调
+→ AI 生成 10 个不同的按钮代码
+
+✅ 正确做法：使用 Component + Variants
+定义 Button 组件，用 Variants 管理 Primary/Secondary/Large/Small
+页面中使用 Instance，只覆盖文本内容
+→ AI 生成 1 个 Button 组件 + props 调用
+```
+
+### 代码生成后的优化
+
+AI 生成的代码通常是"能用"但不是"最优"的。需要以下优化步骤：
+
+```javascript
+// AI 生成的原始代码（能用，但有优化空间）
+function Header() {
+  return (
+    <div style={{ display: 'flex', padding: '16px', gap: '12px' }}>
+      <img style={{ width: '40px', height: '40px', borderRadius: '20px' }} />
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <span style={{ fontSize: '16px', fontWeight: 600 }}>用户名</span>
+        <span style={{ fontSize: '14px', color: '#6B7280' }}>在线</span>
+      </div>
+    </div>
+  );
+}
+
+// 优化后的代码（生产级）
+function Header({ user }) {
+  return (
+    <header className="flex items-center gap-3 p-4">
+      <Avatar src={user.avatar} alt={user.name} status="online" />
+      <div className="flex flex-col">
+        <span className="text-base font-semibold text-text-primary">
+          {user.name}
+        </span>
+        <span className="text-sm text-text-secondary">在线</span>
+      </div>
+    </header>
+  );
+}
+```
+
+**优化清单：**
+
+| 优化项 | 说明 |
+|--------|------|
+| **内联样式 → Tailwind / CSS Modules** | 提升可维护性和 Tree Shaking 效果 |
+| **硬编码值 → 设计令牌** | 颜色、间距用 CSS Variables，方便主题切换 |
+| **重复结构 → 提取组件** | 识别重复模式，提取为可复用组件 |
+| **静态内容 → 动态 props** | 文本、图片用变量替代硬编码 |
+| **添加语义化标签** | `div` → `header` / `nav` / `main` / `section` |
+| **响应式适配** | 添加断点处理（`md:` / `lg:` 前缀） |
+
+### 设计系统集成
+
+Design to Code 的终极目标是与设计系统（Design System）深度集成——设计令牌、组件库、主题系统三者联动。
+
+```text
+设计系统集成架构：
+
+Figma 设计系统
+├── Variables（颜色、间距、字体）
+├── Components（Button、Card、Input）
+└── Styles（文本样式、效果样式）
+        │
+        │ Figma MCP / Token Studio
+        ▼
+设计令牌 JSON
+├── colors.json
+├── spacing.json
+├── typography.json
+└── shadows.json
+        │
+        │ Style Dictionary / Tailwind Config
+        ▼
+前端代码
+├── CSS Variables（:root { --color-primary: ... }）
+├── Tailwind 配置（theme.extend.colors.primary）
+└── 组件库（React / Vue 组件）
+```
+
+```javascript
+// 设计令牌同步示例：Figma → JSON → CSS Variables
+// tokens/colors.json（从 Figma 导出）
+{
+  "color": {
+    "primary": { "value": "#3366FF", "type": "color" },
+    "secondary": { "value": "#6C5CE7", "type": "color" },
+    "text": {
+      "primary": { "value": "#1A1A2E", "type": "color" },
+      "secondary": { "value": "#6B7280", "type": "color" }
+    }
+  }
+}
+
+// Style Dictionary 转换为 CSS Variables
+:root {
+  --color-primary: #3366FF;
+  --color-secondary: #6C5CE7;
+  --color-text-primary: #1A1A2E;
+  --color-text-secondary: #6B7280;
+}
+
+// Tailwind 配置中引用
+module.exports = {
+  theme: {
+    extend: {
+      colors: {
+        primary: 'var(--color-primary)',
+        secondary: 'var(--color-secondary)',
+      }
+    }
+  }
+}
+```
+
+---
+
+## Q6: 高频面试题
+
+---
+
+### 满分回答 vs 及格回答
+
+### 问题："说说 Design to Code 的原理，Figma MCP 是怎么工作的？"
+
+**及格回答（60-70分）：**
+> "Design to Code 就是把设计稿转成代码。Figma MCP 是一个协议，让 AI 读取 Figma 文件生成代码。"
+
+面试官评价：**知道概念但不理解原理**。
+
+**满分回答（90-100分）：**
+
+> "Design to Code 的核心链路是：设计文件解析 → 布局分析 → 样式提取 → 代码生成。Figma 通过 REST API 暴露了完整的节点树结构，每种节点类型（FRAME、COMPONENT、TEXT 等）都有明确的属性定义。Auto Layout 的 `layoutMode`、`itemSpacing`、`padding` 等属性可以直接映射为 CSS Flexbox 的 `flex-direction`、`gap`、`padding`。<sup>[1]</sup>"
+
+> "Figma MCP 是 Anthropic 和 Figma 在 2025 年 5 月联合发布的官方 MCP Server，基于 Model Context Protocol 标准。它的工作原理是：AI 助手通过 stdio 协议启动 MCP Server，MCP Server 使用 Figma Personal Access Token 调用 Figma REST API 获取节点树，然后将解析后的设计信息（节点类型、布局属性、设计令牌）返回给 AI，由 AI 生成组件代码。<sup>[2]</sup>"
+
+> "实际项目中的关键痛点是设计稿质量。如果设计师不用 Auto Layout（用绝对定位），AI 只能生成 `position: absolute` 的代码，无法响应式。如果组件不标准化（同一个按钮画 10 遍），AI 会生成 10 个不同的组件而不是 1 个可复用组件。所以 Design to Code 的前提是要建立设计规范——命名语义化、布局 Auto Layout、组件 Component + Variants。<sup>[3]</sup>"
+
+### 大厂高频连环拷问
+
+<AccordionGroup>
+
+  <Accordion title="Auto Layout 和 CSS Flexbox 的映射关系是什么?" icon="layer-group">
+
+**答题要点：**
+逐一列出 Auto Layout 属性和 CSS 属性的对应关系。
+
+**高分回答：**
+"Figma 的 Auto Layout 本质上就是 CSS Flexbox 的设计侧表达。映射关系如下：
+
+1. `layoutMode: 'HORIZONTAL'` → `display: flex; flex-direction: row`
+2. `layoutMode: 'VERTICAL'` → `display: flex; flex-direction: column`
+3. `itemSpacing` → `gap`（子元素间距）
+4. `paddingLeft/Right/Top/Bottom` → `padding`
+5. `primaryAxisAlignItems: 'CENTER'` → `justify-content: center`
+6. `counterAxisAlignItems: 'CENTER'` → `align-items: center`
+7. `layoutWrap: 'WRAP'` → `flex-wrap: wrap`
+
+值得注意的是，Figma 2023 年新增的 `layoutWrap` 属性对应 CSS 的 `flex-wrap`，这让 Figma 的布局能力真正对齐了 Flexbox 规范。在此之前，Figma 的 Auto Layout 只支持单行/单列布局，复杂布局需要用嵌套 Frame 解决。"
+
+  </Accordion>
+
+  <Accordion title="Figma MCP 和 Figma Dev Mode 有什么区别?" icon="stopwatch">
+
+**答题要点：**
+从能力范围、AI 集成、代码质量三个维度对比。
+
+**高分回答：**
+"Figma Dev Mode 和 Figma MCP 的核心区别是**被动查看 vs 主动读取**。
+
+1. **Figma Dev Mode** 是 Figma 内置的开发者工具，开发者手动打开设计稿，查看 CSS 属性、导出资源。它输出的是静态的 CSS 片段（如 `font-size: 16px; color: #333`），不包含组件结构和交互逻辑。本质上是'标注工具的升级版'。
+
+2. **Figma MCP** 是基于 Model Context Protocol 的标准化接口，AI 助手通过协议主动读取 Figma 文件的完整节点树（包括布局、样式、组件关系），然后由 AI 生成完整的组件代码。它不是简单的 CSS 提取，而是理解设计意图后生成可运行的代码。
+
+3. **关键差异**：Dev Mode 需要人工操作（打开设计稿、逐个查看属性），MCP 是自动化的（AI 批量读取所有节点）。Dev Mode 输出 CSS 片段，MCP 输出组件代码。Dev Mode 不理解组件复用关系，MCP 能识别 Component/Instance 关系并生成可复用组件。"
+
+  </Accordion>
+
+  <Accordion title="V0 和 Locofy 的本质区别是什么?" icon="node">
+
+**答题要点：**
+从输入方式、工作原理、适用场景三个维度对比。
+
+**高分回答：**
+"V0 和 Locofy 的本质区别是**生成式 vs 转换式**。
+
+V0 是生成式 AI——你用文本描述想要的 UI（如'一个带图片的产品卡片'），V0 从零生成 React + Tailwind CSS 代码。它不读取设计稿，而是基于语言模型的理解能力生成代码。适合从想法到代码的场景，但生成结果不一定和设计师的稿子一致。
+
+Locofy 是转换式 AI——它读取 Figma 设计文件的节点树，解析布局和样式，转换为前端代码。适合设计稿已经存在、需要精确还原的场景。Locofy 的代码质量和设计稿质量强相关——设计稿用了 Auto Layout 和组件，生成的代码就好；设计稿用了绝对定位和重复图层，生成的代码就差。
+
+选择标准：有设计稿用 Locofy（精确还原），没设计稿用 V0（快速原型），需要灵活控制用 Figma MCP（AI 决定代码风格）。"
+
+  </Accordion>
+
+  <Accordion title="设计令牌（Design Tokens）是什么?怎么和代码同步?" icon="layer-group">
+
+**答题要点：**
+解释设计令牌的概念、格式、同步工具链。
+
+**高分回答：**
+"设计令牌（Design Tokens）是设计决策的最小可复用单元——把颜色、字体、间距、阴影等视觉属性抽象为键值对。例如 `color-primary: #3366FF` 就是一个设计令牌。
+
+同步工具链有三个环节：
+
+1. **Figma 侧**：使用 Figma Variables 定义颜色、数字、字符串变量。Figma 2023 年推出的 Variables 功能是设计令牌的原生支持。
+
+2. **导出环节**：使用 Token Studio（Figma 插件）或 Figma REST API 将 Variables 导出为 JSON 格式。Token Studio 的 JSON 格式已成为社区标准。
+
+3. **代码侧**：使用 Style Dictionary（Amazon 开源）将 JSON 令牌转换为 CSS Variables、Tailwind 配置、SCSS 变量等多平台格式。
+
+```javascript
+// Token Studio JSON → Style Dictionary → CSS Variables
+// 输入: tokens/color.json
+{ 'color-primary': { value: '#3366FF', type: 'color' } }
+
+// 输出: dist/variables.css
+:root { --color-primary: #3366FF; }
+```
+
+这样设计师改了 Figma 里的颜色值，CI/CD 自动同步到代码库，不需要开发者手动更新。"
+
+  </Accordion>
+
+  <Accordion title="Figma MCP 对设计稿有哪些规范要求?" icon="stopwatch">
+
+**答题要点：**
+从命名、布局、组件三个维度说明规范要求。
+
+**高分回答：**
+"Figma MCP 对设计稿有三个层面的规范要求：
+
+1. **命名规范**：组件用语义化命名（`Button/Primary/Large`），图层用功能化命名（`card-header`），不要用 Figma 默认名（`Frame 123`、`Group 5`）。MCP Server 解析节点树时，名称是 AI 理解设计意图的关键线索。
+
+2. **Auto Layout 规范**：所有布局容器必须开启 Auto Layout，不要用绝对定位。Auto Layout 的 `layoutMode`、`itemSpacing`、`padding` 直接映射为 CSS Flexbox 属性。如果用绝对定位，AI 只能生成 `position: absolute` 代码，无法响应式。
+
+3. **组件规范**：使用 Component（不是普通 Frame）定义可复用元素。使用 Variants 管理状态（Default / Hover / Disabled）。Instance 覆盖只修改内容（文本、图标），不修改结构。这样 MCP 解析时能识别出 Component/Instance 关系，生成可复用组件代码。
+
+不遵循这些规范，MCP 仍然能工作，但生成的代码质量会大幅下降——没有组件复用、没有响应式、没有语义化结构。"
+
+  </Accordion>
+
+  <Accordion title="Design to Code 在企业级项目中怎么落地?" icon="node">
+
+**答题要点：**
+从设计系统建设、工具链搭建、流程规范三个维度回答。
+
+**高分回答：**
+"企业级 Design to Code 落地需要三个环节：
+
+1. **设计系统建设**：在 Figma 中建立统一的设计系统——定义 Variables（颜色、间距、字体）、Components（Button、Card、Input 等基础组件）、文档（每个组件的使用规范）。设计系统是 Design to Code 的基础，没有设计系统，AI 生成的代码就没有一致性。
+
+2. **工具链搭建**：Figma Variables → Token Studio 导出 JSON → Style Dictionary 转换为 CSS Variables / Tailwind 配置 → 组件库消费令牌。CI/CD 集成：设计师改 Figma → 自动触发令牌同步 → 自动生成 PR → 开发者 Review 后合并。
+
+3. **流程规范**：设计师必须用 Auto Layout 和 Component 画稿（写入团队规范）。开发者使用 Figma MCP 或 Locofy 生成代码后，必须经过 Code Review（AI 生成的代码不是最终产物）。建立'设计稿验收标准'：命名规范、Auto Layout 覆盖率、组件复用率。
+
+核心原则：Design to Code 不是'一键出成品'，而是'加速从设计到代码的转换'。AI 生成的代码仍需要人工优化和 Review。"
+
+  </Accordion>
+
+  <Accordion title="Figma MCP 和直接用 Figma REST API 有什么区别?" icon="layer-group">
+
+**答题要点：**
+从协议标准化、AI 集成、动态发现三个维度对比。
+
+**高分回答：**
+"Figma REST API 和 Figma MCP 的区别类似于'HTTP 请求库'和'标准化协议'的区别。
+
+1. **Figma REST API** 是 Figma 提供的原始 HTTP 接口。你需要自己处理认证、请求构建、响应解析、错误重试。每个 AI 产品（Claude、Cursor、Copilot）都需要自己写一套 Figma API 适配代码。
+
+2. **Figma MCP** 是基于 Model Context Protocol 的标准化封装。MCP Server 内部调用 Figma REST API，但对外暴露的是标准化的 MCP 接口（Tool / Resource / Prompt）。任何支持 MCP 的 AI 产品都能直接使用，不需要单独适配。
+
+3. **关键优势**：MCP 支持动态发现——AI 可以问 MCP Server '你有什么工具'，运行时发现可用能力。MCP 有标准化的错误处理和生命周期管理。MCP Server 可以被多个 AI 产品复用，一次开发到处使用。
+
+简单说：REST API 是原始材料，MCP 是标准化的成品。用 REST API 你需要自己盖房子，用 MCP 你直接住精装房。"
+
+  </Accordion>
+
+  <Accordion title="AI 生成的代码有哪些常见问题?怎么优化?" icon="skull">
+
+**答题要点：**
+列出 4-5 个常见问题和对应的优化策略。
+
+**高分回答：**
+"AI 生成的代码常见以下问题：
+
+1. **内联样式泛滥**：AI 倾向于用 `style={{ fontSize: '16px' }}` 而不是 CSS 类名。优化：用 Tailwind 类名或 CSS Modules 替代内联样式，提升可维护性。
+
+2. **硬编码值**：AI 直接写 `#3366FF` 而不是引用设计令牌 `var(--color-primary)`。优化：用 CSS Variables 或 Tailwind 的 theme 配置引用设计令牌。
+
+3. **缺乏组件抽象**：AI 可能把重复结构复制 N 遍，而不是提取为组件。优化：人工识别重复模式，提取为可复用组件。
+
+4. **语义化缺失**：AI 全用 `div`，不用 `header` / `nav` / `main` / `section` 等语义化标签。优化：根据内容语义替换标签。
+
+5. **无响应式处理**：AI 生成固定宽度的布局，没有断点适配。优化：添加 Tailwind 的响应式前缀（`md:` / `lg:`）或 CSS Media Query。
+
+核心原则：AI 生成的代码是'初稿'，不是'终稿'。开发者需要做的是优化（样式抽取、组件抽象、语义化、响应式），而不是直接用。"
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [Figma Blog: Introducing Figma MCP](https://www.figma.com/blog/introducing-figma-mcp/)：Figma 官方 MCP 发布公告，说明了 MCP Server 的能力和集成方式。<sup>[1]</sup>
+- 📖 [Anthropic: Figma MCP Server](https://www.anthropic.com/news/figma-mcp)：Anthropic 与 Figma 联合发布的 MCP Server 详情，包含技术架构和使用场景。<sup>[2]</sup>
+- 🔗 [Figma MCP Server GitHub](https://github.com/figma/figma-mcp)：Figma 官方 MCP Server 的开源代码，包含完整的 Tool 定义和实现逻辑。<sup>[3]</sup>
+- 🟢 [Figma REST API 文档](https://www.figma.com/developers/api)：Figma API 的权威参考，包含节点类型、属性定义、认证方式。<sup>[4]</sup>
+- 📖 [Figma Auto Layout 官方文档](https://help.figma.com/hc/en-us/articles/360040451376-Use-Auto-layout)：Auto Layout 的完整规范，理解 Design to Code 布局映射的基础。<sup>[5]</sup>
+- 🔗 [Medium: Figma MCP The Complete Guide 2025](https://medium.com/@dmitriymorozov/figma-mcp-the-complete-guide-2025-604b3b77f662)：Figma MCP 的完整使用指南，包含配置步骤和实战示例。<sup>[6]</sup>
+- 📖 [MCP 协议规范](https://modelcontextprotocol.io/)：Model Context Protocol 的官方文档，理解 Figma MCP 底层协议的标准参考。<sup>[7]</sup>
+- 🔗 [Vercel V0](https://v0.dev/)：V0 的官方网站，体验文本生成 UI 的能力。<sup>[8]</sup>

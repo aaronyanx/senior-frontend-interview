@@ -110,19 +110,21 @@ let b = 20;
 
 ### 专家视角深度剖析
 
+箭头函数和普通函数的核心区别是 `this` 的来源不同。以下是经典输出题的图解分析：
+
 ```javascript
 // this 是最关键的区别
 const obj = {
   name: 'Tom',
   regular: function() {
-    console.log(this.name); // 'Tom'（隐式绑定）
+    console.log(this.name); // 'Tom'（隐式绑定：obj.regular()）
   },
   arrow: () => {
-    console.log(this.name); // undefined（继承外层，外层是全局）
+    console.log(this.name); // undefined（继承外层，外层是全局 this = window）
   },
   delayed: function() {
     setTimeout(() => {
-      console.log(this.name); // 'Tom'（箭头函数继承 delayed 的 this）
+      console.log(this.name); // 'Tom'（箭头函数继承 delayed 的 this = obj）
     }, 100);
   },
 };
@@ -130,6 +132,40 @@ const obj = {
 // 箭头函数不能被 bind/call/apply 修改 this
 const fn = () => console.log(this);
 fn.call({ name: 'test' }); // 还是原来的 this，call 无效
+```
+
+### 箭头函数输出题图解
+
+```text
+const obj = {
+  name: 'Tom',
+  regular: function() { console.log(this.name); },
+  arrow: () => { console.log(this.name); },
+};
+
+obj.regular();  →  this = obj  →  输出 'Tom'   ✅
+obj.arrow();    →  this = window →  输出 undefined ⚠️
+
+为什么 obj.arrow() 不是 'Tom'？
+
+普通函数 regular：
+┌──────────┐  .regular()  ┌──────────────┐
+│   obj    │ ────────────→│ regular()    │
+│ name:'Tom│              │ this = obj   │ ← 隐式绑定：谁调用指向谁
+└──────────┘              │ 输出 'Tom'   │
+                          └──────────────┘
+
+箭头函数 arrow：
+┌──────────┐  .arrow()    ┌──────────────┐
+│   obj    │ ────────────→│ arrow()      │
+│ name:'Tom│              │ this = window│ ← 箭头函数不看调用方式！
+└──────────┘              │ 定义时就锁定了│   在 obj 内部定义，但 obj 不是作用域
+                          │ 外层 this    │   外层是全局 → this = window
+                          │ 输出 undefined│
+                          └──────────────┘
+
+关键：箭头函数的 this 在【定义时】锁定，不是调用时！
+     obj 不是函数，不形成作用域，所以 arrow 的外层是全局
 ```
 
 ### V8 中箭头函数的 this 实现

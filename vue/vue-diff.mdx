@@ -136,36 +136,85 @@ Vue 3 LIS 优化：
 └───────────────────────────────────────┘
 ```
 
+```text
+Vue 3 diff 算法的三步走图解：
+
+  旧列表: [A] [B] [C] [D] [E] [F] [G]
+  新列表: [A] [B] [D] [F] [C] [E] [G]
+            ↑                        ↑
+          i=0                      e1/e2
+
+  第一步：从左到右，处理头部相同部分（O(1) 每次比较）
+  ┌───┬───┬───┬───┬───┬───┬───┐
+  │ A │ B │ C │ D │ E │ F │ G │  旧
+  ├───┼───┼───┼───┼───┼───┼───┤
+  │ A │ B │ D │ F │ C │ E │ G │  新
+  └───┴───┴───┴───┴───┴───┴───┘
+  ✓   ✓   ✗
+  A==A  B==B  C!=D → 跳出，i=2
+
+  第二步：从右到左，处理尾部相同部分
+  ┌───┬───┬───┬───┬───┬───┬───┐
+  │ A │ B │ C │ D │ E │ F │ G │  旧
+  ├───┼───┼───┼───┼───┼───┼───┤
+  │ A │ B │ D │ F │ C │ E │ G │  新
+  └───┴───┴───┴───┴───┴───┴───┘
+                  ✗       ✓   ✓
+              E!=C  F==F  G==G → e1=4, e2=4
+
+  第三步：中间乱序部分 [C,D,E] vs [D,F,C,E]
+  ┌─────────────────────────────────────────────┐
+  │ 1. 建立 key→新索引 的 Map: D→2, F→3, C→4, E→5│
+  │ 2. 遍历旧节点，查找可复用:                     │
+  │    C → newIndex=4, 记录 [4]                   │
+  │    D → newIndex=2, 记录 [4,2]                 │
+  │    E → newIndex=5, 记录 [4,2,5]               │
+  │ 3. 最长递增子序列(LIS): [4,5] → C和E不动      │
+  │ 4. 只移动 D 和 F                              │
+  └─────────────────────────────────────────────┘
+```
+
 ```javascript
-// Vue 3 的 diff 核心逻辑（伪代码）
+// Vue 3 的 diff 核心逻辑（伪代码，每行注释）
 function patchKeyedChildren(c1, c2, container) {
-  // 1. 从左到右：处理头部相同的部分
+  // ===== 第一步：从左到右，处理头部相同的部分 =====
+  // 用 i 指针从头部开始，逐一比较新旧节点的 key 和 type
   while (i <= e1 && i <= e2) {
-    if (isSameVNode(c1[i], c2[i])) { patch(c1[i], c2[i]); i++; }
-    else break;
+    if (isSameVNode(c1[i], c2[i])) { patch(c1[i], c2[i]); i++; } // 相同则 patch 更新
+    else break; // 不同则跳出，进入下一步
   }
 
-  // 2. 从右到左：处理尾部相同的部分
+  // ===== 第二步：从右到左，处理尾部相同的部分 =====
+  // 用 e1（旧尾）和 e2（新尾）从尾部开始，逐一比较
   while (i <= e1 && i <= e2) {
     if (isSameVNode(c1[e1], c2[e2])) { patch(c1[e1], c2[e2]); e1--; e2--; }
-    else break;
+    else break; // 不同则跳出，进入第三步
   }
 
-  // 3. 中间乱序部分：用 LIS 优化
+  // ===== 第三步：中间乱序部分，用 LIS 优化 =====
+  // 创建映射数组：newIndexToOldIndexMap[新索引] = 旧索引+1（0 表示新增）
   const newIndexToOldIndexMap = new Array(e2 - s2 + 1).fill(0);
-  // 建立 key → newIndex 的映射
+
+  // 建立 key → 新索引 的 Map，O(1) 查找
   for (let i = s2; i <= e2; i++) { keyToNewIndex.set(c2[i].key, i); }
-  // 遍历旧节点，从 Map 中查找可复用的
+
+  // 遍历旧节点，在 Map 中查找可复用的节点
   for (let i = s1; i <= e1; i++) {
-    const newIndex = keyToNewIndex.get(c1[i].key);
-    if (newIndex !== undefined) { newIndexToOldIndexMap[newIndex - s2] = i + 1; }
-    else { unmount(c1[i]); } // 旧节点在新列表中不存在，删除
+    const newIndex = keyToNewIndex.get(c1[i].key); // O(1) 查找
+    if (newIndex !== undefined) {
+      newIndexToOldIndexMap[newIndex - s2] = i + 1; // 记录旧索引（+1 避免 0）
+    } else {
+      unmount(c1[i]); // 旧节点在新列表中不存在，删除
+    }
   }
-  // 计算最长递增子序列
+
+  // 计算最长递增子序列（LIS）—— 这些节点的相对位置没变，不需要移动
   const increasing = getSequence(newIndexToOldIndexMap);
-  // 从后往前遍历，只移动不在 LIS 中的节点
+
+  // 从后往前遍历新列表，只移动不在 LIS 中的节点
   for (let j = increasing.length - 1; j >= 0; j--) {
-    // 移动节点到正确位置
+    // 如果当前索引不在 LIS 中，说明需要移动 DOM
+    // 如果在 LIS 中，跳过（保持原位）
   }
 }
 ```
