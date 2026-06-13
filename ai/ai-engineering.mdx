@@ -984,6 +984,503 @@ class HallucinationDetector {
 }
 ```
 
+## Q6.5: AI 生成内容的多模态渲染
+
+> **面试官为什么问这个？**
+>
+> AI 应用的核心体验是**流式输出 + 多模态渲染**。面试官问这个，是在考察你：**是否理解 AI 生成内容的渲染挑战，以及如何在 React/Vue 中实现高性能的流式渲染。** 如果你只停留在"调用 API 获取文本"的层面，说明你没有真正做过 AI 应用。
+
+---
+
+<Steps>
+
+  <Step title="AI 生成内容的本质是流式多模态数据">
+
+AI 的输出不是一次性返回的完整文档，而是 **token-by-token 的流式数据**。这些 token 需要**实时解析**成多种模态：
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│ AI 输出流（token by token）                                      │
+│                                                                 │
+│ "## 标题\n\n这是" → "一段文字\n\n```javascript\n" → "const x"  │
+│                                                                 │
+│ ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
+│ │ Markdown    │  │ 代码块      │  │ 数学公式    │              │
+│ │ 标题、列表  │  │ 语法高亮    │  │ LaTeX       │              │
+│ └─────────────┘  └─────────────┘  └─────────────┘              │
+│                                                                 │
+│ ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
+│ │ 流程图      │  │ 表格        │  │ 图表        │              │
+│ │ Mermaid     │  │ 数据展示    │  │ ECharts     │              │
+│ └─────────────┘  └─────────────┘  └─────────────┘              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**核心挑战：**
+1. **流式解析**：token 到达时，Markdown 语法可能不完整（如代码块未闭合）
+2. **实时渲染**：用户期望"打字机效果"，不能等全部内容到达再渲染
+3. **性能优化**：大段内容的解析和渲染可能阻塞主线程
+4. **安全防护**：AI 生成的内容可能包含 XSS 攻击
+
+  </Step>
+
+  <Step title="React 中的流式渲染方案">
+
+**React 18 的 Suspense + Streaming SSR：**
+
+```javascript
+// 服务端：流式渲染 React 组件
+import { renderToPipeableStream } from 'react-dom/server';
+
+app.get('/api/chat', (req, res) => {
+  const { pipe } = renderToPipeableStream(<App />, {
+    bootstrapScripts: ['/client.js'],
+    onShellReady() {
+      // Shell 准备好后立即开始流式传输
+      res.setHeader('content-type', 'text/html');
+      pipe(res);
+    },
+  });
+});
+
+// 客户端：Suspense 处理异步加载
+function ChatMessage({ content }) {
+  return (
+    <Suspense fallback={<Loading />}>
+      <MarkdownRenderer content={content} />
+    </Suspense>
+  );
+}
+```
+
+**Vercel AI SDK 的流式渲染：**
+
+```javascript
+// 服务端：使用 streamText 流式输出
+import { streamText } from 'ai';
+import { openai } from '@ai-sdk/openai';
+
+export async function POST(req) {
+  const { messages } = await req.json();
+  const result = streamText({
+    model: openai('gpt-4'),
+    messages,
+  });
+  return result.toDataStreamResponse();
+}
+
+// 客户端：useChat hook 自动处理流式渲染
+import { useChat } from 'ai/react';
+
+function Chat() {
+  const { messages, input, handleInputChange, handleSubmit } = useChat();
+  return (
+    <div>
+      {messages.map(m => (
+        <div key={m.id}>
+          {m.role}: {m.content}
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+  </Step>
+
+  <Step title="Vue 中的流式渲染方案">
+
+**Nuxt 3 的 Streaming SSR：**
+
+```vue
+<!-- 服务端：使用 Nitro 的流式响应 -->
+<script setup>
+const { data } = await useFetch('/api/chat', {
+  method: 'POST',
+  body: { message: 'Hello' },
+});
+</script>
+
+<template>
+  <div>
+    <MarkdownRenderer :content="data" />
+  </div>
+</template>
+```
+
+**Vue 3 的 Suspense + 异步组件：**
+
+```vue
+<!-- 异步加载的 Markdown 渲染组件 -->
+<script setup>
+import { defineAsyncComponent } from 'vue';
+
+const MarkdownRenderer = defineAsyncComponent(() =>
+  import('./MarkdownRenderer.vue')
+);
+</script>
+
+<template>
+  <Suspense>
+    <template #default>
+      <MarkdownRenderer :content="content" />
+    </template>
+    <template #fallback>
+      <div>Loading...</div>
+    </template>
+  </Suspense>
+</template>
+```
+
+**VueUse 的 useFetch 流式处理：**
+
+```vue
+<script setup>
+import { useFetch } from '@vueuse/core';
+
+const { data, isFetching } = useFetch('/api/chat', {
+  method: 'POST',
+  body: JSON.stringify({ message: 'Hello' }),
+}).json();
+</script>
+
+<template>
+  <div>
+    <div v-if="isFetching">Loading...</div>
+    <MarkdownRenderer v-else :content="data" />
+  </div>
+</template>
+```
+
+  </Step>
+
+  <Step title="Markdown 流式解析的核心难点">
+
+**难点 1：代码块未闭合时的处理**
+
+```javascript
+// 问题：token 到达时，代码块可能还没结束
+const tokens = [
+  '```javascript\n',
+  'const x = 1;\n',
+  // 此时代码块还没结束，但需要立即渲染
+];
+
+// 解决：使用"部分解析"策略
+function parsePartialMarkdown(text) {
+  const blocks = [];
+  let currentBlock = null;
+
+  for (const line of text.split('\n')) {
+    if (line.startsWith('```')) {
+      if (currentBlock) {
+        // 结束代码块
+        blocks.push(currentBlock);
+        currentBlock = null;
+      } else {
+        // 开始代码块
+        currentBlock = { type: 'code', content: '' };
+      }
+    } else if (currentBlock) {
+      currentBlock.content += line + '\n';
+    } else {
+      blocks.push({ type: 'text', content: line });
+    }
+  }
+
+  // 如果代码块未结束，标记为"进行中"
+  if (currentBlock) {
+    currentBlock.incomplete = true;
+    blocks.push(currentBlock);
+  }
+
+  return blocks;
+}
+```
+
+**难点 2：性能优化**
+
+```javascript
+// ❌ 错误做法：每次 token 到达都重新解析整个文档
+function onToken(token) {
+  fullContent += token;
+  const html = marked.parse(fullContent);  // 阻塞主线程
+  document.getElementById('output').innerHTML = html;
+}
+
+// ✅ 正确做法：增量解析 + 虚拟滚动
+function onToken(token) {
+  fullContent += token;
+  const newBlocks = parsePartialMarkdown(fullContent);
+
+  // 只渲染新增的块
+  const lastBlock = newBlocks[newBlocks.length - 1];
+  if (lastBlock) {
+    const html = renderBlock(lastBlock);
+    appendToDOM(html);
+  }
+}
+```
+
+**难点 3：安全防护**
+
+```javascript
+// ❌ 危险：直接渲染 AI 输出
+element.innerHTML = marked.parse(aiOutput);  // XSS 风险
+
+// ✅ 安全：使用 DOMPurify 过滤
+import DOMPurify from 'dompurify';
+element.innerHTML = DOMPurify.sanitize(marked.parse(aiOutput));
+
+// ✅ 更安全：使用白名单过滤
+const clean = DOMPurify.sanitize(html, {
+  ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'code', 'pre', 'blockquote'],
+  ALLOWED_ATTR: ['href', 'src', 'alt'],
+});
+```
+
+  </Step>
+
+  <Step title="代码高亮的 React/Vue 实现">
+
+**React 组件：**
+
+```jsx
+import { useEffect, useRef } from 'react';
+import Prism from 'prismjs';
+import 'prismjs/themes/prism-tomorrow.css';
+
+function CodeBlock({ code, language }) {
+  const codeRef = useRef(null);
+
+  useEffect(() => {
+    if (codeRef.current) {
+      Prism.highlightElement(codeRef.current);
+    }
+  }, [code, language]);
+
+  return (
+    <pre className={`language-${language}`}>
+      <code ref={codeRef} className={`language-${language}`}>
+        {code}
+      </code>
+    </pre>
+  );
+}
+```
+
+**Vue 组件：**
+
+```vue
+<script setup>
+import { ref, onMounted, watch } from 'vue';
+import Prism from 'prismjs';
+import 'prismjs/themes/prism-tomorrow.css';
+
+const props = defineProps({
+  code: String,
+  language: String,
+});
+
+const codeRef = ref(null);
+
+onMounted(() => {
+  Prism.highlightElement(codeRef.value);
+});
+
+watch(() => props.code, () => {
+  Prism.highlightElement(codeRef.value);
+});
+</script>
+
+<template>
+  <pre :class="`language-${language}`">
+    <code ref="codeRef" :class="`language-${language}`">{{ code }}</code>
+  </pre>
+</template>
+```
+
+  </Step>
+
+  <Step title="流程图和数学公式的渲染">
+
+**Mermaid 流程图的 React 组件：**
+
+```jsx
+import { useEffect, useRef } from 'react';
+import mermaid from 'mermaid';
+
+mermaid.initialize({ startOnLoad: true, theme: 'default' });
+
+function MermaidChart({ code }) {
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const renderChart = async () => {
+      const { svg } = await mermaid.render(`mermaid-${Date.now()}`, code);
+      containerRef.current.innerHTML = svg;
+    };
+    renderChart();
+  }, [code]);
+
+  return <div ref={containerRef} />;
+}
+```
+
+**KaTeX 数学公式的 Vue 组件：**
+
+```vue
+<script setup>
+import { computed } from 'vue';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+
+const props = defineProps({
+  latex: String,
+  displayMode: { type: Boolean, default: false },
+});
+
+const html = computed(() => {
+  try {
+    return katex.renderToString(props.latex, {
+      displayMode: props.displayMode,
+      throwOnError: false,
+    });
+  } catch (e) {
+    return `<span class="error">${props.latex}</span>`;
+  }
+});
+</script>
+
+<template>
+  <div v-html="html" />
+</template>
+```
+
+  </Step>
+
+</Steps>
+
+**AI 生成内容渲染解决的核心问题：**
+
+```text
+问题：AI 生成的内容是流式的、多模态的，需要实时解析和渲染
+
+没有好的渲染方案：用户等待时间长、界面卡顿、安全风险
+
+解决：React/Vue 的 Suspense + 增量解析 + 虚拟滚动 + 安全过滤
+```
+
+<Warning title='⚠️ 核心机制: 流式渲染的本质是"边解析边渲染"'>
+
+AI 的输出是 token-by-token 的流式数据，不能等全部内容到达再渲染。核心策略是：
+1. **增量解析**：每收到一个 token，就解析一次
+2. **部分渲染**：语法不完整时也要渲染（如代码块未闭合）
+3. **虚拟滚动**：只渲染可见区域的内容
+4. **安全过滤**：使用 DOMPurify 过滤 XSS
+
+</Warning>
+
+<Tip title="🎢 通俗比喻: 餐厅上菜">
+
+AI 的流式渲染就像餐厅上菜：
+- **一次性上菜**（传统方式）：等所有菜都做好再上，顾客等得久
+- **流式上菜**（流式渲染）：每做好一道菜就上一道，顾客边吃边等
+- **部分上菜**（增量解析）：主菜还没好，先上配菜和饮料
+- **安全检查**（DOMPurify）：上菜前检查有没有异物
+
+</Tip>
+
+### React 中的流式渲染架构
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│ React 流式渲染架构                                               │
+│                                                                 │
+│ ┌─────────────┐    ┌─────────────┐    ┌─────────────┐          │
+│ │ AI API      │───→│ SSE Stream  │───→│ useChat     │          │
+│ │ (OpenAI)    │    │ (EventSource│    │ (Vercel SDK)│          │
+│ └─────────────┘    └─────────────┘    └─────────────┘          │
+│                                              │                  │
+│                                              ▼                  │
+│ ┌─────────────┐    ┌─────────────┐    ┌─────────────┐          │
+│ │ DOMPurify   │◄───│ Markdown    │◄───│ Suspense    │          │
+│ │ (安全过滤)  │    │ Parser      │    │ (异步渲染)  │          │
+│ └─────────────┘    └─────────────┘    └─────────────┘          │
+│        │                  │                                     │
+│        ▼                  ▼                                     │
+│ ┌─────────────┐    ┌─────────────┐                              │
+│ │ 代码高亮    │    │ 流程图      │                              │
+│ │ Prism.js    │    │ Mermaid     │                              │
+│ └─────────────┘    └─────────────┘                              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Vue 中的流式渲染架构
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│ Vue 流式渲染架构                                                 │
+│                                                                 │
+│ ┌─────────────┐    ┌─────────────┐    ┌─────────────┐          │
+│ │ AI API      │───→│ Fetch API   │───→│ useFetch    │          │
+│ │ (OpenAI)    │    │ (ReadableStr│    │ (VueUse)    │          │
+│ └─────────────┘    └─────────────┘    └─────────────┘          │
+│                                              │                  │
+│                                              ▼                  │
+│ ┌─────────────┐    ┌─────────────┐    ┌─────────────┐          │
+│ │ DOMPurify   │◄───│ Markdown    │◄───│ Suspense    │          │
+│ │ (安全过滤)  │    │ Parser      │    │ (异步组件)  │          │
+│ └─────────────┘    └─────────────┘    └─────────────┘          │
+│        │                  │                                     │
+│        ▼                  ▼                                     │
+│ ┌─────────────┐    ┌─────────────┐                              │
+│ │ 代码高亮    │    │ 流程图      │                              │
+│ │ Prism.js    │    │ Mermaid     │                              │
+│ └─────────────┘    └─────────────┘                              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 性能优化策略
+
+| 策略 | 实现方式 | 效果 |
+|------|----------|------|
+| **增量解析** | 只解析新增的 token | 避免重复解析 |
+| **虚拟滚动** | 只渲染可见区域 | 大文档不卡顿 |
+| **Web Worker** | 解析放在 Worker 线程 | 不阻塞主线程 |
+| **requestIdleCallback** | 空闲时渲染 | 优先处理用户交互 |
+
+```javascript
+// Web Worker 中的 Markdown 解析
+// worker.js
+importScripts('https://cdn.jsdelivr.net/npm/marked/marked.min.js');
+
+self.onmessage = function(e) {
+  const html = marked.parse(e.data);
+  self.postMessage(html);
+};
+
+// 主线程
+const worker = new Worker('worker.js');
+worker.postMessage(markdownText);
+worker.onmessage = function(e) {
+  document.getElementById('output').innerHTML = DOMPurify.sanitize(e.data);
+};
+```
+
+---
+
+## 📚 延伸阅读与引用参考
+
+- 🔗 [React Suspense 文档](https://react.dev/reference/react/Suspense)：React 官方对 Suspense 的详细说明，包含 Streaming SSR 的使用方式。<sup>[1]</sup>
+- 🔗 [Vercel AI SDK 文档](https://sdk.vercel.ai/docs)：Vercel 官方的 AI SDK 文档，包含 useChat、streamText 等 API。<sup>[2]</sup>
+- 🔗 [Nuxt 3 Streaming SSR](https://nuxt.com/docs/guide/concepts/rendering#streaming)：Nuxt 3 官方对 Streaming SSR 的说明。<sup>[3]</sup>
+- 🔗 [Marked.js 文档](https://marked.js.org/)：Markdown 解析库的官方文档。<sup>[4]</sup>
+- 🔗 [Prism.js 文档](https://prismjs.com/)：代码高亮库的官方文档。<sup>[5]</sup>
+- 🔗 [Mermaid 文档](https://mermaid.js.org/)：流程图渲染库的官方文档。<sup>[6]</sup>
+- 🔗 [KaTeX 文档](https://katex.org/)：数学公式渲染库的官方文档。<sup>[7]</sup>
+- 🔗 [DOMPurify 文档](https://github.com/cure53/DOMPurify)：XSS 过滤库的官方文档。<sup>[8]</sup>
+
 ---
 
 ## Q7: 高频面试题

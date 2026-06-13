@@ -5,6 +5,25 @@ description: Writes and edits MDX files for the frontend interview guide. Use wh
 
 # Interview Guide Writer
 
+## ⚠️ 强制规则：任何操作前必须先读取本文件
+
+**用户提出的任何关于 MDX 文件的问题，都必须先读取本文件（SKILL.md），然后按照规范执行。**
+
+**违反此规则会导致：**
+- 解析错误（引号嵌套、组件未闭合）
+- 格式不一致（缺少图解、比喻、Warning）
+- 内容不完整（缺少延伸阅读、代码示例）
+
+**检查清单（每次操作前必须确认）：**
+- [ ] 已读取 MINTLIFY_MDX_RULES.md
+- [ ] 已读取 _template.mdx
+- [ ] 已读取 javascript/event-loop.mdx（黄金参考）
+- [ ] 已检查组件属性是否有引号嵌套
+- [ ] 已检查组件标签和内容之间是否有空行
+- [ ] 已检查代码块是否正确闭合
+
+---
+
 ## Quick Start
 
 Read `_template.mdx` for structure, read `javascript/event-loop.mdx` as the golden reference, then write following the rules below.
