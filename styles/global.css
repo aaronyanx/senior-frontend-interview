@@ -1,0 +1,308 @@
+/* =====================================
+   3D 抽卡动画 - Mintlify 稳定版
+   ===================================== */
+
+.card-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  margin-top: 3rem;
+  padding: 3.5rem 1rem 4.5rem;
+  overflow: visible;
+  isolation: isolate;
+}
+
+@media (min-width: 768px) {
+  .card-stage {
+    flex-direction: row;
+    justify-content: center;
+    align-items: flex-end;
+    gap: 0;
+    perspective: 1600px;
+  }
+}
+
+.card-item {
+  position: relative;
+  z-index: 10;
+  transform-style: preserve-3d;
+}
+
+.card-item--middle {
+  z-index: 20;
+}
+
+.card-item:hover,
+.card-item:focus-within {
+  z-index: 50;
+}
+
+.card-link {
+  display: block;
+  width: min(90vw, 320px);
+  border-radius: 18px;
+  text-decoration: none;
+  color: inherit;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased;
+  will-change: transform;
+  transform-origin: 50% 85%;
+  transition:
+    transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.55s ease;
+}
+
+@media (min-width: 768px) {
+  .card-link {
+    width: 230px;
+  }
+
+  .card-item--middle .card-link {
+    width: 270px;
+  }
+}
+
+/* =====================================
+   三种卡片基础样式
+   ===================================== */
+
+.card-link--ai {
+  height: 280px;
+  padding: 1.5rem;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+  --line: rgba(22, 101, 52, 0.1);
+  --muted: #166534;
+}
+
+.card-link--js {
+  height: 320px;
+  padding: 1.75rem;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  --line: #f1f5f9;
+  --muted: #475569;
+}
+
+.card-link--react {
+  height: 280px;
+  padding: 1.5rem;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+  --line: #e2e8f0;
+  --muted: #475569;
+}
+
+/* =====================================
+   卡片文字
+   ===================================== */
+
+.card-tag {
+  margin-bottom: 1rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.card-tag--ai {
+  color: #166534;
+}
+
+.card-tag--js {
+  color: #f59e0b;
+  font-size: 0.7rem;
+}
+
+.card-tag--react {
+  color: #475569;
+}
+
+.card-heading {
+  margin-bottom: 0.75rem;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.card-heading--ai,
+.card-heading--react {
+  font-size: 1.35rem;
+}
+
+.card-heading--ai {
+  color: #14532d;
+}
+
+.card-heading--js {
+  font-size: 1.6rem;
+  line-height: 1.15;
+  font-weight: 900;
+  color: #0f172a;
+}
+
+.card-heading--react {
+  color: #0f172a;
+}
+
+.card-list {
+  font-size: 0.8rem;
+  color: var(--muted, #475569);
+}
+
+.card-link--js .card-list {
+  font-size: 0.85rem;
+}
+
+.card-list-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 0;
+}
+
+.card-list-item:not(:last-child) {
+  border-bottom: 1px solid var(--line, rgba(0, 0, 0, 0.08));
+}
+
+.card-text-dim {
+  opacity: 0.4;
+}
+
+/* =====================================
+   小圆点
+   ===================================== */
+
+.card-dot {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  border: 1.5px solid var(--dot-border, #cbd5e1);
+}
+
+.card-dot::after {
+  content: "";
+  position: absolute;
+  inset: 3.5px;
+  border-radius: 9999px;
+  background: transparent;
+}
+
+.card-dot--active {
+  border-color: currentColor;
+}
+
+.card-dot--active::after {
+  background: currentColor;
+}
+
+.card-dot--ai {
+  color: #16a34a;
+}
+
+.card-dot--js {
+  color: #ea580c;
+}
+
+.card-dot--react {
+  color: #2563eb;
+}
+
+.card-dot--inactive-ai {
+  --dot-border: #bbf7d0;
+}
+
+.card-dot--inactive-slate {
+  --dot-border: #cbd5e1;
+}
+
+/* =====================================
+   桌面端初始 3D 抽卡姿态
+   ===================================== */
+
+@media (min-width: 768px) {
+  .card-item--left .card-link {
+    transform: translate3d(3.2rem, 1.2rem, -70px) rotateY(24deg) rotateZ(8deg);
+  }
+
+  .card-item--middle .card-link {
+    transform: translate3d(0, -0.8rem, 0) rotateY(0deg) rotateZ(-5deg);
+  }
+
+  .card-item--right .card-link {
+    transform: translate3d(-3.2rem, 1.6rem, -70px) rotateY(-24deg) rotateZ(14deg);
+  }
+}
+
+/* =====================================
+   hover / focus 动画
+   ===================================== */
+
+@media (hover: hover) {
+  .card-item:hover .card-link,
+  .card-item:focus-within .card-link {
+    box-shadow: 0 30px 60px -18px rgba(0, 0, 0, 0.38);
+  }
+}
+
+@media (hover: hover) and (min-width: 768px) {
+  .card-item--left:hover .card-link,
+  .card-item--left:focus-within .card-link {
+    transform: translate3d(2.4rem, -3.2rem, 90px) rotateY(0deg) rotateZ(0deg) scale(1.08);
+  }
+
+  .card-item--middle:hover .card-link,
+  .card-item--middle:focus-within .card-link {
+    transform: translate3d(0, -3.8rem, 120px) rotateY(0deg) rotateZ(0deg) scale(1.12);
+  }
+
+  .card-item--right:hover .card-link,
+  .card-item--right:focus-within .card-link {
+    transform: translate3d(-2.4rem, -3.2rem, 90px) rotateY(0deg) rotateZ(0deg) scale(1.08);
+  }
+}
+
+/* 移动端给一个轻微 hover，避免完全没反馈 */
+@media (hover: hover) and (max-width: 767px) {
+  .card-item:hover .card-link,
+  .card-item:focus-within .card-link {
+    transform: translateY(-0.75rem) scale(1.02);
+  }
+}
+
+/* =====================================
+   无障碍：减少动态效果
+   ===================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .card-link {
+    transition: none;
+  }
+
+  .card-item--left .card-link,
+  .card-item--middle .card-link,
+  .card-item--right .card-link {
+    transform: none;
+  }
+}
+
+/* =====================================
+   可选修复：
+   如果 Mintlify 的祖先容器有 overflow hidden / clip，
+   导致 3D 卡片被裁掉，可以取消下面注释。
+   ===================================== */
+
+/*
+main,
+article,
+.prose {
+  overflow: visible !important;
+}
+*/

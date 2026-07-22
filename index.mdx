@@ -6,46 +6,36 @@ description: "逐题解析高频面试题"
 ## 内容导航
 
 <CardGroup cols={2}>
-
   <Card title="JavaScript" icon="js" color="#F7DF1E" href="/javascript/event-loop">
-
     异步机制、原型链、闭包、ES6 新特性
-
   </Card>
+
   <Card title="CSS & 浏览器" icon="css3-alt" color="#1572B6" href="/css/box-model">
-
     布局系统、渲染流程、性能优化
-
   </Card>
+
   <Card title="Vue" icon="vuejs" color="#41B883" href="/vue/vue-reactivity">
-
     响应式原理、Diff 算法、编译器
-
   </Card>
+
   <Card title="React" icon="react" color="#61DAFB" href="/react/react-history">
-
     Fiber 架构、Hooks 原理、并发模式
-
   </Card>
+
   <Card title="工程化" icon="gears" color="#FF8C00" href="/engineering/webpack">
-
     构建工具、TypeScript、CI/CD
-
   </Card>
+
   <Card title="AI 工程化" icon="robot" color="#8A2BE2" href="/ai/langchain">
-
     Agent 架构、MCP 协议、RAG
-
   </Card>
+
   <Card title="TypeScript" icon="code" color="#3178C6" href="/typescript/typescript">
-
     类型系统、泛型、类型体操
-
   </Card>
+
   <Card title="Node.js & BFF" icon="server" color="#339933" href="/engineering/nginx-bff">
-
     洋葱模型原理、Nginx 反代配置、BFF 架构设计
-
   </Card>
 </CardGroup>
 
@@ -55,24 +45,26 @@ description: "逐题解析高频面试题"
 - 踩坑总结：来自实际面试和项目里踩过的坑
 - 追问链：模拟真实面试的递进追问，从基础到深入
 
-<div className="flex flex-col md:flex-row justify-center items-center md:items-end mt-12 md:mt-24 pb-8 space-y-6 md:space-y-0">
-  
+<div className="card-stage">
   {/* Left Card */}
-  <div className="relative z-10 hover:z-50 group transform transition-transform md:rotate-[6deg] md:translate-y-[15px] md:translate-x-[50px]">
-    <a href="/ai/langchain" className="block transition-all duration-500 ease-out group-hover:-translate-y-12 group-hover:scale-110 group-hover:-rotate-6 group-hover:shadow-[0_40px_80px_-15px_rgba(0,0,0,0.3)] w-[90vw] max-w-[320px] md:w-[220px]" style={{ textDecoration: 'none', color: 'inherit', height: '280px', background: '#f0fdf4', padding: '1.5rem', borderRadius: '16px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)', border: '1px solid #bbf7d0' }}>
-      <div style={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#166534', letterSpacing: '0.05em', marginBottom: '1rem', textTransform: 'uppercase' }}>AI 工程化</div>
-      <div style={{ fontSize: '1.35rem', fontWeight: '800', marginBottom: '0.75rem', color: '#14532d', lineHeight: '1.2' }}>Agent 长期记忆与大模型</div>
-      <div style={{ fontSize: '0.8rem', color: '#166534', opacity: 0.85 }}>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid rgba(22, 101, 52, 0.1)' }}>
-          <svg viewBox="0 0 24 24" fill="none" style={{ width: '16px', height: '16px', marginRight: '8px', flexShrink: 0 }}><circle cx="12" cy="12" r="10" stroke="#16a34a" strokeWidth="1.5" /><circle cx="12" cy="12" r="5" fill="#16a34a" /></svg>
-          <span style={{ opacity: 0.4 }}>LLM Token 原理与私有部署</span>
+  <div className="card-item card-item--left">
+    <a href="/ai/langchain" className="card-link card-link--ai">
+      <div className="card-tag card-tag--ai">AI 工程化</div>
+      <div className="card-heading card-heading--ai">Agent 长期记忆与大模型</div>
+
+      <div className="card-list">
+        <div className="card-list-item">
+          <span className="card-dot card-dot--ai card-dot--active"></span>
+          <span className="card-text-dim">LLM Token 原理与私有部署</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid rgba(22, 101, 52, 0.1)' }}>
-          <svg viewBox="0 0 24 24" fill="none" style={{ width: '16px', height: '16px', marginRight: '8px', flexShrink: 0 }}><circle cx="12" cy="12" r="10" stroke="#bbf7d0" strokeWidth="1.5" /></svg>
+
+        <div className="card-list-item">
+          <span className="card-dot card-dot--inactive-ai"></span>
           <span>RAG 向量检索与混合召回策略</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '6px 0' }}>
-          <svg viewBox="0 0 24 24" fill="none" style={{ width: '16px', height: '16px', marginRight: '8px', flexShrink: 0 }}><circle cx="12" cy="12" r="10" stroke="#bbf7d0" strokeWidth="1.5" /></svg>
+
+        <div className="card-list-item">
+          <span className="card-dot card-dot--inactive-ai"></span>
           <span>Agent 记忆流与 MCP 协议</span>
         </div>
       </div>
@@ -80,21 +72,24 @@ description: "逐题解析高频面试题"
   </div>
 
   {/* Middle Card */}
-  <div className="relative z-20 hover:z-50 group transform transition-transform md:-rotate-[5deg] md:-translate-y-[10px] md:translate-x-0">
-    <a href="/javascript/v8-array" className="block transition-all duration-500 ease-out group-hover:-translate-y-12 group-hover:scale-110 group-hover:rotate-6 group-hover:shadow-[0_40px_80px_-15px_rgba(0,0,0,0.3)] w-[90vw] max-w-[320px] md:w-[260px]" style={{ textDecoration: 'none', color: 'inherit', height: '320px', background: '#ffffff', padding: '1.75rem', borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #e2e8f0' }}>
-      <div style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#f59e0b', letterSpacing: '0.05em', marginBottom: '1rem', textTransform: 'uppercase' }}>JavaScript 底层</div>
-      <div style={{ fontSize: '1.6rem', fontWeight: '900', marginBottom: '0.75rem', color: '#0f172a', lineHeight: '1.15' }}>V8 引擎与 ES6 原理</div>
-      <div style={{ fontSize: '0.85rem', color: '#475569' }}>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f1f5f9' }}>
-          <svg viewBox="0 0 24 24" fill="none" style={{ width: '16px', height: '16px', marginRight: '8px', flexShrink: 0 }}><circle cx="12" cy="12" r="10" stroke="#ea580c" strokeWidth="1.5" /><circle cx="12" cy="12" r="5" fill="#ea580c" /></svg>
-          <span style={{ opacity: 0.4 }}>作用域双环境与 TDZ 闭包陷阱</span>
+  <div className="card-item card-item--middle">
+    <a href="/javascript/v8-array" className="card-link card-link--js">
+      <div className="card-tag card-tag--js">JavaScript 底层</div>
+      <div className="card-heading card-heading--js">V8 引擎与 ES6 原理</div>
+
+      <div className="card-list">
+        <div className="card-list-item">
+          <span className="card-dot card-dot--js card-dot--active"></span>
+          <span className="card-text-dim">作用域双环境与 TDZ 闭包陷阱</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f1f5f9' }}>
-          <svg viewBox="0 0 24 24" fill="none" style={{ width: '16px', height: '16px', marginRight: '8px', flexShrink: 0 }}><circle cx="12" cy="12" r="10" stroke="#cbd5e1" strokeWidth="1.5" /></svg>
+
+        <div className="card-list-item">
+          <span className="card-dot card-dot--inactive-slate"></span>
           <span>Packed vs Holey 连续内存降级</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '6px 0' }}>
-          <svg viewBox="0 0 24 24" fill="none" style={{ width: '16px', height: '16px', marginRight: '8px', flexShrink: 0 }}><circle cx="12" cy="12" r="10" stroke="#cbd5e1" strokeWidth="1.5" /></svg>
+
+        <div className="card-list-item">
+          <span className="card-dot card-dot--inactive-slate"></span>
           <span>WeakMap 兜底 V8 垃圾回收机制</span>
         </div>
       </div>
@@ -102,27 +97,27 @@ description: "逐题解析高频面试题"
   </div>
 
   {/* Right Card */}
-  <div className="relative z-10 hover:z-50 group transform transition-transform md:rotate-[12deg] md:translate-y-[20px] md:-translate-x-[50px]">
-    <a href="/react/react-history" className="block transition-all duration-500 ease-out group-hover:-translate-y-12 group-hover:scale-110 group-hover:-rotate-12 group-hover:shadow-[0_40px_80px_-15px_rgba(0,0,0,0.3)] w-[90vw] max-w-[320px] md:w-[220px]" style={{ textDecoration: 'none', color: 'inherit', height: '280px', background: '#f8fafc', padding: '1.5rem', borderRadius: '16px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)', border: '1px solid #cbd5e1' }}>
-      <div style={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#475569', letterSpacing: '0.05em', marginBottom: '1rem', textTransform: 'uppercase' }}>React</div>
-      <div style={{ fontSize: '1.35rem', fontWeight: '800', marginBottom: '0.75rem', color: '#0f172a', lineHeight: '1.2' }}>Fiber 架构与 Hooks 原理</div>
-      <div style={{ fontSize: '0.8rem', color: '#475569', opacity: 0.85 }}>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #e2e8f0' }}>
-          <svg viewBox="0 0 24 24" fill="none" style={{ width: '16px', height: '16px', marginRight: '8px', flexShrink: 0 }}><circle cx="12" cy="12" r="10" stroke="#2563eb" strokeWidth="1.5" /><circle cx="12" cy="12" r="5" fill="#2563eb" /></svg>
-          <span style={{ opacity: 0.4 }}>Stack 到 Fiber 架构历史演进</span>
+  <div className="card-item card-item--right">
+    <a href="/react/react-history" className="card-link card-link--react">
+      <div className="card-tag card-tag--react">React</div>
+      <div className="card-heading card-heading--react">Fiber 架构与 Hooks 原理</div>
+
+      <div className="card-list">
+        <div className="card-list-item">
+          <span className="card-dot card-dot--react card-dot--active"></span>
+          <span className="card-text-dim">Stack 到 Fiber 架构历史演进</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #e2e8f0' }}>
-          <svg viewBox="0 0 24 24" fill="none" style={{ width: '16px', height: '16px', marginRight: '8px', flexShrink: 0 }}><circle cx="12" cy="12" r="10" stroke="#cbd5e1" strokeWidth="1.5" /></svg>
+
+        <div className="card-list-item">
+          <span className="card-dot card-dot--inactive-slate"></span>
           <span>突破 16ms 限制的时间分片机制</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '6px 0' }}>
-          <svg viewBox="0 0 24 24" fill="none" style={{ width: '16px', height: '16px', marginRight: '8px', flexShrink: 0 }}><circle cx="12" cy="12" r="10" stroke="#cbd5e1" strokeWidth="1.5" /></svg>
+
+        <div className="card-list-item">
+          <span className="card-dot card-dot--inactive-slate"></span>
           <span>Hooks 链表挂载与闭包陷阱剖析</span>
         </div>
       </div>
     </a>
   </div>
-
 </div>
-
-
