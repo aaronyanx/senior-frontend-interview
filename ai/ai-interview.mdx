@@ -6,6 +6,25 @@ title: "AI 工程化高频面试题"
 >
 > 这组题目覆盖 AI 应用从模型底座、Agent 编排、工具协议到工程实践的完整链路。高分回答不能停在名词解释，要能把设计动机、运行时数据流、失败边界和生产取舍连起来。涉及项目经历的题目，下面使用的是可替换的回答骨架，必须换成自己的真实项目、指标和故障案例。
 
+## 题目出处与证据边界
+
+本页 10 道题来自掘金面经 [《阿里一面，我霸气反问：你说你们在做 Agent 项目，说说 langchain、muti-agent、a2a 这些你们都是怎么做的？》](https://juejin.cn/post/7657453685375369267)，页面发布时间为 2026-07-02。面经原文还包含第 11 题“对模型内部算法了解么”，本页没有扩展该题。<sup>[0]</sup>
+
+这篇面经只作为**题目出处**，不作为技术事实的唯一依据；文中的项目经历和模型排名也不能直接当作通用结论。正文的技术回答分别引用 LangChain、Anthropic、MCP、A2A、OpenAI、模型厂商文档和 Transformer 原论文，面试时应把示例经历替换成自己的真实经历。
+
+| 本页编号 | 面经原题 | 题目出处 |
+| --- | --- | --- |
+| Q1 | 聊聊 LangChain 的架构 | 面经第 01 题 <sup>[0]</sup> |
+| Q2 | Agent 开发方式有几种 | 面经第 02 题 <sup>[0]</sup> |
+| Q3 | LangChain 有哪些核心模块 | 面经第 03 题 <sup>[0]</sup> |
+| Q4 | 介绍你项目中 Multi-Agent 的情况 | 面经第 04 题 <sup>[0]</sup> |
+| Q5 | 讲一下 Agent 之间的通讯协议；MCP 和 A2A 有什么区别 | 面经第 05 题 <sup>[0]</sup> |
+| Q6 | 用 MCP 做过什么 | 面经第 06 题 <sup>[0]</sup> |
+| Q7 | Transformer 了解么 | 面经第 07 题 <sup>[0]</sup> |
+| Q8 | 自注意机制是什么 | 面经第 08 题 <sup>[0]</sup> |
+| Q9 | 大模型对比 | 面经第 09 题 <sup>[0]</sup> |
+| Q10 | AI Coding 工具用的哪个 | 面经第 10 题 <sup>[0]</sup> |
+
 ## Q1: 聊聊 LangChain 的架构
 
 **满分回答：**
@@ -343,6 +362,7 @@ Self-Attention 的 Q、K、V 来自同一序列，目的是让序列内部交换
 
 ## 📚 延伸阅读与引用参考
 
+- [掘金面经：阿里一面 Agent 相关问题](https://juejin.cn/post/7657453685375369267)：本页 10 道题的出处；仅用于题目溯源，不替代技术原始资料。<sup>[0]</sup>
 - [LangChain: LangChain overview](https://docs.langchain.com/oss/python/langchain/overview)：Agent、LangChain、LangGraph 和 LangSmith 的当前分层，以及 `create_agent` 入口。<sup>[1]</sup>
 - [LangChain: Agents](https://docs.langchain.com/oss/python/langchain/agents)：Agent loop、Model、Tools、System Prompt、Structured Output 和 Middleware。<sup>[2]</sup>
 - [LangGraph: Overview](https://docs.langchain.com/oss/python/langgraph/overview)：有状态 Agent 的编排、持久化、流式输出和人工介入。<sup>[3]</sup>

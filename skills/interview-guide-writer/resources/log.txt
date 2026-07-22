@@ -125,3 +125,4 @@ All 58 interview questions across all 7 files are verified to exist in real inte
 ## [2026-07-22] ingest | 新增 AI 工程化高频面试题，核验 LangChain、Agent 模式、MCP、A2A、Transformer、模型选型与 AI Coding 官方来源
 ## [2026-07-22] query | 使用 agent-reach Exa 搜索；Exa DNS 不可用，按回退路径读取 Jina Reader 官方页面
 ## [2026-07-22] lint | 检查新 MDX 的组件闭合、代码块边界、引用链接和导航路径
+## [2026-07-22] query | 核验题目出处：掘金面经 https://juejin.cn/post/7657453685375369267，逐项匹配本页 Q1-Q10
