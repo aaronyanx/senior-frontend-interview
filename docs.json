@@ -320,6 +320,12 @@
             ]
           },
           {
+            "group": "AI 高频面试题",
+            "pages": [
+              "ai/ai-interview"
+            ]
+          },
+          {
             "group": "提示词工程",
             "pages": [
               "ai/prompt"

@@ -121,3 +121,7 @@ All questions across all 7 files are confirmed to exist in real interview databa
 ## Conclusion
 
 All 58 interview questions across all 7 files are verified to exist in real interview databases (牛客网, 掘金, haizlin/fe-interview, CSDN). No questions needed to be replaced. The questions are well-curated and cover the essential topics for both Vue and React frontend interviews.
+
+## [2026-07-22] ingest | 新增 AI 工程化高频面试题，核验 LangChain、Agent 模式、MCP、A2A、Transformer、模型选型与 AI Coding 官方来源
+## [2026-07-22] query | 使用 agent-reach Exa 搜索；Exa DNS 不可用，按回退路径读取 Jina Reader 官方页面
+## [2026-07-22] lint | 检查新 MDX 的组件闭合、代码块边界、引用链接和导航路径

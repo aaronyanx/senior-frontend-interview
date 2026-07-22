@@ -216,6 +216,8 @@
 29. **Vercel V0 团队** - 推出 AI 代码生成工具 V0，从文本描述生成 React/Next.js/Tailwind CSS 代码。
 30. **GitHub Copilot 团队** - 推出 AI 编程助手 Copilot，代码补全 + Chat + Workspace。
 31. **Windsurf 团队** - 推出 AI 代码编辑器 Windsurf，Cascade 模式支持多文件编辑。
+32. **Ashish Vaswani 等 Transformer 论文作者** - [Attention Is All You Need](https://arxiv.org/abs/1706.03762) 作者团队，提出 Transformer 架构。
+33. **A2A Protocol 项目团队** - [A2A Protocol](https://a2a-protocol.org/latest/specification/) 的维护团队，定义 Agent 能力发现、任务和产物交换规范。
 
 ---
 

@@ -1,0 +1,356 @@
+---
+title: "AI 工程化高频面试题"
+---
+
+> **面试官为什么问这个？**
+>
+> 这组题目覆盖 AI 应用从模型底座、Agent 编排、工具协议到工程实践的完整链路。高分回答不能停在名词解释，要能把设计动机、运行时数据流、失败边界和生产取舍连起来。涉及项目经历的题目，下面使用的是可替换的回答骨架，必须换成自己的真实项目、指标和故障案例。
+
+## Q1: 聊聊 LangChain 的架构
+
+**满分回答：**
+
+LangChain 不是一个模型本身，而是一组连接模型、工具、消息、结构化输出和 Agent 运行时的应用框架。当前官方文档把 Agent 抽象成 `Model + Harness`：模型负责推理和选择下一步，harness 负责提示词、工具、上下文、循环以及中间件。`create_agent` 是高层入口，适合快速组合一个可配置的工具调用 Agent。<sup>[1][2]</sup>
+
+```text
+用户请求
+   |
+   v
+LangChain Agent Harness
+   |-- System Prompt / Middleware / Guardrails
+   |-- Model: 选择工具、生成参数、判断是否结束
+   |-- Tools: API、数据库、搜索、代码执行、MCP 工具
+   |-- Structured Output: 把结果变成可校验的数据
+   v
+LangGraph Runtime
+   |-- State / Checkpoint / Durable Execution
+   |-- Streaming / Human-in-the-loop / Retry
+   v
+LangSmith
+   |-- Trace / Evaluation / Debugging / Monitoring
+```
+
+LangChain、LangGraph、LangSmith 是三个不同层次。LangChain 是模型和工具的应用抽象，LangGraph 是更底层的有状态编排运行时，LangSmith 负责追踪、评估和调试。LangChain Agent 构建在 LangGraph 之上，因此一个简单的工具循环可以从 `create_agent` 开始；需要条件分支、循环、暂停恢复或长时间运行时，再下沉到 LangGraph。<sup>[1][3]</sup>
+
+我不会把 LangChain 描述成“把 prompt 串起来的库”。真正的架构价值是把外部能力标准化为可组合的输入输出，把模型调用纳入一个可观测、可恢复的运行时。生产环境还要自己补齐权限、超时、幂等、成本上限和输出校验，框架不会自动替你解决业务风险。
+
+<Tip title="通俗比喻：机场调度系统">
+
+模型像飞行员，Tools 像机场服务，Agent Harness 像塔台调度规则，LangGraph 像航班状态和转场系统，LangSmith 像全链路飞行记录。只会调用模型，相当于只有飞行员，没有航线、塔台和事故记录。
+
+</Tip>
+
+### 追问 1：LangChain 和 LangGraph 什么时候分别使用？
+
+LangChain 适合一个明确的 Agent 循环、标准工具调用和较少的状态管理。LangGraph 适合显式建模状态、条件边、循环、并行、人工审批和持久化。判断标准不是“哪个更先进”，而是流程是否已经需要独立的状态机和恢复语义。
+
+### 追问 2：为什么不直接调用模型 API？
+
+直接调用 API 在单轮生成和非常短的流程中更简单，延迟和调试路径也更透明。引入 LangChain 的理由应该是统一模型接口、工具 schema、结构化输出、流式事件和可观测性，而不是为了让代码看起来像 Agent。复杂度不够时保留直接 API 调用更合理。<sup>[4]</sup>
+
+## Q2: Agent 开发方式有几种？
+
+“有几种”没有唯一标准答案。面试中我会先按控制权分为两类，再列常见工程模式：**Workflow** 由代码决定路径，**Agent** 由模型在工具结果反馈下动态决定下一步。Anthropic 的工程分类包含 Prompt Chaining、Routing、Parallelization、Orchestrator-workers、Evaluator-optimizer，以及自主 Agent 循环。<sup>[4]</sup>
+
+| 方式 | 路径是否预先确定 | 适合场景 | 主要代价 |
+| --- | --- | --- | --- |
+| 单次模型调用 | 是 | 总结、改写、分类 | 能力边界窄 |
+| Prompt Chaining | 是，串行 | 解析 -> 生成 -> 校验 | 延迟增加 |
+| Routing | 分类后分流 | 不同领域使用不同专家 | 路由错误 |
+| Parallelization | 子任务固定并行 | 多视角审核、批量抽取 | 合并冲突 |
+| Orchestrator-workers | 子任务动态拆分 | 文件级改造、复杂研究 | 调度成本和状态复杂度 |
+| Evaluator-optimizer | 生成和评审循环 | 有明确质量标准的写作、代码 | 可能循环和超预算 |
+| Tool-using Agent | 模型动态选工具 | 开放式检索、操作和排障 | 行为不确定、风险高 |
+
+```text
+固定问题 -> Workflow
+              |-- Chain: A -> B -> C
+              |-- Router: classify -> specialist
+              |-- Parallel: A/B/C -> merge
+              |-- Evaluator: draft <-> review
+
+开放问题 -> Agent Loop
+              observe -> decide -> tool call -> observe -> ... -> stop
+```
+
+选择顺序是先用单次调用，再用固定 Workflow，最后才用自主 Agent。开放式任务、步骤数量不可预知、工具结果会改变计划时，Agent 的灵活性才值得支付额外延迟和成本。无论采用哪种方式，都需要最大步数、超时、预算、权限和人工审批边界。<sup>[4]</sup>
+
+### 追问 1：Workflow 和 Agent 的本质差异是什么？
+
+差异在控制流的归属。Workflow 的控制流在程序里，模型只负责局部决策；Agent 的控制流部分交给模型，模型决定调用什么工具、是否继续和下一步做什么。两者可以混用，例如固定的合规检查流程中嵌一个负责检索的 Agent。
+
+### 追问 2：为什么 Multi-Agent 不一定比单 Agent 好？
+
+拆成多个 Agent 会引入上下文转移、通信、调度、权限和错误传播。只有当角色确实需要不同工具、不同上下文或独立评估标准时，拆分才会降低问题复杂度；否则一个带清晰工具边界的 Agent 通常更容易调试。
+
+## Q3: LangChain 有哪些核心模块？
+
+我会分成“基础组件”和“运行时能力”回答，而不是只背旧版的类名：
+
+1. **Models**：统一聊天模型、嵌入模型等接口；模型负责理解输入、推理、工具选择和最终生成。
+2. **Messages**：承载 system、user、assistant、tool 等角色以及多模态 content blocks，是状态传递的基本单元。
+3. **Tools**：带名称、描述和输入 schema 的可调用能力。类型标注和 docstring 会影响模型是否正确选择工具。
+4. **Prompts**：固定或动态的系统提示、消息模板和上下文拼装逻辑。
+5. **Structured Output**：用 Pydantic、TypedDict 或 JSON schema 约束输出，避免下游解析自然语言。
+6. **Retrieval**：文档加载、切分、Embedding、Vector Store、Retriever 和 Reranker，服务于 RAG。
+7. **Memory / State**：短期会话状态、长期 Store、线程标识和 Checkpoint；要区分“本轮上下文”和“跨会话记忆”。
+8. **Middleware**：在模型调用前后插入动态 prompt、重试、路由、护栏、人机协作和上下文压缩。
+9. **Agent Runtime**：`create_agent` 提供模型和工具的循环；LangGraph 提供更低层的状态图和持久化；LangSmith 提供可观测和评估。
+
+```python
+from langchain.agents import create_agent
+from pydantic import BaseModel
+
+class Answer(BaseModel):
+    answer: str
+    confidence: float
+
+agent = create_agent(
+    model="provider:model",
+    tools=[search, load_document],
+    system_prompt="Answer with evidence and state uncertainty.",
+    response_format=Answer,
+)
+```
+
+工具调用不是模型直接执行函数。模型先返回 tool call 请求，运行时执行工具，再把 tool result 放回消息序列供模型继续推理；结构化输出则把最终结果变成应用可以校验的对象。<sup>[2][8]</sup>
+
+### 追问 1：Tool 和普通函数有什么差别？
+
+普通函数只对代码作者可见，Tool 还要向模型暴露名称、描述、参数 schema、错误语义和权限边界。一个实现正确但描述含糊的工具，仍然可能被 Agent 误选或传入错误参数。工具描述应像给新同事写 API 文档，并通过样例和评测验证模型是否会正确调用。<sup>[4][8]</sup>
+
+### 追问 2：结构化输出为什么比正则解析好？
+
+正则解析依赖文本表面格式，遇到 Markdown、语言切换或字段缺失就容易崩。结构化输出把 schema 放进模型调用协议或 tool call 中，再做运行时校验；失败时可以重试或返回明确错误。它仍不是业务校验的替代品，金额、权限和状态转换必须由确定性代码再次验证。
+
+## Q4: 介绍你项目中的 Multi-Agent 架构
+
+这是项目经历题，不能照抄一套“我做过”的故事。下面是一份可替换的专家级回答模板；其中括号里的指标和业务名必须替换成真实数据。
+
+**示例回答：**
+
+我在[业务场景]里没有一开始就拆 Multi-Agent，而是先用单 Agent 验证任务是否能稳定完成。当一个 Agent 同时承担检索、规划、执行和审核时，工具数量、上下文长度和权限边界开始互相干扰，于是拆成一个路由/编排 Agent、一个检索 Agent、一个执行 Agent 和一个评审 Agent。拆分依据是职责、工具集合和失败隔离边界，而不是为了增加 Agent 数量。
+
+```text
+用户请求
+   |
+   v
+Supervisor / Router
+   |-- Researcher: 检索、引用、证据整理
+   |-- Executor: 调用业务 API 或生成变更
+   |-- Reviewer: schema、规则、测试结果校验
+   v
+Aggregator -> 用户
+
+共享基础设施：
+Task Envelope | State Store | Trace ID | Budget | Auth | Retry
+```
+
+Agent 之间不直接传递无边界的自然语言长文本，而是传递版本化的任务 envelope：`task_id`、`trace_id`、`goal`、`input_refs`、`constraints`、`expected_schema`、`deadline`、`permissions` 和 `status`。大对象放对象存储或数据库，消息只传引用；每个 Agent 返回结构化结果、证据引用、错误类别和可重试标志。编排层负责超时、幂等、重试、取消和最终合并。
+
+评审 Agent 不能只“再问一次模型”。它要有可执行的验收标准，例如 JSON schema、单元测试、引用完整性、权限校验和业务规则。线上我会记录每个节点的 token、延迟、工具调用、失败原因、重试次数和最终质量，并用固定数据集做回归评测。LangGraph 的状态、持久化和人工介入能力适合承载这类长流程，但业务权限和数据隔离仍由应用层负责。<sup>[3][4]</sup>
+
+### 追问 1：为什么这些角色要拆成 Agent，而不是普通函数？
+
+如果一个步骤是确定性逻辑，例如 schema 校验、权限检查或数据聚合，我会写成普通函数。只有需要独立上下文、工具选择、开放式推理或独立质量判断的角色才使用 Agent。这样可以把模型的不确定性限制在少数节点，降低成本和排障范围。
+
+### 追问 2：一个 Agent 失败时怎么处理？
+
+先按错误类型分类：参数校验错误返回模型修正，网络和限流错误指数退避，业务冲突交给上层重新规划，不可恢复错误直接终止并保留状态。每个任务都有幂等键和最大重试次数；重试不能重复扣款、发消息或写入不可逆数据，副作用操作要经过审批或幂等服务。
+
+## Q5: Agent 之间的通讯协议是什么？MCP 和 A2A 有什么区别？
+
+Agent 内部通信可以是函数调用、队列事件、共享状态或 HTTP API；跨进程、跨团队和跨供应商时，才需要协议化。MCP 和 A2A 解决的不是同一条连接：**MCP 主要把应用接到工具和上下文，A2A 主要让独立 Agent 互相发现、委托和跟踪任务。**
+
+| 维度 | MCP | A2A |
+| --- | --- | --- |
+| 主要关系 | Host/Client 与 Server | Client Agent 与 Remote Agent |
+| 主要目标 | 暴露 Tools、Resources、Prompts | 发现能力、委托任务、交换结果 |
+| 典型对象 | Tool、Resource、Prompt、Sampling | Agent Card、Message、Task、Artifact |
+| 状态模型 | 会话和能力协商，工具调用可有状态 | Task 有生命周期，支持长任务和异步恢复 |
+| 传输与消息 | JSON-RPC 2.0；stdio、Streamable HTTP 等 | JSON-RPC、gRPC、HTTP/REST；SSE 和 push notification |
+| 信息边界 | Server 提供能力，Host 控制数据和授权 | Agent 保持内部实现、记忆和工具的黑盒性 |
+| 典型例子 | Coding Agent 读取 Git、数据库、浏览器 | 研究 Agent 委托翻译 Agent 处理文档 |
+
+```text
+MCP：
+LLM Application / Host -> MCP Client -> MCP Server -> Tool / Data
+
+A2A：
+User -> Client Agent -> Remote Agent -> Task -> Artifact / Event
+```
+
+MCP 规范使用 JSON-RPC 2.0，并定义 Host、Client、Server 三个角色；Server 可以提供 Resources、Prompts、Tools，Client 还可以提供 Sampling、Roots 和 Elicitation。A2A 规范以 Agent Card 描述远程 Agent 的能力和认证要求，以 Task 管理长时间工作，以 Message 和 Artifact 交换输入与产物。两者可以组合：A2A Agent 暴露给其他 Agent，内部再用 MCP 连接数据库和业务工具。<sup>[5][6]</sup>
+
+安全上不能因为协议标准化就默认可信。MCP 工具可能执行任意代码，规范要求用户同意数据访问和工具执行；A2A 需要认证、授权、任务可见范围、回调地址校验和数据脱敏。协议定义互操作语义，不能替应用自动完成租户隔离和业务授权。
+
+### 追问 1：MCP 能不能做 Agent 之间通信？
+
+技术上可以把一个 Agent 包成 MCP Server 的 Tool，但语义上它更像“调用一个能力”，不是完整的 Agent-to-Agent 协作。缺少 Agent Card、标准 Task 生命周期、长任务事件和跨 Agent 能力发现时，调用方仍要自定义这些语义。需要独立 Agent 黑盒协作时，A2A 更贴合问题。
+
+### 追问 2：A2A 和普通 HTTP API 有什么差别？
+
+普通 HTTP API 通常是业务方预先知道 endpoint、参数和返回结构；A2A 在此基础上标准化 Agent Card、消息 Parts、Task 生命周期、流式事件和异步通知，使客户端能在不知道内部框架的情况下协作。它不是替代所有业务 API，而是为 Agent 能力和长任务增加通用语义。
+
+## Q6: 你用 MCP 做过什么？
+
+这道题要把“接过一个 Server”讲成完整工程闭环。若真实经历是文档检索、数据库查询、浏览器自动化或设计稿读取，可以按下面结构替换。
+
+**示例回答：**
+
+我用 MCP 把[代码仓库/知识库/业务系统]暴露成 Agent 可调用的上下文和工具。Host 侧只接入 MCP Client，不把每个系统的 SDK 直接塞进 Agent；Server 侧负责认证、数据查询和最小权限。实际工具包括只读搜索、按范围读取、结构化查询和一个需要审批的写操作，工具返回数据时同时带 `source_id`、版本和权限范围，方便回答引用和审计。
+
+```text
+Agent
+  |
+  | tools/list -> 发现能力与 inputSchema
+  | tools/call -> 调用具体工具
+  v
+MCP Client -> MCP Server -> 数据库 / Git / 内部 API
+                    |
+                    +-> 权限、参数校验、超时、审计、脱敏
+```
+
+我特别关注四个边界：只读和写入工具分离；工具输入使用严格 schema；返回结果限制字段和行数并带来源；副作用操作需要用户确认和幂等键。MCP Server 的描述不能当成安全策略，Host 仍要对工具调用做授权，不能把 `description` 当成可信代码。LangChain 可以用 `langchain-mcp-adapters` 将一个或多个 MCP Server 的工具加载到 Agent 中，但会话是否有状态要显式决定，不能默认认为每次调用共享上下文。<sup>[5][8]</sup>
+
+上线前我会用固定任务集评估工具选择准确率、参数错误率、P95 延迟、失败恢复率和越权拒绝率；工具升级时做 schema 兼容检查。这样回答的重点是“协议接入加上安全和可观测闭环”，而不是只展示一个 hello world Server。
+
+### 追问 1：MCP Tool 和 Function Calling 有什么区别？
+
+Function Calling 是一次模型 API 调用里的工具调用格式，通常由应用自己注册和执行；MCP 是跨 Host、Client、Server 的能力发现和通信协议。MCP Server 的工具最终仍可能被转换成模型能理解的 tool schema，所以两者是不同层次，可以组合而不是互斥。
+
+### 追问 2：MCP Server 如何防止越权和提示词注入？
+
+把外部文本当不可信输入，工具层做租户、用户、资源和动作级授权；参数用 schema 和业务约束校验，写操作默认确认；返回内容做大小限制、敏感字段脱敏和来源标记。提示词注入不能只靠系统提示词解决，真正的防线是最小权限、隔离执行、审批和审计。
+
+## Q7: Transformer 了解么？
+
+Transformer 是一种完全基于注意力机制的序列模型架构。原论文用它替代循环和卷积，获得了更好的并行训练能力；经典结构是 Encoder-Decoder，每层包含 Multi-Head Attention、逐位置 Feed-Forward Network、残差连接和 Layer Normalization，并使用位置表示补足顺序信息。<sup>[7]</sup>
+
+```text
+Token IDs -> Embedding + Position Information
+                  |
+                  v
+      +-------------------------+
+      | Multi-Head Attention    |
+      +------------+------------+
+                   |
+             Residual + Norm
+                   v
+      +-------------------------+
+      | Position-wise FFN       |
+      +------------+------------+
+                   |
+             Residual + Norm
+                   v
+              Repeat N layers
+```
+
+现代大语言模型通常采用 Decoder-only Transformer：输入 token 经过因果 Mask，只能访问当前位置及之前的 token，模型以 next-token prediction 训练。Encoder-only 模型更常用于表征和分类，Encoder-Decoder 模型适合输入输出转换任务。三种结构都以 Transformer 为基础，但训练目标、注意力 Mask 和输出方式不同。
+
+我会补一句工程取舍：标准全量 self-attention 的序列长度方向计算和显存开销近似为 `O(n^2)`，长上下文会带来成本和延迟问题，因此生产系统需要上下文压缩、检索、滑动窗口、稀疏注意力或 KV Cache 等手段。不能把“上下文窗口大”直接等同于“模型一定能有效使用所有上下文”。
+
+<Tip title="通俗比喻：开会做纪要">
+
+每个 Token 都是参会人。Self-Attention 让每个人先判断自己应该参考谁，FFN 再把吸收的信息加工成新的观点，残差连接保留原始发言，位置表示保留发言顺序。Decoder 的因果 Mask 相当于禁止参会人偷看未来发言。
+
+</Tip>
+
+### 追问 1：Transformer 为什么比 RNN 更适合大规模训练？
+
+RNN 沿序列逐步计算，前一时刻完成后才能处理下一时刻，训练并行度低；Transformer 的注意力可以在一个层内并行计算整个序列，长距离依赖也不需要经过很多循环步。代价是注意力矩阵随序列长度平方增长，以及需要额外的位置表示。
+
+### 追问 2：KV Cache 解决了什么问题？
+
+自回归生成每次只新增一个 token，但如果每轮重新计算历史 token 的 Key 和 Value，会重复计算。KV Cache 保存已经生成的历史 K、V，下一步只计算新 token 的部分并复用缓存。它降低了生成阶段的重复计算，却会占用显存，并且长上下文下缓存本身会成为内存压力。
+
+## Q8: 自注意力机制是什么？
+
+给定输入表示 `X`，模型通过三组线性投影生成 Query、Key、Value：`Q = XWq`、`K = XWk`、`V = XWv`。每个位置的 Query 与所有位置的 Key 做点积得到相关性，再除以 `sqrt(dk)` 稳定数值，经过 Softmax 变成权重，最后对 Value 加权求和：
+
+```text
+Attention(Q, K, V) = softmax(QK^T / sqrt(dk) + mask)V
+
+X -> Q, K, V
+Q x K^T -> relevance scores
+scores + mask -> valid positions only
+Softmax -> attention weights
+weights x V -> contextual representation
+```
+
+Q、K、V 不是“问题、标签、答案”的固定语义，而是同一个输入经过不同可学习投影后的三种表示。多头注意力把表示空间分成多个 head，每个 head 学习不同的关系，再拼接并投影；例如一个 head 可能更关注指代关系，另一个 head 可能更关注局部语法关系，但不能把每个可视化热力图直接当成可靠的因果解释。<sup>[7]</sup>
+
+`mask` 决定哪些位置可见：Encoder 通常允许双向注意力，Decoder 训练使用上三角因果 Mask，Padding Mask 则屏蔽补齐位置。缩放因子 `sqrt(dk)` 用来控制点积的数值范围，避免维度增大后 Softmax 过度饱和。<sup>[7]</sup>
+
+### 追问 1：为什么要除以 `sqrt(dk)`？
+
+如果 Q 和 K 的每个维度近似独立、方差固定，点积的方差会随 `dk` 增长。分数变大后 Softmax 更容易接近 one-hot，梯度变小，训练不稳定。除以 `sqrt(dk)` 把分数缩回可控范围，是数值稳定设计，不是为了改变语义相似度。
+
+### 追问 2：Self-Attention 和 Cross-Attention 有什么区别？
+
+Self-Attention 的 Q、K、V 来自同一序列，目的是让序列内部交换信息；Cross-Attention 的 Q 来自一侧，K、V 来自另一侧，典型场景是 Decoder 查询 Encoder 的输出。Decoder-only LLM 主要使用 masked self-attention，Encoder-Decoder 模型还会在 Decoder 中使用 cross-attention。
+
+## Q9: 大模型怎么对比？
+
+我不会用“哪个模型最强”做结论，而会先定义任务和约束，再按能力、可靠性、成本、延迟、上下文、工具调用、数据合规和部署方式做评估。模型名称和价格变化很快，面试时应说明比较日期、固定版本和评测集；厂商的模型目录只能说明能力定位，不能替代自己的业务评测。<sup>[10][11][12]</sup>
+
+| 维度 | 高能力推理模型 | 快速/低成本模型 | 代码专长模型 | 多模态/长上下文模型 |
+| --- | --- | --- | --- | --- |
+| 适合 | 复杂规划、难题、评审 | 分类、抽取、客服高并发 | 重构、测试、代码库操作 | 文档、图片、音频、长材料 |
+| 关注 | 正确率、推理预算 | P95、单请求成本 | 工具调用、补丁正确率 | 跨模态准确率、上下文利用率 |
+| 风险 | 慢、贵、过度思考 | 复杂任务质量不足 | 代码能编译但业务不对 | 长上下文中间内容被忽略 |
+| 评测 | 任务成功率和人工复核 | 召回率、延迟、成本 | 测试通过率、回滚率 | 文档问答和引用准确率 |
+
+实际选型可以采用路由：小模型处理简单请求，难题升级到高能力模型；Agent 节点按职责使用不同模型；所有路由都通过离线评测和线上抽样验证。LangChain 的统一模型接口和能力 profile 适合做切换，但接口统一不代表模型行为、工具调用细节和安全策略完全相同。<sup>[1][8]</sup>
+
+我的回答会是：“我先用同一批脱敏任务建立基线，分别测任务成功率、结构化输出通过率、工具调用准确率、引用正确率、P50/P95 延迟、输入输出 token 和失败恢复，再按业务权重选型。对高风险写操作，模型能力不是唯一指标，确定性校验和人工审批更重要。”
+
+### 追问 1：模型参数越大就一定越好吗？
+
+不一定。参数规模通常提高能力上限，但还要看训练数据、后训练、工具调用、上下文使用、输出稳定性和部署成本。一个较小模型在固定分类或结构化抽取上可能更快更便宜；选择应看任务成功率除以成本和延迟，而不是参数量。
+
+### 追问 2：怎么设计模型评测集？
+
+从真实失败样本、边界样本、对抗输入和高价值主流程抽取固定集合，保留人工标注和版本号。评测不只看 BLEU 或字符串相似度，还要看业务断言、schema 校验、工具副作用、引用可验证性和人工偏好。模型、prompt、工具 schema 或检索策略变化都要触发回归。
+
+## Q10: AI Coding 工具用哪个？
+
+这也是经历题，工具名称本身不是答案。当前常见工具都在从补全向 Agent 演进：Codex 官方文档覆盖 CLI、IDE、云端、沙箱、审批和子 Agent；Claude Code 支持终端、IDE、桌面和 Web，并可跨表面复用项目指令和 MCP；Cursor 强调代码库索引、模型选择、Agent、终端和云端 Agent。<sup>[13][14][15]</sup>
+
+**示例回答：**
+
+我主要用[真实工具]处理三类任务：第一类是局部补全和重命名，追求低延迟；第二类是跨文件功能和 Bug 修复，让工具先读项目规则、定位调用链，再提交最小 diff；第三类是批量重构或代码审查，放在沙箱或分支里执行。工具只是执行面，真正的质量控制是任务拆分、上下文边界、权限审批、测试和人工 review。
+
+我的工作流通常是：先让工具复述目标和约束，再允许只读探索；确认方案后修改；运行 lint、类型检查和测试；检查 diff 和安全影响；最后由我决定是否提交和 push。对于能产生副作用的 shell、数据库写入、发布和删除操作，默认要求明确审批。这样可以区分“模型生成了代码”和“代码经过工程验证”。
+
+如果面试官追问 Codex、Claude Code 和 Cursor 的差别，我会按工作面比较：Codex 更适合带沙箱、审批和代码任务执行的 Agent 工作流；Claude Code 更适合终端驱动、跨文件操作和 MCP/项目指令整合；Cursor 更适合在编辑器内结合代码库索引进行交互式开发。最终仍以团队权限、数据合规、模型可用性和自己的评测结果为准，不能把产品定位当成绝对排名。
+
+### 追问 1：AI Coding 如何防止生成错误代码？
+
+把任务限制在可验证的边界内：先读代码和测试，生成小 diff，使用类型系统、lint、单元测试、集成测试和静态安全扫描形成反馈闭环。对模型没有观察能力的隐含业务规则，要增加测试或人工验收；“测试通过”只能证明测试覆盖到的行为。
+
+### 追问 2：AI Coding 工具如何控制权限？
+
+按只读、可修改、可执行、可发布分级，工作目录和网络访问使用沙箱隔离，敏感凭据不进入 prompt 或工具输出。每个任务设置超时、预算和可回滚点，记录命令、文件、工具调用和审批结果。对于删除、支付、发布等不可逆动作，强制人工确认或由独立服务执行。
+
+## 面试官视角：满分回答的共同结构
+
+> 第一层先回答“它解决什么问题”，再回答“运行时怎么流转”。只背组件名只能说明知道词汇，不能说明理解系统。
+
+> 第二层必须主动谈边界：成本、延迟、状态、权限、幂等、重试、结构化校验和可观测性。Agent 的难点不在把模型调用起来，而在让不确定性停在可控范围内。
+
+> 第三层把个人经历和证据绑定：真实项目、自己的职责、可量化指标、一次失败和一次修复。没有做过的内容就说“设计过”或使用示例模板，不要把阅读过的架构包装成线上经验。
+
+## 📚 延伸阅读与引用参考
+
+- [LangChain: LangChain overview](https://docs.langchain.com/oss/python/langchain/overview)：Agent、LangChain、LangGraph 和 LangSmith 的当前分层，以及 `create_agent` 入口。<sup>[1]</sup>
+- [LangChain: Agents](https://docs.langchain.com/oss/python/langchain/agents)：Agent loop、Model、Tools、System Prompt、Structured Output 和 Middleware。<sup>[2]</sup>
+- [LangGraph: Overview](https://docs.langchain.com/oss/python/langgraph/overview)：有状态 Agent 的编排、持久化、流式输出和人工介入。<sup>[3]</sup>
+- [Anthropic: Building Effective AI Agents](https://www.anthropic.com/research/building-effective-agents)：Workflow、Agent 及五种常见编排模式。<sup>[4]</sup>
+- [Model Context Protocol: Specification](https://modelcontextprotocol.io/specification/latest)：MCP 的角色、JSON-RPC、能力和安全边界。<sup>[5]</sup>
+- [A2A Protocol: Specification](https://a2a-protocol.org/latest/specification/)：Agent Card、Message、Task、Artifact、流式和异步任务。<sup>[6]</sup>
+- [Vaswani et al.: Attention Is All You Need](https://arxiv.org/abs/1706.03762)：Transformer 和 Scaled Dot-Product Attention 原论文。<sup>[7]</sup>
+- [LangChain: Models](https://docs.langchain.com/oss/python/langchain/models)、[Tools](https://docs.langchain.com/oss/python/langchain/tools)、[Structured Output](https://docs.langchain.com/oss/python/langchain/structured-output)、[MCP](https://docs.langchain.com/oss/python/langchain/mcp)：模型接口、工具 schema、结构化输出和 MCP 适配。<sup>[8]</sup>
+- [OpenAI: Orchestration and handoffs](https://platform.openai.com/docs/guides/agents/orchestration)：Agent 编排和 handoff 的实现思路。<sup>[9]</sup>
+- [OpenAI: Models](https://platform.openai.com/docs/models)、[Anthropic: Models](https://docs.anthropic.com/en/docs/about-claude/models)、[Google: Gemini models](https://ai.google.dev/gemini-api/docs/models)：模型能力和版本信息，模型名称随时间变化。<sup>[10][11][12]</sup>
+- [OpenAI Codex Docs](https://developers.openai.com/codex)、[Claude Code overview](https://docs.anthropic.com/en/docs/claude-code/overview)、[Cursor](https://www.cursor.com/features)：AI Coding 工具的执行面、上下文和协作方式。<sup>[13][14][15]</sup>

@@ -72,8 +72,15 @@
 *   **Prompt Engineering**: 提示词工程
 *   **Harness Engineering**: 评测与脚手架工程（OpenAI 内部常指代对大模型及 Agent 的标准化评测系统与沙箱执行框架）
 *   **Tool Use / Function Calling**: 工具调用 / 函数调用
+*   **Agent Harness**: Agent 运行外壳（包围模型循环的提示词、工具、状态、中间件和控制策略）
+*   **Workflow**: 工作流（由代码预先编排 LLM 和工具路径的 Agentic System）
+*   **Orchestrator-workers**: 编排器-工作者模式（中心模型动态拆分任务并委派给工作者）
+*   **Evaluator-optimizer**: 评审-优化模式（生成器与评审器循环迭代，直到达到质量标准）
 *   **Retrieval-Augmented Generation (RAG)**: 检索增强生成（解决知识幻觉的核心技术，偏向“被动知识检索”）
 *   **Model Context Protocol (MCP)**: 模型上下文协议（标准化 AI 与外部数据源/工具的连接协议）
+*   **Agent2Agent (A2A)**: Agent 间协议（用于独立 Agent 的能力发现、任务委派、消息和产物交换）
+*   **Agent Card**: Agent 能力卡片（A2A 中描述 Agent 身份、能力、技能、端点和认证要求的元数据文档）
+*   **Task / Artifact (A2A)**: 任务 / 产物（A2A 中用于跟踪长任务生命周期和承载 Agent 输出的对象）
 *   **Vector Database**: 向量数据库
 *   **LangChain / LangGraph**: LangChain / LangGraph（保留英文，AI 应用开发与流程式/图结构多智能体编排的核心框架）
 *   **Skill**: Skill / 技能（赋予 Agent 的特定主动执行能力或工具集合，与被动的 RAG 数据集形成对比，❌ 严禁机翻为“技巧”）
@@ -94,6 +101,10 @@
 *   **GitHub Copilot**: GitHub 的 AI 编程助手（代码补全 + Chat + Workspace）
 *   **Cursor**: AI-first 代码编辑器（Fork VS Code，内置 AI 对话和代码编辑）
 *   **Windsurf**: AI 代码编辑器（Cascade 模式，支持多文件编辑）
+*   **Self-Attention**: 自注意力（通过 Q、K、V 计算序列内部 Token 相关性并聚合上下文）
+*   **Scaled Dot-Product Attention**: 缩放点积注意力（`softmax(QK^T / sqrt(dk))V`）
+*   **KV Cache**: 键值缓存（自回归生成时缓存历史 Key 和 Value，减少重复计算）
+*   **Model Routing**: 模型路由（按任务难度、成本、延迟或能力把请求分配给不同模型）
 
 ## 8. Node.js 服务端生态 (参考：Node.js 官方文档、《深入浅出 Node.js》)
 *   **Event Loop**: 事件循环（Node.js 特有的 6 个阶段：Timers, Pending, Idle/Prepare, Poll, Check, Close）

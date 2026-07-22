@@ -133,6 +133,8 @@
 5. **NousResearch / OpenClaw 社区**：体验开源模型与工具生态最前沿的极客精神。NousResearch 及其 Hermes 系列模型专门为 Tool Use 与 Agent 调度进行了极其硬核的微调，而 OpenClaw 则是开源本地智能体执行框架的先锋。
 6. **字节跳动 Coze 团队 / 阿里百炼团队**：如果您想了解工业级、长时间运行 (Long-running) 的企业级 Agent 是如何做权限边界收敛、状态异步恢复、复杂的被动 RAG 知识检索与主动 Skill 串联的，这两家平台的架构分享是国内首选。
 7. **Vercel AI 团队 / 蚂蚁通义前端团队**：探索前端”生成式 UI”、流式响应式渲染以及将复杂工具调用 (Function Calling) 丝滑融入现代 Web 交互的先驱。
+8. **A2A Protocol 项目**：维护 Agent2Agent 开放协议，覆盖 Agent Card、Task 生命周期、消息、产物、流式更新和异步通知。
+9. **Google AI for Developers**：提供 Gemini 模型目录、版本生命周期和能力说明，适合做模型选型时核对版本信息。
 
 ### 🎨 Design to Code 与 AI 代码生成
 1. **Figma MCP 团队**：推出 Figma MCP 服务，允许 AI 工具直接读取 Figma 设计文件，推动 Design to Code 标准化。
