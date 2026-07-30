@@ -5,6 +5,8 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
 [![AI Friendly](https://img.shields.io/badge/AI-Friendly-8A2BE2?style=flat-square)](/llms.txt)
 
+[English](./README.en-US.md) | 简体中文
+
 👉 [在线阅读](https://opc-43d279b8.mintlify.app)
 
 > 面向高级前端工程师的面试手册，讲底层原理，不讲 API 背诵。覆盖 V8 引擎、React/Vue 源码、微前端架构，以及 AI Agent 编排与大模型工程化。
