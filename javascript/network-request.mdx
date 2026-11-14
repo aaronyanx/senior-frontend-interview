@@ -225,12 +225,20 @@ function fetchWithTimeout(url, options = {}, timeout = 5000) {
 // ✅ Fetch 流式读取大文件
 const response = await fetch('/api/large-file');
 const reader = response.body.getReader();
-while (true) {
-  const { done, value } = await reader.read();
-  if (done) break;
-  console.log(`收到 ${value.length} 字节`);
+try {
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    console.log(`收到 ${value.length} 字节`);
+  }
+} finally {
+  reader.releaseLock();
 }
 ```
+
+> **面试追问：** 如果这个字节流是 UTF-8 文本，一个 emoji 的字节被拆到两个 chunk，应该如何还原？复用同一个 `TextDecoder`，对每块使用 `decode(value, { stream: true })`，正常结束时再调用 `decode()` 刷新缓冲。`reader.releaseLock()` 只释放独占读取锁，并不会取消流；如果要提前停止，应明确选择 `reader.cancel()`，或通过传给 `fetch` 的 `AbortSignal` 中止请求。
+>
+> 可选练习：[Stream to Text — ReadableStream → string](https://frontendatlas.com/javascript/coding/js-stream-to-text)（免费题目与完整解答，无需登录），练习跨 chunk 的 UTF-8 解码、结束刷新、取消读取及 reader 清理。
 
 ---
 
