@@ -1,10 +1,9 @@
 ---
 title: "模块化"
+description: "CommonJS 与 ESM 的加载机制、live binding、循环依赖、Tree Shaking 以及 exports/import.meta 的用法。"
 ---
 
-> **面试官为什么问这个？**
->
-> 模块化是前端工程化的基石。面试官问这个，本质上是在考察你：**你理解 JavaScript 代码是怎么组织、加载和执行的吗？** 如果你不理解 CommonJS 和 ES Modules 的区别、Tree Shaking 的原理、循环依赖的处理机制，你就无法真正理解 Webpack/Vite 的打包逻辑，也无法写出可维护的大型应用。
+> 模块这块我踩过循环依赖：拿到的是半成品，报错位置还很迷惑。后来才补上条件导出和 `import.meta` 的用途。
 
 ---
 
@@ -20,21 +19,21 @@ title: "模块化"
 
 <Steps>
 
-  <Step title="2005 年: 脚本地狱（Script Hell）">
+<Step title="2005 年: 脚本地狱（Script Hell）">
 
-    早期的 JavaScript 没有模块系统。所有代码都通过 `<script>` 标签加载，全局变量互相覆盖，加载顺序必须手动管理。一个中等规模的项目可能有 50 多个 `<script>` 标签，顺序一改就报错。
+早期的 JavaScript 没有模块系统。所有代码都通过 `<script>` 标签加载，全局变量互相覆盖，加载顺序必须手动管理。一个中等规模的项目可能有 50 多个 `<script>` 标签，顺序一改就报错。
 
-  </Step>
-  <Step title="2009 年: CommonJS 与 AMD 诞生">
+</Step>
+<Step title="2009 年: CommonJS 与 AMD 诞生">
 
-    Ryan Dahl 创建 Node.js，带来了 CommonJS 规范——用 `require()` 导入、`module.exports` 导出。同一时期，浏览器端诞生了 AMD（Asynchronous Module Definition）规范，RequireJS 是它的实现，用 `define()` 定义模块。两个规范分别统治了服务端和浏览器端。
+Ryan Dahl 创建 Node.js，带来了 CommonJS 规范——用 `require()` 导入、`module.exports` 导出。同一时期，浏览器端诞生了 AMD（Asynchronous Module Definition）规范，RequireJS 是它的实现，用 `define()` 定义模块。两个规范分别统治了服务端和浏览器端。
 
-  </Step>
-  <Step title="2015 年: ES Modules 成为语言标准">
+</Step>
+<Step title="2015 年: ES Modules 成为语言标准">
 
-    ES6 正式引入了 `import` / `export` 语法，JavaScript 终于有了语言层面的模块标准。ES Modules 支持静态分析，让 Tree Shaking 成为可能——这是构建工具性能优化的基础。
+ES6 正式引入了 `import` / `export` 语法，JavaScript 终于有了语言层面的模块标准。ES Modules 支持静态分析，让 Tree Shaking 成为可能——这是构建工具性能优化的基础。
 
-  </Step>
+</Step>
 
 </Steps>
 
@@ -55,7 +54,7 @@ import $ from 'jquery';      // 显式导入，不污染全局
 import { ajax } from './api'; // 依赖关系一目了然
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 模块化让 JavaScript 从"脚本语言"进化为"工程语言"——每个文件是一个独立的模块，有自己的作用域和明确的依赖声明。
 
@@ -63,19 +62,19 @@ import { ajax } from './api'; // 依赖关系一目了然
 
 <CardGroup cols={2}>
 
-<Card title="🚫 没有模块化">
+<Card title="没有模块化">
 
 一家公司没有部门划分，所有员工都在一个大开间里。张三的文件和李四的文件混在一起，谁都能改别人的文件。新来的员工要花两周搞清楚"这些文件的先后顺序是什么"。一旦有人改了共享文件，全公司的工作都可能受影响。
 
 </Card>
-<Card title="✅ 引入模块化">
+<Card title="引入模块化">
 
 有了部门（模块）之后，每个部门有自己的办公室（作用域），通过正式的申请流程（import/export）与其他部门交互。新员工入职时只需要了解自己部门的接口，不需要知道其他部门的内部实现。
 
 </Card>
 </CardGroup>
 
-<Tip title="💡 面试技巧">
+<Tip title="面试技巧">
 
 面试时先讲"为什么需要模块化"（全局污染、依赖管理），再讲"怎么实现的"（CommonJS vs ES Modules），最后讲"Tree Shaking 和构建优化"。展示你从历史到原理到工程实践的完整理解。
 
@@ -99,8 +98,10 @@ CommonJS 是 Node.js 默认的模块系统。它的核心特点是：**同步加
 
 ```javascript
 // b.js — CommonJS 导出
-const name = 'module-b';
-function greet() { return `Hello from ${name}`; }
+const name = "module-b";
+function greet() {
+  return `Hello from ${name}`;
+}
 
 // module.exports 是模块对外暴露的接口——require 拿到的就是这个对象
 module.exports = { name, greet };
@@ -108,8 +109,8 @@ module.exports = { name, greet };
 // 所以推荐直接操作 module.exports
 
 // a.js — CommonJS 导入
-const b = require('./b');                 // 同步加载 b.js，执行其代码，返回 module.exports
-console.log(b.name);   // 'module-b'      // 通过返回的 exports 对象访问导出值
+const b = require("./b"); // 同步加载 b.js，执行其代码，返回 module.exports
+console.log(b.name); // 'module-b'      // 通过返回的 exports 对象访问导出值
 console.log(b.greet()); // 'Hello from module-b'
 ```
 
@@ -131,9 +132,9 @@ require() 的执行过程：
  * 这就是为什么 CommonJS 模块是"单例"的
  */
 // a.js
-console.log('a 被加载了');
-const b1 = require('./b');                // 第一次 require：加载并执行 b.js，缓存 module.exports
-const b2 = require('./b');                // 第二次 require：直接返回缓存，不重新执行 b.js
+console.log("a 被加载了");
+const b1 = require("./b"); // 第一次 require：加载并执行 b.js，缓存 module.exports
+const b2 = require("./b"); // 第二次 require：直接返回缓存，不重新执行 b.js
 console.log(b1 === b2); // true           // 同一个引用——证明模块只执行了一次
 
 // b.js 只会被执行一次，输出一次 'a 被加载了'
@@ -141,35 +142,36 @@ console.log(b1 === b2); // true           // 同一个引用——证明模块�
 
 ### CommonJS 的值拷贝特性
 
-<Warning title="⚠️ CommonJS 导出的是值的拷贝，不是引用">
+<Warning title="CommonJS 导出的是值的拷贝，不是引用">
 
-这是最容易出错的地方。CommonJS 在 `require` 时会执行模块代码，然后返回 `module.exports` 的**浅拷贝**。如果导出的是基本类型，后续模块内部的变化不会反映到导入方。
+这是最容易出错的地方。CommonJS 在 `require` 时会执行模块代码，然后返回 `module.exports` 对象本身。但由于导出时 `{ count, increment }` 里的 `count` 只是当时值的快照，后续模块内部的 `count++` 不会回写到这个对象属性上。
 
 ```javascript
 /**
  * CommonJS 的值拷贝陷阱
- * require 时执行模块代码，返回 module.exports 的浅拷贝
- * 基本类型（如 count=0）在 require 时就被拷贝了，后续修改不影响已拷贝的值
+ * require 时执行模块代码，返回 module.exports 对象
+ * 基本类型（如 count=0）在导出时就被拷贝进对象，后续修改不影响已拷贝的值
  */
 
 // counter.js
 let count = 0;
-function increment() { count++; }         // 内部修改 count（从 0 变为 1）
-module.exports = { count, increment };     // 导出时 count 的值是 0，被拷贝到 exports
+function increment() {
+  count++;
+} // 内部修改 count（从 0 变为 1）
+module.exports = { count, increment }; // 导出时 count 的值是 0，被拷贝到 exports
 
 // main.js
-const { count, increment } = require('./counter');
+const { count, increment } = require("./counter");
 console.log(count); // 0                  // 拿到的是 require 时 count 的值（拷贝）
-increment();                               // 调用 increment，counter.js 内部的 count 变为 1
+increment(); // 调用 increment，counter.js 内部的 count 变为 1
 console.log(count); // 0                  // 但 main.js 中的 count 仍然是拷贝时的值 0！
 
 // 注意：即使是对象引用，count 是基本类型也会被拷贝
-const counter = require('./counter');
+const counter = require("./counter");
 counter.increment();
 console.log(counter.count); // 0          // counter.count 也是拷贝
 // 如果想拿到最新值，需要重新设计导出方式（如用 getter 函数）
 ```
-
 
 </Warning>
 
@@ -183,30 +185,26 @@ console.log(counter.count); // 0          // counter.count 也是拷贝
  */
 
 // a.js
-console.log('a 开始');
-exports.done = false;                     // 设置 a 的初始状态
-const b = require('./b');                 // 遇到 require('./b') → 暂停 a，去执行 b.js
-console.log('在 a 中, b.done =', b.done); // b 已经执行完毕，b.done = true
-exports.done = true;                      // 更新 a 的状态
-console.log('a 结束');
+console.log("a 开始");
+exports.done = false; // 设置 a 的初始状态
+const b = require("./b"); // 遇到 require('./b') → 暂停 a，去执行 b.js
+console.log("在 a 中, b.done =", b.done); // b 已经执行完毕，b.done = true
+exports.done = true; // 更新 a 的状态
+console.log("a 结束");
 
 // b.js
-console.log('b 开始');
-exports.done = false;                     // 设置 b 的初始状态
-const a = require('./a');                 // 此时 a.js 还在执行中，Node.js 返回 a 当前的 exports
-console.log('在 b 中, a.done =', a.done); // false — 拿到的是 a 执行到一半的"半成品"！
+console.log("b 开始");
+exports.done = false; // 设置 b 的初始状态
+const a = require("./a"); // 此时 a.js 还在执行中，Node.js 返回 a 当前的 exports
+console.log("在 b 中, a.done =", a.done); // false — 拿到的是 a 执行到一半的"半成品"！
 exports.done = true;
-console.log('b 结束');
+console.log("b 结束");
 // 执行顺序：a 开始 → b 开始 → 在 b 中, a.done = false → b 结束 → 在 a 中, b.done = true → a 结束
-
-// 执行顺序：a 开始 → b 开始 → 在 b 中, a.done = false → b 结束 → 在 a 中, b.done = true → a 结束
-// CommonJS 遇到循环依赖时，返回的是当前已执行部分的 exports（不完整的值）
 ```
 
-<Tip title="🎢 通俗比喻: 同步电话">
+<Tip title="通俗比喻: 同步电话">
 
 CommonJS 的 `require()` 就像打一通同步电话——你打电话给同事要一份文件（require），同事必须立刻找到文件发给你，你拿到文件后才能继续工作。如果同事也需要你的文件（循环依赖），你们就陷入了"你等我、我等你"的尴尬——最终先拿到的是对方"还没做完的半成品"。
-
 
 </Tip>
 
@@ -230,17 +228,19 @@ ES Modules（ESM）是 ES6 引入的官方模块系统。它的核心特点是�
 ```javascript
 // b.mjs — ES Modules 导出
 // export 声明必须在模块顶层（不能在 if/for/函数内），这是静态分析的前提
-export const name = 'module-b';           // 命名导出：导出变量的绑定（live binding）
-export function greet() { return `Hello from ${name}`; }
+export const name = "module-b"; // 命名导出：导出变量的绑定（live binding）
+export function greet() {
+  return `Hello from ${name}`;
+}
 // 也可以统一导出：export { name, greet };
 
 // a.mjs — ES Modules 导入
-import { name, greet } from './b.js';     // 按名称导入，名字必须匹配
-console.log(name);   // 'module-b'
+import { name, greet } from "./b.js"; // 按名称导入，名字必须匹配
+console.log(name); // 'module-b'
 console.log(greet()); // 'Hello from module-b'
 
 // 重命名导入：用 as 关键字起别名
-import { name as moduleName } from './b.js';
+import { name as moduleName } from "./b.js";
 
 // 默认导出：每个模块只能有一个 default export
 // b.js: export default function() {}
@@ -254,14 +254,14 @@ ES Modules 的 `import` / `export` 必须在模块顶层，不能在条件语句
 ```javascript
 // ❌ 不能在条件中使用 import
 if (condition) {
-  import { foo } from './foo.js'; // SyntaxError
+  import { foo } from "./foo.js"; // SyntaxError
 }
 
 // ✅ 动态导入用 import()
-const module = await import('./foo.js');
+const module = await import("./foo.js");
 
 // ✅ 静态导入必须在顶层
-import { foo } from './foo.js';
+import { foo } from "./foo.js";
 ```
 
 ```text
@@ -274,7 +274,7 @@ ES Modules 的静态分析能力带来的好处：
 
 ### ES Modules 的 Live Bindings（活绑定）
 
-<Warning title="⚠️ ES Modules 导出的是值的引用，不是拷贝">
+<Warning title="ES Modules 导出的是值的引用，不是拷贝">
 
 ES Modules 的导出是 **live binding**——导入方拿到的是对导出变量的引用，而不是值的拷贝。当模块内部修改了导出变量，导入方会看到最新值。
 
@@ -286,13 +286,15 @@ ES Modules 的导出是 **live binding**——导入方拿到的是对导出变�
  */
 
 // counter.mjs
-export let count = 0;                     // export 导出的是变量的绑定
-export function increment() { count++; }  // 内部修改 count，外部通过 live binding 感知
+export let count = 0; // export 导出的是变量的绑定
+export function increment() {
+  count++;
+} // 内部修改 count，外部通过 live binding 感知
 
 // main.mjs
-import { count, increment } from './counter.mjs';
+import { count, increment } from "./counter.mjs";
 console.log(count); // 0                  // 初始值
-increment();                               // 调用 increment，counter.mjs 内部 count 变为 1
+increment(); // 调用 increment，counter.mjs 内部 count 变为 1
 console.log(count); // 1                  // 通过 live binding 拿到最新值！
 
 // 但注意：import 绑定是只读的（read-only view）
@@ -300,21 +302,20 @@ console.log(count); // 1                  // 通过 live binding 拿到最新值
 // 要修改导出值，只能通过调用导出的函数（如 increment）
 ```
 
-
 </Warning>
 
 ### CommonJS vs ES Modules 对比
 
-| 对比维度 | CommonJS | ES Modules |
-|---------|----------|------------|
-| **语法** | `require()` / `module.exports` | `import` / `export` |
-| **加载方式** | 同步加载 | 异步加载 |
-| **解析时机** | 运行时解析 | 编译时静态分析 |
-| **导出值** | 值的拷贝 | 值的引用（live binding） |
-| **this 指向** | `module.exports` 对象 | `undefined` |
-| **循环依赖** | 返回不完整的 exports | 通过 live binding 获取最新值 |
-| **Tree Shaking** | 不支持 | 支持 |
-| **环境** | Node.js 默认 | 浏览器 + Node.js（.mjs 或 type: "module"） |
+| 对比维度         | CommonJS                       | ES Modules                                 |
+| ---------------- | ------------------------------ | ------------------------------------------ |
+| **语法**         | `require()` / `module.exports` | `import` / `export`                        |
+| **加载方式**     | 同步加载                       | 异步加载                                   |
+| **解析时机**     | 运行时解析                     | 编译时静态分析                             |
+| **导出值**       | 值的拷贝（导出时快照）         | 值的引用（live binding）                   |
+| **this 指向**    | `module.exports` 对象          | `undefined`                                |
+| **循环依赖**     | 返回不完整的 exports           | 通过 live binding 获取最新值               |
+| **Tree Shaking** | 不支持                         | 支持                                       |
+| **环境**         | Node.js 默认                   | 浏览器 + Node.js（.mjs 或 type: "module"） |
 
 ---
 
@@ -336,18 +337,18 @@ console.log(count); // 1                  // 通过 live binding 拿到最新值
 
 ```javascript
 // a.js
-console.log('a 开始加载');
-const b = require('./b');
-console.log('a 中 b.done =', b.done); // 可能是不完整的值
+console.log("a 开始加载");
+const b = require("./b");
+console.log("a 中 b.done =", b.done); // 可能是不完整的值
 exports.done = true;
-console.log('a 加载完成');
+console.log("a 加载完成");
 
 // b.js
-console.log('b 开始加载');
-const a = require('./a');
-console.log('b 中 a.done =', a.done); // false — a 还没执行完
+console.log("b 开始加载");
+const a = require("./a");
+console.log("b 中 a.done =", a.done); // false — a 还没执行完
 exports.done = true;
-console.log('b 加载完成');
+console.log("b 加载完成");
 ```
 
 ```text
@@ -372,14 +373,14 @@ CommonJS 的处理机制：
  */
 
 // a.mjs
-import { bDone } from './b.mjs';         // 导入 b 的 bDone 变量（live binding）
-console.log('a 中 bDone =', bDone);       // 如果 a 先执行，bDone 可能还是 undefined
-export const aDone = true;                // 导出 aDone
+import { bDone } from "./b.mjs"; // 导入 b 的 bDone 变量（live binding）
+console.log("a 中 bDone =", bDone); // 如果 a 先执行，bDone 可能还是 undefined
+export const aDone = true; // 导出 aDone
 
 // b.mjs
-import { aDone } from './a.mjs';         // 导入 a 的 aDone 变量（live binding）
-console.log('b 中 aDone =', aDone);       // 如果 b 先执行，aDone 可能还是 undefined
-export const bDone = true;                // 导出 bDone
+import { aDone } from "./a.mjs"; // 导入 a 的 aDone 变量（live binding）
+console.log("b 中 aDone =", aDone); // 如果 b 先执行，aDone 可能还是 undefined
+export const bDone = true; // 导出 bDone
 ```
 
 ```text
@@ -399,24 +400,34 @@ ES Modules 的 live binding 机制让循环依赖更优雅：
 ```javascript
 // ❌ 循环依赖：A 和 B 直接互相引用
 // service-a.js
-import { processB } from './service-b.js';
-export function processA() { return processB() + 1; }
+import { processB } from "./service-b.js";
+export function processA() {
+  return processB() + 1;
+}
 
 // service-b.js
-import { processA } from './service-a.js';
-export function processB() { return processA() + 1; }
+import { processA } from "./service-a.js";
+export function processB() {
+  return processA() + 1;
+}
 
 // ✅ 解决方案 1：提取公共模块
 // shared.js
-export function baseProcess() { return 1; }
+export function baseProcess() {
+  return 1;
+}
 
 // service-a.js
-import { baseProcess } from './shared.js';
-export function processA() { return baseProcess() + 1; }
+import { baseProcess } from "./shared.js";
+export function processA() {
+  return baseProcess() + 1;
+}
 
 // service-b.js
-import { baseProcess } from './shared.js';
-export function processB() { return baseProcess() + 2; }
+import { baseProcess } from "./shared.js";
+export function processB() {
+  return baseProcess() + 2;
+}
 
 // ✅ 解决方案 2：依赖注入
 // service-a.js
@@ -425,10 +436,9 @@ export function createServiceA(serviceB) {
 }
 ```
 
-<Warning title="⚠️ 循环依赖是设计问题的信号">
+<Warning title="循环依赖是设计问题的信号">
 
 大多数循环依赖说明模块的职责划分有问题。如果 A 和 B 互相依赖，通常意味着它们应该合并成一个模块，或者把共享的部分提取到第三个模块。不要试图"解决"循环依赖，而应该**消除**它。
-
 
 </Warning>
 
@@ -450,7 +460,7 @@ Tree Shaking 是 ES Modules 带来的最重要的构建优化：**在打包时�
 │  打包结果                 │
 │  function used() {}       │  ← 保留
 │                          │
-│  unused() 被删除了 🎉     │
+│  unused() 被删除了        │
 └──────────────────────────┘
 ```
 
@@ -469,12 +479,12 @@ Tree Shaking 的实现步骤：
 
 ```javascript
 // ❌ 情况 1：CommonJS 模块不能 Tree Shaking
-const utils = require('./utils'); // 动态导入，编译时无法分析
+const utils = require("./utils"); // 动态导入，编译时无法分析
 utils.used();
 
 // ❌ 情况 2：副作用（Side Effects）模块
 // 如果模块有副作用，打包工具不敢删除它
-import './polyfill.js'; // 这个文件可能修改了全局对象
+import "./polyfill.js"; // 这个文件可能修改了全局对象
 
 // ✅ 在 package.json 中声明无副作用
 // { "sideEffects": false }
@@ -491,23 +501,22 @@ export const COUNT = 0; // const 导出不会被修改，更安全
 ```javascript
 // webpack.config.js
 module.exports = {
-  mode: 'production', // 自动开启 Tree Shaking
+  mode: "production", // 自动开启 Tree Shaking
   optimization: {
-    usedExports: true,    // 标记未使用的导出
-    minimize: true,       // 删除死代码
-    sideEffects: true,    // 识别并跳过无副作用的模块
+    usedExports: true, // 标记未使用的导出
+    minimize: true, // 删除死代码
+    sideEffects: true, // 识别并跳过无副作用的模块
   },
 };
 
 // 确保使用 ES Modules 语法
-import { debounce } from 'lodash-es'; // ✅ 可以 Tree Shaking
-import _ from 'lodash';               // ❌ 无法 Tree Shaking（CommonJS）
+import { debounce } from "lodash-es"; // ✅ 可以 Tree Shaking
+import _ from "lodash"; // ❌ 无法 Tree Shaking（CommonJS）
 ```
 
-<Tip title="🎢 通俗比喻: 自助餐">
+<Tip title="通俗比喻: 自助餐">
 
 Tree Shaking 就像自助餐的按需取用。你走进餐厅（打包入口），只拿了你吃的菜（import 的模块）。厨房（打包工具）发现你没拿"红烧肉"（未使用的导出），就把红烧肉从菜单上划掉了（Tree Shaking）。但如果你的盘子里放了一个"可能影响其他菜味道"的调料瓶（副作用模块），厨房就不敢随便划掉它。
-
 
 </Tip>
 
@@ -532,11 +541,11 @@ Tree Shaking 就像自助餐的按需取用。你走进餐厅（打包入口）�
 
 ```javascript
 // 静态导入：打包时就确定依赖关系
-import HeavyComponent from './HeavyComponent';
+import HeavyComponent from "./HeavyComponent";
 
 // 动态导入：运行时按需加载
-button.addEventListener('click', async () => {
-  const { default: HeavyComponent } = await import('./HeavyComponent');
+button.addEventListener("click", async () => {
+  const { default: HeavyComponent } = await import("./HeavyComponent");
   render(HeavyComponent);
 });
 ```
@@ -544,11 +553,11 @@ button.addEventListener('click', async () => {
 ### React 中的懒加载
 
 ```javascript
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense } from "react";
 
 // 路由级别的代码分割
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Settings = lazy(() => import('./pages/Settings'));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Settings = lazy(() => import("./pages/Settings"));
 
 function App() {
   return (
@@ -572,20 +581,23 @@ function App() {
 // Settings.js      — 异步 Chunk（设置页代码）
 
 // 魔法注释：给 Chunk 命名
-const Dashboard = lazy(() => import(
-  /* webpackChunkName: "dashboard" */
-  './pages/Dashboard'
-));
+const Dashboard = lazy(
+  () =>
+    import(
+      /* webpackChunkName: "dashboard" */
+      "./pages/Dashboard"
+    ),
+);
 ```
 
 ### 动态导入 vs 静态导入的选择
 
-| 场景 | 推荐方式 | 原因 |
-|------|---------|------|
-| 核心功能（首屏） | 静态 import | 立即需要，减少请求 |
-| 路由页面 | 动态 import() | 按需加载，减少首屏体积 |
+| 场景                 | 推荐方式      | 原因                   |
+| -------------------- | ------------- | ---------------------- |
+| 核心功能（首屏）     | 静态 import   | 立即需要，减少请求     |
+| 路由页面             | 动态 import() | 按需加载，减少首屏体积 |
 | 大型库（如 ECharts） | 动态 import() | 用户可能不触发图表功能 |
-| 条件性功能 | 动态 import() | 只在满足条件时加载 |
+| 条件性功能           | 动态 import() | 只在满足条件时加载     |
 
 ---
 
@@ -601,8 +613,8 @@ Webpack 把所有模块（包括 CommonJS 和 ES Modules）统一转换为自己
  * Webpack 将所有模块包装在一个 IIFE 中，用自己的 require 实现模块加载
  * 核心机制：模块缓存 + 包装函数 + 依赖注入
  */
-(function(modules) {
-  var installedModules = {};               // 模块缓存：已加载的模块不会重复执行
+(function (modules) {
+  var installedModules = {}; // 模块缓存：已加载的模块不会重复执行
 
   /**
    * Webpack 版的 require：模拟 CommonJS 的 require 行为
@@ -610,34 +622,42 @@ Webpack 把所有模块（包括 CommonJS 和 ES Modules）统一转换为自己
    * @returns {object} 模块的 exports 对象
    */
   function __webpack_require__(moduleId) {
-    if (installedModules[moduleId]) {      // 检查缓存：已加载则直接返回
+    if (installedModules[moduleId]) {
+      // 检查缓存：已加载则直接返回
       return installedModules[moduleId].exports;
     }
     // 创建新模块对象：i=模块ID, l=是否已加载, exports=导出对象
-    var module = installedModules[moduleId] = {
+    var module = (installedModules[moduleId] = {
       i: moduleId,
       l: false,
-      exports: {}                          // 空的 exports 对象，模块代码执行后填充
-    };
+      exports: {}, // 空的 exports 对象，模块代码执行后填充
+    });
     // 执行模块代码：用 call 绑定 this 为 module.exports
     // 传入 module, exports, __webpack_require__ 三个参数
     // 这就是为什么 CommonJS 模块中能直接用 module.exports 和 require()
-    modules[moduleId].call(module.exports, module, module.exports, __webpack_require__);
-    module.l = true;                       // 标记为已加载
-    return module.exports;                 // 返回填充后的 exports
+    modules[moduleId].call(
+      module.exports,
+      module,
+      module.exports,
+      __webpack_require__,
+    );
+    module.l = true; // 标记为已加载
+    return module.exports; // 返回填充后的 exports
   }
 
   // 加载入口模块，启动整个应用
-  return __webpack_require__(__webpack_require__.s = './src/index.js');
+  return __webpack_require__((__webpack_require__.s = "./src/index.js"));
 })({
   // 模块表：每个模块路径对应一个包装函数（Webpack 将源码包装在这里）
-  './src/index.js': function(module, exports, __webpack_require__) {
-    var _utils = __webpack_require__('./src/utils.js'); // 同步 require，加载 utils 模块
+  "./src/index.js": function (module, exports, __webpack_require__) {
+    var _utils = __webpack_require__("./src/utils.js"); // 同步 require，加载 utils 模块
     console.log(_utils.add(1, 2));
   },
-  './src/utils.js': function(module, exports) {
-    exports.add = function(a, b) { return a + b; };     // 挂载到 exports 上
-  }
+  "./src/utils.js": function (module, exports) {
+    exports.add = function (a, b) {
+      return a + b;
+    }; // 挂载到 exports 上
+  },
 });
 ```
 
@@ -670,13 +690,13 @@ Vite 开发模式：
 
 ### Webpack vs Vite 对比
 
-| 对比维度 | Webpack | Vite |
-|---------|---------|------|
-| **开发启动** | 慢（先打包） | 快（原生 ESM） |
-| **HMR** | 中等（重新编译模块链） | 快（精确更新单个模块） |
-| **生产构建** | 成熟稳定 | 基于 Rollup，同样稳定 |
-| **生态插件** | 极其丰富 | 快速成长 |
-| **适用场景** | 复杂项目、需要高度定制 | 新项目、追求开发体验 |
+| 对比维度     | Webpack                | Vite                   |
+| ------------ | ---------------------- | ---------------------- |
+| **开发启动** | 慢（先打包）           | 快（原生 ESM）         |
+| **HMR**      | 中等（重新编译模块链） | 快（精确更新单个模块） |
+| **生产构建** | 成熟稳定               | 基于 Rollup，同样稳定  |
+| **生态插件** | 极其丰富               | 快速成长               |
+| **适用场景** | 复杂项目、需要高度定制 | 新项目、追求开发体验   |
 
 ---
 
@@ -705,33 +725,33 @@ src/
 
 ```javascript
 // utils/index.ts — Barrel Export
-export { debounce } from './debounce';
-export { throttle } from './throttle';
-export { formatDate } from './formatDate';
+export { debounce } from "./debounce";
+export { throttle } from "./throttle";
+export { formatDate } from "./formatDate";
 
 // 使用时：一个 import 搞定
-import { debounce, throttle } from '@/utils';
+import { debounce, throttle } from "@/utils";
 
 // ⚠️ 注意：Barrel Export 可能影响 Tree Shaking
 // 如果 barrel 文件导出了大量模块，打包工具可能无法精确 Tree Shaking
 // 解决方案：直接导入具体文件
-import { debounce } from '@/utils/debounce';
+import { debounce } from "@/utils/debounce";
 ```
 
 ### 模块边界（Module Boundary）
 
 ```javascript
 // ❌ 直接导入其他模块的内部文件
-import { helper } from '../utils/internal/helper';
+import { helper } from "../utils/internal/helper";
 
 // ✅ 通过模块的公共 API 导入
-import { helper } from '../utils';
+import { helper } from "../utils";
 
 // 模块应该对外暴露稳定的公共 API，隐藏内部实现
 // 这样内部重构不会影响其他模块
 ```
 
-<Warning title="⚠️ 避免循环依赖的工程实践">
+<Warning title="避免循环依赖的工程实践">
 
 1. **依赖方向单一化**：上层模块可以依赖下层模块，下层不能依赖上层
 2. **提取公共模块**：如果 A 和 B 都需要的功能，提取到 C
@@ -745,16 +765,13 @@ rules: {
 }
 ```
 
-
 </Warning>
 
 ---
 
-## 🔍 底层源码：Node.js 和浏览器如何加载模块？
+## 底层源码：Node.js 和浏览器如何加载模块？
 
-<div class="follow-up">
-Node.js 的 require() 是怎么实现的？
-</div>
+<div class="follow-up">Node.js 的 require() 是怎么实现的？</div>
 
 Node.js 的模块加载器在 `lib/internal/modules/cjs/loader.js` 中实现：
 
@@ -763,7 +780,7 @@ Node.js 的模块加载器在 `lib/internal/modules/cjs/loader.js` 中实现：
  * Node.js require() 的核心逻辑（简化版，源自 lib/internal/modules/cjs/loader.js）
  * 完整流程：路径解析 → 缓存检查 → 原生模块检查 → 创建模块 → 编译执行 → 返回 exports
  */
-Module._load = function(request, parent, isMain) {
+Module._load = function (request, parent, isMain) {
   // 第 1 步：解析文件路径——将 './b' 转为绝对路径（如 /project/src/b.js）
   var filename = Module._resolveFilename(request, parent);
 
@@ -775,14 +792,14 @@ Module._load = function(request, parent, isMain) {
   }
 
   // 第 3 步：检查是否为原生模块（如 fs、path、http 等）
-  var NativeModule = require('internal/bootstrap/loaders');
+  var NativeModule = require("internal/bootstrap/loaders");
   if (NativeModule.exists(filename)) {
     return NativeModule.require(filename);
   }
 
   // 第 4 步：创建新模块对象，存入缓存
   var module = new Module(filename, parent);
-  Module._cache[filename] = module;        // 先存缓存——这是处理循环依赖的关键
+  Module._cache[filename] = module; // 先存缓存——这是处理循环依赖的关键
 
   // 第 5 步：根据文件扩展名选择加载方式（.js、.json、.node）
   tryModuleLoad(module, filename);
@@ -797,26 +814,32 @@ Module._load = function(request, parent, isMain) {
  * @param {string} content - 模块源码
  * @param {string} filename - 文件路径
  */
-Module.prototype._compile = function(content, filename) {
+Module.prototype._compile = function (content, filename) {
   // Module.wrap 将源码包装在一个函数中，注入 5 个参数
   // 包装后的代码：(function(exports, require, module, __filename, __dirname) { <源码> })
   var wrapper = Module.wrap(content);
   // vm.runInThisContext 在当前 V8 上下文中编译并返回函数
   var compiledWrapper = vm.runInThisContext(wrapper);
   // 用 call 调用包装函数，传入 module.exports、require 等参数
-  var result = compiledWrapper.call(this.exports, this.exports, require, this, filename, dirname);
+  var result = compiledWrapper.call(
+    this.exports,
+    this.exports,
+    require,
+    this,
+    filename,
+    dirname,
+  );
   return result;
 };
 ```
 
 这段代码揭示了 Node.js 模块的几个关键机制：
+
 1. **模块缓存**：`Module._cache` 用文件路径作为 key，确保每个文件只执行一次
 2. **包装函数**：每个模块代码被包装在一个函数中，`exports`、`require`、`module` 作为参数传入
 3. **路径解析**：`Module._resolveFilename` 负责解析 `require()` 的参数为绝对路径
 
-<div class="follow-up">
-浏览器原生 ESM 是怎么加载的？
-</div>
+<div class="follow-up">浏览器原生 ESM 是怎么加载的？</div>
 
 浏览器的 ESM 加载分三个阶段：
 
@@ -851,26 +874,27 @@ Module.prototype._compile = function(content, filename) {
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 十、及格回答 vs 满分回答
 
 ### 问题："CommonJS 和 ES Modules 有什么区别？"
 
 **及格回答（60-70分）：**
+
 > "CommonJS 用 require 导入，ES Modules 用 import 导入。CommonJS 是同步的，ES Modules 是异步的。CommonJS 在 Node.js 用，ES Modules 在浏览器用。"
 
-面试官评价：**知道表面区别，不理解底层机制**。
+问题出在：**知道表面区别，不理解底层机制**。
 
 **满分回答（90-100分）：**
 
 > CommonJS 和 ES Modules 最本质的区别是**静态分析能力**。ES Modules 的 `import` / `export` 必须在模块顶层，不能在条件语句中使用，这让打包工具在编译时就能构建完整的依赖图——这是 Tree Shaking 的基础。CommonJS 的 `require()` 是一个普通函数调用，可以在任何地方执行，编译时无法确定依赖关系。<sup>[1]</sup>
 
-> 第二个关键区别是导出值的行为。CommonJS 导出的是值的拷贝——`require()` 执行模块代码后，返回 `module.exports` 的浅拷贝。ES Modules 导出的是 live binding——导入方拿到的是对导出变量的引用，模块内部修改变量后，导入方能看到最新值。这意味着 CommonJS 的 `require()` 在执行时就已经确定了值，而 ES Modules 的值在求值阶段才确定。<sup>[2]</sup>
+> 第二个关键区别是导出值的行为。CommonJS 的 `require()` 返回的是 `module.exports` 对象本身，但导出那一刻基本类型的值已经作为属性存进对象，模块内部后续对变量的重新赋值不会回写这个属性，所以观察起来像"值的拷贝"。ES Modules 导出的是 live binding——导入方拿到的是对导出变量的引用，模块内部修改变量后，导入方能看到最新值。这意味着 CommonJS 的 `require()` 在执行时就已经确定了值，而 ES Modules 的值在求值阶段才确定。<sup>[2]</sup>
 
 > 第三个区别是循环依赖的处理。CommonJS 遇到循环依赖时，返回的是"当前已执行部分的 exports"——一个不完整的对象。ES Modules 通过 live binding 机制，即使变量还没被赋值，绑定关系已经建立，等赋值完成后导入方能拿到最新值。但两种方式在实践中都是"设计问题的信号"，应该通过提取公共模块或依赖注入来消除循环依赖。<sup>[3]</sup>
 
-> 在实际项目中，Node.js 从 12 开始支持 ESM（`.mjs` 扩展名或 `package.json` 的 `"type": "module"`），现代前端项目统一使用 ESM。开发时用 Vite 享受原生 ESM 的快速启动，生产构建用 Webpack/Rollup 的 Tree Shaking 优化体积。
+> 在实际项目中，Node.js 从 12.17 / 13.2 起正式稳定支持 ESM（`.mjs` 扩展名或 `package.json` 的 `"type": "module"`），现代前端项目统一使用 ESM。开发时用 Vite 享受原生 ESM 的快速启动，生产构建用 Webpack/Rollup 的 Tree Shaking 优化体积。
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
@@ -922,13 +946,13 @@ Module.prototype._compile = function(content, filename) {
     两种方式：.mjs 扩展名或 package.json 的 type: "module"。
 
     **高分回答：**
-    "Node.js 从 12 开始支持 ESM，有两种启用方式：
+    "Node.js 从 12.17 / 13.2 起正式稳定支持 ESM（12.0 到 12.16 需要 `--experimental-modules`），有两种启用方式：
     1. 文件扩展名用 `.mjs`
     2. 在 `package.json` 中设置 `\"type\": \"module\"`
 
     注意事项：
     - ESM 中不能使用 `require()`、`module`、`exports`、`__dirname`、`__filename`
-    - 需要替代方案：`import.meta.url` 替代 `__filename`，`path.dirname(import.meta.url)` 替代 `__dirname`
+    - 需要替代方案：`import.meta.url` 是当前模块的文件 URL，可替代 `__filename`；`path.dirname(fileURLToPath(import.meta.url))` 等价于 `__dirname`（Node 20.11+ 也可直接用 `import.meta.dirname`）
     - CommonJS 和 ESM 可以互相导入，但有兼容性限制
 
     ```javascript
@@ -1014,7 +1038,7 @@ Module.prototype._compile = function(content, filename) {
 
   </Accordion>
 
-  <Accordion title='🔥 如何设计一个支持 Tree Shaking 的工具库？' icon="skull">
+  <Accordion title='如何设计一个支持 Tree Shaking 的工具库？' icon="skull">
 
     **答题要点：**
     从源码到构建到 package.json 都需要配合。
@@ -1060,11 +1084,11 @@ Module.prototype._compile = function(content, filename) {
     }
     ```
 
-    `exports` 字段让打包工具可以直接导入子路径（`import debounce from 'my-lib/debounce'`），进一步提升 Tree Shaking 效果。"
+    `exports` 字段让打包工具可以直接导入子路径（`import debounce from 'my-lib/debounce'`），进一步提升 Tree Shaking 效果。条件按书写顺序匹配，先命中 `import` 或 `require`，最后用 `"default"` 兜底；`"types"` 条件供 TypeScript 解析类型。"
 
   </Accordion>
 
-  <Accordion title='🔥 ESM 和 CommonJS 在 Node.js 中混用有什么坑？' icon="skull">
+  <Accordion title='ESM 和 CommonJS 在 Node.js 中混用有什么坑？' icon="skull">
 
     **答题要点：**
     双包问题（Dual Package Hazard）和导入方式的兼容性限制。
@@ -1088,7 +1112,7 @@ Module.prototype._compile = function(content, filename) {
     ```
 
     解决方案：
-    1. 只发布 ESM 版本（Node 12+ 支持）
+    1. 只发布 ESM 版本（需 Node 12.17+）
     2. 用 Conditional Exports 但确保内部状态用全局单例
     3. 在 `package.json` 中用 `"type": "module"` 统一为 ESM
 
@@ -1128,12 +1152,14 @@ ES Modules 的三阶段加载模型：
  */
 
 // main.mjs — 入口文件
-import { count } from './counter.mjs';    // 引擎在此发现依赖 counter.mjs
-import { debounce } from './utils.mjs';   // 引擎在此发现依赖 utils.mjs
+import { count } from "./counter.mjs"; // 引擎在此发现依赖 counter.mjs
+import { debounce } from "./utils.mjs"; // 引擎在此发现依赖 utils.mjs
 
 // counter.mjs — 被依赖的模块
-export let count = 0;                     // export 声明被引擎在构建阶段记录
-export function increment() { count++; }
+export let count = 0; // export 声明被引擎在构建阶段记录
+export function increment() {
+  count++;
+}
 
 // 构建阶段完成后的依赖图（Module Graph）：
 // main.mjs → [counter.mjs, utils.mjs]   main 依赖两个模块
@@ -1194,38 +1220,42 @@ export function increment() { count++; }
 
 // === ESM 的 live binding（活绑定）===
 // counter.mjs
-export let count = 0;                     // export 导出的是变量的绑定，不是值
-export function increment() { count++; }  // 内部修改 count，外部通过 live binding 自动感知
+export let count = 0; // export 导出的是变量的绑定，不是值
+export function increment() {
+  count++;
+} // 内部修改 count，外部通过 live binding 自动感知
 
 // main.mjs
-import { count, increment } from './counter.mjs';
+import { count, increment } from "./counter.mjs";
 console.log(count); // 0                  // 初始值
-increment();                               // 调用 increment，count 在 counter.mjs 内部变为 1
+increment(); // 调用 increment，count 在 counter.mjs 内部变为 1
 console.log(count); // 1                  // 通过 live binding 拿到最新值！
 
 // === CommonJS 的值拷贝 ===
 // counter.js
 let count = 0;
-function increment() { count++; }
-module.exports = { count, increment };     // 导出时 count 的值 0 被拷贝到 exports 对象
+function increment() {
+  count++;
+}
+module.exports = { count, increment }; // 导出时 count 的值 0 被拷贝到 exports 对象
 
 // main.js
-const { count, increment } = require('./counter');
+const { count, increment } = require("./counter");
 console.log(count); // 0                  // require 时拿到的是值的拷贝
-increment();                               // 调用 increment，counter.js 内部的 count 变为 1
+increment(); // 调用 increment，counter.js 内部的 count 变为 1
 console.log(count); // 0                  // 但 main.js 中的 count 仍然是拷贝时的值 0
 ```
 
-<Warning title="⚠️ ESM 的 live binding 是只读的">
+<Warning title="ESM 的 live binding 是只读的">
 
 虽然 ESM 的导入是 live binding（引用），但**导入方不能直接修改导入的变量**。这是规范的硬性要求——`import` 绑定是只读的（read-only view）。要修改导出值，只能通过调用导出的函数。
 
 ```javascript
-import { count, increment } from './counter.mjs';
+import { count, increment } from "./counter.mjs";
 // count = 10;  // SyntaxError: "count" is read-only
-                // import 绑定是只读的——这是规范的硬性要求
-                // 防止导入方意外修改导出方的状态，保证单向数据流
-increment();    // ✅ 通过导出的函数间接修改——这是修改导出值的唯一方式
+// import 绑定是只读的——这是规范的硬性要求
+// 防止导入方意外修改导出方的状态，保证单向数据流
+increment(); // ✅ 通过导出的函数间接修改——这是修改导出值的唯一方式
 ```
 
 </Warning>
@@ -1236,17 +1266,21 @@ ESM 的静态分析能力是 Tree Shaking 的基础。因为 `import`/`export` �
 
 ```javascript
 // 编译时就能知道：debounce 被 import 了，throttle 没有
-import { debounce } from './utils.mjs';
+import { debounce } from "./utils.mjs";
 
 // utils.mjs
-export const debounce = (fn, ms) => { /* ... */ };
-export const throttle = (fn, ms) => { /* ... */ };
+export const debounce = (fn, ms) => {
+  /* ... */
+};
+export const throttle = (fn, ms) => {
+  /* ... */
+};
 // throttle 没有被任何模块 import → 打包时删除
 ```
 
 CommonJS 的 `require()` 是普通函数调用，可以在任何地方执行，编译时无法确定依赖关系，所以无法 Tree Shaking。
 
-<Tip title="🎢 通俗比喻: 建筑设计图 vs 现场施工">
+<Tip title="通俗比喻: 建筑设计图 vs 现场施工">
 
 CommonJS 就像现场施工——工人到了现场才知道要什么材料（运行时解析），缺什么临时去拿。ES Modules 就像先画好完整的设计图（编译时静态分析），所有的材料清单（依赖关系）在开工前就确定了。有了设计图，就能精确知道哪些材料会被用到（Tree Shaking），哪些是多余的可以直接划掉。
 
@@ -1254,8 +1288,8 @@ CommonJS 就像现场施工——工人到了现场才知道要什么材料（�
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 🔗 [Node.js 官方文档: Modules](https://nodejs.org/api/modules.html)：Node.js 模块系统的权威文档，包含 CommonJS 的加载机制和缓存策略。<sup>[1]</sup>
-- 📖 [MDN: JavaScript Modules](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules)：ES Modules 的官方教程，包含浏览器端和 Node.js 端的使用方式。<sup>[2]</sup>
-- 🟢 [Vite 官方文档: Why Vite](https://vitejs.dev/guide/why.html)：Vite 作者尤雨溪对"为什么需要新一代构建工具"的深度解释，理解原生 ESM 的价值。<sup>[3]</sup>
+- [Node.js 官方文档: Modules](https://nodejs.org/api/modules.html)：Node.js 模块系统的权威文档，包含 CommonJS 的加载机制和缓存策略。<sup>[1]</sup>
+- [MDN: JavaScript Modules](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules)：ES Modules 的官方教程，包含浏览器端和 Node.js 端的使用方式。<sup>[2]</sup>
+- [Vite 官方文档: Why Vite](https://vitejs.dev/guide/why.html)：Vite 作者尤雨溪对"为什么需要新一代构建工具"的深度解释，理解原生 ESM 的价值。<sup>[3]</sup>

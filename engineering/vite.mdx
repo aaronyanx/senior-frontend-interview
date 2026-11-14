@@ -1,12 +1,11 @@
 ---
 title: "Vite"
+description: "覆盖 Vite 开发与生产双模式、预构建、HMR 原理、Rollup 选型与 Rolldown 演进等高频面试点。"
 ---
 
-> **面试官为什么问这个？**
+> Vite 快在开发阶段按需编译、只在浏览器请求时才处理模块，生产环境它照样打包。分清这两件事，很多问题就顺了。
 >
-> Vite 是下一代前端构建工具的代表。面试官问这个，本质上是在考察你：**是否理解 Vite 为什么比 Webpack 快，以及"按需编译"和"全量打包"的本质区别。** 如果你答不清楚，说明你对构建工具的选型停留在"跟着教程用"而不是"知道为什么选它"。
->
-> **延伸方向：** Vite 团队正在用 Rust 编写 Rolldown 打包器，2025 年 3 月已发布 1.0 稳定版。Rolldown 的打包速度比 Rollup 快约 25 倍，比 Rspack 快约 7 倍，将彻底统一 Vite 的开发和生产环境。<sup>[4]</sup>
+> **延伸方向：** Vite 团队正在用 Rust 编写 Rolldown 打包器，目标是统一开发与生产环境的构建链路，目前仍在推进稳定化。<sup>[4]</sup>
 
 ---
 
@@ -31,7 +30,8 @@ Vite 的核心创新：**不打包，直接启动开发服务器**。浏览器�
   </Step>
   <Step title="两个关键技术支撑">
 
-1. **esbuild**（Go 语言编写）：用于预构建 node_modules 中的 CommonJS 依赖为 ESM，比 JS 打包器快 10-100 倍。2. **浏览器原生 ESM**：模块解析由浏览器完成（C++ 实现），而不是 Node.js（JavaScript 实现）。
+1. **esbuild**（Go 语言编写）：用于预构建 node_modules 中的 CommonJS 依赖为 ESM，比 JS 打包器快 10-100 倍。
+2. **浏览器原生 ESM**：模块解析由浏览器完成（C++ 实现），而不是 Node.js（JavaScript 实现）。
 
   </Step>
   <Step title="关键权衡: 开发快 vs 生产稳">
@@ -156,11 +156,11 @@ Vite 的本质是**利用浏览器原生 ESM 按需加载模块**，但 node_mod
 export default {
   optimizeDeps: {
     include: [
-      'lodash-es',           // 600+ 个模块，必须预构建
-      '@monorepo/shared',    // monorepo 中的本地包
+      "lodash-es", // 600+ 个模块，必须预构建
+      "@monorepo/shared", // monorepo 中的本地包
     ],
     exclude: [
-      'my-local-package',    // 已经是 ESM 格式的本地包
+      "my-local-package", // 已经是 ESM 格式的本地包
     ],
   },
 };
@@ -172,18 +172,18 @@ export default {
 
 ### 基础梳理
 
-| 维度 | Webpack | Vite |
-|------|---------|------|
-| **开发环境** | 先全量打包，再启动服务器 | 先启动服务器，按需编译 |
-| **生产环境** | 自己打包（Webpack 5） | 用 Rollup 打包 |
-| **模块解析** | Node.js 中完成（JavaScript，慢） | 浏览器中完成（C++，快） |
-| **启动速度** | 随项目大小线性增长 | 常数级（不随项目大小变化） |
-| **热更新** | 重新编译受影响的模块链 | 只更新变化的模块（HMR 更快） |
-| **依赖预构建** | 不需要（打包时处理） | esbuild 预构建（Go 语言，10-100x 快） |
+| 维度           | Webpack                          | Vite                                  |
+| -------------- | -------------------------------- | ------------------------------------- |
+| **开发环境**   | 先全量打包，再启动服务器         | 先启动服务器，按需编译                |
+| **生产环境**   | 自己打包（Webpack 5）            | 用 Rollup 打包                        |
+| **模块解析**   | Node.js 中完成（JavaScript，慢） | 浏览器中完成（C++，快）               |
+| **启动速度**   | 随项目大小线性增长               | 常数级（不随项目大小变化）            |
+| **热更新**     | 重新编译受影响的模块链           | 只更新变化的模块（HMR 更快）          |
+| **依赖预构建** | 不需要（打包时处理）             | esbuild 预构建（Go 语言，10-100x 快） |
 
 ### 专家视角深度剖析
 
-很多候选人能说出"Vite 用原生 ESM，所以快"，但大厂面试官真正在意的是：**Vite 的 HMR 有没有上限？什么时候 Vite 反而比 Webpack 慢？**
+很多人能说出"Vite 用原生 ESM，所以快"，但实际更在意的是：**Vite 的 HMR 有没有上限？什么时候 Vite 反而比 Webpack 慢？**
 
 Vite 的 HMR 有一个隐含的性能瓶颈：**深层依赖链的瀑布式请求**。当一个模块被修改后，浏览器需要重新请求这个模块。如果这个模块被 100 个文件 import，浏览器会发出 100 个 HTTP 请求。而 Webpack 的 HMR 只需要下载一个 update chunk。
 
@@ -194,8 +194,8 @@ Vite 的 HMR 有一个隐含的性能瓶颈：**深层依赖链的瀑布式请�
 export default {
   optimizeDeps: {
     include: [
-      'lodash-es',           // 600+ 个模块，必须预构建
-      '@monorepo/shared',    // monorepo 中的本地包
+      "lodash-es", // 600+ 个模块，必须预构建
+      "@monorepo/shared", // monorepo 中的本地包
     ],
   },
 };
@@ -225,12 +225,12 @@ Vite 的模块解析（快）：
 
 ### HMR 原理对比：Vite vs Webpack
 
-| 维度 | Webpack HMR | Vite HMR |
-|------|-------------|----------|
-| **更新粒度** | chunk 级别 | 模块级别 |
+| 维度         | Webpack HMR                                          | Vite HMR                          |
+| ------------ | ---------------------------------------------------- | --------------------------------- |
+| **更新粒度** | chunk 级别                                           | 模块级别                          |
 | **更新流程** | 文件变更 → 重新编译模块链 → 生成 update chunk → 下载 | 文件变更 → 只发送变更模块的新代码 |
-| **性能瓶颈** | 模块越多，编译越慢 | 深层依赖链导致瀑布式请求 |
-| **适用场景** | 大型项目（模块多但依赖浅） | 中小型项目（模块少但依赖浅） |
+| **性能瓶颈** | 模块越多，编译越慢                                   | 深层依赖链导致瀑布式请求          |
+| **适用场景** | 大型项目（模块多但依赖浅）                           | 中小型项目（模块少但依赖浅）      |
 
 <Note title="💡 一句话总结">
 
@@ -327,21 +327,31 @@ Vite 的 Plugin 系统借鉴了 Rollup，但扩展了开发服务器特有的钩
 // Vite Plugin 的基本结构
 function myPlugin() {
   return {
-    name: 'my-plugin',
+    name: "my-plugin",
     // Rollup 兼容钩子
-    resolveId(source) { /* 解析模块路径 */ },
-    load(id) { /* 加载文件内容 */ },
-    transform(code, id) { /* 转换代码 */ },
+    resolveId(source) {
+      /* 解析模块路径 */
+    },
+    load(id) {
+      /* 加载文件内容 */
+    },
+    transform(code, id) {
+      /* 转换代码 */
+    },
     // Vite 独有钩子
-    configureServer(server) { /* 配置开发服务器 */ },
-    transformIndexHtml(html) { /* 转换 HTML */ },
+    configureServer(server) {
+      /* 配置开发服务器 */
+    },
+    transformIndexHtml(html) {
+      /* 转换 HTML */
+    },
   };
 }
 ```
 
 <Note title="💡 一句话总结">
 
-esbuild 快但功能不全（代码分割弱、无缓存、CSS 处理弱），Rollup 功能全但慢。Rolldown（Rust）正在弥合这个差距——2025 年 3 月发布 1.0，打包速度比 Rollup 快约 25 倍。
+esbuild 快但功能不全（代码分割弱、无持久化缓存、CSS 处理弱），Rollup 功能全但慢。Rolldown（Rust）正在弥合这个差距，目标是兼容 Rollup 的 API 与插件生态。
 
 </Note>
 
@@ -349,9 +359,7 @@ esbuild 快但功能不全（代码分割弱、无缓存、CSS 处理弱），Ro
 
 ## 🔍 底层源码：Vite 的模块转换链路
 
-<div class="follow-up">
-Vite 收到浏览器的模块请求后，内部是怎么处理的？
-</div>
+<div class="follow-up">Vite 收到浏览器的模块请求后，内部是怎么处理的？</div>
 
 Vite 的开发服务器基于 Connect（Node.js HTTP 框架），每个模块请求经过一条 Plugin 管道（详见 [Vite 源码：packages/vite/src/node/server/transformRequest.ts](https://github.com/vitejs/vite/blob/main/packages/vite/src/node/server/transformRequest.ts)）：
 
@@ -371,11 +379,9 @@ async function transformRequest(url, server) {
 }
 ```
 
-每个步骤都是由 Vite 的 Plugin 系统驱动的。`@vitejs/plugin-react` 在 `transform` 阶段用 esbuild 转换 JSX，`vite:css` 在 `transform` 阶段处理 CSS Modules。
+每个步骤都是由 Vite 的 Plugin 系统驱动的。Vite 内置的 `vite:esbuild` 负责 TS/JSX 的语法转换，`@vitejs/plugin-react` 在此基础上叠加 Babel 插件实现 Fast Refresh，`vite:css` 在 `transform` 阶段处理 CSS Modules。
 
-<div class="follow-up">
-Vite 的 HMR 是怎么做到只更新变化的模块的？
-</div>
+<div class="follow-up">Vite 的 HMR 是怎么做到只更新变化的模块的？</div>
 
 Vite 的 HMR 基于**模块粒度的更新**，而不是 Webpack 的 chunk 粒度（详见 [Vite 源码：packages/vite/src/node/server/hmr.ts](https://github.com/vitejs/vite/blob/main/packages/vite/src/node/server/hmr.ts)）：
 
@@ -393,14 +399,15 @@ Vite 的 HMR 基于**模块粒度的更新**，而不是 Webpack 的 chunk 粒�
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 十、及格回答 vs 满分回答
 
 ### 问题："说说 Vite 和 Webpack 的区别"
 
 **及格回答（60-70分）：**
+
 > "Vite 用浏览器原生 ESM，按需编译，启动快。Webpack 先打包再启动。Vite 生产环境用 Rollup。"
 
-面试官评价：**知道结论但不理解原理**。
+问题出在：**知道结论但不理解原理**。
 
 **满分回答（90-100分）：**
 
@@ -410,7 +417,7 @@ Vite 的 HMR 基于**模块粒度的更新**，而不是 Webpack 的 chunk 粒�
 
 > "但 Vite 的 HMR 有上限：深层依赖链会导致浏览器发出大量 HTTP 请求（瀑布式请求）。在大型 monorepo 中可能比 Webpack 更慢。解决方案是通过 `optimizeDeps.include` 手动预构建高频依赖。生产环境用 Rollup 打包，因为 esbuild 的代码分割和 Tree-shaking 不如 Rollup 成熟。未来的 Rolldown（Rust 编写）将统一开发和生产环境。<sup>[3]</sup>"
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
@@ -473,6 +480,7 @@ Vite 的 HMR 更快是因为没有打包开销。但代价是：如果一个模�
 
 **高分回答：**
 "Vite 对 CSS 的处理有几个优势：
+
 1. **开箱即用**：内置支持 CSS Modules（`*.module.css`）、PostCSS、CSS 预处理器（Sass/Less/Stylus），不需要额外配置 Loader。
 2. **开发环境**：CSS 通过 `<style>` 标签注入，HMR 时只更新变化的 CSS，不需要重新加载页面。
 3. **生产环境**：CSS 自动提取为独立文件，支持代码分割。
@@ -489,6 +497,7 @@ Vite 的 HMR 更快是因为没有打包开销。但代价是：如果一个模�
 
 **高分回答：**
 "Vite 的 SSR 支持通过 `ssrLoadModule` API 实现。核心原理：
+
 1. **开发环境**：Vite 的开发服务器同时支持客户端和服务端。服务端直接加载 ESM 模块，不需要打包。
 2. **生产环境**：用 Rollup 打包两份代码——客户端 bundle 和服务端 bundle。
 3. **SSR 流程**：服务端执行组件渲染函数 → 生成 HTML → 发送给客户端 → 客户端 hydrate（激活交互）。
@@ -504,6 +513,7 @@ Vite SSR 的优势：开发时不需要打包，启动快；HMR 时服务端代�
 
 **高分回答：**
 "Vite 的环境变量通过 `.env` 文件管理：
+
 1. **加载优先级**：`.env` → `.env.local` → `.env.[mode]` → `.env.[mode].local`
 2. **暴露规则**：只有 `VITE_` 前缀的变量才会暴露给客户端代码（`import.meta.env.VITE_API_URL`）
 3. **类型安全**：在 `vite-env.d.ts` 中声明环境变量类型
@@ -511,8 +521,8 @@ Vite SSR 的优势：开发时不需要打包，启动快；HMR 时服务端代�
 ```typescript
 // vite-env.d.ts
 interface ImportMetaEnv {
-  readonly VITE_API_URL: string
-  readonly VITE_APP_TITLE: string
+  readonly VITE_API_URL: string;
+  readonly VITE_APP_TITLE: string;
 }
 ```
 
@@ -527,6 +537,7 @@ interface ImportMetaEnv {
 
 **高分回答：**
 "Vite 在大型项目中可能遇到的性能问题和解决方案：
+
 1. **启动慢**：node_modules 中的 CommonJS 模块太多，预构建耗时。解决方案：用 `optimizeDeps.include` 手动指定需要预构建的依赖。
 2. **HMR 慢**：深层依赖链导致浏览器发出大量 HTTP 请求。解决方案：用 `optimizeDeps.include` 预构建高频依赖，减少运行时请求数。
 3. **构建慢**：Rollup 打包大型项目耗时。解决方案：用 `build.rollupOptions.output.manualChunks` 手动拆分 chunk，减少单次打包的模块数。
@@ -541,6 +552,7 @@ interface ImportMetaEnv {
 
 **高分回答：**
 "Vite 和 Turbopack 的定位不同：
+
 1. **Vite**：通用的前端构建工具，支持所有框架（Vue、React、Svelte 等）。开发环境用浏览器原生 ESM，生产环境用 Rollup。
 2. **Turbopack**：Next.js 团队用 Rust 编写的打包器，专为 Next.js 优化。开发和生产都用 Turbopack。
 
@@ -555,8 +567,8 @@ interface ImportMetaEnv {
 
 ## 📚 延伸阅读与引用参考
 
-- 🔗 [Vite 官方文档：Why Vite](https://vitejs.dev/guide/why.html)：*Vite 作者尤雨溪亲自解释 Vite 的设计动机和技术原理——"bundling is necessary for production but a hindrance during development"。* <sup>[1]</sup>
-- 📖 [Vite 源码](https://github.com/vitejs/vite)：*Vite 的完整源码，理解 Plugin 系统、HMR、预构建的底层实现。* <sup>[2]</sup>
-- 🟢 [esbuild 官方文档](https://esbuild.github.io/)：*了解 esbuild 的性能优势和局限性，理解为什么 Vite 生产环境不用 esbuild。* <sup>[3]</sup>
-- 🟢 [Rolldown 官方仓库](https://github.com/rolldown/rolldown)：*Vite 团队用 Rust 编写的下一代打包器，2025 年 3 月发布 1.0 稳定版，目标是统一 Vite 的开发和生产环境。* <sup>[4]</sup>
-- 🔗 [尤雨溪 Vite 设计文档](https://tangzhanbo.github.io/vite-design/)：*尤雨溪公开的 Vite 下一代构建工具设计过程文档，展示从 esbuild + Rollup 到 Rolldown 的演进思路。* <sup>[5]</sup>
+- 🔗 [Vite 官方文档：Why Vite](https://vitejs.dev/guide/why.html)：_Vite 作者尤雨溪亲自解释 Vite 的设计动机和技术原理——"bundling is necessary for production but a hindrance during development"。_ <sup>[1]</sup>
+- 📖 [Vite 源码](https://github.com/vitejs/vite)：_Vite 的完整源码，理解 Plugin 系统、HMR、预构建的底层实现。_ <sup>[2]</sup>
+- 🟢 [esbuild 官方文档](https://esbuild.github.io/)：_了解 esbuild 的性能优势和局限性，理解为什么 Vite 生产环境不用 esbuild。_ <sup>[3]</sup>
+- 🟢 [Rolldown 官方仓库](https://github.com/rolldown/rolldown)：_Vite 团队用 Rust 编写的下一代打包器，目标是统一 Vite 的开发和生产环境。_ <sup>[4]</sup>
+- 🔗 [尤雨溪 Vite 设计文档](https://tangzhanbo.github.io/vite-design/)：_尤雨溪公开的 Vite 下一代构建工具设计过程文档，展示从 esbuild + Rollup 到 Rolldown 的演进思路。_ <sup>[5]</sup>

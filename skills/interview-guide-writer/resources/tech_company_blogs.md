@@ -135,6 +135,7 @@
 7. **Vercel AI 团队 / 蚂蚁通义前端团队**：探索前端”生成式 UI”、流式响应式渲染以及将复杂工具调用 (Function Calling) 丝滑融入现代 Web 交互的先驱。
 8. **A2A Protocol 项目**：维护 Agent2Agent 开放协议，覆盖 Agent Card、Task 生命周期、消息、产物、流式更新和异步通知。
 9. **Google AI for Developers**：提供 Gemini 模型目录、版本生命周期和能力说明，适合做模型选型时核对版本信息。
+10. **字节跳动 CloudWeGo / Eino 团队**：面向 Go 服务提供 Graph、Agent、Tool、Retriever 和流式执行能力，适合核对 Go 生态中的 Agent 编排与工程集成。
 
 ### 🎨 Design to Code 与 AI 代码生成
 1. **Figma MCP 团队**：推出 Figma MCP 服务，允许 AI 工具直接读取 Figma 设计文件，推动 Design to Code 标准化。

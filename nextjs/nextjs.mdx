@@ -1,10 +1,9 @@
 ---
 title: "Next.js"
+description: "覆盖 SSR/SSG/ISR/CSR 选型、App Router 与 RSC、Server Actions、Hydration 和缓存机制。"
 ---
 
-> **面试官为什么问这个？**
->
-> Next.js 是 React 生态中最主流的全栈框架，几乎垄断了中大型 React 项目的工程化方案。面试官问这个，本质上是在考察你：**你能不能从"会写 React 组件"跨越到"能设计整站渲染架构"？** 如果你答不清楚 SSR/SSG/ISR 的区别和选型依据，说明你对前端工程化的理解停留在"本地 dev 能跑"的层面。
+> 我最早用 Next.js 时只记住 SSR、SSG 几个名词，真踩过部署和缓存的坑，才明白选型要看数据新鲜度和性能成本。
 
 ---
 
@@ -72,7 +71,7 @@ Next.js 在服务端预先渲染好 HTML，用户打开页面就能直接看到�
 
 <Tip title="面试技巧">
 
-回答时先说"为什么"（SPA 的白屏和 SEO 问题），再说"怎么解决"（服务端预渲染）。面试官想听的是你理解问题的本质，而不是背诵 Next.js 的功能列表。
+回答时先说"为什么"（SPA 的白屏和 SEO 问题），再说"怎么解决"（服务端预渲染）。想听的是你对问题本质的理解，而不是背诵 Next.js 的功能列表。
 
 </Tip>
 
@@ -107,21 +106,21 @@ Next.js 在服务端预先渲染好 HTML，用户打开页面就能直接看到�
 // SSR：每次请求都在服务端执行，数据永远最新
 // 适用：用户个人页、搜索结果页、实时数据看板
 export async function getServerSideProps(context) {
-  const data = await fetch('https://api.example.com/user/' + context.params.id);
+  const data = await fetch("https://api.example.com/user/" + context.params.id);
   return { props: { user: await data.json() } };
 }
 
 // SSG：构建时生成静态 HTML，CDN 直接返回
 // 适用：博客、文档、营销落地页
 export async function getStaticProps() {
-  const posts = await fetch('https://api.example.com/posts');
+  const posts = await fetch("https://api.example.com/posts");
   return { props: { posts: await posts.json() } };
 }
 
 // ISR：静态页面按需后台重新生成，兼顾速度和新鲜度
 // 适用：电商商品页、新闻列表
 export async function getStaticProps() {
-  const products = await fetch('https://api.example.com/products');
+  const products = await fetch("https://api.example.com/products");
   return {
     props: { products: await products.json() },
     revalidate: 60, // 60 秒后，下次访问触发后台重新生成
@@ -131,14 +130,26 @@ export async function getStaticProps() {
 // App Router 等价写法（Next.js 13+）
 async function ProductPage() {
   // 等价于 SSR
-  const data = await fetch('https://api.example.com/data', { cache: 'no-store' });
+  const data = await fetch("https://api.example.com/data", {
+    cache: "no-store",
+  });
   // 等价于 SSG
-  const data2 = await fetch('https://api.example.com/data', { cache: 'force-cache' });
+  const data2 = await fetch("https://api.example.com/data", {
+    cache: "force-cache",
+  });
   // 等价于 ISR
-  const data3 = await fetch('https://api.example.com/data', { next: { revalidate: 60 } });
+  const data3 = await fetch("https://api.example.com/data", {
+    next: { revalidate: 60 },
+  });
   return <div>{/* ... */}</div>;
 }
 ```
+
+<Note title="版本差异：fetch 默认缓存">
+
+在 Next.js 14 及更早版本，`fetch` 默认使用 `force-cache`；从 Next.js 15 开始默认改为 `no-store`，GET Route Handler 也不再默认缓存。跨版本升级时不要依赖默认值，把 `cache` 和 `next.revalidate` 显式写出来，否则同一个页面在 14 和 15 上的行为可能完全不同。
+
+</Note>
 
 <Warning title="核心机制: ISR 的两阶段返回">
 
@@ -166,20 +177,20 @@ SSR 就像"现点现做"——你点了鱼香肉丝，厨师立刻起锅烧油�
 
 ### 基础梳理
 
-| 对比维度 | Pages Router | App Router |
-|---------|-------------|-----------|
-| **引入版本** | Next.js 9（2019） | Next.js 13（2022） |
-| **React 版本** | React 17/18 | React 18+（必须） |
-| **组件模型** | 所有组件默认客户端执行 | Server Components（默认）+ Client Components |
-| **数据获取** | `getServerSideProps` / `getStaticProps` | async 组件直接 `await` |
-| **布局系统** | `_app.tsx` + 手动嵌套 | 原生嵌套 `layout.tsx` |
-| **流式渲染** | 不支持 | 支持（Suspense + Streaming） |
-| **Server Actions** | 不支持 | 支持（表单直接调用服务端函数） |
-| **缓存策略** | 手动控制 | 自动缓存（fetch 默认缓存） |
+| 对比维度           | Pages Router                            | App Router                                   |
+| ------------------ | --------------------------------------- | -------------------------------------------- |
+| **引入版本**       | Next.js 9（2019）                       | Next.js 13（2022）                           |
+| **React 版本**     | React 17/18                             | React 18+（必须）                            |
+| **组件模型**       | 所有组件默认客户端执行                  | Server Components（默认）+ Client Components |
+| **数据获取**       | `getServerSideProps` / `getStaticProps` | async 组件直接 `await`                       |
+| **布局系统**       | `_app.tsx` + 手动嵌套                   | 原生嵌套 `layout.tsx`                        |
+| **流式渲染**       | 不支持                                  | 支持（Suspense + Streaming）                 |
+| **Server Actions** | 不支持                                  | 支持（表单直接调用服务端函数）               |
+| **缓存策略**       | 显式配置 `revalidate`                   | 按 `fetch` 配置（Next.js 15 起默认不缓存）   |
 
 ### 专家视角深度剖析
 
-很多候选人只能背诵上面的表格，但大厂面试官真正在意的是：**App Router 的架构设计到底解决了 Pages Router 的哪些根本性缺陷？**
+很多人只能背诵上面的表格，但实际更在意的是：**App Router 的架构设计到底解决了 Pages Router 的哪些根本性缺陷？**
 
 Pages Router 时代的根本矛盾是：**组件代码既在服务端执行（SSR），又在客户端执行（Hydration），但你无法控制哪些部分只在服务端跑。** 每个组件都会被打包进客户端 JS Bundle，即使它只是用来查询数据库和渲染静态内容。这导致了两个严重问题：
 
@@ -189,33 +200,38 @@ Pages Router 时代的根本矛盾是：**组件代码既在服务端执行（SS
 App Router 引入 **React Server Components（RSC）** 彻底解决了这个问题。RSC 的核心思想是：**组件默认只在服务端执行，不会被发送到客户端。** 只有显式标记了 `'use client'` 的组件才会被打包进客户端 JS。这意味着：
 
 - 服务端组件可以直接 `await` 数据库查询，零客户端 JS 开销。
-- 每个组件可以独立获取数据，Next.js 会自动并行化请求。
+- 每个组件可以独立获取数据；但"独立"不等于自动并行，多个请求要放在同一个组件里用 `Promise.all`，或者拆成多个 Server Component 用 `Suspense` 分区，才会真正并行。
 - 布局（Layout）在页面切换时不会重新渲染，只渲染变化的子页面。
 
 ```javascript
 // Pages Router：数据获取只能在页面顶层，形成瀑布流
 // pages/dashboard.tsx
 export async function getServerSideProps() {
-  const user = await fetchUser();      // 等 200ms
-  const orders = await fetchOrders();  // 再等 300ms
-  const stats = await fetchStats();    // 再等 150ms
+  const user = await fetchUser(); // 等 200ms
+  const orders = await fetchOrders(); // 再等 300ms
+  const stats = await fetchStats(); // 再等 150ms
   // 总耗时：650ms（串行）
   return { props: { user, orders, stats } };
 }
 
-// App Router：每个组件独立获取数据，自动并行化
+// App Router：数据获取可以下沉到组件，但并行要显式写
 // app/dashboard/page.tsx
 async function Dashboard() {
-  // Next.js 会自动并行执行这三个请求
+  const [user, orders, stats] = await Promise.all([
+    fetchUser(), // 200ms
+    fetchOrders(), // 300ms
+    fetchStats(), // 150ms
+  ]);
   return (
     <Layout>
-      <UserProfile />   {/* 独立 await fetchUser() */}
-      <OrderList />     {/* 独立 await fetchOrders() */}
-      <StatsPanel />    {/* 独立 await fetchStats() */}
+      <UserProfile user={user} />
+      <OrderList orders={orders} />
+      <StatsPanel stats={stats} />
     </Layout>
   );
 }
 // 总耗时：max(200, 300, 150) = 300ms（并行）
+// 也可以拆成三个 Server Component 并用 Suspense 包裹，按各区块速度流式输出
 ```
 
 ---
@@ -274,23 +290,20 @@ function Form() {
 **经典踩坑：Server Actions 不是万能的。**
 
 ```javascript
-// 踩坑 1：Server Actions 有大小限制
-// Vercel 的 Server Actions 请求体上限默认为 1MB
-// 上传文件需要用 Multipart Upload，不能直接 formData.get('file')
+// 踩坑 1：Server Actions 有请求体大小限制
+// Next.js 的 serverActions.bodySizeLimit 默认 1MB，可通过 next.config 调整
+// 上传大文件应该用对象存储的直传（预签名 URL），而不是把整段文件塞进 Action
 'use server';
 export async function uploadFile(formData: FormData) {
   const file = formData.get('file') as File;
-  // 如果文件 > 1MB，会直接报 413 Payload Too Large
+  // 超过配置上限时，请求会在进入函数前被拒绝
   const buffer = Buffer.from(await file.arrayBuffer());
   await fs.writeFile('./uploads/' + file.name, buffer);
 }
 
-// 踩坑 2：Server Actions 是顺序执行的，不支持并行
-// 如果一个表单有多个 action，它们会串行执行
-<form action={async () => {
-  await createUser(formData);     // 先执行
-  await sendWelcomeEmail(email);  // 再执行
-}}>
+// 踩坑 2：每次调用都是一次网络往返，不能当成本地函数循环调用
+// 多个 Action 需要并行时由调用方显式 Promise.all；批量提交要自己做防抖和限流
+await Promise.all([createUser(formData), sendWelcomeEmail(email)]);
 
 // 踩坑 3：错误处理需要 try/catch，不会自动返回 HTTP 状态码
 'use server';
@@ -306,14 +319,14 @@ export async function createUser(formData: FormData) {
 
 **关键区别：**
 
-| 对比维度 | API Routes | Server Actions |
-|---------|-----------|---------------|
-| **调用方式** | HTTP 请求（fetch/axios） | 直接函数调用（RPC） |
-| **序列化** | 手动 JSON 序列化/反序列化 | 自动序列化（支持 FormData、Blob 等） |
-| **适用场景** | 第三方 Webhook、公开 API | 表单提交、内部数据变更 |
-| **类型安全** | 需要手动维护类型 | 自动推导（TypeScript 原生支持） |
-| **缓存集成** | 需要手动 revalidate | 自动集成 revalidatePath / revalidateTag |
-| **请求大小** | 无限制（自行控制） | 默认 1MB（Vercel 限制） |
+| 对比维度     | API Routes                | Server Actions                                                |
+| ------------ | ------------------------- | ------------------------------------------------------------- |
+| **调用方式** | HTTP 请求（fetch/axios）  | 直接函数调用（RPC）                                           |
+| **序列化**   | 手动 JSON 序列化/反序列化 | 自动序列化（支持 FormData、Blob 等）                          |
+| **适用场景** | 第三方 Webhook、公开 API  | 表单提交、内部数据变更                                        |
+| **类型安全** | 需要手动维护类型          | 自动推导（TypeScript 原生支持）                               |
+| **缓存集成** | 需要手动 revalidate       | 自动刷新当前路由；数据缓存仍需 revalidatePath / revalidateTag |
+| **请求大小** | 无限制（自行控制）        | 默认 1MB（`bodySizeLimit`，可配置）                           |
 
 <Tip title="最佳实践">
 
@@ -376,7 +389,7 @@ function BadComponent() {
 // ❌ 错误：依赖 localStorage
 function BadComponent() {
   // 服务端不存在 localStorage
-  const theme = localStorage.getItem('theme');
+  const theme = localStorage.getItem("theme");
   return <div className={theme}>{/* ... */}</div>;
   // 服务端和客户端的 className 不同 → Mismatch
 }
@@ -414,19 +427,22 @@ function TimeDisplay() {
 }
 
 // ✅ 方案三：动态导入（禁用 SSR）
-import dynamic from 'next/dynamic';
+import dynamic from "next/dynamic";
 
 const ClientOnlyComponent = dynamic(
-  () => import('./ClientOnlyComponent'),
-  { ssr: false } // 不在服务端渲染，直接在客户端加载
+  () => import("./ClientOnlyComponent"),
+  { ssr: false }, // 不在服务端渲染，直接在客户端加载
 );
 
 // ✅ 方案四：useSyncExternalStore 的 getServerSnapshot
 function WindowWidth() {
   const width = useSyncExternalStore(
-    () => window.addEventListener('resize', () => {}),
+    (onChange) => {
+      window.addEventListener("resize", onChange);
+      return () => window.removeEventListener("resize", onChange);
+    },
     () => window.innerWidth,
-    () => 0  // getServerSnapshot：服务端返回的快照
+    () => 0, // getServerSnapshot：服务端和首次 Hydration 都返回这个快照
   );
   return <p>窗口宽度：{width}</p>;
 }
@@ -453,7 +469,7 @@ function WindowWidth() {
    → 查看哪些组件在 Hydration 期间被重新渲染
 ```
 
-<Warning title="⚠️ Hydration 失败的后果">
+<Warning title="Hydration 失败的后果">
 
 Hydration 失败时，React 会在控制台报错。严重情况下，React 会丢弃服务端渲染的 HTML，在客户端**从头重新渲染**整个组件树。这意味着：
 
@@ -463,7 +479,7 @@ Hydration 失败时，React 会在控制台报错。严重情况下，React 会�
 
 </Warning>
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 Hydration 是 SSR 的"激活"阶段——服务端渲染的 HTML 是静态的，客户端 React 给它注入交互能力。Hydration 失败的根本原因是**服务端和客户端的渲染结果不一致**，解决方案是把客户端特有的逻辑放到 `useEffect` 中。
 
@@ -471,11 +487,9 @@ Hydration 是 SSR 的"激活"阶段——服务端渲染的 HTML 是静态的，
 
 ---
 
-## 🔍 底层源码：Next.js 是如何实现渲染的？
+## 底层源码：Next.js 是如何实现渲染的？
 
-<div class="follow-up">
-Next.js 的 SSR 渲染流程在源码中是怎么实现的？
-</div>
+<div class="follow-up">Next.js 的 SSR 渲染流程在源码中是怎么实现的？</div>
 
 Next.js 的服务端渲染核心在 `packages/next/src/server/render.tsx` 中。渲染流程分为三个阶段（详见 [Next.js 源码：packages/next/src/server/render.tsx](https://github.com/vercel/next.js/blob/canary/packages/next/src/server/render.tsx)）：
 
@@ -500,7 +514,7 @@ async function renderToHTML(req, res, pathname, query) {
 这段代码做了 3 件事：先调用 `getServerSideProps` 获取数据，再用 `ReactDOMServer.renderToString` 把 React 组件树序列化为 HTML 字符串，最后把 HTML 注入到文档模板中返回给浏览器。
 
 <div class="follow-up">
-App Router 的 RSC（React Server Components）又是怎么实现的？
+  App Router 的 RSC（React Server Components）又是怎么实现的？
 </div>
 
 App Router 的核心是 RSC 协议，实现在 `packages/next/src/server/app-render/` 目录下（详见 [Next.js 源码：packages/next/src/server/app-render/rsc/render.tsx](https://github.com/vercel/next.js/blob/canary/packages/next/src/server/app-render/rsc/render.tsx)）：
@@ -529,16 +543,19 @@ async function renderToReadableStream(rscStream) {
 
 RSC 的关键设计：服务端组件和客户端组件通过一个"边界"（`'use client'` 指令）分离。服务端组件的渲染结果以 RSC Payload（流式 JSON）的形式传输，而不是 HTML。客户端的 React 运行时消费这个 Payload，结合客户端组件的 JS 代码，最终渲染为 DOM。这就是为什么服务端组件可以 `await` 数据库查询而不会增加客户端 JS 体积——它们的代码永远不会到达浏览器。
 
+需要强调：**RSC 与 SSR 不是替代关系。** SSR 回答的是"首屏 HTML 在哪里生成"，RSC 回答的是"组件代码在哪里执行、哪些 JS 要发到浏览器"。一个完全静态生成（SSG）的页面同样可以使用服务端组件；客户端组件也仍会在服务端被渲染成 HTML 以便首屏显示，再在浏览器 Hydration。
+
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 及格回答 vs 满分回答
 
 ### 问题："说说 Next.js 的渲染策略，什么时候用 SSR，什么时候用 SSG？"
 
 **及格回答（60-70分）：**
+
 > "SSR 是每次请求时在服务端渲染，适合动态数据。SSG 是构建时生成静态页面，适合不怎么变的内容。ISR 是 SSG 的增强版，可以按需重新生成。"
 
-面试官评价：**知道定义但不理解选型逻辑**。
+问题出在：**知道定义但不理解选型逻辑**。
 
 **满分回答（90-100分）：**（4 段，每段 3-5 句）
 
@@ -550,7 +567,7 @@ RSC 的关键设计：服务端组件和客户端组件通过一个"边界"（`'
 
 > 实际项目选型：电商商品详情页用 ISR（revalidate: 10s，CDN 扛流量），搜索结果页用 SSR（每次查询不同），文档站用 SSG（内容固定），后台管理系统用 CSR（不需要 SEO）。一个项目中可以混合使用多种策略，按页面粒度选择最优方案。
 
-### 大厂高频连环拷问
+### 常见追问
 
 > 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。
 
@@ -605,13 +622,26 @@ RSC 的关键设计：服务端组件和客户端组件通过一个"边界"（`'
     如果需要在 Middleware 中使用 Node.js API，应该切换到 Server Components 或 Route Handlers 处理，而不是试图在 Middleware 中强行使用。"
 
   </Accordion>
+
+  <Accordion title="RSC 和 SSR 是一回事吗? generateStaticParams 解决什么问题?" icon="layer-group">
+
+    **答题要点：**
+    先拆开两个概念，再说清 `generateStaticParams` 只负责枚举静态路径。
+
+    **高分回答：**
+    "不是一回事。SSR 说的是首屏 HTML 在服务端按请求生成；RSC 说的是组件在服务端执行、只把序列化后的 RSC Payload 发给客户端，组件代码本身不进客户端 Bundle。两者可以组合：App Router 的页面通常由服务端组件产出 Payload，同时渲染出首屏 HTML，客户端组件再 Hydration。RSC 也不会自动让页面变成动态渲染，静态生成的页面同样可以是 RSC。
+
+    `generateStaticParams` 是 App Router 里 `getStaticPaths` 的替代品，在构建时枚举动态段参数，把这些路径预渲染成静态页面。没有列出的参数默认在首次访问时按需生成，设 `export const dynamicParams = false` 后则直接 404。它只决定'哪些路径在构建时生成'，不负责数据缓存，数据是否缓存仍由 `fetch` 的 `cache` 和 `revalidate` 决定。"
+
+  </Accordion>
+
 </AccordionGroup>
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 🔗 [Next.js 官方文档 - Rendering](https://nextjs.org/docs/app/building-your-application/rendering)：官方对 SSR/SSG/ISR/CSR 四种渲染策略的最权威解释，包含 App Router 的最新 API。<sup>[1]</sup>
-- 📖 [React Server Components 协议提案](https://github.com/reactjs/rfcs/blob/main/text/0188-server-components.md)：React 团队对 RSC 架构的 RFC 设计文档，解释了为什么要把组件分为服务端和客户端两类。<sup>[2]</sup>
-- 🟢 [Vercel 博客：Making the Web Faster](https://vercel.com/blog)：Vercel 工程团队对 Next.js 缓存策略、ISR 实现原理的深度技术博客。<sup>[3]</sup>
-- 🔗 [Next.js GitHub 源码](https://github.com/vercel/next.js)：`packages/next/src/server/` 目录包含 SSR 渲染、RSC Payload 生成、缓存管理的核心实现。
+- [Next.js 官方文档 - Rendering](https://nextjs.org/docs/app/building-your-application/rendering)：官方对 SSR/SSG/ISR/CSR 四种渲染策略的最权威解释，包含 App Router 的最新 API。<sup>[1]</sup>
+- [React Server Components 协议提案](https://github.com/reactjs/rfcs/blob/main/text/0188-server-components.md)：React 团队对 RSC 架构的 RFC 设计文档，解释了为什么要把组件分为服务端和客户端两类。<sup>[2]</sup>
+- [Vercel 博客](https://vercel.com/blog)：Vercel 工程团队关于 Next.js 缓存策略、ISR 实现原理的官方文章汇总。<sup>[3]</sup>
+- [Next.js GitHub 源码](https://github.com/vercel/next.js)：`packages/next/src/server/` 目录包含 SSR 渲染、RSC Payload 生成、缓存管理的核心实现。

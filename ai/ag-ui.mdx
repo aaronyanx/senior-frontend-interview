@@ -1,0 +1,874 @@
+---
+title: "AG-UI 与 A2A：Agent 与前端的协议层"
+description: "AG-UI 事件流、A2A 任务模型与 Agent 前端协议分层面试考点"
+---
+
+> 我对 AG-UI 的理解分几次补上的：先记住 MCP 连工具，后来补上 A2A 连 Agent，最后才把 AG-UI 连前端这条线接上。Agent 到了界面上，要处理的是流式文本、工具调用可视化、共享状态和中断恢复。
+
+---
+
+## Q1: 为什么 Agent 需要 AG-UI？传统 REST / WebSocket 不够吗？
+
+Agent 的交互形态和传统 CRUD 有本质差异：
+
+| 特征     | 传统接口       | Agent                              |
+| -------- | -------------- | ---------------------------------- |
+| 响应时长 | 毫秒到秒       | 秒到分钟，可能跨多轮               |
+| 输出     | 一次性完整结果 | 增量 token、工具事件、状态变更混合 |
+| 确定性   | 同输入同输出   | 非确定，可能走不同工具链           |
+| 交互     | 请求-响应      | 中途需要确认、补充输入、取消       |
+| 结构     | JSON           | 文本 + 结构化 + 工具调用 + UI 状态 |
+
+常见的三种"自研协议"及其问题：
+
+1. **轮询任务状态。** 实现简单，但延迟高、请求量大，且拿不到 token 级增量，用户看到的是"转圈很久，然后整段出现"。
+2. **自定义 WebSocket 消息。** 能实时，但每个团队定义一套 `{type, data}`，前端要写大量 if/else；断线重连、乱序、回放全靠自己。
+3. **直接把模型 SSE 透传给前端。** 前端拿到的是 Provider 的 delta 格式，不是业务事件；工具调用、状态同步、人工确认都无处安放。
+
+AG-UI 的定位是：**定义 Agent 与用户界面之间的标准事件流**。它不规定 UI 长什么样，也不规定 Agent 内部怎么实现，只规定"发生了什么事、按什么顺序、带什么字段"。
+
+```text
+用户界面（React / 移动端 / 桌面端）
+        ▲
+        │  AG-UI 事件流（SSE / WebSocket）
+        │
+Agent Runtime（LangGraph / CrewAI / 自研）
+        │
+        ├── MCP ──→ 工具与数据
+        └── A2A ──→ 其他 Agent
+```
+
+<Note title="一句话总结">
+
+AG-UI 是"Agent 的过程协议"，不是"UI 组件协议"。它让前端知道"现在在思考、正在调哪个工具、参数是什么、状态变成了什么、需不需要用户确认"，而不是只等一个最终字符串。
+
+</Note>
+
+---
+
+## Q2: 一次完整 Run 的事件序列长什么样？
+
+### 请求：RunAgentInput
+
+前端发起一次执行，POST 一个结构化输入：
+
+```json
+{
+  "threadId": "thread-42",
+  "runId": "run-1001",
+  "messages": [
+    {
+      "id": "m-1",
+      "role": "user",
+      "content": "帮我查一下订单 A1024，如果已发货就申请退款"
+    }
+  ],
+  "tools": [],
+  "context": [],
+  "state": {},
+  "forwardedProps": {}
+}
+```
+
+| 字段             | 含义               | 注意                                       |
+| ---------------- | ------------------ | ------------------------------------------ |
+| `threadId`       | 会话线程 ID        | 同一段对话保持不变，用于恢复上下文         |
+| `runId`          | 本次执行 ID        | 每次新请求用新值，事件靠它归属             |
+| `messages`       | 消息历史或本轮新增 | 续聊时可只传新消息，由服务端按 thread 恢复 |
+| `tools`          | 客户端提供的工具   | 与服务端 MCP 工具不同，由前端执行          |
+| `state`          | 前端共享状态       | 与 Agent 状态做双向同步                    |
+| `context`        | 补充上下文         | 业务侧附加信息                             |
+| `forwardedProps` | 透传扩展           | 放置鉴权外的业务参数，不要放密钥           |
+
+### 事件流
+
+```text
+RUN_STARTED            { threadId, runId }
+  STEP_STARTED         { stepName: "plan" }
+  STEP_FINISHED        { stepName: "plan" }
+
+  TOOL_CALL_START      { toolCallId, toolCallName: "get_order" }
+  TOOL_CALL_ARGS       { toolCallId, delta: "{\"orderId\":" }
+  TOOL_CALL_ARGS       { toolCallId, delta: "\"A1024\"}" }
+  TOOL_CALL_END        { toolCallId }
+  TOOL_CALL_RESULT     { toolCallId, messageId, content: "..." }
+
+  STATE_SNAPSHOT       { snapshot: { order: {...}, step: "confirm_refund" } }
+  STATE_DELTA          { delta: [{ "op": "replace", "path": "/step", "value": "await_confirm" }] }
+
+  TEXT_MESSAGE_START   { messageId, role: "assistant" }
+  TEXT_MESSAGE_CONTENT { messageId, delta: "订单已发货，" }
+  TEXT_MESSAGE_CONTENT { messageId, delta: "需要你确认后退款。" }
+  TEXT_MESSAGE_END     { messageId }
+
+RUN_FINISHED           { threadId, runId, outcome: { type: "success" } }
+```
+
+### 三条不变量
+
+1. **每个 run 必须以 `RUN_STARTED` 开始，以 `RUN_FINISHED` 或 `RUN_ERROR` 结束。** 中间可以有任意多个 step、消息、工具调用。
+2. **同一 `messageId` 的内容只能追加。** 前端按到达顺序拼接 `delta`；要改内容只能开新消息。
+3. **同一 `toolCallId` 的 `TOOL_CALL_START` → `ARGS` → `END` → `RESULT` 必须配套。** `TOOL_CALL_END` 只表示"参数发完了"，**不表示工具执行成功**；结果要等 `TOOL_CALL_RESULT`。
+
+<Warning title="最容易搞错的事件语义">
+
+`TOOL_CALL_END` 表示"参数传输结束，开始执行或等待执行"，不代表工具已经结束。真正结果在 `TOOL_CALL_RESULT`。把两者混为一谈，UI 会在工具还没返回时就把卡片标成"完成"。
+
+</Warning>
+
+---
+
+## Q3: AG-UI 的事件类型怎么分类？每类的失败模式是什么？
+
+| 类别     | 事件                                                                                        | 作用                       | 典型失败                         |
+| -------- | ------------------------------------------------------------------------------------------- | -------------------------- | -------------------------------- |
+| 生命周期 | `RUN_STARTED`、`RUN_FINISHED`、`RUN_ERROR`、`STEP_STARTED`、`STEP_FINISHED`                 | 标记执行边界与阶段         | 只有 Start 没有 End，UI 永远转圈 |
+| 文本消息 | `TEXT_MESSAGE_START`、`TEXT_MESSAGE_CONTENT`、`TEXT_MESSAGE_END`、`TEXT_MESSAGE_CHUNK`      | 流式文本                   | delta 乱序导致句子错乱           |
+| 工具调用 | `TOOL_CALL_START`、`TOOL_CALL_ARGS`、`TOOL_CALL_END`、`TOOL_CALL_RESULT`、`TOOL_CALL_CHUNK` | 工具调用可视化             | 参数增量拼不成合法 JSON          |
+| 状态     | `STATE_SNAPSHOT`、`STATE_DELTA`、`MESSAGES_SNAPSHOT`                                        | 共享状态同步               | 丢 patch 后状态漂移              |
+| 活动     | `ACTIVITY_SNAPSHOT`、`ACTIVITY_DELTA`                                                       | 展示计划、搜索等等待型活动 | 与消息共用 id 空间冲突           |
+| 推理     | `REASONING_*`（旧 `THINKING_*` 已弃用）                                                     | 推理摘要与加密推理项       | 把推理内容当回答拼接             |
+| 子 Agent | `SUBAGENT_STARTED`、`SUBAGENT_FINISHED`、`SUBAGENT_ERROR`                                   | 并发子 Agent 归属          | 多个子 Agent 输出混成一条流      |
+| 扩展     | `CUSTOM`、`RAW`                                                                             | 业务自定义、透传外部事件   | 前端不认识就报错                 |
+
+### 事件字段的共同点
+
+所有事件都有 `type`，可选 `timestamp`、`rawEvent`、`metadata`，以及可选的 `subagentRunId`（标识由哪个子 Agent 产生）。`metadata` 是开放键值对象，适合放 token usage、trace id、finish reason；消费端按键合并，后写覆盖先写。
+
+### 便捷事件：CHUNK
+
+`TEXT_MESSAGE_CHUNK`、`TOOL_CALL_CHUNK`、`REASONING_MESSAGE_CHUNK` 是"缩写"：客户端流转换器会自动展开成 Start → Content → End 三件套。第一条 chunk 必须带 id，切换 id 或流结束时自动补 End。**服务端可以只发 CHUNK，但客户端必须同时支持展开后的完整事件**，否则换个 Producer 就崩。
+
+### 状态事件的两条规则
+
+- `STATE_SNAPSHOT` 是**替换**，不是合并。前端收到后应整体替换本地状态。
+- `STATE_DELTA` 是 **RFC 6902 JSON Patch** 数组，必须按顺序应用；检测到不一致时应主动请求或等待新的 Snapshot。
+
+`MESSAGES_SNAPSHOT` 是整段对话的快照，用于初始化历史和断线重连；它不是增量，不能拿来做"追加一条消息"。
+
+---
+
+## Q4: SSE 和 WebSocket 怎么选？断线重连怎么做？
+
+### SSE 模式（最常见）
+
+```http
+POST /ag-ui/agent HTTP/1.1
+Content-Type: application/json
+Accept: text/event-stream
+
+{ "threadId": "t-1", "runId": "r-1", "messages": [ ... ] }
+```
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/event-stream
+Cache-Control: no-cache
+
+id: 0
+data: {"type":"RUN_STARTED","threadId":"t-1","runId":"r-1"}
+
+id: 1
+data: {"type":"TEXT_MESSAGE_START","messageId":"a-1","role":"assistant"}
+```
+
+要点：
+
+- 因为是 **POST + 自定义 body**，浏览器原生 `EventSource` 用不了（它只支持 GET），要用 `fetch` + `ReadableStream` 自己解析。
+- SSE 是**单向**的：服务端推事件，客户端想发消息只能再发一个 POST（例如 resume）。
+- 事件 `id` 可用于续传，但 AG-UI 本身不规定服务端必须支持 `Last-Event-ID` 重放；**重连后的状态一致性要靠 Snapshot 保证**。
+
+### WebSocket 模式
+
+适合需要双向实时交互的场景：语音、协同编辑、用户频繁打断。代价是要自己定义连接生命周期、心跳、鉴权、重连和消息封装。部分托管平台（例如 AWS Bedrock AgentCore Runtime）同时支持 SSE 与 WebSocket 两种传输。
+
+### 选型表
+
+| 场景                 | 推荐             | 理由                                     |
+| -------------------- | ---------------- | ---------------------------------------- |
+| 聊天式 Agent         | SSE              | 实现简单、穿透代理好、天然适配 HTTP 鉴权 |
+| 需要频繁打断/语音    | WebSocket        | 双向低延迟                               |
+| 多标签页共享一个会话 | SSE + 服务端会话 | 避免多连接状态分叉                       |
+| 长任务 + 人工审批    | SSE + 中断恢复   | 审批通过新 POST 恢复，不需要长连接常驻   |
+
+### 断线重连的正确姿势
+
+```text
+断线
+ ├─ 不要假设服务端取消了 run（SSE 断开不等于取消）
+ ├─ 用 threadId + runId 重新订阅或查询 run 状态
+ ├─ 收到 STATE_SNAPSHOT / MESSAGES_SNAPSHOT 后整体替换本地状态
+ └─ 如果 run 已结束，补拉最后一次快照，避免丢最终结果
+```
+
+`SSE 断开 ≠ 任务取消` 这一点和 MCP 的 Streamable HTTP 一致：取消必须是显式动作。
+
+### 生产环境的五个坑
+
+| 问题       | 表现               | 处理                                               |
+| ---------- | ------------------ | -------------------------------------------------- |
+| 代理缓冲   | 事件攒一批才到     | 关闭缓冲，设置 `X-Accel-Buffering: no`，加心跳注释 |
+| 空闲超时   | 长任务流被 LB 切断 | 服务端定期发心跳，LB 超时大于心跳间隔              |
+| 乱序       | 文本拼接错乱       | 单连接内保序；多路复用要带序号并缓冲               |
+| 重复投递   | 同一条消息出现两次 | 事件带唯一 id，前端去重                            |
+| 回放不完整 | 重连后缺中间状态   | 以 Snapshot 为准，不依赖事件重放                   |
+
+---
+
+## Q5: 共享状态怎么同步？Snapshot 和 Delta 各自什么时候用？
+
+AG-UI 的状态同步是**快照 + 增量**模型：
+
+```text
+STATE_SNAPSHOT  → 全量替换（连接开始、重连、检测到漂移）
+STATE_DELTA     → JSON Patch 增量（高频小变更）
+MESSAGES_SNAPSHOT → 对话历史全量（初始化、恢复）
+```
+
+### 什么时候必须发 Snapshot
+
+1. Run 开始，前端可能持有旧状态；
+2. 断线重连后；
+3. 前端报告 patch 应用失败或版本不连续；
+4. **中断边界**：在发出带 `interrupt` 的 `RUN_FINISHED` 之前，必须先把恢复所需的状态通过 `STATE_SNAPSHOT` 和 `MESSAGES_SNAPSHOT` 发出去。
+
+第 4 条是协议明确要求的，目的是让"重放式恢复"和"检查点式恢复"在外部观察上一致：不管后端是重建上下文还是恢复挂起的协程，前端看到的状态都必须一样。
+
+### 前端实现
+
+```typescript
+type State = { order?: Order; step: string; pending?: string };
+
+function reduce(state: State, event: AgUiEvent): State {
+  switch (event.type) {
+    case "STATE_SNAPSHOT":
+      return event.snapshot as State; // 替换，不合并
+    case "STATE_DELTA":
+      return applyPatch(state, event.delta).newDocument;
+    case "MESSAGES_SNAPSHOT":
+      return { ...state, messages: event.messages };
+    default:
+      return state;
+  }
+}
+```
+
+`applyPatch` 用标准 JSON Patch 库（RFC 6902），不要手写。应用前校验 `path` 是否以 `/` 开头、是否越界；服务端也要限制 patch 只能作用于白名单路径，防止恶意 patch 改到敏感字段。
+
+### 失败模式
+
+| 失败                   | 后果                  | 处理                                     |
+| ---------------------- | --------------------- | ---------------------------------------- |
+| 丢一个 delta           | 状态永久漂移          | 版本号 / 序号检测，发现缺口请求 Snapshot |
+| 并发 run 写同一 state  | 后写覆盖先写          | 按 runId 隔离状态，或串行化              |
+| patch path 注入        | 改到非预期字段        | 服务端白名单 + 客户端校验                |
+| Snapshot 与 Delta 交错 | 旧 patch 应用到新快照 | 快照带版本号，旧版本 patch 丢弃          |
+
+---
+
+## Q6: human-in-the-loop 怎么做？工具调用确认的完整契约是什么？
+
+AG-UI 的中断模型是**终态式中断**：run 会**以 interrupt 结果结束**，不会挂起在连接上，用户响应后由客户端发起一个新的 run 来恢复。
+
+### 中断事件
+
+```json
+{
+  "type": "RUN_FINISHED",
+  "threadId": "t-1",
+  "runId": "r-1",
+  "outcome": {
+    "type": "interrupt",
+    "interrupts": [
+      {
+        "id": "int-1",
+        "reason": "tool_call",
+        "message": "即将为订单 A1024 发起退款 128.00 元，是否确认？",
+        "toolCallId": "tc-9",
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "approved": { "type": "boolean" },
+            "editedArgs": { "type": "object" }
+          },
+          "required": ["approved"]
+        },
+        "expiresAt": "2026-11-14T12:05:00Z"
+      }
+    ]
+  }
+}
+```
+
+| 字段             | 用途                                                                                   |
+| ---------------- | -------------------------------------------------------------------------------------- |
+| `id`             | 中断、恢复、幂等、审计的关联键                                                         |
+| `reason`         | 路由提示：`tool_call`、`input_required`、`confirmation`，或自定义 `<framework>:<name>` |
+| `message`        | 通用兜底文案，任何前端都能展示                                                         |
+| `toolCallId`     | 绑定到之前的工具调用序列                                                               |
+| `responseSchema` | 约束用户响应的结构                                                                     |
+| `expiresAt`      | 过期后恢复会报错                                                                       |
+
+### 恢复：同一个 thread，新的 run
+
+```json
+{
+  "threadId": "t-1",
+  "runId": "r-2",
+  "messages": [],
+  "state": {},
+  "resume": [
+    {
+      "interruptId": "int-1",
+      "status": "resolved",
+      "payload": { "approved": true }
+    }
+  ]
+}
+```
+
+契约规则（必须全部满足）：
+
+1. **同一个 `threadId`**；
+2. `interruptId` 必须来自被中断 run 的 `interrupts[]`；
+3. **必须覆盖所有未决中断**，不支持部分恢复；
+4. 线程里有未决中断时，任何新输入都必须带 `resume`，否则应返回 `RUN_ERROR`；
+5. 相同的 `(threadId, interruptId, status, payload)` 必须可安全重放（幂等）；
+6. 声明了 `responseSchema`时，payload 要校验，不匹配返回 `RUN_ERROR`；
+7. 超过 `expiresAt` 不得恢复；
+8. 拒绝要表达在 payload 里（如 `{"approved": false}`），不是另一个 status。
+
+`status` 只有两种：`resolved`（用户给了有意义输入）和 `cancelled`（用户放弃，payload 应省略）。
+
+### 工具确认的三段审计
+
+当 `reason: "tool_call"` 且带 `toolCallId` 时，一次工具调用跨两个 run：
+
+```text
+run-1: TOOL_CALL_ARGS        ← Agent 提议的参数
+run-2: resume.payload        ← 用户的决定与修改
+run-2: TOOL_CALL_RESULT      ← 实际执行结果（针对原 toolCallId）
+```
+
+**恢复的 run 不会重发 `TOOL_CALL_START/ARGS/END`**，只发 `TOOL_CALL_RESULT`。前端要靠原 `toolCallId` 把结果挂回原来的卡片。如果工具由服务端执行，生产方可以用 `metadata: {"ag-ui:tool-execution": "server"}` 标记；前端不得自己合成工具结果，服务端仍必须校验决定。
+
+### 前端审批代码骨架
+
+```tsx
+async function onApprove(intr: Interrupt, approved: boolean) {
+  const res = await fetch("/ag-ui/agent", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      threadId: intr.threadId,
+      runId: crypto.randomUUID(),
+      messages: [],
+      state: {},
+      resume: [
+        { interruptId: intr.id, status: "resolved", payload: { approved } },
+      ],
+    }),
+  });
+  await consumeSse(res.body!);
+}
+```
+
+### 失败模式
+
+| 失败                          | 原因                          | 处理                                                     |
+| ----------------------------- | ----------------------------- | -------------------------------------------------------- |
+| 恢复报错 "无法关联 interrupt" | 跨 thread 或 interrupt 已过期 | 校验 threadId 与 expiresAt                               |
+| 恢复后状态错乱                | 中断前没发 Snapshot           | 严格按协议，在 RunFinished 前发快照                      |
+| 用户刷新页面后审批丢失        | 中断只存在内存                | 持久化 pending interrupts，按 thread 恢复                |
+| 重复点击导致重复执行          | resume 不幂等                 | 服务端按 `(threadId, interruptId, status, payload)` 去重 |
+| 前端伪造执行结果              | 信任了客户端 tool result      | 服务端所有工具必须重新校验与执行                         |
+
+---
+
+## Q7: AG-UI 和 Generative UI 的边界在哪里？
+
+这是最容易被混淆的一对概念。
+
+| 维度       | AG-UI                  | Generative UI                   |
+| ---------- | ---------------------- | ------------------------------- |
+| 层次       | 传输与事件协议         | 渲染策略与组件映射              |
+| 规定什么   | 有哪些事件、字段、顺序 | 事件如何变成界面                |
+| 不规定什么 | 组件长什么样           | 事件怎么传输                    |
+| 失败后果   | 前端收不到或收错过程   | UI 丑、错、或渲染了不安全的组件 |
+
+三种常见实现方式：
+
+1. **固定组件 + 工具结果渲染。** 前端为每个工具注册一个卡片组件（如 `get_order` → 订单卡片），AG-UI 的 `TOOL_CALL_*` 事件驱动卡片状态。可控性最好。
+2. **前端注册"动作/组件"映射。** 例如 CopilotKit 的 `useCopilotAction` / 渲染钩子，把某个工具调用映射到自定义 React 组件。仍然是前端决定 UI，模型只决定调用。
+3. **模型生成 UI DSL。** 模型输出组件树或 DSL，前端按白名单渲染。灵活但风险最高：组件注入、XSS、版本漂移、可访问性都难保证。
+
+### 边界原则
+
+- **AG-UI 只传事件，不传可执行 UI 代码。** 如果要传"UI 意图"，用 `CUSTOM` 事件 + 业务自己的 schema，并做白名单校验。
+- **组件映射由前端拥有。** 后端不应该知道"订单卡片长什么样"。
+- **生成式 UI 必须有沙箱。** 只允许预注册组件、限制 props schema、禁止内联脚本和任意 URL。
+- **不要把所有状态都塞进 `state`。** 只同步"渲染需要且需要跨端一致"的部分，组件内部状态留在前端。
+
+<Warning title="一个常见误用">
+
+把 AG-UI 的 `state` 当成"万能 UI 状态总线"，把弹窗开关、滚动位置、表单草稿都同步到服务端。结果是 token 暴涨、并发冲突、回放困难。`state` 应该只承载**业务状态**（当前步骤、订单、待确认动作），UI 局部状态留在前端。
+
+</Warning>
+
+---
+
+## Q8: CopilotKit 这类实现扮演什么角色？自研还是采用？
+
+CopilotKit 是 AG-UI 的发起方之一，也是主要的参考前端实现：它提供 React 侧的聊天组件、工具渲染、共享状态和人工确认能力，底层用 AG-UI 事件流与后端通信。后端侧则有各框架的 adapter（LangGraph、CrewAI、Mastra、Pydantic AI、Google ADK、AWS Strands、Microsoft Agent Framework 等）。
+
+| 方案                  | 适合                       | 代价                               |
+| --------------------- | -------------------------- | ---------------------------------- |
+| 直接用 CopilotKit     | 标准聊天 + 工具卡片 + 审批 | 组件风格受约束，深度定制要改源码   |
+| 用 AG-UI SDK 自研前端 | 已有设计系统、需要深度定制 | 要自己实现 SSE 解析、reducer、重连 |
+| 完全自研协议          | 极端特殊场景               | 失去生态，所有边界情况自己踩       |
+
+采用时的三个检查点：
+
+1. **协议版本对齐。** SDK 版本与后端事件结构必须匹配，尤其是 interrupt、reasoning、activity 这些较新的能力。
+2. **传输能力对齐。** 前端要支持 POST + SSE（不是只支持 `EventSource`），并处理代理缓冲。
+3. **状态所有权明确。** 哪些状态由 Agent 拥有、哪些由前端拥有，要在接入前定好，否则会出现"两边都在改同一个字段"。
+
+---
+
+## Q9: A2A 是什么？它和 MCP 的本质区别在哪？
+
+A2A（Agent2Agent）解决的是**互不透明的 Agent 之间如何委派任务**。核心假设是：你不能访问对方的内部状态、记忆、工具和推理过程，只能通过声明式能力和消息/产物交互。
+
+| 维度         | MCP                                         | A2A                                          |
+| ------------ | ------------------------------------------- | -------------------------------------------- |
+| 连接对象     | Agent ↔ 工具/数据                           | Agent ↔ Agent                                |
+| 抽象         | 能力（Tool/Resource/Prompt）                | 任务（Task）+ 消息 + 产物                    |
+| 对方是否透明 | Server 的实现对你不可见，但能力是显式声明的 | 完全 opaque，只暴露 Agent Card 与任务状态    |
+| 生命周期     | 连接 + 请求                                 | 任务状态机，可长达数小时                     |
+| 结果形态     | 工具返回值                                  | Artifact（文档、图片、结构化数据）           |
+| 发现方式     | `tools/list`                                | Agent Card（`/.well-known/agent-card.json`） |
+
+### Agent Card
+
+```json
+{
+  "name": "travel-booking-agent",
+  "description": "负责机票与酒店预订",
+  "provider": { "organization": "Example Travel" },
+  "supportedInterfaces": [
+    { "url": "https://agent.example.com/a2a", "protocolBinding": "JSONRPC", "protocolVersion": "1.0" }
+  ],
+  "capabilities": { "streaming": true, "pushNotifications": true },
+  "securitySchemes": { "oauth": { "type": "oauth2", "flows": { ... } } },
+  "skills": [
+    {
+      "id": "book-flight",
+      "name": "预订航班",
+      "description": "根据出发地、目的地、日期预订航班",
+      "tags": ["travel", "booking"],
+      "examples": ["帮我订 12 月 1 日北京到东京的航班"]
+    }
+  ]
+}
+```
+
+关键字段（字段名以官方规范为准）：`supportedInterfaces` 可以同时声明多个绑定与版本，便于灰度迁移；`capabilities` 声明是否支持流式与推送；`skills` 是能力目录，不是工具 Schema。v1.0 还引入了**签名 Agent Card** 与多租户支持。
+
+### Task 生命周期
+
+```text
+SUBMITTED ──→ WORKING ──→ COMPLETED
+     │            │  │
+     │            │  ├──→ FAILED
+     │            │  ├──→ CANCELED
+     │            │  └──→ REJECTED
+     │            ├──→ INPUT_REQUIRED ──→ WORKING
+     │            └──→ AUTH_REQUIRED  ──→ WORKING
+```
+
+后四个是终态，不能再接受消息。`INPUT_REQUIRED` 和 `AUTH_REQUIRED` 是"暂停等待"，用于中途补充信息或凭据；`contextId` 把多个相关任务和消息归到一个会话。
+
+### 消息与产物
+
+- **Message**：一轮通信，`role` 为 `user` 或 `agent`，包含一个或多个 Part。
+- **Part**：最小内容单元。v1.0 对 Part 的序列化做了破坏性调整：据公开迁移说明，取消了 `kind` 字段，改为**按携带的字段区分**（`text`、`url`、`raw`、`data`）。从 v0.3 升级时必须逐条核对官方迁移文档，不要按旧解析器上线。
+- **Artifact**：任务产出，例如文档、图片、结构化 JSON，由多个 Part 组成。
+
+### 三种消费方式
+
+| 方式     | 机制                                                               | 适用                   |
+| -------- | ------------------------------------------------------------------ | ---------------------- |
+| 阻塞请求 | 一次调用等到结果                                                   | 短任务                 |
+| 轮询     | `GetTask` 查状态                                                   | 中等时长、实现简单     |
+| 流式     | `SubscribeToTask` / `SendStreamingMessage`，SSE 推送状态与产物分片 | 需要实时反馈           |
+| 推送     | 客户端提供 webhook，服务端主动 POST                                | 超长任务、客户端会离线 |
+
+### 协议绑定与版本
+
+A2A v1.0 支持三种绑定：**JSON-RPC 2.0 over HTTP、gRPC、HTTP+JSON**，都跑在 HTTP(S) 上；客户端用 `A2A-Version` 头声明版本，不支持时服务端返回版本错误。操作命名在 v1.0 统一为 `SendMessage`、`GetTask`、`ListTasks`、`CancelTask`、`SubscribeToTask`、`GetExtendedAgentCard` 等（完整列表以官方规范为准）。
+
+### A2A 的失败模式
+
+| 失败                      | 表现                        | 处理                                    |
+| ------------------------- | --------------------------- | --------------------------------------- |
+| 任务卡在 WORKING          | 对方 Agent 崩溃或没实现超时 | 客户端超时 + `CancelTask`，记录 taskId  |
+| `INPUT_REQUIRED` 无人应答 | 通知没送达用户              | 持久化任务 + 提醒 + 过期策略            |
+| Artifact 太大             | 响应超限或前端卡死          | 分片、对象存储引用、签名 URL            |
+| 重复投递                  | 重试导致同一消息执行两次    | 消息 id + 幂等键                        |
+| 跨组织信任                | 无法确认对方身份            | 签名 Agent Card + mTLS/OAuth            |
+| 版本不兼容                | 字段解析失败                | 用 `supportedInterfaces` 协商，灰度迁移 |
+
+---
+
+## Q10: 三者怎么组合？画一张分层图，并说清每层的失败模式。
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ 用户界面                                                      │
+│  聊天 / 工具卡片 / 审批弹窗 / 生成式 UI                        │
+└───────────────────────────┬──────────────────────────────────┘
+                            │ AG-UI（事件流：文本 / 工具 / 状态 / 中断）
+┌───────────────────────────▼──────────────────────────────────┐
+│ Agent Runtime（规划、记忆、编排、审批）                        │
+│                                                              │
+│   ┌──────────────────────┐      ┌─────────────────────────┐  │
+│   │ MCP Client           │      │ A2A Client              │  │
+│   │ 工具 / 资源 / 提示词  │      │ 任务委派 / 产物接收      │  │
+│   └──────────┬───────────┘      └────────────┬────────────┘  │
+└──────────────┼───────────────────────────────┼───────────────┘
+               │ MCP（JSON-RPC / stdio / HTTP） │ A2A（Task / Message / Artifact）
+        ┌──────▼──────┐                 ┌──────▼──────────────┐
+        │ MCP Server  │                 │ 远程 Agent          │
+        │ 文件/DB/API │                 │ （不透明，可能再用 MCP）│
+        └─────────────┘                 └─────────────────────┘
+```
+
+| 层            | 解决什么         | 核心抽象                  | 失败模式                       | 观测点                       |
+| ------------- | ---------------- | ------------------------- | ------------------------------ | ---------------------------- |
+| AG-UI         | 过程可见、可中断 | Run / Event / State       | 事件丢失、乱序、断线、审批丢失 | runId、事件序号、快照版本    |
+| Agent Runtime | 规划与编排       | 步骤 / 工具调用 / 中断    | 死循环、漏步、状态漂移         | step、tool_call_id、步数     |
+| MCP           | 工具与数据接入   | Tool / Resource / Prompt  | 工具投毒、超时、越权、结果过长 | session、tool、isError、耗时 |
+| A2A           | 跨 Agent 委派    | Task / Message / Artifact | 任务卡死、版本不兼容、信任失败 | taskId、状态迁移、产物大小   |
+
+### 选型表
+
+| 你的需求                | 用哪个                | 不要用                            |
+| ----------------------- | --------------------- | --------------------------------- |
+| 让模型调用内部 API      | MCP                   | 不要把每个 API 都写成一个前端工具 |
+| 前端实时展示 Agent 过程 | AG-UI                 | 不要透传 Provider 的原始 SSE      |
+| 把任务委派给外部 Agent  | A2A                   | 不要用 MCP 模拟任务状态机         |
+| 只有一个模型、一个后端  | 直接 Function Calling | 不必上 MCP                        |
+| 只是简单聊天            | 普通流式接口          | 不必上完整 AG-UI                  |
+
+### 三个常见误用
+
+1. **用 MCP 做 Agent 间协作。** MCP 没有任务状态机、没有 Artifact、没有 `INPUT_REQUIRED`，最后会在工具层手写一套任务协议。
+2. **用 A2A 做前端流。** A2A 的任务状态粒度是"任务级"，不是 token 级，前端会失去逐字输出和细粒度工具事件。
+3. **用 AG-UI 传工具定义。** AG-UI 的 `tools` 是"客户端工具"，生命周期属于一次 run；把它当成能力注册中心，会与 MCP 的发现机制冲突。
+
+<Note title="一句话总结">
+
+MCP 让 Agent 有手，A2A 让 Agent 有同事，AG-UI 让 Agent 有表情。三者解决的是不同层的问题，叠在一起才是完整的 Agent 协议栈。
+
+</Note>
+
+---
+
+## Q11: 端到端实战：AG-UI + MCP 的完整链路
+
+### 时序
+
+```text
+前端                  Agent Runtime              MCP Server          用户
+ │  POST /ag-ui/agent      │                         │                │
+ │────────────────────────>│                         │                │
+ │                         │ tools/call get_order    │                │
+ │                         │────────────────────────>│                │
+ │                         │<────────────────────────│                │
+ │  RUN_STARTED            │                         │                │
+ │<────────────────────────│                         │                │
+ │  TOOL_CALL_START/ARGS   │                         │                │
+ │<────────────────────────│                         │                │
+ │  TOOL_CALL_RESULT       │                         │                │
+ │<────────────────────────│                         │                │
+ │  STATE_SNAPSHOT         │                         │                │
+ │<────────────────────────│                         │                │
+ │  RUN_FINISHED(interrupt)│                         │                │
+ │<────────────────────────│                         │                │
+ │  展示审批卡片 ────────────────────────────────────────────────────>│
+ │<──────────────────────────────────────────── 点击"确认退款"        │
+ │  POST /ag-ui/agent (resume)                       │                │
+ │────────────────────────>│ tools/call refund_order │                │
+ │                         │────────────────────────>│                │
+ │  TOOL_CALL_RESULT       │                         │                │
+ │<────────────────────────│                         │                │
+ │  TEXT_MESSAGE_*         │                         │                │
+ │<────────────────────────│                         │                │
+ │  RUN_FINISHED(success)  │                         │                │
+ │<────────────────────────│                         │                │
+```
+
+### 服务端骨架（Node / TypeScript）
+
+```typescript
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+const mcp = new Client({ name: "agent-runtime", version: "1.0.0" });
+await mcp.connect(
+  new StreamableHTTPClientTransport(new URL("https://mcp.internal/mcp")),
+);
+
+type Emit = (event: Record<string, unknown>) => void;
+
+async function run(input: RunAgentInput, emit: Emit) {
+  emit({ type: "RUN_STARTED", threadId: input.threadId, runId: input.runId });
+
+  try {
+    // 1. 调用 MCP 工具，并把调用过程映射成 AG-UI 事件
+    const toolCallId = `tc-${input.runId}`;
+    emit({ type: "TOOL_CALL_START", toolCallId, toolCallName: "get_order" });
+    emit({
+      type: "TOOL_CALL_ARGS",
+      toolCallId,
+      delta: JSON.stringify({ orderId: "A1024" }),
+    });
+    emit({ type: "TOOL_CALL_END", toolCallId });
+
+    const order = await mcp.callTool({
+      name: "get_order",
+      arguments: { orderId: "A1024" },
+    });
+
+    if ((order as any).isError) {
+      emit({ type: "RUN_ERROR", code: "TOOL_ERROR", message: "订单查询失败" });
+      return;
+    }
+
+    emit({
+      type: "TOOL_CALL_RESULT",
+      messageId: `msg-${input.runId}`,
+      toolCallId,
+      content: JSON.stringify(order.structuredContent ?? order.content),
+    });
+
+    // 2. 中断前必须先发状态快照
+    emit({
+      type: "STATE_SNAPSHOT",
+      snapshot: { order: order.structuredContent, step: "await_confirm" },
+    });
+
+    // 3. 需要人工确认：以 interrupt 结束本次 run
+    emit({
+      type: "RUN_FINISHED",
+      threadId: input.threadId,
+      runId: input.runId,
+      outcome: {
+        type: "interrupt",
+        interrupts: [
+          {
+            id: `int-${input.runId}`,
+            reason: "tool_call",
+            message: "确认对订单 A1024 发起退款？",
+            toolCallId,
+            responseSchema: {
+              type: "object",
+              properties: { approved: { type: "boolean" } },
+              required: ["approved"],
+            },
+          },
+        ],
+      },
+    });
+  } catch (err) {
+    emit({ type: "RUN_ERROR", message: "运行时异常", code: "RUNTIME_ERROR" });
+  }
+}
+```
+
+### 恢复分支
+
+```typescript
+async function resume(input: RunAgentInput, emit: Emit) {
+  const decision = input.resume?.[0];
+  if (!decision || decision.status !== "resolved") {
+    emit({
+      type: "RUN_FINISHED",
+      outcome: { type: "interrupt", interrupts: pending },
+    });
+    return;
+  }
+
+  emit({ type: "RUN_STARTED", threadId: input.threadId, runId: input.runId });
+
+  if (decision.payload?.approved !== true) {
+    emit({ type: "TEXT_MESSAGE_START", messageId: "m-no", role: "assistant" });
+    emit({
+      type: "TEXT_MESSAGE_CONTENT",
+      messageId: "m-no",
+      delta: "已取消退款。",
+    });
+    emit({ type: "TEXT_MESSAGE_END", messageId: "m-no" });
+    emit({ type: "RUN_FINISHED", outcome: { type: "success" } });
+    return;
+  }
+
+  const result = await mcp.callTool({
+    name: "refund_order",
+    arguments: {
+      orderId: "A1024",
+      idempotencyKey: `refund:${input.threadId}:int-1`,
+    },
+  });
+
+  // 恢复的 run 不重发 TOOL_CALL_START/ARGS，只发 RESULT 挂回原 toolCallId
+  emit({
+    type: "TOOL_CALL_RESULT",
+    messageId: "m-refund",
+    toolCallId: "tc-run-1",
+    content: JSON.stringify(result.structuredContent ?? result.content),
+  });
+  emit({ type: "TEXT_MESSAGE_START", messageId: "m-done", role: "assistant" });
+  emit({
+    type: "TEXT_MESSAGE_CONTENT",
+    messageId: "m-done",
+    delta: "退款已提交。",
+  });
+  emit({ type: "TEXT_MESSAGE_END", messageId: "m-done" });
+  emit({ type: "RUN_FINISHED", outcome: { type: "success" } });
+}
+```
+
+### 前端消费骨架
+
+```typescript
+async function consumeSse(body: ReadableStream<Uint8Array>) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // SSE 以空行分隔事件；只处理 data: 行
+    const chunks = buffer.split("\n\n");
+    buffer = chunks.pop() ?? "";
+    for (const chunk of chunks) {
+      const data = chunk
+        .split("\n")
+        .filter((l) => l.startsWith("data:"))
+        .map((l) => l.slice(5).trim())
+        .join("");
+      if (data) dispatch(JSON.parse(data));
+    }
+  }
+}
+```
+
+### 错误处理矩阵
+
+| 故障         | 对外事件                                   | 前端行为                 | 不要做                      |
+| ------------ | ------------------------------------------ | ------------------------ | --------------------------- |
+| MCP 超时     | `TOOL_CALL_RESULT`（isError）+ 继续        | 展示"查询超时"，提供重试 | 直接 `RUN_ERROR` 丢掉上下文 |
+| 工具业务错误 | `TOOL_CALL_RESULT` + `TEXT_MESSAGE_*` 解释 | 展示可行动提示           | 把堆栈给用户                |
+| 用户拒绝     | `RUN_FINISHED(success)` + 解释文本         | 关闭审批卡片             | 再弹一次同样的确认          |
+| 审批过期     | `RUN_ERROR`（过期）                        | 提示重新发起             | 静默失败                    |
+| 断线         | 无事件                                     | 用 snapshot 恢复         | 假设任务已取消              |
+| 重复 resume  | 幂等返回同一结果                           | 去重                     | 重复执行退款                |
+| 工具返回超长 | 截断 + `meta.truncated`                    | 展示"查看全部"           | 静默截断                    |
+
+### 这条链路的关键设计点
+
+1. **工具执行在服务端，不在前端。** 前端只负责展示和审批，不能持有下游凭据。
+2. **中断是"结束一个 run + 开一个新 run"**，不是长连接挂起。这样服务端可以无状态扩展。
+3. **状态快照先于中断。** 否则用户刷新页面后无法恢复上下文。
+4. **恢复必须幂等。** 用 `threadId + interruptId + payload` 做去重键，写操作再加下游幂等键。
+5. **错误分级。** 工具错误回灌给模型/用户；协议错误终止 run；基础设施错误由编排层降级。
+
+---
+
+## Q12: 深度追问（AG-UI / A2A）
+
+<AccordionGroup>
+
+<Accordion title="AG-UI 为什么用事件流，而不是直接返回一个完整结果？">
+
+**及格回答：** 因为 Agent 执行慢，流式体验更好。
+
+**满分回答：** 不只是体验，而是**可观测性和可干预性**。Agent 的一次执行包含规划、多次工具调用、状态变化，用户需要知道"现在在做什么、为什么卡住、要不要确认"。如果只返回最终结果，前端无法展示工具调用、无法在危险操作前拦截、无法在断线后恢复中间状态。事件流把内部过程变成一等公民：文本增量、工具调用、状态快照、错误、中断都能被消费。代价是前端要处理乱序、重连、去重和状态一致性，所以协议必须定义清楚事件边界和快照语义。
+
+</Accordion>
+
+<Accordion title="`TOOL_CALL_END` 和 `TOOL_CALL_RESULT` 有什么区别？">
+
+**及格回答：** 一个是工具结束，一个是结果。
+
+**满分回答：** `TOOL_CALL_END` 只表示**参数传输结束**，此时工具可能刚开始执行，也可能还在排队；`TOOL_CALL_RESULT` 才是执行结果，带 `content` 并挂到同一个 `toolCallId`。这个区分对 UI 很重要：参数发完可以把卡片从"生成中"切到"执行中"，但只有收到 RESULT 才能显示"完成"。在人工确认场景里更明显：`TOOL_CALL_ARGS` 是 Agent 的提议，`TOOL_CALL_RESULT` 可能要到下一个 run 才出现，中间隔着用户的决定。
+
+</Accordion>
+
+<Accordion title='AG-UI 的中断为什么设计成"结束 run"，而不是保持连接挂起？'>
+
+**及格回答：** 因为用户可能很久才回复，连接不能一直挂着。
+
+**满分回答：** 核心是**可扩展性和可恢复性**。如果中断时保持连接或协程挂起，服务端就要为每个待审批任务保留内存和连接，跨实例、跨重启都不可靠。终态式中断把"等待"变成"已结束的 run + 持久化的 pending interrupt"，用户响应后开一个新 run，带上 `resume` 数组恢复。协议还要求中断前先发 `STATE_SNAPSHOT` 和 `MESSAGES_SNAPSHOT`，这样"重放式恢复"和"检查点式恢复"在外部观察上一致。代价是前端要持久化未决中断，服务端要保证 resume 幂等和过期校验。
+
+</Accordion>
+
+<Accordion title="`STATE_DELTA` 丢了怎么办？">
+
+**及格回答：** 再发一次全量状态。
+
+**满分回答：** 先要能发现丢了。做法是给状态加快照版本号或事件序号，客户端应用 patch 时检查连续性，发现缺口就不应用并请求新的 `STATE_SNAPSHOT`。快照是替换语义，收到后整体覆盖本地状态，不合并。还要处理交错问题：旧版本的 delta 不能应用到新快照上，所以 patch 要带基准版本。服务端侧则要限制 patch 的 path 白名单，防止恶意 patch 改到敏感字段。最终原则是：**事件流可以丢，状态必须能重建**。
+
+</Accordion>
+
+<Accordion title="如何防止前端伪造工具执行结果？">
+
+**及格回答：** 后端再校验一次。
+
+**满分回答：** 首先明确信任边界：前端传来的任何东西都不可信，包括 `resume.payload`、客户端工具结果、`state`。工具执行必须在服务端或受控执行器里完成，前端只提交"批准/拒绝/修改后的参数"。服务端要校验 payload 是否符合 `responseSchema`、`interruptId` 是否属于该 thread、是否过期、是否重复；写操作再加幂等键。AG-UI 里 `metadata: {"ag-ui:tool-execution": "server"}` 只是告诉前端"这个工具由服务端执行，不要合成结果"，它不是授权凭据，服务端仍必须自己校验。
+
+</Accordion>
+
+<Accordion title='A2A 和 MCP 都能"调能力"，为什么还要两个协议？'>
+
+**及格回答：** A2A 是 Agent 之间，MCP 是 Agent 和工具之间。
+
+**满分回答：** 抽象不同。MCP 的抽象是"能力调用"：一次请求、一个结果、有明确的 Schema，适合工具和数据；A2A 的抽象是"任务委派"：有 Task 状态机（SUBMITTED、WORKING、INPUT_REQUIRED、AUTH_REQUIRED、终态）、有 Message 和 Artifact、支持长任务、流式、推送和人工补充信息，而且对方 Agent 是**不透明**的，你不共享它的记忆和工具。用 MCP 模拟这些，最后会在工具层重新发明任务状态机和产物协议。反过来，A2A 的任务粒度也不适合前端逐字流式展示。所以常见组合是"MCP inside agents，A2A between agents，AG-UI to users"。
+
+</Accordion>
+
+<Accordion title="A2A 的 Task 卡在 WORKING，你怎么处理？">
+
+**及格回答：** 超时后取消任务。
+
+**满分回答：** 先分清是"对方真的在干活"还是"状态没更新"。看 `GetTask` 的 `status.timestamp`、最近一次消息时间、是否支持流式；如果对方支持 `SubscribeToTask`，优先用流式而不是轮询。设置分层超时：单次请求超时、任务整体超时、无进展超时（一段时间没有新消息或产物）。超时后发 `CancelTask`，并记录 `taskId`、`contextId`、最后一次状态，便于对方排查。对 `INPUT_REQUIRED` 要单独处理：通知用户、设置过期、允许重新发起。最后在客户端做幂等，避免重试导致重复任务。
+
+</Accordion>
+
+<Accordion title="设计一个支持多会话、断线恢复的 AG-UI 前端架构。">
+
+**及格回答：** 每个会话一个连接，断了就重连。
+
+**满分回答：** 按 `threadId` 建会话模型，每个会话保存：消息列表、状态快照及版本、未决中断、正在运行的 `runId`、事件序号。连接层与渲染层解耦：连接层负责 POST + SSE 解析、心跳、重连、去重；渲染层只消费归一化后的事件。断线后不重放所有事件，而是拉一次 `MESSAGES_SNAPSHOT` + `STATE_SNAPSHOT` 重建，再继续接收增量。多会话要限制并发连接数，后台会话可以降级为轮询或只保留快照。未决中断要持久化（localStorage 或服务端），刷新后还能继续审批。最后加可观测性：记录 `runId`、最后事件序号、重连次数，才能定位"用户说卡住了"到底是网络、服务端还是渲染层。
+
+</Accordion>
+
+</AccordionGroup>
+
+---
+
+## 延伸阅读与引用参考
+
+- [AG-UI 官方文档](https://docs.ag-ui.com/introduction)：协议定位、三种 Agentic Protocol 的分层。
+- [AG-UI Events](https://docs.ag-ui.com/concepts/events)：事件类型、字段、Snapshot/Delta、CHUNK 与子 Agent 事件。
+- [AG-UI Interrupts](https://docs.ag-ui.com/concepts/interrupts)：中断结果、resume 契约、工具确认与 approve-with-edits。
+- [AG-UI 官网](https://ag-ui.com/)：生态与集成列表。
+- [CopilotKit 文档](https://docs.copilotkit.ai/)：AG-UI 的参考前端实现与各框架集成。
+- [A2A Protocol 官方规范](https://a2a-protocol.org/latest/specification/)：Agent Card、Task、Message、Artifact、传输绑定。
+- [A2A v1.0 发布说明](https://a2a-protocol.org/latest/blog/2026/03/12/a2a-protocol-ships-v10-production-ready-standard-for-agent-to-agent-communication/)：多绑定、签名 Agent Card、多租户与 MCP 的分工。
+- [AWS Bedrock AgentCore AG-UI 协议契约](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-agui-protocol-contract.html)：SSE/WebSocket 传输与 `RunAgentInput` 的实际形态。
+- [MCP 规范](https://modelcontextprotocol.io/specification/latest)：与 AG-UI/A2A 相邻的工具协议层。

@@ -1,10 +1,9 @@
 ---
 title: "DOM 事件"
+description: "事件流三阶段、事件委托、事件对象、自定义事件、passive 监听与事件性能优化。"
 ---
 
-> **面试官为什么问这个？**
->
-> DOM 事件是前端开发最基础的能力。面试官问这个，本质上是在考察你：**你写的事件处理代码，浏览器底层到底是怎么派发的？冒泡和捕获的区别到底在哪里？事件委托为什么能优化性能？** 如果你答不清楚，说明你对 DOM 的理解停留在"能绑定事件"而不是"理解事件流"。
+> 我对事件流的理解分几次补上的：先记住冒泡和捕获，后来写事件委托，最后才把浏览器派发过程串起来。
 
 ---
 
@@ -81,7 +80,7 @@ DOM 事件流 = 捕获阶段 + 目标阶段 + 冒泡阶段，开发者可以在�
 
 <Tip title="💡 面试技巧">
 
-回答时先说"为什么需要事件模型"（Netscape vs IE 的兼容性问题），再说"事件流的三个阶段"。面试官想听的是你理解事件传播的完整过程，而不是只记住"冒泡"。
+回答时先说"为什么需要事件模型"（Netscape vs IE 的兼容性问题），再说"事件流的三个阶段"。想听的是你对事件传播完整过程的理解，而不是只记住"冒泡"。
 
 </Tip>
 
@@ -110,19 +109,19 @@ DOM 事件流 = 捕获阶段 + 目标阶段 + 冒泡阶段，开发者可以在�
 // 事件流的完整演示
 <div id="outer">
   <button id="inner">点击</button>
-</div>
+</div>;
 
-const outer = document.getElementById('outer');
-const inner = document.getElementById('inner');
+const outer = document.getElementById("outer");
+const inner = document.getElementById("inner");
 
 // 捕获阶段（第三个参数为 true）
-outer.addEventListener('click', () => console.log('outer capture'), true);
+outer.addEventListener("click", () => console.log("outer capture"), true);
 
 // 冒泡阶段（第三个参数为 false 或省略）
-outer.addEventListener('click', () => console.log('outer bubble'));
+outer.addEventListener("click", () => console.log("outer bubble"));
 
 // 目标元素
-inner.addEventListener('click', () => console.log('inner target'));
+inner.addEventListener("click", () => console.log("inner target"));
 
 // 点击按钮，输出：
 // outer capture → inner target → outer bubble
@@ -134,14 +133,13 @@ inner.addEventListener('click', () => console.log('inner target'));
 
 ```javascript
 // 目标阶段：按注册顺序执行，不区分捕获/冒泡
-inner.addEventListener('click', () => console.log('1'), true);  // 捕获
-inner.addEventListener('click', () => console.log('2'), false); // 冒泡
-inner.addEventListener('click', () => console.log('3'), true);  // 捕获
+inner.addEventListener("click", () => console.log("1"), true); // 捕获
+inner.addEventListener("click", () => console.log("2"), false); // 冒泡
+inner.addEventListener("click", () => console.log("3"), true); // 捕获
 
 // 点击 inner，输出：1 → 2 → 3（按注册顺序）
 // 而不是：1 → 3 → 2（按捕获/冒泡分组）
 ```
-
 
 </Warning>
 
@@ -149,30 +147,36 @@ inner.addEventListener('click', () => console.log('3'), true);  // 捕获
 
 事件流就像快递配送——快递从仓库（window）出发，经过各个中转站（捕获阶段），到达收件人（目标阶段）。收件人拆开包裹后，快递单信息逐级回传到仓库（冒泡阶段）。你可以在快递到达你家之前拦截（捕获阶段），也可以在快递离开你家之后处理（冒泡阶段）。
 
-
 </Tip>
 
 ### 事件监听器的注册方式
 
 ```javascript
 // 1. HTML 内联事件（不推荐）
-<button onclick="handleClick()">点击</button>
+<button onclick="handleClick()">点击</button>;
 
 // 2. DOM 属性绑定（只能绑定一个）
-element.onclick = function() { console.log('click'); };
+element.onclick = function () {
+  console.log("click");
+};
 
 // 3. addEventListener（推荐，可以绑定多个）
-element.addEventListener('click', function() { console.log('click 1'); });
-element.addEventListener('click', function() { console.log('click 2'); });
+element.addEventListener("click", function () {
+  console.log("click 1");
+});
+element.addEventListener("click", function () {
+  console.log("click 2");
+});
 
 // 4. addEventListener 的第三个参数
-element.addEventListener('click', handler, true);  // 捕获阶段
-element.addEventListener('click', handler, false); // 冒泡阶段（默认）
-element.addEventListener('click', handler, {       // 选项对象
-  capture: true,   // 捕获阶段
-  once: true,      // 只触发一次
-  passive: true,   // 不会调用 preventDefault
-  signal: controller.signal // 可以通过 AbortController 取消
+element.addEventListener("click", handler, true); // 捕获阶段
+element.addEventListener("click", handler, false); // 冒泡阶段（默认）
+element.addEventListener("click", handler, {
+  // 选项对象
+  capture: true, // 捕获阶段
+  once: true, // 只触发一次
+  passive: true, // 不会调用 preventDefault
+  signal: controller.signal, // 可以通过 AbortController 取消
 });
 ```
 
@@ -196,9 +200,9 @@ element.addEventListener('click', handler, {       // 选项对象
 
 ```javascript
 // ❌ 不用事件委托——每个子元素都绑定事件
-const items = document.querySelectorAll('li');
-items.forEach(item => {
-  item.addEventListener('click', function() {
+const items = document.querySelectorAll("li");
+items.forEach((item) => {
+  item.addEventListener("click", function () {
     console.log(this.textContent);
   });
 });
@@ -207,10 +211,10 @@ items.forEach(item => {
 // 2. 动态添加的 li 没有事件监听器
 
 // ✅ 用事件委托——只在父元素绑定一个事件
-const list = document.querySelector('ul');
-list.addEventListener('click', function(e) {
+const list = document.querySelector("ul");
+list.addEventListener("click", function (e) {
   const target = e.target;
-  if (target.tagName === 'LI') {
+  if (target.tagName === "LI") {
     console.log(target.textContent);
   }
 });
@@ -225,8 +229,8 @@ list.addEventListener('click', function(e) {
 
 ```javascript
 // ❌ 混淆 target 和 currentTarget
-list.addEventListener('click', function(e) {
-  console.log(e.target);        // 实际点击的元素（可能是 li 的子元素）
+list.addEventListener("click", function (e) {
+  console.log(e.target); // 实际点击的元素（可能是 li 的子元素）
   console.log(e.currentTarget); // 绑定事件的元素（始终是 ul）
 });
 
@@ -235,15 +239,14 @@ list.addEventListener('click', function(e) {
 // e.currentTarget = ul（绑定事件的元素）
 
 // ✅ 正确使用事件委托
-list.addEventListener('click', function(e) {
+list.addEventListener("click", function (e) {
   // 向上查找最近的 li 元素
-  const li = e.target.closest('li');
+  const li = e.target.closest("li");
   if (li && list.contains(li)) {
     console.log(li.textContent);
   }
 });
 ```
-
 
 </Warning>
 
@@ -251,17 +254,16 @@ list.addEventListener('click', function(e) {
 
 事件委托就像公司前台——你不需要给每个员工都配一个秘书（事件监听器）。所有访客都先到前台（父元素），前台根据访客要找的人（e.target）来分发。这样即使公司新招了员工（动态添加元素），也不需要额外配秘书。
 
-
 </Tip>
 
 ### 事件委托的适用场景
 
-| 场景 | 是否适用事件委托 | 原因 |
-|------|----------------|------|
-| **列表项点击** | 适用 | 子元素数量多，可能动态增删 |
-| **表格行操作** | 适用 | 行数可能很多，需要批量处理 |
-| **输入框验证** | 不适用 | 需要精确绑定到特定输入框 |
-| **拖拽操作** | 不适用 | 需要精确绑定到特定元素 |
+| 场景           | 是否适用事件委托 | 原因                       |
+| -------------- | ---------------- | -------------------------- |
+| **列表项点击** | 适用             | 子元素数量多，可能动态增删 |
+| **表格行操作** | 适用             | 行数可能很多，需要批量处理 |
+| **输入框验证** | 不适用           | 需要精确绑定到特定输入框   |
+| **拖拽操作**   | 不适用           | 需要精确绑定到特定元素     |
 
 ---
 
@@ -270,29 +272,29 @@ list.addEventListener('click', function(e) {
 事件对象包含了事件的所有信息，是事件处理的核心。
 
 ```javascript
-element.addEventListener('click', function(e) {
+element.addEventListener("click", function (e) {
   // 1. 事件类型
   console.log(e.type); // 'click'
 
   // 2. 目标元素
-  console.log(e.target);        // 实际触发事件的元素
+  console.log(e.target); // 实际触发事件的元素
   console.log(e.currentTarget); // 绑定事件监听器的元素
 
   // 3. 鼠标位置
   console.log(e.clientX, e.clientY); // 相对于视口
-  console.log(e.pageX, e.pageY);     // 相对于页面（含滚动）
+  console.log(e.pageX, e.pageY); // 相对于页面（含滚动）
   console.log(e.offsetX, e.offsetY); // 相对于目标元素
 
   // 4. 键盘信息（键盘事件）
-  console.log(e.key);     // 按键值（如 'Enter'）
-  console.log(e.code);    // 按键码（如 'KeyA'）
-  console.log(e.altKey);  // Alt 键是否按下
+  console.log(e.key); // 按键值（如 'Enter'）
+  console.log(e.code); // 按键码（如 'KeyA'）
+  console.log(e.altKey); // Alt 键是否按下
   console.log(e.ctrlKey); // Ctrl 键是否按下
-  console.log(e.shiftKey);// Shift 键是否按下
+  console.log(e.shiftKey); // Shift 键是否按下
   console.log(e.metaKey); // Meta 键是否按下
 
   // 5. 阻止默认行为和传播
-  e.preventDefault();  // 阻止浏览器默认行为（如表单提交）
+  e.preventDefault(); // 阻止浏览器默认行为（如表单提交）
   e.stopPropagation(); // 阻止事件继续传播
   e.stopImmediatePropagation(); // 阻止同元素上的其他监听器执行
 });
@@ -304,33 +306,32 @@ element.addEventListener('click', function(e) {
 
 ```javascript
 // preventDefault：阻止浏览器默认行为
-link.addEventListener('click', function(e) {
+link.addEventListener("click", function (e) {
   e.preventDefault(); // 阻止链接跳转
   // 事件仍然会继续传播（冒泡到父元素）
 });
 
 // stopPropagation：阻止事件继续传播
-button.addEventListener('click', function(e) {
+button.addEventListener("click", function (e) {
   e.stopPropagation(); // 阻止事件冒泡到父元素
   // 浏览器默认行为仍然会执行
 });
 
 // 两者结合：既阻止默认行为，又阻止传播
-form.addEventListener('submit', function(e) {
-  e.preventDefault();     // 阻止表单提交
-  e.stopPropagation();    // 阻止事件冒泡
+form.addEventListener("submit", function (e) {
+  e.preventDefault(); // 阻止表单提交
+  e.stopPropagation(); // 阻止事件冒泡
 });
 ```
-
 
 </Warning>
 
 ### 事件对象的常用方法
 
-| 方法 | 作用 | 典型场景 |
-|------|------|---------|
-| `preventDefault()` | 阻止浏览器默认行为 | 阻止链接跳转、表单提交 |
-| `stopPropagation()` | 阻止事件继续传播 | 防止事件冒泡到父元素 |
+| 方法                         | 作用                     | 典型场景                       |
+| ---------------------------- | ------------------------ | ------------------------------ |
+| `preventDefault()`           | 阻止浏览器默认行为       | 阻止链接跳转、表单提交         |
+| `stopPropagation()`          | 阻止事件继续传播         | 防止事件冒泡到父元素           |
 | `stopImmediatePropagation()` | 阻止同元素上的其他监听器 | 防止同一元素上的多个监听器执行 |
 
 ---
@@ -341,16 +342,16 @@ form.addEventListener('submit', function(e) {
 
 ```javascript
 // 1. 创建自定义事件
-const event = new CustomEvent('myEvent', {
-  detail: { message: 'Hello', data: [1, 2, 3] }, // 传递数据
-  bubbles: true,    // 允许冒泡
-  cancelable: true  // 允许取消
+const event = new CustomEvent("myEvent", {
+  detail: { message: "Hello", data: [1, 2, 3] }, // 传递数据
+  bubbles: true, // 允许冒泡
+  cancelable: true, // 允许取消
 });
 
 // 2. 监听自定义事件
-element.addEventListener('myEvent', function(e) {
+element.addEventListener("myEvent", function (e) {
   console.log(e.detail.message); // 'Hello'
-  console.log(e.detail.data);    // [1, 2, 3]
+  console.log(e.detail.data); // [1, 2, 3]
 });
 
 // 3. 派发自定义事件
@@ -368,7 +369,7 @@ element.dispatchEvent(event);
 class ShoppingCart {
   constructor() {
     this.items = [];
-    document.addEventListener('addToCart', (e) => {
+    document.addEventListener("addToCart", (e) => {
       this.items.push(e.detail.product);
       this.updateUI();
     });
@@ -378,9 +379,9 @@ class ShoppingCart {
 // 商品列表组件：派发添加事件
 class ProductList {
   addToCart(product) {
-    const event = new CustomEvent('addToCart', {
+    const event = new CustomEvent("addToCart", {
       detail: { product },
-      bubbles: true
+      bubbles: true,
     });
     document.dispatchEvent(event);
   }
@@ -388,7 +389,6 @@ class ProductList {
 
 // 好处：两个组件完全解耦，不需要直接引用对方
 ```
-
 
 </Warning>
 
@@ -412,16 +412,16 @@ class ProductList {
 
 ```javascript
 // 事件处理器在渲染前执行
-button.addEventListener('click', () => {
+button.addEventListener("click", () => {
   // 这里的代码在渲染前执行
-  element.style.transform = 'scale(1.2)';
+  element.style.transform = "scale(1.2)";
   // 浏览器会在本次事件处理完后渲染
 });
 
 // 对比 setTimeout：在下一个宏任务执行
 setTimeout(() => {
   // 这里的代码在下一个宏任务执行
-  element.style.transform = 'scale(1.2)';
+  element.style.transform = "scale(1.2)";
   // 浏览器会在本次宏任务执行完后渲染
 }, 0);
 ```
@@ -432,7 +432,7 @@ setTimeout(() => {
 
 ```javascript
 // ❌ 事件处理器中的长任务——阻塞渲染
-button.addEventListener('click', () => {
+button.addEventListener("click", () => {
   // 长任务：耗时 100ms
   for (let i = 0; i < 1000000; i++) {
     heavyComputation();
@@ -441,7 +441,7 @@ button.addEventListener('click', () => {
 });
 
 // ✅ 用 requestAnimationFrame 拆分任务
-button.addEventListener('click', () => {
+button.addEventListener("click", () => {
   requestAnimationFrame(() => {
     // 在渲染前执行，但可以被拆分成多个 rAF
     processChunk1();
@@ -451,7 +451,6 @@ button.addEventListener('click', () => {
   });
 });
 ```
-
 
 </Warning>
 
@@ -467,7 +466,7 @@ button.addEventListener('click', () => {
 // 防抖：事件触发后等待 N 毫秒，如果期间再次触发则重新计时
 function debounce(fn, delay) {
   let timer = null;
-  return function(...args) {
+  return function (...args) {
     clearTimeout(timer);
     timer = setTimeout(() => {
       fn.apply(this, args);
@@ -480,7 +479,7 @@ const handleSearch = debounce((query) => {
   fetchSearchResults(query);
 }, 300);
 
-input.addEventListener('input', (e) => {
+input.addEventListener("input", (e) => {
   handleSearch(e.target.value);
 });
 ```
@@ -491,7 +490,7 @@ input.addEventListener('input', (e) => {
 // 节流：N 毫秒内只执行一次
 function throttle(fn, delay) {
   let lastTime = 0;
-  return function(...args) {
+  return function (...args) {
     const now = Date.now();
     if (now - lastTime >= delay) {
       lastTime = now;
@@ -505,7 +504,7 @@ const handleScroll = throttle(() => {
   updateScrollIndicator();
 }, 100);
 
-window.addEventListener('scroll', handleScroll);
+window.addEventListener("scroll", handleScroll);
 ```
 
 <Warning title="⚠️ passive 事件监听器">
@@ -514,19 +513,22 @@ window.addEventListener('scroll', handleScroll);
 
 ```javascript
 // ❌ 默认的事件监听器——浏览器需要等待 preventDefault 判断
-element.addEventListener('touchmove', (e) => {
+element.addEventListener("touchmove", (e) => {
   // 浏览器不确定你是否会调用 e.preventDefault()
   // 所以必须等待这个函数执行完才能滚动
   heavyComputation();
 });
 
 // ✅ passive: true——告诉浏览器不会调用 preventDefault
-element.addEventListener('touchmove', (e) => {
-  heavyComputation();
-}, { passive: true });
+element.addEventListener(
+  "touchmove",
+  (e) => {
+    heavyComputation();
+  },
+  { passive: true },
+);
 // 浏览器可以立即开始滚动，不需要等待事件处理器
 ```
-
 
 </Warning>
 
@@ -535,12 +537,12 @@ element.addEventListener('touchmove', (e) => {
 ```javascript
 // ❌ 直接绑定——100 个事件监听器
 for (let i = 0; i < 100; i++) {
-  items[i].addEventListener('click', handleClick);
+  items[i].addEventListener("click", handleClick);
 }
 
 // ✅ 事件委托——1 个事件监听器
-parent.addEventListener('click', (e) => {
-  const item = e.target.closest('.item');
+parent.addEventListener("click", (e) => {
+  const item = e.target.closest(".item");
   if (item) handleClick.call(item, e);
 });
 ```
@@ -553,20 +555,28 @@ parent.addEventListener('click', (e) => {
 
 ```javascript
 // 场景：在事件到达目标元素之前拦截
-document.addEventListener('click', (e) => {
-  // 在捕获阶段拦截所有点击事件
-  if (e.target.matches('.disabled')) {
-    e.stopPropagation(); // 阻止事件继续传播
-    e.preventDefault();  // 阻止默认行为
-    return;
-  }
-}, true); // 捕获阶段
+document.addEventListener(
+  "click",
+  (e) => {
+    // 在捕获阶段拦截所有点击事件
+    if (e.target.matches(".disabled")) {
+      e.stopPropagation(); // 阻止事件继续传播
+      e.preventDefault(); // 阻止默认行为
+      return;
+    }
+  },
+  true,
+); // 捕获阶段
 
 // 场景：全局错误捕获
-window.addEventListener('error', (e) => {
-  console.error('捕获到错误:', e.message);
-  reportError(e); // 上报错误
-}, true); // 捕获阶段
+window.addEventListener(
+  "error",
+  (e) => {
+    console.error("捕获到错误:", e.message);
+    reportError(e); // 上报错误
+  },
+  true,
+); // 捕获阶段
 ```
 
 <Warning title="⚠️ 捕获阶段的实际用途">
@@ -579,24 +589,25 @@ window.addEventListener('error', (e) => {
 
 ```javascript
 // 权限控制：在捕获阶段检查用户权限
-document.addEventListener('click', (e) => {
-  if (!hasPermission('click', e.target)) {
-    e.stopPropagation();
-    showToast('没有操作权限');
-  }
-}, true);
+document.addEventListener(
+  "click",
+  (e) => {
+    if (!hasPermission("click", e.target)) {
+      e.stopPropagation();
+      showToast("没有操作权限");
+    }
+  },
+  true,
+);
 ```
-
 
 </Warning>
 
 ---
 
-## 🔍 底层源码：浏览器是如何实现事件系统的？
+## 底层源码：浏览器是如何实现事件系统的？
 
-<div class="follow-up">
-浏览器的事件系统是怎么实现的？
-</div>
+<div class="follow-up">浏览器的事件系统是怎么实现的？</div>
 
 浏览器的事件系统在 Blink 中实现，核心是事件派发器（EventDispatcher）（详见 [Blink 源码：third_party/blink/renderer/core/dom/events/](https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/dom/events/)）：
 
@@ -625,13 +636,12 @@ void EventDispatcher::DispatchEvent(Node& node, Event& event) {
 ```
 
 这段代码做了 3 件事：
+
 1. 在捕获阶段，从 window 向目标元素传播，触发捕获阶段的事件监听器
 2. 在目标阶段，触发目标元素上的事件监听器（不区分捕获/冒泡）
 3. 在冒泡阶段，从目标元素向 window 传播，触发冒泡阶段的事件监听器
 
-<div class="follow-up">
-事件监听器是怎么存储和查找的？
-</div>
+<div class="follow-up">事件监听器是怎么存储和查找的？</div>
 
 Blink 用哈希表存储事件监听器，按事件类型分组：
 
@@ -666,14 +676,15 @@ class EventTarget {
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 十、及格回答 vs 满分回答
 
 ### 问题："说说 DOM 事件流，事件委托是怎么回事？"
 
 **及格回答（60-70分）：**
+
 > "事件流分为捕获和冒泡两个阶段。事件委托就是把子元素的事件绑定到父元素上，利用冒泡机制处理。这样可以减少事件监听器的数量，提高性能。"
 
-面试官评价：**知道规则但不理解细节**。
+问题出在：**知道规则但不理解细节**。
 
 **满分回答（90-100分）：**
 
@@ -685,7 +696,7 @@ class EventTarget {
 
 > 在 React 中，事件委托是默认行为——React 17 之前把所有事件委托到 `document`，React 17 之后委托到根节点（`#root`）。这就是为什么 React 的合成事件（SyntheticEvent）和原生 DOM 事件的执行顺序有时会让人困惑。
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
@@ -1007,9 +1018,9 @@ class EventTarget {
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 🔗 [MDN 事件参考](https://developer.mozilla.org/en-US/docs/Web/Events)：Mozilla 官方对所有 DOM 事件的完整参考。<sup>[1]</sup>
-- 📖 [JavaScript 事件委托详解](https://javascript.info/event-delegation)：Ilya Kantor 对事件委托的深度剖析，包含性能测试数据。<sup>[2]</sup>
-- 🟢 [Chrome 被动事件监听器](https://developer.chrome.com/blog/scrolling-intervention-landing)：Chrome 团队对 passive 事件监听器的官方解释，解决页面卡顿问题。<sup>[3]</sup>
-- 📘 [DOM Level 2 Events 规范](https://www.w3.org/TR/DOM-Level-2-Events/)：W3C 官方规范，定义了事件流的三个阶段。<sup>[4]</sup>
+- [MDN 事件参考](https://developer.mozilla.org/en-US/docs/Web/Events)：Mozilla 官方对所有 DOM 事件的完整参考。<sup>[1]</sup>
+- [JavaScript 事件委托详解](https://javascript.info/event-delegation)：Ilya Kantor 对事件委托的深度剖析，包含性能测试数据。<sup>[2]</sup>
+- [Chrome 被动事件监听器](https://developer.chrome.com/blog/scrolling-intervention-landing)：Chrome 团队对 passive 事件监听器的官方解释，解决页面卡顿问题。<sup>[3]</sup>
+- [DOM Level 2 Events 规范](https://www.w3.org/TR/DOM-Level-2-Events/)：W3C 官方规范，定义了事件流的三个阶段。<sup>[4]</sup>

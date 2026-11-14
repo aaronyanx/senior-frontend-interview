@@ -306,3 +306,223 @@ article,
   overflow: visible !important;
 }
 */
+
+/* =====================================
+   扇形卡改造：扑克牌式堆叠
+   ===================================== */
+
+@media (min-width: 768px) {
+  .card-stage {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+    place-items: center;
+    gap: 0;
+    height: 400px;
+    margin-top: 2.5rem;
+    padding: 0;
+  }
+
+  .card-stage > .card-item {
+    grid-area: 1 / 1;
+  }
+
+  .card-stage .card-link {
+    width: 230px;
+    height: 330px;
+  }
+
+  .card-stage .card-heading--ai,
+  .card-stage .card-heading--react {
+    font-size: 1.2rem;
+  }
+
+  .card-stage .card-heading--js {
+    font-size: 1.35rem;
+  }
+
+  .card-item--far-left,
+  .card-item--far-right {
+    z-index: 5;
+  }
+
+  .card-item--left,
+  .card-item--right {
+    z-index: 15;
+  }
+
+  .card-item--middle {
+    z-index: 25;
+  }
+
+  .card-item--far-left .card-link {
+    transform: translate3d(-150px, 16px, -60px) rotate(-12deg);
+  }
+
+  .card-item--left .card-link {
+    transform: translate3d(-75px, 8px, -40px) rotate(-6deg);
+  }
+
+  .card-item--middle .card-link {
+    transform: translate3d(0, -6px, 20px) rotate(-1deg);
+  }
+
+  .card-item--right .card-link {
+    transform: translate3d(75px, 8px, -30px) rotate(6deg);
+  }
+
+  .card-item--far-right .card-link {
+    transform: translate3d(150px, 16px, -50px) rotate(12deg);
+  }
+
+  .card-stage::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: 1.75rem;
+    width: 52%;
+    height: 34px;
+    transform: translateX(-50%);
+    background: radial-gradient(
+      50% 50% at 50% 50%,
+      rgba(15, 23, 42, 0.16) 0%,
+      rgba(15, 23, 42, 0) 70%
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+}
+
+/* 悬停时像扑克牌一样展开，单张悬停再抬起 */
+@media (hover: hover) and (min-width: 768px) {
+  .card-stage:hover .card-item--far-left .card-link {
+    transform: translate3d(-200px, 12px, 0) rotate(-12deg);
+  }
+
+  .card-stage:hover .card-item--left .card-link {
+    transform: translate3d(-100px, 4px, 10px) rotate(-6deg);
+  }
+
+  .card-stage:hover .card-item--middle .card-link {
+    transform: translate3d(0, -10px, 30px) rotate(0deg);
+  }
+
+  .card-stage:hover .card-item--right .card-link {
+    transform: translate3d(100px, 4px, 10px) rotate(6deg);
+  }
+
+  .card-stage:hover .card-item--far-right .card-link {
+    transform: translate3d(200px, 12px, 0) rotate(12deg);
+  }
+
+  .card-stage .card-item--far-left:hover .card-link,
+  .card-stage .card-item--far-left:focus-within .card-link {
+    transform: translate3d(-200px, -18px, 60px) rotate(-4deg) scale(1.05);
+  }
+
+  .card-stage .card-item--left:hover .card-link,
+  .card-stage .card-item--left:focus-within .card-link {
+    transform: translate3d(-100px, -20px, 70px) rotate(-2deg) scale(1.05);
+  }
+
+  .card-stage .card-item--middle:hover .card-link,
+  .card-stage .card-item--middle:focus-within .card-link {
+    transform: translate3d(0, -22px, 80px) rotate(0deg) scale(1.07);
+  }
+
+  .card-stage .card-item--right:hover .card-link,
+  .card-stage .card-item--right:focus-within .card-link {
+    transform: translate3d(100px, -20px, 70px) rotate(2deg) scale(1.05);
+  }
+
+  .card-stage .card-item--far-right:hover .card-link,
+  .card-stage .card-item--far-right:focus-within .card-link {
+    transform: translate3d(200px, -18px, 60px) rotate(4deg) scale(1.05);
+  }
+}
+
+/* 扇形卡长文本在卡内换行，避免溢出 */
+.card-list-item > span:last-child {
+  min-width: 0;
+}
+
+/* =====================================
+   点击热区修复
+   .card-item 是网格里叠放的普通盒子，即使透明也会挡住下层的点击；
+   关掉它的指针事件，只让卡片本体（a）接收点击。
+   ===================================== */
+
+.card-stage > .card-item {
+  pointer-events: none;
+}
+
+.card-stage > .card-item > .card-link {
+  pointer-events: auto;
+}
+
+/* =====================================
+   五张牌分色：每张一个专属色调
+   ===================================== */
+
+.card-link--amber {
+  --surface: #fffefb;
+  --edge: #f4e4cf;
+  --accent: #b07a36;
+  --line: rgba(176, 122, 54, 0.12);
+}
+
+.card-link--violet {
+  --surface: #fdfcff;
+  --edge: #e9e4f7;
+  --accent: #7a5fc8;
+  --line: rgba(122, 95, 200, 0.12);
+}
+
+.card-link--blue {
+  --surface: #fcfdff;
+  --edge: #dfe8f6;
+  --accent: #4d76c4;
+  --line: rgba(77, 118, 196, 0.12);
+}
+
+.card-link--green {
+  --surface: #fbfefc;
+  --edge: #d9efe5;
+  --accent: #3f8f72;
+  --line: rgba(63, 143, 114, 0.12);
+}
+
+.card-link--rose {
+  --surface: #fffcfd;
+  --edge: #f6e0e4;
+  --accent: #bf6a7d;
+  --line: rgba(191, 106, 125, 0.12);
+}
+
+.card-stage .card-link {
+  background: var(--surface);
+  border-color: var(--edge);
+}
+
+.card-stage .card-tag {
+  color: var(--accent);
+}
+
+.card-stage .card-heading {
+  color: #1f2937;
+}
+
+.card-stage .card-list {
+  color: #475569;
+}
+
+.card-stage .card-dot--ai,
+.card-stage .card-dot--js,
+.card-stage .card-dot--react {
+  color: var(--accent);
+}
+
+.card-stage .card-dot--inactive-ai,
+.card-stage .card-dot--inactive-slate {
+  --dot-border: var(--edge);
+}

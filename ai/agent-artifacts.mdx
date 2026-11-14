@@ -1,0 +1,389 @@
+---
+title: "Agent 产物与沙箱协作架构"
+description: "Agent 产物生命周期、Artifact 引用、沙箱协作与安全边界面试考点"
+---
+
+> 多 Agent 一旦开始交接，产物就成了绕不开的问题：消息传不下、权限收不住、版本回不去。我现在会把文件当成需要治理的基础设施来看。
+
+---
+
+## Q1: Agent 为什么需要"产物（Artifact）"这一层？消息内联不够吗？
+
+对话消息适合传"意图和结论"，不适合传"交付物"。一旦产物变多、变大、需要被多个 Agent 共享，消息内联就会出问题：
+
+| 问题          | 消息内联                | 独立产物层               |
+| ------------- | ----------------------- | ------------------------ |
+| 大文件        | 塞进上下文，token 爆炸  | 只传引用，按需读取       |
+| 多 Agent 共享 | 每个 Agent 各存一份副本 | 一份不可变对象，多处引用 |
+| 版本与回滚    | 无法表达"上一版"        | 版本号 + 内容 hash       |
+| 权限控制      | 跟着消息走，难以约束    | 按产物粒度授权           |
+| 审计          | 散落在对话里            | manifest 可查询、可追溯  |
+| 并发写        | 互相覆盖，无法检测      | ETag / 版本号做 CAS      |
+
+<Note title="一句话总结">
+
+消息传"指针"，产物存"内容"。Agent 之间应该传 artifact 引用，而不是把文件内容塞进 prompt。
+
+</Note>
+
+---
+
+## Q2: 一次会话中，产物经历了怎样的生命周期？
+
+```text
+① 临时产物（ephemeral）
+   工具刚生成、只在当前步骤有效，例如中间 CSV、临时截图
+        │  任务确认需要保留
+        ▼
+② 工作区文件（workspace）
+   落在沙箱 / 共享卷，供同一会话内的 Agent 读写
+        │  需要跨 Agent / 跨会话 / 交付
+        ▼
+③ 对象存储 artifact（immutable）
+   上传到 S3 / MinIO，生成 manifest + 内容 hash + 版本号
+        │  需要被其他 Agent 读取
+        ▼
+④ 引用传递（reference）
+   通过 artifactId / URI / MCP ResourceLink 传给下游 Agent
+        │  任务结束
+        ▼
+⑤ 清理 / 归档（retention）
+   临时产物过期删除，正式产物归档或按策略保留
+```
+
+各阶段的存储选型：
+
+| 阶段          | 典型存储              | 生命周期 | 关键点                   |
+| ------------- | --------------------- | -------- | ------------------------ |
+| 临时产物      | 沙箱本地盘 / tmp      | 分钟级   | 不跨节点，进程结束即失   |
+| 工作区文件    | K8s RWX PVC / 共享卷  | 会话级   | 需处理并发写             |
+| 正式 artifact | S3 / MinIO 等对象存储 | 天到永久 | 不可变、内容寻址         |
+| 元数据        | PostgreSQL            | 跟随产物 | manifest、权限、版本     |
+| 事件          | 消息队列 / 事件总线   | 短期     | 产物创建、提交、删除事件 |
+
+<Warning title="常见误区：把工作区当产物库">
+
+工作区是"草稿纸"，对象存储才是"档案室"。工作区随 Pod 销毁而丢失，且多副本之间不一定强一致。需要交付、审计、回滚的产物必须提升为不可变 artifact。
+
+</Warning>
+
+---
+
+## Q3: 产物协作的参考架构长什么样？
+
+```text
+┌──────────────┐      ┌──────────────┐      ┌──────────────┐
+│  Agent A     │      │  Agent B     │      │  Agent C     │
+│  (Sandbox)   │      │  (Sandbox)   │      │  (Sandbox)   │
+└──────┬───────┘      └──────┬───────┘      └──────┬───────┘
+       │ 只拿短期凭证          │                     │
+       ▼                     ▼                     ▼
+┌──────────────────────────────────────────────────────────┐
+│                   Artifact Service                        │
+│  申请上传 / 提交 manifest / 授权下载 / 版本 / 审计         │
+└──────┬───────────────────────────────┬───────────────────┘
+       │ 签发 presigned URL             │ 写 manifest
+       ▼                               ▼
+┌──────────────────┐          ┌──────────────────┐
+│ 对象存储 S3/MinIO │          │ 元数据库 PostgreSQL│
+│ 不可变对象 + hash │          │ 版本 / 权限 / 标签  │
+└──────────────────┘          └──────────────────┘
+```
+
+核心组件职责：
+
+| 组件             | 职责                           | 关键设计                             |
+| ---------------- | ------------------------------ | ------------------------------------ |
+| Sandbox          | 生成和消费产物                 | 不持有对象存储长期凭证               |
+| Artifact Service | 上传授权、manifest、版本、鉴权 | 统一入口，所有访问经过它             |
+| 对象存储         | 存不可变字节                   | key 由服务端生成，内容 hash 校验     |
+| 元数据库         | 存 manifest 与索引             | 支持按 run / task / session 前缀查询 |
+| MCP Resource     | 把产物暴露给 Agent             | 用 URI 引用，避免内联大内容          |
+
+<Note title="与 MCP / A2A 的关系">
+
+MCP 的 Resource 用 URI 唯一标识资源，并提供 `resources/read` 读取；`ResourceLink` 让 Agent 拿到的是一个句柄而不是内联内容。A2A 协议里的 Artifact 也有唯一 ID 和名称、由多个 Part 组成、可增量流式传输。两者都指向同一个工程结论：**跨 Agent 传引用，不传大块内容。**
+
+</Note>
+
+---
+
+## Q4: A Agent 写、B Agent 读，三种模式怎么选？
+
+| 模式                | 权限模型                   | 隔离强度         | 一致性         | 冲突处理             | 审计             | 成本         |
+| ------------------- | -------------------------- | ---------------- | -------------- | -------------------- | ---------------- | ------------ |
+| 共享挂载（RWX PVC） | 卷级授权，粒度粗           | 弱，同卷即可读写 | 取决于文件系统 | 文件锁 / 乐观锁      | 弱，需额外埋点   | 存储成本中等 |
+| Artifact 引用传递   | 产物级 presigned，最小权限 | 强，默认互不可见 | 最终一致       | 版本号 / ETag / hash | 强，服务端全记录 | 存储 + 流量  |
+| 消息内联            | 随消息传播                 | 无隔离           | 单消息强一致   | 无并发概念           | 弱，易泄漏       | token 成本高 |
+
+### 怎么选
+
+```text
+同 Pod / 同节点、需要低延迟读写 → 共享挂载
+跨节点 / 跨会话 / 需要交付与审计 → Artifact 引用传递
+小块结构化结果、下游只需看一眼 → 消息内联
+```
+
+经验规则：**默认用 Artifact 引用传递**，因为它的权限、审计、版本最完整；只有在同机协作且对延迟极敏感时，才用共享挂载作为性能优化，并且仍然要把最终产物提交成 artifact。
+
+<Warning title="不要在沙箱里放对象存储的长期凭证">
+
+沙箱执行的是模型生成的代码，属于不可信环境。正确做法是沙箱只拿到短期、单对象、只读或只写的 presigned URL，或者只拿到一个指向 Artifact Service 的会话令牌。长期 AK/SK 一旦进入沙箱，就等于把整个桶交出去。
+
+</Warning>
+
+---
+
+## Q5: artifact manifest 与上传 / 下载 API 怎么设计？
+
+### manifest schema
+
+```ts
+interface ArtifactManifest {
+  artifactId: string; // 全局唯一
+  taskId: string; // 归属任务
+  producer: { agentId: string; runId: string };
+  name: string; // 人类可读名，如 research.md
+  mimeType: string;
+  size: number;
+  sha256: string; // 内容寻址
+  version: number; // 同一逻辑产物的递增版本
+  storageKey: string; // 服务端生成，如 runs/{runId}/{name}
+  createdAt: string;
+  retention: "ephemeral" | "workspace" | "archive";
+  visibility: "task" | "session" | "tenant";
+  labels?: Record<string, string>;
+  parentArtifactId?: string; // diff / patch 的血缘
+}
+```
+
+### API 形态
+
+```text
+POST /artifacts
+  -> 申请上传，返回 artifactId 与 presigned PUT URL
+
+PUT  <presigned URL>
+  -> 直传对象存储，不经过 Artifact Service
+
+POST /artifacts/:id/commit
+  -> 校验 size / sha256 / mime，写入 manifest
+
+GET  /artifacts/:id
+  -> 返回 manifest（不含字节）
+
+GET  /artifacts/:id/content
+  -> 302 到短期 presigned GET，或流式返回
+
+GET  /artifacts?runId=...
+  -> 按前缀列举某次运行的产物
+
+POST /artifacts/:id/versions
+  -> 基于已有产物提交新版本，version 自增
+```
+
+<Note title="两阶段提交的意义">
+
+先申请上传、再 commit，是为了让"对象已写入"和"元数据可见"解耦。只有 commit 成功，产物才对下游可见；上传中断留下的孤儿对象由生命周期规则清理。这样避免了"文件写了一半就被读到"。
+
+</Note>
+
+---
+
+## Q6: 并发写同一文件、大文件、跨沙箱传输怎么处理？
+
+### 并发写：用 CAS，不要用"后写覆盖"
+
+| 场景               | 机制                      | 失败处理             |
+| ------------------ | ------------------------- | -------------------- |
+| 只允许创建一次     | `If-None-Match: *`        | 409，重新读取        |
+| 基于已知版本更新   | `If-Match: <etag>`        | 409，说明有人先改了  |
+| 同一逻辑产物多版本 | version 自增 + 不可变对象 | 保留全部版本，不覆盖 |
+
+```text
+A 与 B 同时写 config.json：
+1. 都读到 version=3
+2. A 用 If-Match=v3 写入成功，version=4
+3. B 用 If-Match=v3 写入失败（409）
+4. B 重新读取 v4，决定合并还是上报 Lead 裁决
+```
+
+关键原则：**不可变对象 + 版本指针**。永远不原地覆盖，冲突就产生新版本，由 Lead 或规则决定哪个版本是"当前"。
+
+### 大文件与流式
+
+- 大文件绝不要 base64 内联进消息，token 会直接爆炸。
+- 上传用分片（multipart），每片校验 MD5 / SHA256。
+- 下载用 Range 请求，支持断点续传。
+- 下游 Agent 先读 manifest 判断是否真的需要内容，再决定是否拉取。
+- 对文本类产物可只传 diff / patch，而不是整份文件。
+
+### 跨沙箱传输
+
+```text
+B 需要读 A 的产物：
+1. B 向 Artifact Service 出示会话令牌 + artifactId
+2. 服务校验 visibility 与租户，签发短期 presigned GET（只读、单对象）
+3. B 用该 URL 直连对象存储读取
+4. 全程不把存储凭证交给 B
+```
+
+---
+
+## Q7: 场景走查：流水线交接、专家团汇总、版本回滚
+
+### 场景一：硅基员工流水线
+
+```text
+调研 Agent  → research.md + sources.json
+      │
+设计 Agent  → 读 research 产物引用，产出 design.md + api-contract.json
+      │
+实现 Agent  → 读 design + contract，产出 patch.diff
+      │
+评审 Agent  → 读 patch + acceptance，产出 review.json
+      │
+Lead        → 汇总、裁决、决定是否交付
+```
+
+每一级只通过 `artifactRefs` 拿上游产物，不继承上游完整对话。产物天然形成一条血缘链，出问题能逐级回溯。
+
+### 场景二：专家团多份产物汇总
+
+```text
+安全专家  → security-report.md
+性能专家  → perf-report.md
+可维护性  → maintainability-report.md
+                │
+            Lead 汇总
+                ├─ 按 sha256 去重相同结论
+                ├─ 按 manifest 索引对齐主题
+                └─ 冲突项进入裁决，不直接拼接
+```
+
+汇总要先按 manifest 对齐、按 hash 去重，再把冲突项交给裁决逻辑；"把三份报告粘起来"做不到这些。
+
+### 场景三：失败后基于版本回滚
+
+```text
+1. 实现 Agent 提交 patch v1，评审不通过
+2. 实现 Agent 基于 v1 提交 v2，评审通过，发布指针指向 v2
+3. 上线后发现回归，需要回滚
+4. 不删除 v2，也不覆盖 v2，而是把发布指针指回 v1
+5. 保留 v1 / v2 两个不可变版本，供复盘
+```
+
+**回滚 = 移动指针，不是覆盖历史。** 这样任何时刻都能回答"当时交付的是哪一版、由谁产出、基于什么上游产物"。
+
+---
+
+## Q8: 产物协作的安全边界怎么划？
+
+| 风险     | 攻击方式                   | 防护                                                   |
+| -------- | -------------------------- | ------------------------------------------------------ |
+| 路径穿越 | 产物名含 `../` 或绝对路径  | 服务端生成 key，拒绝 `..` 与绝对路径，规范化后校验前缀 |
+| 恶意文件 | 上传可执行文件 / 伪造 MIME | magic bytes 校验、病毒扫描、默认不可执行、渲染隔离     |
+| 数据外泄 | 把敏感产物外传             | presigned 短 TTL、单对象、最小权限、出网管控、水印     |
+| 租户越权 | 猜 artifactId 读别家产物   | `tenant/{tenantId}/` 前缀 + IAM 策略 + 每租户 KMS 密钥 |
+| 产物堆积 | 临时产物永不清理           | 生命周期规则、按前缀过期、归档到冷存储                 |
+| 供应链   | 下游直接信任上游产物       | 校验 hash 与签名，评审 Agent 独立验证                  |
+
+### 保留策略
+
+```text
+ephemeral：1-7 天自动删除（中间态、临时截图）
+workspace：会话结束后归档或删除
+archive：长期保留，转冷存储，按合规要求设 legal hold
+```
+
+<Warning title="不要信任客户端传来的 key 或文件名">
+
+存储 key 必须由服务端根据 `artifactId` 生成，绝不能直接使用客户端传来的路径。文件名只作为展示字段，不参与寻址。
+
+</Warning>
+
+---
+
+## Q9: 八道深度追问（及格 vs 满分）
+
+> 八题覆盖"为什么需要产物层 / 生命周期 / 三种协作模式 / presigned 安全 / 内容寻址 / 并发冲突 / 大文件 / 版本回滚"。
+
+<AccordionGroup>
+
+<Accordion title="为什么不能把产物直接塞进 Agent 的消息里？">
+
+**及格回答：** 因为文件太大，塞进去会超上下文。
+
+**满分回答：** 大小只是表象，核心问题是消息无法承载交付物应有的属性：无法多 Agent 共享一份不可变副本、无法表达版本和回滚、无法按产物粒度授权、无法审计、无法检测并发写冲突。所以我用"消息传引用、对象存储存内容"的方式：消息里只放 artifactId 或 ResourceLink，下游按需读取。这样上下文可控，权限和版本也能约束。
+
+</Accordion>
+
+<Accordion title="产物从临时文件到正式 artifact，生命周期怎么设计？">
+
+**及格回答：** 先生成文件，再传到对象存储，最后删掉临时文件。
+
+**满分回答：** 我分五段：临时产物放沙箱本地盘，分钟级清理；确认要保留的提升为工作区文件，落在共享卷供同会话读写；需要跨 Agent 或交付时，上传到对象存储并生成 manifest、hash 和版本，成为不可变 artifact；下游通过引用读取；任务结束按 retention 清理或归档。关键是把"工作区"和"档案室"分开，工作区随 Pod 销毁而丢失，不能当产物库用。
+
+</Accordion>
+
+<Accordion title="共享挂载、Artifact 引用、消息内联怎么选？">
+
+**及格回答：** 文件大就用对象存储，文件小就直接发消息。
+
+**满分回答：** 我按三个维度选：隔离、一致性、审计。共享挂载延迟低，但卷级授权粒度粗、跨节点一致性弱，适合同 Pod 协作；Artifact 引用是默认选择，权限能细到单个产物，服务端记录完整访问审计，版本和冲突处理也最完整；消息内联只适合小块结构化结果，下游看一眼就够。即便用共享挂载做性能优化，最终交付物仍然要提交成不可变 artifact。
+
+</Accordion>
+
+<Accordion title="presigned URL 的安全边界在哪？">
+
+**及格回答：** 设置一个过期时间就安全了。
+
+**满分回答：** 过期时间只是一层。完整的边界包括：只授权单个对象而不是整个桶、只给需要的动作（读或写）、TTL 尽量短、绑定租户和会话、必要时限制来源 IP。沙箱里绝不能放长期 AK/SK，因为它执行的是模型生成的不可信代码。正确做法是沙箱向 Artifact Service 出示会话令牌，换取短期单对象 URL。这样即使 URL 泄漏，损失也被限制在一个对象和很短的时间窗内。
+
+</Accordion>
+
+<Accordion title="内容寻址（hash）解决什么问题？">
+
+**及格回答：** 用来校验文件有没有损坏。
+
+**满分回答：** 完整性只是第一层。sha256 让相同内容天然去重——专家团多份报告里重复的附件只存一份；让 manifest 可以验证"下游读到的确实是上游产出的那一份"；让缓存和增量处理成为可能——hash 没变就不用重新处理；还能支撑血缘追踪，patch 可以记录它基于哪个父产物的 hash。可以说内容寻址是产物系统可验证性的基础。
+
+</Accordion>
+
+<Accordion title="两个 Agent 同时写同一个文件怎么办？">
+
+**及格回答：** 加个锁，谁先拿到谁写。
+
+**满分回答：** 我不倾向用分布式锁做长期方案，而是用乐观并发加不可变版本。读的时候拿到 ETag 或 version，写的时候带 `If-Match`；版本对不上就返回 409，让写入方重新读取后决定合并还是上报。对象永远不原地覆盖，冲突就产生新版本，由 Lead 或规则决定哪个是当前版本。这样既避免了锁的死锁和租约问题，又保留了完整历史。
+
+</Accordion>
+
+<Accordion title="大文件怎么传给下一个 Agent 而不爆上下文？">
+
+**及格回答：** 分块读，读一部分处理一部分。
+
+**满分回答：** 首先绝不 base64 内联进消息。上游把大文件提交为 artifact，下游只拿引用；需要读取时用 Range 请求做流式或分片读取，支持断点续传。文本类产物优先传 diff / patch 而不是整份文件。下游 Agent 先读 manifest 判断是否真的需要内容，很多情况下只需要摘要或元数据。上传侧用 multipart 分片并逐片校验 hash，避免大文件半途失败重传。
+
+</Accordion>
+
+<Accordion title="上线后发现产物有问题，怎么回滚？">
+
+**及格回答：** 把文件改回上一版就行。
+
+**满分回答：** 不能覆盖，因为覆盖会丢失证据、也无法回答"当时交付的是哪一版"。正确做法是所有版本都作为不可变对象保留，manifest 记录 version 和 parentArtifactId，发布用一个指针指向当前版本。回滚就是把指针指回上一个通过的版本，而不是删改历史。这样既能快速恢复，又保留了完整的血缘和审计链，复盘时能定位是哪一级 Agent、基于什么上游产物出的问题。
+
+</Accordion>
+
+</AccordionGroup>
+
+---
+
+## 延伸阅读与引用参考
+
+- [Amazon S3: Presigned URLs](https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-presigned-url.html)：预签名 URL 的权限、过期与最小授权实践。
+- [MCP Specification: Resources](https://modelcontextprotocol.io/specification/2025-06-18/server/resources)：用 URI 标识资源、`resources/read` 与 `ResourceLink` 的语义。
+- [A2A Protocol Specification](https://a2a-protocol.org/latest/specification/)：Artifact 的唯一 ID、Part 组成与增量流式传输。
+- [Kubernetes: Persistent Volumes Access Modes](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes)：ReadWriteMany 等访问模式与共享卷语义。
+- [OWASP: File Upload Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html)：文件上传的路径穿越、MIME 伪造与内容校验防护。
+- [OpenAI: Sandbox Agents](https://platform.openai.com/docs/guides/sandbox-agents)：Harness 与 compute 分离、Manifest、快照与沙箱执行面的设计。
+- [阿里云 Agent Sandbox 文件系统](https://help.aliyun.com/)：`uploadUrl` / `downloadUrl` 与跨沙箱产物读取的公开接口形态（具体字段以官方文档为准）。

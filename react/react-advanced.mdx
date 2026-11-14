@@ -1,10 +1,9 @@
 ---
 title: "React 进阶"
+description: "覆盖 Error Boundary、Context 性能、RSC/SSR、受控组件、keep-alive 与 Suspense 原理。"
 ---
 
-> **面试官为什么问这个？**
->
-> React 进阶话题（Error Boundaries、Context、Server Components、代码分割）考察的是你对 React 生态的全面理解。面试官问这些，本质上是在考察你是否具备从"会写组件"到"能设计完整应用架构"的能力。如果你对这些进阶机制一无所知，说明你的 React 水平还停留在入门阶段。
+> 进阶这块我踩过的坑都在边界上：错误边界兜哪一层、Context 更新粒度多大、RSC 和 SSR 各自负责什么。API 会用不难，放错层就麻烦了。
 
 ---
 
@@ -60,7 +59,7 @@ Error Boundaries 只能捕获子组件树的渲染错误，无法捕获事件处
 用户操作 → 某个子组件抛出错误 → Error Boundary 捕获 → 显示降级 UI → 其余组件正常
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 Error Boundaries 让 React 应用从"一错全崩"变成了"局部降级"。
 
@@ -68,19 +67,19 @@ Error Boundaries 让 React 应用从"一错全崩"变成了"局部降级"。
 
 <CardGroup cols={2}>
 
-<Card title="🚫 没有 Error Boundaries">
+<Card title="没有 Error Boundaries">
 
 一个小组件的渲染错误导致整个页面白屏。就像一栋大楼里一间房着火了，整栋楼的所有住户都被强制撤离。
 
 </Card>
-<Card title="✅ 引入 Error Boundaries">
+<Card title="引入 Error Boundaries">
 
 出错的房间被隔离，显示"维修中"的提示，其他住户正常生活。就像大楼装了防火门，火势不会蔓延。
 
 </Card>
 </CardGroup>
 
-<Tip title="💡 面试技巧">
+<Tip title="面试技巧">
 
 回答时先说"为什么需要"（组件错误导致全页面崩溃），再说"怎么实现"（getDerivedStateFromError + componentDidCatch）。最后一定要主动说出它的局限性（不能捕获异步错误），这是加分项。
 
@@ -98,13 +97,13 @@ Context 的核心问题有三个：第一，粗粒度更新——Provider 的 va
 
 ### 状态管理方案技术选型
 
-| 方案 | 原理 | 适用场景 | 学习成本 |
-|------|------|---------|---------|
-| **Context** | Provider/Consumer 广播 | 低频变化的全局数据（主题、语言） | 低 |
-| **Redux** | 单一 Store + 纯函数 Reducer | 复杂业务逻辑、需要时间旅行调试 | 高 |
-| **Zustand** | 原子化 Store + 自动订阅 | 中小型应用、精准订阅 | 低 |
-| **MobX** | 响应式数据 + 自动追踪依赖 | 复杂对象图、需要细粒度响应 | 中 |
-| **Jotai** | 原子化状态 + 底层 Context | 独立的、细粒度的状态单元 | 低 |
+| 方案        | 原理                        | 适用场景                         | 学习成本 |
+| ----------- | --------------------------- | -------------------------------- | -------- |
+| **Context** | Provider/Consumer 广播      | 低频变化的全局数据（主题、语言） | 低       |
+| **Redux**   | 单一 Store + 纯函数 Reducer | 复杂业务逻辑、需要时间旅行调试   | 高       |
+| **Zustand** | 原子化 Store + 自动订阅     | 中小型应用、精准订阅             | 低       |
+| **MobX**    | 响应式数据 + 自动追踪依赖   | 复杂对象图、需要细粒度响应       | 中       |
+| **Jotai**   | 原子化状态 + 底层 Context   | 独立的、细粒度的状态单元         | 低       |
 
 ```text
 ┌───────────────────────────────────────┐
@@ -120,19 +119,19 @@ Context 的核心问题有三个：第一，粗粒度更新——Provider 的 va
 
 ```javascript
 // 问题：Context 值变化时，所有 Consumer 都会 re-render
-const ThemeContext = createContext({ theme: 'light', lang: 'zh' });
+const ThemeContext = createContext({ theme: "light", lang: "zh" });
 
 // CompA 只用了 theme，CompB 只用了 lang
 // 但 theme 变化时，CompB 也会 re-render（即使 lang 没变）
 
 // 解决方案 1：拆分 Context
-const ThemeContext = createContext('light');
-const LangContext = createContext('zh');
+const ThemeContext = createContext("light");
+const LangContext = createContext("zh");
 // theme 变化时，只有 ThemeContext 的 Consumer re-render
 
 // 解决方案 2：用 useMemo 稳定 Context 值
 function App() {
-  const [theme, setTheme] = useState('light');
+  const [theme, setTheme] = useState("light");
   const value = useMemo(() => ({ theme, setTheme }), [theme]);
   return <ThemeContext.Provider value={value}>...</ThemeContext.Provider>;
 }
@@ -141,13 +140,13 @@ function App() {
 // 精准订阅，只有用到的组件 re-render
 ```
 
-<Warning title="⚠️ Context 的性能陷阱">
+<Warning title="Context 的性能陷阱">
 
 Context 的 value 变化时，会绕过 `React.memo` 的优化。即使子组件被 `React.memo` 包裹，只要它通过 `useContext` 消费了变化的 Context，就会强制 re-render。这是很多开发者在优化列表性能时忽略的"隐性更新源"。
 
 </Warning>
 
-<Tip title="🎢 通俗比喻: 公司群发邮件">
+<Tip title="通俗比喻: 公司群发邮件">
 
 Context 就像公司的全员邮件。你改了公司 logo（theme 变了），系统给所有员工（Consumer）都发了一封通知邮件，即使有些员工根本不关心 logo。拆分 Context 就像把邮件按部门分组——设计部收到 logo 变更通知，财务部只收到报销规则变更通知，互不干扰。
 
@@ -167,39 +166,46 @@ RSC 使用一种特殊的序列化格式（RSC Payload）流式传输渲染结�
 
 ### 基础梳理
 
-| 维度 | SSR | Server Components |
-|------|-----|-------------------|
-| **渲染产物** | HTML 字符串 | RSC Payload（序列化格式） |
-| **客户端需要的 JS** | 需要完整组件代码进行 Hydration | 服务端组件的代码不发送到客户端 |
-| **运行时机** | 请求时在服务端渲染 HTML | 组件在服务端运行，结果流式传输 |
-| **交互能力** | Hydration 后完全可交互 | 服务端组件不可交互，客户端组件可交互 |
-| **数据获取** | 在 getServerSideProps 中获取 | 直接在组件中 async/await |
+| 维度                | SSR                            | Server Components                    |
+| ------------------- | ------------------------------ | ------------------------------------ |
+| **渲染产物**        | HTML 字符串                    | RSC Payload（序列化格式）            |
+| **客户端需要的 JS** | 需要完整组件代码进行 Hydration | 服务端组件的代码不发送到客户端       |
+| **运行时机**        | 请求时在服务端渲染 HTML        | 组件在服务端运行，结果流式传输       |
+| **交互能力**        | Hydration 后完全可交互         | 服务端组件不可交互，客户端组件可交互 |
+| **数据获取**        | 在 getServerSideProps 中获取   | 直接在组件中 async/await             |
 
 ### 专家视角深度剖析
 
-很多候选人只能说出"RSC 减少了客户端 JS 体积"，但大厂面试官真正在意的是：**RSC 的核心设计理念是什么？它解决了 SSR 的什么根本性问题？**
+很多人只能说出"RSC 减少了客户端 JS 体积"，但实际更在意的是：**RSC 的核心设计理念是什么？它解决了 SSR 的什么根本性问题？**
 
 SSR 的根本问题是**Hydration 成本**。服务端渲染出 HTML 后，客户端必须下载完整的组件代码，在本地重新执行一遍来"激活"交互（Hydration）。这意味着组件代码会被执行两次——服务端一次生成 HTML，客户端一次绑定事件。对于大型应用，Hydration 可能需要数百毫秒，阻塞了页面的可交互时间。
 
 RSC 的设计理念是**组件级别的服务端/客户端分离**。服务端组件只在服务端运行，客户端收到的是渲染结果（RSC Payload），不需要重新执行组件函数。只有标记了 `'use client'` 的客户端组件才需要发送 JS 到客户端并进行 Hydration。
 
-```javascript
+```jsx
 // 服务端组件：只在服务端运行，不发送 JS 到客户端
 async function UserProfile({ userId }) {
-  const user = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+  const user = await db.query("SELECT * FROM users WHERE id = ?", [userId]);
   return <div>{user.name}</div>;
   // 客户端只收到渲染结果，不需要这个组件的代码
 }
 
-// 客户端组件：发送到客户端，需要 Hydration
-'use client';
-function LikeButton() {
-  const [liked, setLiked] = useState(false);
-  return <button onClick={() => setLiked(!liked)}>{liked ? 'Liked' : 'Like'}</button>;
-}
-
 // 关键规则：服务端组件可以导入客户端组件，但客户端组件不能导入服务端组件
 // 客户端组件可以接收服务端组件作为 children prop
+```
+
+```jsx
+// 客户端组件（另一个文件）：发送到客户端，需要 Hydration
+"use client"; // 必须是该文件的第一条语句，且在 import 之前
+
+import { useState } from "react";
+
+function LikeButton() {
+  const [liked, setLiked] = useState(false);
+  return (
+    <button onClick={() => setLiked(!liked)}>{liked ? "Liked" : "Like"}</button>
+  );
+}
 ```
 
 ---
@@ -219,10 +225,10 @@ function LikeButton() {
 ```javascript
 // 受控组件：React 是"单一数据源"
 function ControlledInput() {
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState("");
   return (
     <input
-      value={value}                    // React 控制值
+      value={value} // React 控制值
       onChange={(e) => setValue(e.target.value)} // 每次输入都更新 state
     />
   );
@@ -242,12 +248,12 @@ function UncontrolledInput() {
 
 **关键区别：**
 
-| 场景 | 受控组件 | 非受控组件 |
-|------|---------|-----------|
-| 值的来源 | React state | DOM 自身 |
-| 获取值的方式 | 读 state | 读 ref.current.value |
-| 适用场景 | 实时验证、格式化、动态禁用 | 文件上传、集成第三方库 |
-| 性能 | 每次输入触发 re-render | 不触发 re-render |
+| 场景         | 受控组件                   | 非受控组件             |
+| ------------ | -------------------------- | ---------------------- |
+| 值的来源     | React state                | DOM 自身               |
+| 获取值的方式 | 读 state                   | 读 ref.current.value   |
+| 适用场景     | 实时验证、格式化、动态禁用 | 文件上传、集成第三方库 |
+| 性能         | 每次输入触发 re-render     | 不触发 re-render       |
 
 <Tip title="最佳实践: ">
 
@@ -293,13 +299,13 @@ React：用户切换到 TabB，但优先级不够高，我先中断渲染去做�
 
 三个核心原因：
 
-| 原因 | 解释 |
-|------|------|
+| 原因                   | 解释                                                                   |
+| ---------------------- | ---------------------------------------------------------------------- |
 | **状态应由数据层持有** | React 认为组件状态应该提升到 Redux/Zustand/URL，而不是由组件实例"私有" |
-| **并发模式兼容** | keep-alive 的"实例持久化"与并发模式的"可丢弃渲染"冲突 |
-| **组合优于缓存** | React 推荐用条件渲染 + 状态提升来替代缓存，保持组件树的简洁 |
+| **并发模式兼容**       | keep-alive 的"实例持久化"与并发模式的"可丢弃渲染"冲突                  |
+| **组合优于缓存**       | React 推荐用条件渲染 + 状态提升来替代缓存，保持组件树的简洁            |
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 React 没有 keep-alive 不是功能缺失，而是设计哲学的选择——**状态属于数据层，组件只是视图函数，卸载重建是正常行为**。
 
@@ -320,13 +326,13 @@ function TabContainer() {
   // 状态在父组件，子组件卸载不影响
   const [tabAData, setTabAData] = useState([]);
   const [tabBData, setTabBData] = useState([]);
-  const [activeTab, setActiveTab] = useState('A');
+  const [activeTab, setActiveTab] = useState("A");
 
   return (
     <>
       <TabBar active={activeTab} onChange={setActiveTab} />
-      {activeTab === 'A' && <TabA data={tabAData} onChange={setTabAData} />}
-      {activeTab === 'B' && <TabB data={tabBData} onChange={setTabBData} />}
+      {activeTab === "A" && <TabA data={tabAData} onChange={setTabAData} />}
+      {activeTab === "B" && <TabB data={tabBData} onChange={setTabBData} />}
     </>
   );
   // Tab 切换时组件会卸载重建，但数据不丢失
@@ -340,7 +346,7 @@ function TabContainer() {
 用 `useRef` 在父组件中缓存子组件的 VNode，切换时不销毁。
 
 ```jsx
-import { useRef, useState } from 'react';
+import { useRef, useState } from "react";
 
 function KeepAlive({ children, activeKey }) {
   const cacheRef = useRef(new Map());
@@ -354,7 +360,10 @@ function KeepAlive({ children, activeKey }) {
   return (
     <>
       {Array.from(cacheRef.current.entries()).map(([key, vnode]) => (
-        <div key={key} style={{ display: key === activeKey ? 'block' : 'none' }}>
+        <div
+          key={key}
+          style={{ display: key === activeKey ? "block" : "none" }}
+        >
           {vnode}
         </div>
       ))}
@@ -364,10 +373,10 @@ function KeepAlive({ children, activeKey }) {
 
 // 使用
 function App() {
-  const [activeTab, setActiveTab] = useState('A');
+  const [activeTab, setActiveTab] = useState("A");
   return (
     <KeepAlive activeKey={activeTab}>
-      {activeTab === 'A' ? <TabA /> : <TabB />}
+      {activeTab === "A" ? <TabA /> : <TabB />}
     </KeepAlive>
   );
 }
@@ -398,14 +407,20 @@ function App() {
 }
 ```
 
-react-activation 的原理是通过 **React Context + Error Boundary** 把缓存的组件树"嫁接"到一个隐藏的 Provider 中，切换时从 Provider 中取出组件树挂载到目标位置。
+react-activation 的思路是在 `AliveScope` 下维护一份隐藏的缓存容器，把需要保留的组件树渲染进去；切换时复用缓存中的节点，而不是重新挂载。该库依赖 React 内部机制，升级 React 大版本时需要重点验证兼容性。
 
 ### 方案四：手写 keep-alive 原理
 
 核心思路：用一个 Map 缓存组件的 VNode，用 DOM 的 `appendChild` 把组件的真实 DOM 移到容器中，而不是销毁重建。
 
 ```jsx
-import { useRef, useEffect, useCallback, createContext, useContext } from 'react';
+import {
+  useRef,
+  useEffect,
+  useCallback,
+  createContext,
+  useContext,
+} from "react";
 
 const KeepAliveContext = createContext();
 
@@ -424,7 +439,7 @@ function AliveScope({ children }) {
   return (
     <KeepAliveContext.Provider value={{ keep, release, cache: cacheRef }}>
       {children}
-      <div id="alive-container" style={{ display: 'none' }}>
+      <div id="alive-container" style={{ display: "none" }}>
         {/* 缓存的 DOM 节点存放在这里 */}
       </div>
     </KeepAliveContext.Provider>
@@ -437,7 +452,7 @@ function KeepAlive({ id, children }) {
   const { keep, release, cache } = useContext(KeepAliveContext);
 
   useEffect(() => {
-    const container = document.getElementById('alive-container');
+    const container = document.getElementById("alive-container");
     const cachedDom = cache.current.get(id);
 
     if (cachedDom) {
@@ -457,7 +472,7 @@ function KeepAlive({ id, children }) {
 }
 ```
 
-<Warning title="⚠️ 手写方案的局限性">
+<Warning title="手写方案的局限性">
 
 手写的 keep-alive 只能缓存 DOM 节点，无法缓存 React 组件的内部状态（hooks state、ref 等）。如果需要完整的状态缓存，应该使用 react-activation 等第三方库。状态提升方案虽然简单，但最符合 React 的设计理念。
 
@@ -465,14 +480,14 @@ function KeepAlive({ id, children }) {
 
 ### 方案选型对比
 
-| 方案 | 缓存 DOM | 缓存状态 | 性能开销 | 复杂度 |
-|------|---------|---------|---------|--------|
-| **状态提升** | ❌ | ✅ state | 低 | 低 |
-| **useRef + display** | ✅ | ✅ | 中（隐藏组件仍渲染） | 中 |
-| **react-activation** | ✅ | ✅ | 中 | 低 |
-| **手写 DOM 转移** | ✅ | ❌ hooks 丢失 | 低 | 高 |
+| 方案                 | 缓存 DOM | 缓存状态         | 性能开销             | 复杂度 |
+| -------------------- | -------- | ---------------- | -------------------- | ------ |
+| **状态提升**         | 否       | 是（state）      | 低                   | 低     |
+| **useRef + display** | 是       | 是               | 中（隐藏组件仍渲染） | 中     |
+| **react-activation** | 是       | 是               | 中                   | 低     |
+| **手写 DOM 转移**    | 是       | 否（hooks 丢失） | 低                   | 高     |
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 React 没有 keep-alive，但**状态提升是最 React 的方案**——把状态放到数据层，组件只是视图，卸载重建无所谓。如果确实需要缓存 DOM 状态（滚动位置），用 react-activation。
 
@@ -484,32 +499,27 @@ React 没有 keep-alive，但**状态提升是最 React 的方案**——把状�
 
 ---
 
-## 🔍 底层源码：Suspense 是怎么工作的？
+## Q7: Suspense 在源码中是怎么工作的？
 
-<div class="follow-up">
-Suspense 在源码中是怎么实现的？
-</div>
+<div class="follow-up">Suspense 在源码中是怎么实现的？</div>
 
 当子组件"抛出"一个 Promise（通过 `throw`，不是 `return`），React 的 Fiber 协调器会捕获它并渲染最近的 Suspense boundary 的 fallback。Promise resolve 后，React 重新尝试渲染子组件。详见 [React 源码 packages/react-reconciler/src/ReactFiberWorkLoop.js](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/ReactFiberWorkLoop.js)。
 
 ```javascript
-// Suspense 的核心机制（简化版）
+// Suspense 的核心机制（伪代码，便于理解流程，函数名并非源码中的真实 API）
 function renderRoot(root) {
   try {
     // 尝试渲染组件树
     workLoopSync();
   } catch (thrownValue) {
-    // 如果组件 throw 了一个 Promise
-    if (isPromise(thrownValue)) {
-      // 找到最近的 Suspense boundary
-      const suspenseBoundary = findNearestSuspense();
-      // 将 boundary 的状态标记为 Suspended
-      suspenseBoundary.memoizedState = { dehydrated: null };
-      // 渲染 fallback UI
-      renderFallback(suspenseBoundary);
-      // 等待 Promise resolve 后重新渲染
+    // 如果组件 throw 了一个 Promise（thenable）
+    if (isThenable(thrownValue)) {
+      // 在 Fiber 树上向上查找最近的 Suspense boundary
+      const suspenseBoundary = findNearestSuspenseBoundary();
+      // 将该 boundary 标记为挂起，本次提交渲染 fallback
+      markSuspenseBoundarySuspended(suspenseBoundary);
+      // 等待 Promise resolve 后重新调度该 boundary 的渲染
       thrownValue.then(() => {
-        suspenseBoundary.memoizedState = null;
         scheduleUpdateOnFiber(suspenseBoundary);
       });
     }
@@ -519,22 +529,21 @@ function renderRoot(root) {
 
 这段代码做了 2 件事：第一，通过 try/catch 捕获组件 throw 的 Promise，找到最近的 Suspense boundary；第二，将 boundary 状态标记为 Suspended 并渲染 fallback，Promise resolve 后触发重新渲染。
 
-<div class="follow-up">
-React 19 的 use() hook 是怎么配合 Suspense 的？
-</div>
+<div class="follow-up">React 19 的 use() hook 是怎么配合 Suspense 的？</div>
 
 `use()` hook 是 React 19 引入的新 API，它可以在渲染过程中"读取" Promise 或 Context。当 Promise 未 resolve 时，`use()` 会 throw 一个 Promise，触发最近的 Suspense boundary 渲染 fallback。与 `useEffect` + `useState` 的数据获取方式不同，`use()` 可以在条件语句和循环中使用，打破了 Hooks 的"顶层调用"规则。详见 [React 官方文档 use()](https://react.dev/reference/react/use)。
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## Q8: 及格回答和满分回答差在哪？
 
 ### 问题："说说 React Server Components"
 
 **及格回答（60-70分）：**
+
 > "RSC 在服务端渲染组件，不发送 JS 到客户端。减少客户端 JS 体积。"
 
-面试官评价：**知道结论但不理解设计**。
+问题出在：**知道结论但不理解设计**。
 
 **满分回答（90-100分）：**
 
@@ -544,7 +553,7 @@ React 19 的 use() hook 是怎么配合 Suspense 的？
 
 > RSC 解决了 SSR 的根本问题——Hydration 成本。对于大型应用，Hydration 可能阻塞数百毫秒的可交互时间。RSC 通过减少需要发送到客户端的 JS 代码量（服务端组件的代码完全不发送），从根本上降低了 Hydration 的工作量。
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
@@ -574,21 +583,21 @@ React 19 的 use() hook 是怎么配合 Suspense 的？
 从用户体验和性能两个角度分析后果。
 
 **高分回答：**
-"当服务端和客户端的渲染结果不一致时，React 会报 'Hydration failed' 错误，然后**客户端重新渲染整个页面**——丢弃服务端的 HTML，从头用客户端代码渲染。这会导致：第一，用户看到页面闪烁（旧 HTML 被替换为新渲染的结果）；第二，完全丢失服务端渲染的性能优势（白屏时间等于客户端完整渲染时间）。常见原因包括：使用了 Date.now()、Math.random()（服务端和客户端结果不同）、使用了 window/document（服务端不存在）。解决方案是用 `suppressHydrationWarning` 或 `useEffect` 延迟执行客户端特有的逻辑。"
+"当服务端和客户端的渲染结果不一致时，React 会报 hydration mismatch 警告，并回退到客户端渲染来修正不一致的子树（严重时表现为整棵树的客户端渲染）。这会导致：第一，用户可能看到页面闪烁；第二，丢失部分服务端渲染带来的首屏收益。常见原因包括：使用了 Date.now()、Math.random()（服务端和客户端结果不同）、渲染时直接读取 window/document（服务端不存在）。解决方案是让首屏渲染结果保持确定性，把客户端特有逻辑放进 `useEffect`，必要时用 `suppressHydrationWarning` 处理不可避免的文本差异。"
 
   </Accordion>
 
-  <Accordion title="🔥 React 19 的 use() hook 打破了 Hooks 规则, 为什么可以这样做?" icon="skull">
+  <Accordion title="React 19 的 use() hook 打破了 Hooks 规则, 为什么可以这样做?" icon="skull">
 
 **答题要点：**
 从实现机制和设计动机两个角度分析。
 
 **高分回答：**
-"传统的 Hooks（如 useState）必须在函数顶层调用，因为它们依赖链表的顺序读取机制——React 按调用顺序从 memoizedState 链表中取值。但 `use()` 的实现不依赖链表顺序：它不是从 Fiber 节点上读取缓存状态，而是直接在渲染过程中同步读取 Promise 或 Context 的当前值。如果 Promise 未 resolve，它 throw 一个 Promise 触发 Suspense；如果已 resolve，它返回值。这种实现方式不依赖调用顺序，所以可以在条件语句和循环中使用。设计动机是简化数据获取——不再需要 useEffect + useState + loading 三件套，一行 `use(fetchData())` 就能配合 Suspense 实现加载状态。"
+"传统的 Hooks（如 useState）必须在函数顶层调用，因为它们依赖链表的顺序读取机制——React 按调用顺序从 memoizedState 链表中取值。但 `use()` 的实现不依赖链表顺序：它不是从 Fiber 节点上读取缓存状态，而是直接在渲染过程中同步读取 Promise 或 Context 的当前值。如果 Promise 未 resolve，它 throw 一个 Promise 触发 Suspense；如果已 resolve，它返回值。这种实现方式不依赖调用顺序，所以可以在条件语句和循环中使用。设计动机是简化数据获取——不再需要 useEffect + useState + loading 三件套。注意传给 `use()` 的 Promise 必须来自上层或缓存（不要在渲染中每次新建 Promise），否则每次渲染都会重新触发挂起。"
 
   </Accordion>
 
-  <Accordion title="🔥 受控组件和非受控组件该怎么选?" icon="skull">
+  <Accordion title="受控组件和非受控组件该怎么选?" icon="skull">
 
 **答题要点：**
 从 React 设计理念和实际场景两个角度分析。
@@ -601,9 +610,9 @@ React 19 的 use() hook 是怎么配合 Suspense 的？
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 🟢 [React 官方文档：Error Boundaries](https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary)：官方对错误边界的权威解释和使用示例。<sup>[1]</sup>
-- 🟢 [React 官方文档：Server Components](https://react.dev/reference/rsc/server-components)：官方对 RSC 设计理念和使用方式的完整文档。<sup>[2]</sup>
-- 📖 [Dan Abramov: Suspense for Data Fetching](https://react.dev/blog/2022/03/29/react-v18.html)：深入理解 Suspense 的工作原理和未来方向。<sup>[3]</sup>
-- 📖 [react-error-boundary 库](https://github.com/bvaughn/react-error-boundary)：函数组件的 Error Boundary 实现，支持 fallback 和 onReset。<sup>[4]</sup>
+- [React 官方文档：Error Boundaries](https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary)：官方对错误边界的权威解释和使用示例。<sup>[1]</sup>
+- [React 官方文档：Server Components](https://react.dev/reference/rsc/server-components)：官方对 RSC 设计理念和使用方式的完整文档。<sup>[2]</sup>
+- [Dan Abramov: Suspense for Data Fetching](https://react.dev/blog/2022/03/29/react-v18.html)：深入理解 Suspense 的工作原理和未来方向。<sup>[3]</sup>
+- [react-error-boundary 库](https://github.com/bvaughn/react-error-boundary)：函数组件的 Error Boundary 实现，支持 fallback 和 onReset。<sup>[4]</sup>

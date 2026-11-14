@@ -1,0 +1,1062 @@
+---
+title: "Pi：极简 Agent Harness"
+description: "Pi 的设计取舍、会话模型、扩展机制与极简 Harness 面试考点"
+---
+
+> Harness 一旦被当成"功能越多越好"，讨论就会失焦。Pi 这类极简实现让我想清楚：哪些能力该由运行时提供，哪些该交给调用方。
+
+---
+
+## Q1: 什么是 Agent Harness？为什么它成了新的面试考点？
+
+<Steps>
+
+  <Step title="2023-2024：模型能力决定一切">
+
+    这一阶段产品竞争的核心是"模型聪不聪明"。开发者做的事情是写 Prompt、接 Function Calling，把模型当成一个会说话的函数。
+
+  </Step>
+  <Step title="2025：Coding Agent 证明 Harness 的价值">
+
+    Claude Code、Codex 等产品让行业意识到：同一个模型，放在不同的工具集、上下文策略和权限系统里，完成复杂任务的成功率可以差出数倍。差距不在模型，而在模型外面的那层运行时。
+
+  </Step>
+  <Step title="2026：Harness 成为独立基础设施">
+
+    Pi、DeepSeek Harness 等项目把 Harness 本身开源出来。面试开始问"你怎么设计工具契约""上下文怎么组装""一次任务怎么回放"，而不是"你用过哪个模型"。
+
+  </Step>
+
+</Steps>
+
+**Harness 的定义：** 模型之外、负责把一次任务真正跑完的全部工程层。
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│                       Agent 产品                         │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │                    Harness                        │  │
+│  │  上下文组装 │ 工具注册 │ 主循环 │ 会话 │ 权限 │ 沙箱 │  │
+│  └───────────────────────┬───────────────────────────┘  │
+│                          │                              │
+│                    ┌─────▼─────┐                        │
+│                    │    LLM    │                        │
+│                    └───────────┘                        │
+└─────────────────────────────────────────────────────────┘
+```
+
+| 层次      | 负责什么                             | 典型代表                          |
+| --------- | ------------------------------------ | --------------------------------- |
+| Model     | 推理、生成、决定下一步               | GPT、Claude、DeepSeek、Qwen       |
+| Harness   | 工具、循环、上下文、会话、权限、沙箱 | Pi、DeepSeek Harness、Claude Code |
+| Framework | 用代码编排多个 Agent 或工作流        | LangGraph、AutoGen                |
+| Product   | 面向具体场景的交互与业务闭环         | Cursor、OpenClaw、企业硅基员工    |
+
+<Note title="一句话总结">
+
+模型决定"能不能想明白"，Harness 决定"能不能稳定做完"。面试问 Harness，问的是你把不确定性关进工程笼子的能力。
+
+</Note>
+
+---
+
+## Q2: Pi 是什么？它为什么敢"什么都不内置"？
+
+Pi 是一个用 TypeScript 编写的开源 Coding Agent / Agent Harness，MIT 协议，官网是 [pi.dev](https://pi.dev/)。它最早由 Mario Zechner 以 `badlogic/pi-mono` 的名字开发，2026 年 4 月被 Armin Ronacher 等人创立的 Earendil 收购，仓库迁移到 [earendil-works/pi](https://github.com/earendil-works/pi)。OpenClaw 等项目就构建在 Pi 之上。
+
+Pi 的核心数字很反直觉：
+
+| 维度                  | Pi 的选择                                         |
+| --------------------- | ------------------------------------------------- |
+| 默认工具              | 只有 `read`、`write`、`edit`、`bash` 四个         |
+| 系统提示词 + 工具定义 | 经验值约 1k tokens，随工具数量增长                |
+| 子 Agent              | 不内置                                            |
+| Plan Mode             | 不内置                                            |
+| MCP                   | 不内置                                            |
+| 权限弹窗              | 默认没有                                          |
+| 扩展方式              | Extensions、Skills、Prompt Templates、Pi Packages |
+
+官方 README 的一句话概括了它的哲学：**"Adapt Pi to your workflows, not the other way around."**（让 Pi 适应你的工作流，而不是反过来。）
+
+### 为什么"少"反而是一种竞争力
+
+1. **上下文可控。** Harness 不偷偷往系统提示里塞规则，也不在你不知情时注入工具说明。模型看到的每一条上下文都能在会话里找到来源。
+2. **行为可解释。** 工具少、提示短，出问题时容易判断是模型决策错、工具契约错，还是上下文缺信息。
+3. **避免功能诅咒。** 每个内置功能都会带来新的状态、新的失败模式和新的维护成本。Pi 把这些交给扩展，核心保持稳定。
+4. **适配私有工作流。** 企业的差异在流程、权限和数据，"有没有内置子 Agent"不是关键。Pi 选择给你一个可编程内核，把决定权留给团队。
+
+<Tip title="通俗比喻: 手术刀而不是瑞士军刀">
+
+瑞士军刀什么都有，但真做手术没人用它。Pi 更像一把手术刀：只有最必要的几个刃口，但材质、角度、握持方式都允许你按自己的手型改造。Claude Code 更像一把功能齐全的瑞士军刀，开箱即用；Pi 适合那些明确知道自己要什么、并且愿意自己打磨工具的团队。
+
+</Tip>
+
+### Pi 的极简边界
+
+```text
+默认给你：
+  read / write / edit / bash
+  AGENTS.md 项目上下文
+  会话树、分支、压缩
+  多 Provider 模型切换
+  TUI / print / JSON / RPC / SDK
+
+需要自己加：
+  子 Agent        → 扩展或第三方 package
+  MCP             → pi-mcp 或 MCP 扩展
+  权限审批        → 自定义扩展
+  Plan Mode       → 工作流扩展
+  自定义工具      → TypeScript Extension
+```
+
+---
+
+## Q3: Pi 的架构是怎么拆的？
+
+Pi 由一组可独立使用的 npm 包组成。
+
+| 包                                          | 作用                                                 |
+| ------------------------------------------- | ---------------------------------------------------- |
+| `@earendil-works/pi-ai`                     | 统一 LLM API，自动发现模型与 Provider                |
+| `@earendil-works/pi-agent-core`             | 通用 Agent 内核：传输抽象、状态管理、附件            |
+| `@earendil-works/pi-coding-agent`           | Coding Agent CLI，含 read/write/edit/bash 与会话管理 |
+| `@earendil-works/pi-mcp`                    | 独立 MCP 客户端                                      |
+| `@earendil-works/pi-durable`                | 持久化会话、任务、文档运行时                         |
+| `@earendil-works/pi-protocol` / `pi-client` | 基于 CBOR 的远程会话协议与客户端                     |
+| `@earendil-works/pi-codemode`               | 沙箱内执行 JavaScript，只暴露注入的工具              |
+| `@earendil-works/gondolin`                  | Alpine Linux 沙箱，限制文件与网络访问                |
+
+```text
+┌────────────────────────────────────────────────────┐
+│                   pi-coding-agent                  │
+│  ┌────────────┐  ┌────────────┐  ┌──────────────┐  │
+│  │  TUI 交互   │  │ print/JSON │  │  RPC / SDK   │  │
+│  └─────┬──────┘  └─────┬──────┘  └──────┬───────┘  │
+│        └───────────────┼────────────────┘          │
+│                 ┌──────▼──────┐                    │
+│                 │ Agent Core  │                    │
+│                 │ 循环/状态/消息│                    │
+│                 └──────┬──────┘                    │
+│        ┌───────────────┼────────────────┐          │
+│  ┌─────▼─────┐  ┌──────▼──────┐  ┌──────▼───────┐  │
+│  │ pi-ai     │  │ 四个内置工具 │  │ 扩展/技能包   │  │
+│  │ 多 Provider│  │ read/write  │  │ Extensions   │  │
+│  └───────────┘  │ edit/bash   │  │ Skills       │  │
+│                 └─────────────┘  └──────────────┘  │
+└────────────────────────────────────────────────────┘
+```
+
+### 四种运行形态
+
+| 形态            | 使用场景                          |
+| --------------- | --------------------------------- |
+| Interactive TUI | 人在终端里边看边改                |
+| print / JSON    | CI、脚本、一次性任务              |
+| RPC             | 作为子进程被其他程序驱动          |
+| SDK             | 嵌入到自己的应用里，例如 OpenClaw |
+
+### 会话树：Pi 最值得学的设计
+
+大多数 Agent 的会话是一条直线。Pi 把会话存成**树**：每次从历史节点继续都会产生分支，用 `/tree` 可以跳回任意节点重新开始，用 `/resume` 恢复历史会话。
+
+这带来三个工程收益：
+
+1. **可回放。** 出问题时能定位到具体哪一轮、哪个工具结果导致了错误决策。
+2. **可分支实验。** 同一个任务可以从分叉点尝试两种策略，不需要重跑前面几十轮。
+3. **可压缩。** 长会话通过 compaction 生成摘要节点，原始消息仍保留在树里，需要时可以回溯。
+
+---
+
+## Q4: Pi 的 Agent 主循环是怎么跑的？
+
+Pi 的循环本身非常朴素：组装上下文 → 调模型 → 执行工具 → 把结果写回会话 → 判断是否继续。真正复杂的是每一步的边界处理。
+
+```typescript
+// 极度简化的 Pi 风格主循环（伪代码）
+async function runAgentLoop(session: Session, userInput: string) {
+  session.append({ role: "user", content: userInput });
+
+  while (true) {
+    // 1. 显式组装上下文：系统提示 + AGENTS.md + 历史 + 工具定义
+    const context = contextBuilder.build(session, {
+      includeAgentsMd: true,
+      includeSkills: session.activeSkills,
+      maxTokens: session.settings.contextBudget,
+    });
+
+    // 2. 调模型。流式输出，支持 abort 与超时
+    const response = await llm.complete({
+      messages: context.messages,
+      tools: context.tools,
+      signal: session.abortSignal,
+    });
+
+    session.append(response.message);
+
+    // 3. 没有工具调用，任务结束
+    if (!response.toolCalls?.length) break;
+
+    // 4. 逐个执行工具。只读工具可并行，写操作按顺序串行
+    const results = await executeTools(response.toolCalls, {
+      concurrency: session.settings.toolConcurrency,
+      timeoutMs: session.settings.toolTimeoutMs,
+      truncate: { head: 200, tail: 200, maxBytes: 32_000 },
+    });
+
+    // 5. 工具结果写回会话，进入下一轮
+    session.append({ role: "tool", results });
+
+    // 6. 超过轮次或预算，强制收敛
+    if (session.steps >= session.settings.maxSteps) {
+      session.append({
+        role: "system",
+        content: "已达到最大步数，请总结当前进展",
+      });
+      break;
+    }
+  }
+
+  return session.lastAssistantMessage;
+}
+```
+
+### 这段循环里，Pi 刻意做对的四件事
+
+| 设计             | 为什么重要                               |
+| ---------------- | ---------------------------------------- |
+| 上下文显式组装   | 没有隐藏注入，出问题能对账               |
+| 工具结果截断     | 防止一个 `cat` 把几十万字符灌进上下文    |
+| 写操作串行       | 避免两个 `edit` 同时改同一个文件导致覆盖 |
+| 最大步数与 abort | 防止死循环和用户无法中断                 |
+
+<Warning title="常见误区：把 Harness 写成 Prompt 堆砌">
+
+很多团队所谓"自研 Agent"，本质是把系统提示越写越长：加角色、加规则、加示例、加约束。结果上下文越来越贵，模型反而更容易忽略关键指令。Harness 的正确做法是**把约束下沉到代码和工具契约**：权限用工具层拦截，格式用 Schema 校验，流程用状态机约束，而不是全塞进 Prompt。
+
+</Warning>
+
+---
+
+## Q5: Pi 的运行时状态机长什么样？会话树如何支撑回放、分支和恢复？
+
+Pi 的循环很朴素，但"一次 run 的状态放在哪"决定了它能不能恢复、能不能回放、能不能做分支实验。Pi 的答案是：**状态外置到会话文件，进程只做执行器。**
+
+### 会话文件就是事件日志
+
+Pi 把会话存成 JSONL：一行一个条目，通过 `id` / `parentId` 组成树。公开文档列出的条目类型包括会话头、用户/助手/工具结果消息、bash 执行、模型切换、思考等级切换、压缩（compaction）、分支摘要和自定义条目<sup>[1]</sup>。这实际上是一个**面向消息的事件日志**，只是它没有把每个事件都拆成 `step/started` 这种细粒度事实。
+
+| 层       | Pi 里的对应物                  | 公开文档是否把它作为稳定 API               |
+| -------- | ------------------------------ | ------------------------------------------ |
+| 会话     | JSONL 文件 + 树形 parentId     | 是（`/tree`、`/resume`、`/export`）        |
+| 轮次     | 一次用户输入到助手停止         | 部分（消息条目可见）                       |
+| 模型往返 | 一次 assistant 消息 + 工具调用 | 部分（消息/工具结果条目）                  |
+| 工具调用 | tool result 条目               | 是（`tool_call` / `tool_result` 扩展事件） |
+
+需要诚实说明：Pi 公开文档没有像 DeepSeek Harness 那样明确暴露 `turn/step` 事件模型，也没有承诺一套"run 事件总线"。它的可回放性主要来自**会话文件不可变追加 + 树形分支**，而不是完整的事件溯源 API。
+
+```text
+session.jsonl
+├── header
+├── msg(user)            id=a1 parent=null
+├── msg(assistant, tool_call) id=a2 parent=a1
+├── msg(tool_result)     id=a3 parent=a2
+├── msg(assistant)       id=a4 parent=a3      ← 分支点
+├── msg(user)            id=b1 parent=a4      ← 分支 1 继续
+├── compaction           id=c1 parent=b1
+└── msg(user)            id=d1 parent=a4      ← 分支 2（/tree 跳回 a4）
+```
+
+### 分支、压缩与恢复的机制
+
+- **分支**：`/tree` 跳到任意历史节点继续，产生新的 `parentId`，旧分支保留。适合"同一任务试两种策略"，不用重跑前几十轮。
+- **压缩**：接近上下文上限时自动或手动 `/compact` 生成摘要条目，保留最近 token；摘要采用结构化格式（目标、约束、进度、决策、文件操作），原始消息仍在树里。Pi 还支持在切换分支时生成分支摘要，保持上下文连续<sup>[1]</sup>。
+- **恢复**：`/resume` 选择历史会话，从文件重建上下文。因为文件是真相，进程崩溃不会丢会话；但**工具副作用不会自动回滚**，这是事件日志方案的固有边界。
+- **热重载**：扩展放在可发现目录时，`/reload` 可以重载扩展，不必重启会话。
+
+### Pi 没给你的恢复能力（生产必须补）
+
+| 缺口                              | 后果                            | 补法                                            |
+| --------------------------------- | ------------------------------- | ----------------------------------------------- |
+| 没有工具幂等账本                  | 恢复后重试可能重复写文件/发请求 | 在工具层用 `idempotency_key` + 结果账本         |
+| 没有租约/ fencing token           | 两个进程可能同时跑同一会话      | 外层调度器加 lease，事件写入带 token            |
+| 没有 pending tool call 的显式状态 | 崩溃点落在工具执行中时难判断    | 扩展记录 `tool_call` 开始/结束，恢复时对账      |
+| 没有细粒度 step 事件              | 难以精确重放到某一步            | 用 `tool_result` + 消息条目近似，或自建事件旁路 |
+| 摘要会丢细节                      | 回放看到的不是原始上下文        | 原始 JSONL 永久保留，摘要只用于构造上下文       |
+
+**什么场景会坏：** 压缩把关键约束摘要掉，后续模型反复犯同一个错；`/tree` 回到旧节点后，工作区文件已经是新分支的状态，模型看到"代码与历史不一致"；两个终端同时打开同一会话。
+
+**怎么验证：** 构造一条含工具调用、压缩、分支的会话，逐个节点 `/tree` 后检查上下文构造结果；kill 进程后 `/resume`，对比工具副作用是否重复；把"摘要前后关键约束是否保留"做成 fixture 断言。
+
+---
+
+## Q6: Pi 的上下文是怎么组装的？预算、压缩和 Prompt Cache 怎么配合？
+
+Pi 的核心卖点是"模型看到的每一条上下文都能在会话里找到来源"。这句话要落到工程上，需要看清组装顺序和每部分的成本。
+
+### 组装顺序
+
+```text
+┌──────────────────────────────────────────────┐
+│ 1. 系统提示（默认很短；.pi/SYSTEM.md 可替换） │  稳定
+│ 2. .pi/APPEND_SYSTEM.md 追加内容              │  半稳定
+│ 3. 工具定义（read/write/edit/bash + 扩展工具） │  稳定，顺序固定
+│ 4. AGENTS.md（agent 目录 → 父目录 → 当前目录） │  按仓库版本
+│ 5. Skills 索引（name + description，≤1024 字符）│  半稳定
+│ 6. 会话历史（含工具结果）                      │  增长
+│ 7. 当前用户输入 / 排队消息                     │  每轮变化
+└──────────────────────────────────────────────┘
+        ↑ 缓存断点应放在 3 或 4 的末尾
+```
+
+几个有公开依据的细节：
+
+- `AGENTS.md` 在启动时从 agent 目录、父目录和当前目录加载；`.pi/SYSTEM.md` 替换系统提示，`.pi/APPEND_SYSTEM.md` 只追加不替换<sup>[2]</sup>。
+- Skills 每轮只注入名称和不超过 1024 字符的描述，形成 `<available_skills>` 块，避免把 `SKILL.md` 全文塞进上下文；"调用 Skill"本质是让模型去读对应的 `SKILL.md`。这是渐进式披露，目的就是避免一次性撑爆上下文、破坏缓存<sup>[3]</sup>。
+- Prompt Templates 是 Markdown 片段，通过 `/name` 展开，属于"用户输入侧"的复用，不占系统提示的常驻预算。
+
+### 预算与压缩
+
+Pi 没有公开一套固定的预算比例，但提供了可操作的杠杆：
+
+| 杠杆                  | 作用                   | 代价                                   |
+| --------------------- | ---------------------- | -------------------------------------- |
+| 精简系统提示与工具集  | 降低常驻开销           | 能力变少，需要扩展补                   |
+| Skills 渐进披露       | 只常驻索引，按需读全文 | 模型可能不知道某个 Skill 存在          |
+| 自动压缩 / `/compact` | 把早期历史压成摘要     | 不可逆，可能丢约束                     |
+| 分支摘要              | 切换分支时保持连续     | 摘要有信息损失                         |
+| `setActiveTools`      | 只暴露当前需要的工具   | 重建基础提示，下一轮生效，可能影响缓存 |
+
+这里有一个容易忽略的权衡：**动态切换 active tools 会重建基础提示**。它节省了工具 schema 的常驻 token，但如果切换频繁，前缀稳定性被破坏，Prompt Cache 可能失效。正确做法是按任务阶段切换（探索阶段只读工具、实现阶段加写工具），而不是每轮都切。
+
+### 前缀稳定与缓存
+
+Pi 的 footer 会显示 token、cache read/write 和缓存命中率，这让"缓存是否真的命中"变成可观测指标<sup>[2]</sup>。工程上要守住三条不变量：
+
+1. 系统提示、工具定义、AGENTS.md 的内容和顺序在会话内尽量不变。
+2. 时间戳、随机 ID、动态排序的工具数组不要放在断点之前。
+3. 压缩摘要不要每轮重写；摘要一旦生成，应作为稳定节点参与后续前缀。
+
+作为量级参考：Anthropic 的 Prompt Cache 默认 5 分钟 TTL、最多 4 个断点、回看 20 个内容块，写入约 1.25 倍、读取约 0.1 倍计费<sup>[4]</sup>。在断点前插入动态内容，会出现"每次写缓存、永远读不到"的最坏情况。
+
+**什么场景会坏：** AGENTS.md 写成上千行；每个扩展都往系统提示里塞一段说明；Skills 描述写得像教程，索引本身就把预算吃光；压缩把"不要修改某目录"这类硬约束摘要掉。
+
+**怎么验证：** 看 footer 的 cache 指标和单任务成本；固定任务集对比"精简上下文 vs 堆提示"；对压缩做消融，检查关键约束是否仍在上下文中。
+
+---
+
+## Q7: Pi 的工具运行时：注册、并发、超时、截断和错误契约怎么落地？
+
+### 注册与可见性
+
+```typescript
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+
+export default function (pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "repo_search",
+    label: "Repo Search",
+    description: "在当前仓库内搜索文本。只读，不修改文件。",
+    parameters: Type.Object({
+      query: Type.String({ description: "搜索词或正则" }),
+      maxResults: Type.Optional(Type.Number({ default: 20 })),
+    }),
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const res = await runRipgrep(params.query, { signal });
+      return {
+        content: [{ type: "text", text: truncate(res, 50_000, 2_000) }],
+        details: { toolCallId, truncated: res.length > 50_000 },
+        isError: false,
+      };
+    },
+  });
+}
+```
+
+关键机制（均有公开依据）：
+
+- 参数用 TypeBox 定义，模型看到的是 name + description + JSON Schema。
+- `execute` 收到 `toolCallId`、参数、`AbortSignal`、`onUpdate` 和扩展上下文，取消可以端到端传递<sup>[3]</sup>。
+- `executionMode: "sequential"` 可以让某个工具显式串行，避免共享状态竞争；官方示例里的井字棋工具就用它防止并发改同一个游标<sup>[5]</sup>。
+- 注册是 eager 的，没有 `unregisterTool`；通过 `getAllTools()` / `getActiveTools()` / `setActiveTools()` 控制模型可见子集<sup>[3]</sup>。
+- `tool_call` 事件可以在执行前拦截（返回 `{ block: true, reason }`），`tool_result` 在执行后携带 `{ toolName, input, content, isError }`，适合审计和纠错<sup>[3]</sup>。
+
+### 并发矩阵
+
+| 工具                      | 并发                               | 原因                           |
+| ------------------------- | ---------------------------------- | ------------------------------ |
+| read / grep / find / ls   | 可并行                             | 只读                           |
+| write / edit              | 按文件加锁或串行                   | 避免 lost update               |
+| bash                      | 默认串行更安全                     | 命令可能改同一文件、抢同一端口 |
+| 有共享游标/会话状态的工具 | 显式 `executionMode: "sequential"` | 并发导致状态错乱               |
+| 外部副作用                | 串行 + 幂等键                      | 重试可能重复执行               |
+
+Pi 公开文档没有承诺一个默认并发度，也没有内置工具侧幂等账本。**默认值不等于生产契约**，这两件事要在扩展层补。
+
+### 超时、取消与截断
+
+```typescript
+async function withDeadline<T>(
+  fn: (signal: AbortSignal) => Promise<T>,
+  ms: number,
+) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(new Error("tool timeout")), ms);
+  try {
+    return await fn(ac.signal);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+```
+
+只做 `Promise.race` 而不把 signal 传给子进程，会留下继续写文件的僵尸进程。`bash` 工具要杀进程组。
+
+截断不要只截不留：保留头尾 + 明确写出"已截断、共多少字符"，完整内容落到工作区文件或产物，返回路径/ID，让模型按需读取。Pi 官方 `truncated-tool` 示例对 ripgrep 输出做 50KB / 2000 行截断，可以作为起点<sup>[5]</sup>。
+
+### 错误契约
+
+```typescript
+type ToolFailure = {
+  ok: false;
+  code:
+    | "INVALID_ARGUMENT"
+    | "PERMISSION_DENIED"
+    | "NOT_FOUND"
+    | "TIMEOUT"
+    | "RATE_LIMITED"
+    | "UPSTREAM_ERROR";
+  message: string; // 写给模型：怎么修
+  retryable: boolean; // 写给运行时：是否重试
+};
+```
+
+Pi 的工具返回是内容 + `isError`，没有强制的错误结构，所以团队要自己约定。**可重试性必须由工具声明**：参数错误不重试，超时/429/5xx 指数退避重试并尊重 `Retry-After`。错误信息要可执行，例如"路径必须在工作区内，请改用相对路径"，而不是"失败"。
+
+**什么场景会坏：** 两个 `edit` 并行改同一文件导致覆盖；工具超时后进程仍在写；截断把关键报错信息截掉；错误返回给模型但模型不知道能否重试，反复调用。
+
+**怎么验证：** 对每个写工具做并发测试；注入超时并检查子进程是否被杀；对截断做"信息仍可被找回"的测试；统计工具误调用率和重试率。
+
+---
+
+## Q8: Pi 的沙箱与产物：默认没有，怎么补成可交接的工程链路？
+
+Pi 的默认姿态是"没有权限弹窗、没有沙箱"，把安全边界交给运行环境和扩展。这是刻意的边界选择：Pi 认为自己不该替团队决定安全策略。但生产落地必须补。
+
+### 可用的沙箱接缝
+
+| 方式                            | 机制                                    | 适合                   |
+| ------------------------------- | --------------------------------------- | ---------------------- |
+| permission-gate 扩展            | `tool_call` 拦截危险命令，弹确认        | 本地开发、低风险       |
+| protected-paths 扩展            | 阻止写 `.env`、`.git/`、`node_modules/` | 防误伤                 |
+| `@anthropic-ai/sandbox-runtime` | OS 级文件系统/网络隔离                  | 本地命令沙箱           |
+| Gondolin 微 VM                  | Alpine Linux 微虚拟机，限制文件与网络   | 更强隔离、跑不可信代码 |
+| SSH 执行扩展                    | 把工具调用转发到远程机器                | 远程开发、隔离环境     |
+| 容器/远程沙箱                   | 自己接 provider                         | 多租户、云端           |
+
+官方示例目录里同时提供 permission-gate、protected-paths、sandbox、gondolin、ssh 这些实现，说明"默认没有"不等于"做不到"<sup>[5]</sup>。但要注意：**扩展运行在 Pi 进程内，拥有完整系统权限**。权限拦截扩展本身如果被绕过，边界就没了；强隔离要放在进程外（容器、微 VM、远程执行）。
+
+### 产物链路：会话 → 工作区 → 对象存储 → 下一个 Agent
+
+Pi 没有公开的内置产物存储/清单机制。会话可以 `/export` 成 HTML 或分享成 gist，但那是会话导出，不是可被下游消费的产物契约。所以需要自己设计。一个可用的参考架构：
+
+```text
+Agent A（worktree A）
+  └─ write/report.md
+       │ stage：临时文件 + sha256 + mediaType
+       ▼
+  ArtifactStore.commit()
+       │ manifest: id/version/sha256/owner/producedBy/lineage/ttl
+       ▼
+  对象存储（按 tenant/run 前缀）
+       │
+       ├─ Agent A 的下一步：artifact_read(id, range)
+       ├─ Agent B（另一个 worktree/进程）：按 id 读取 + 鉴权 + checksum
+       └─ 清理任务：TTL / 引用计数 / 合规保留
+```
+
+```typescript
+type Artifact = {
+  id: string;
+  version: number;
+  sha256: string;
+  mediaType: string;
+  bytes: number;
+  visibility: "run" | "tenant" | "public";
+  owner: { tenantId: string; userId: string };
+  producedBy: { sessionId: string; toolCallId: string; agentId?: string };
+  inputs?: string[];
+  createdAt: string;
+  expiresAt?: string;
+};
+```
+
+跨 Agent 交接时，**传引用和验收契约，不传裸路径**：
+
+```python
+handoff = {
+    "artifact_id": art.id,
+    "sha256": art.sha256,
+    "media_type": art.mediaType,
+    "read_with": "artifact_read(id, offset, length)",
+    "acceptance": {"schema": "report.v2", "must_parse": True},
+}
+```
+
+多 Agent 工程里常见的做法也是类似的：把工作区当作文件交接区，用 run manifest 记录产物，主张 "artifacts-as-truth"，并配合验证门和有界修复循环。重点在于**把"产物是什么、谁产的、能不能被下游验收"写成契约**，具体实现可以照搬也可以自研，路径约定本身不算契约。
+
+### 生命周期与权限
+
+| 阶段    | 动作                            | 失败处理               |
+| ------- | ------------------------------- | ---------------------- |
+| stage   | 写临时文件、算 checksum         | 失败则不向模型报成功   |
+| commit  | 原子写入对象存储、登记 manifest | 重试；成功后删临时文件 |
+| verify  | 读回校验 sha256/schema          | 校验失败视为工具失败   |
+| promote | 从 run 可见提升到 tenant 可见   | 需要显式授权           |
+| expire  | TTL/引用计数/合规保留           | 被引用时禁止删除       |
+
+**什么场景会坏：** 沙箱/进程先死，产物没上传；`../../.ssh` 路径穿越；不同租户共用 bucket 前缀导致越权；产物无 TTL 把磁盘撑满；manifest 记录了但文件被就地修改。
+
+**怎么验证：** 提交前后注入 kill；用第二个 Agent 真实读取并跑 schema 校验；做路径穿越和越权读取的负向测试；GC 时断言"被引用的产物不能删"。
+
+---
+
+## Q9: 多 Provider、成本分级和失败切换怎么做？
+
+### Pi 已有的能力
+
+- `pi-ai` 提供统一 LLM API，内置 15+ Provider，支持订阅登录（Claude Pro/Max、ChatGPT Plus/Pro、GitHub Copilot）和 API Key<sup>[2]</sup>。
+- `/model` 或 Ctrl+L 可在会话中切换模型；自定义 Provider 写在 `~/.pi/agent/models.json`，支持 OpenAI/Anthropic/Google 兼容协议；更特殊的 API/OAuth 通过扩展注册<sup>[2]</sup>。
+- footer 显示当前模型、token、cache 和成本，`pi-ai` 本身也做 token/成本跟踪<sup>[9]</sup>。
+
+### 公开资料未披露的部分
+
+Pi 的公开文档描述的是**模型切换**，没有承诺一套自动的跨 Provider 故障切换/降级策略。不要假设它有"主模型失败自动切备用"的内置行为。生产需要自己在 Provider 层或外层网关做：
+
+```typescript
+type Route = {
+  provider: string;
+  model: string;
+  maxContext: number;
+  tier: "fast" | "standard" | "deep";
+};
+
+async function routeAndCall(req: ModelRequest, ladder: Route[]) {
+  for (const r of ladder) {
+    if (req.estimatedTokens > r.maxContext) continue;
+    if (breaker(r).isOpen()) continue;
+    try {
+      return await piAi.complete({ ...adapt(req, r), signal: req.signal });
+    } catch (e) {
+      if (!retryable(e)) throw e;
+      breaker(r).recordFailure();
+      await sleep(backoffWithJitter(r));
+    }
+  }
+  throw new Error("all routes failed");
+}
+```
+
+### 成本分级的三个原则
+
+| 原则           | 做法                                         | 代价                   |
+| -------------- | -------------------------------------------- | ---------------------- |
+| 按任务阶段分级 | 探索/总结用便宜模型，规划/难推理用强模型     | 切换点判断错误会掉质量 |
+| 缓存优先       | 同一会话尽量不换模型，保持前缀稳定           | 降级时缓存失效         |
+| 预算硬约束     | 每 run/每租户 token 与金额上限，超限降级或停 | 需要准确的成本核算     |
+
+**什么场景会坏：** 会话中途频繁切模型，缓存全失效，账单反而更高；跨 Provider 的 tool schema 不支持并行调用，工具调用静默丢失；订阅额度与 API Key 混用导致 401/429 难以归因；降级后模型不知道工具变少。
+
+**怎么验证：** 用故障代理制造 429/500；统计每档成功率、P95 延迟、单任务成本、缓存命中率；对工具 schema 做跨 Provider 契约测试。
+
+---
+
+## Q10: Pi 的扩展体系怎么设计？Extension、Skill、Package 有什么区别？
+
+| 机制            | 本质            | 适合做什么                   | 例子                       |
+| --------------- | --------------- | ---------------------------- | -------------------------- |
+| Extension       | TypeScript 代码 | 新工具、新命令、UI、事件钩子 | 加一个 `jira_search` 工具  |
+| Skill           | Markdown 说明书 | 教模型"这类任务怎么做"       | 代码评审流程、发布检查清单 |
+| Prompt Template | 可复用提示片段  | 常用任务入口                 | `/review`、`/release`      |
+| Pi Package      | npm/git 分发包  | 把上面几样打包分享           | 团队内部 Agent 套件        |
+
+### 一个最小 Extension
+
+```typescript
+// ~/.pi/extensions/jira.ts
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+export default function jiraExtension(pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "jira_search",
+    description:
+      "当用户需要查询 Jira 工单、缺陷或需求状态时使用。不要用它查询代码或文档。",
+    parameters: {
+      type: "object",
+      properties: {
+        jql: {
+          type: "string",
+          description: "JQL 查询语句，例如 project = FE AND status = Open",
+        },
+        limit: { type: "number", description: "返回条数，默认 10，最大 50" },
+      },
+      required: ["jql"],
+      additionalProperties: false,
+    },
+    async execute({ jql, limit = 10 }) {
+      const res = await fetch(`${process.env.JIRA_BASE}/rest/api/3/search`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.JIRA_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ jql, maxResults: Math.min(limit, 50) }),
+      });
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: `Jira 查询失败：HTTP ${res.status}`,
+          retryable: res.status >= 500,
+        };
+      }
+      return { ok: true, data: await res.json() };
+    },
+  });
+}
+```
+
+### 为什么 Skill 不等于 Extension
+
+- Skill 是**给模型看的说明书**，不执行代码，适合流程、规范、判断标准。
+- Extension 是**给 Harness 执行的能力**，适合接系统、做校验、改 UI。
+- 能用 Skill 解决的就别写 Extension，因为 Prompt 可以快速迭代；涉及权限、密钥、外部副作用的，必须放到 Extension 里，不能交给模型自觉。
+
+<Note title="一句话总结">
+
+Pi 的扩展体系把"知识"和"能力"分开：Skill 管怎么做，Extension 管能做什么，Package 管怎么分发。
+
+</Note>
+
+### 扩展的生命周期：加载、信任、热重载、卸载
+
+很多文章把 Pi 扩展讲成"写个 TypeScript 文件就行"，但真正决定生产可用性的是**生命周期**：什么时候加载、谁有权加载、改了怎么生效、卸载后残留什么。Pi 的公开设计在这四点上有明确取舍。
+
+| 阶段 | Pi 的做法                                                              | 公开依据                                     | 代价 / 风险                                       |
+| ---- | ---------------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------- |
+| 发现 | 全局 `~/.pi/agent/extensions/`、项目 `.pi/extensions/`、Package 安装   | 官方 README 与 extensions 文档<sup>[3]</sup> | 同名工具冲突需要团队约定                          |
+| 加载 | 运行时用 jiti 直接执行 TypeScript，无构建步骤                          | 扩展文档<sup>[3]</sup>                       | 类型错误在运行时才暴露，需自建 CI 类型检查        |
+| 信任 | 项目级扩展在项目被 trust 后才加载，`project_trust` 事件可参与决策      | 扩展文档<sup>[3]</sup>                       | 未信任仓库不能自动获得项目能力，需要用户手动确认  |
+| 生效 | `/reload` 重新加载扩展，不必重启会话                                   | README<sup>[2]</sup>                         | 重载期间正在执行的 tool call 需要自己保证不被打断 |
+| 卸载 | 没有 `unregisterTool`，注册是 eager 的；只能通过 `setActiveTools` 隐藏 | 扩展文档<sup>[3]</sup>                       | 插件无法真正"拔掉"，资源清理要靠扩展自觉          |
+
+**为什么用 jiti 而不是预编译？** 因为 Pi 的核心卖点是"改一行立刻生效"。预编译插件需要 build、发布、再安装，迭代一次要几分钟；jiti 把"写扩展"变成和"改配置"一样的体验。代价是：扩展作者必须自己保证语法/类型正确，且启动时执行任意代码意味着**扩展就是完全信任的代码**，不是沙箱里的插件。
+
+**为什么项目扩展要 trust？** 这是 Pi 少有的默认安全机制。`git clone` 一个仓库就自动执行其中的 `.pi/extensions/*.ts`，等于把"打开项目"变成"运行陌生人的代码"。trust 门把这一步变成显式决策。但要注意：**trust 只解决"要不要加载"，不解决"加载后能做什么"**——一旦信任，扩展拥有与 Pi 进程相同的文件、网络、进程权限。
+
+### 和 Cordis 的机制级对比
+
+DeepSeek Harness 用 Cordis 做插件内核，Pi 用"运行时加载 + 事件钩子"做扩展。两者都能扩展，但保证的东西完全不同：
+
+| 维度       | Pi Extension                  | DeepSeek Harness / Cordis           |
+| ---------- | ----------------------------- | ----------------------------------- |
+| 加载单位   | 一个 TS 模块，导出函数        | 一个 Plugin，声明 `inject` 依赖     |
+| 依赖解析   | 无；扩展自己 import           | 内核按依赖关系决定加载顺序          |
+| 副作用管理 | 无自动回收，扩展自理          | `ctx.effect()` 登记，卸载时自动撤销 |
+| 卸载       | 无 `unregisterTool`，只能隐藏 | 可卸载插件并回滚其注册              |
+| 隔离       | 无，进程内完全信任            | 无进程隔离，但有能力接缝做替换      |
+| 热更新     | `/reload` 整批重载            | 插件级热插拔/热重载                 |
+| 适合       | 个人/小团队的快速定制         | 企业级、需要可替换与可审计的运行时  |
+
+一句话：**Pi 的扩展是"改自己的工具"，Cordis 的插件是"换运行时的一个器官"。** 前者的成本低、心智负担小；后者的约束强、能保证卸载干净，但要求每个能力都先定义接缝。
+
+**什么场景会坏：** 两个扩展注册同名工具，后加载的静默覆盖；扩展在 `session_start` 里开了定时器/连接，`/reload` 后旧实例泄漏；项目扩展在 trust 前被其他机制加载；把密钥写进扩展源码再提交到仓库。
+
+**怎么验证：** 写一个"注册工具 + 开 interval + 注册事件"的扩展，连续 `/reload` 十次，观察句柄数量是否增长；构造同名工具冲突，确认是否有告警；在未 trust 的仓库里检查项目扩展是否真的没执行。
+
+---
+
+## Q11: Pi、Claude Code、Codex、DeepSeek Harness、LangGraph 怎么选？
+
+| 维度      | Pi                    | Claude Code             | Codex CLI               | DeepSeek Harness          | LangGraph                 |
+| --------- | --------------------- | ----------------------- | ----------------------- | ------------------------- | ------------------------- |
+| 定位      | 极简可扩展 Harness    | 开箱即用的 Coding Agent | 开箱即用的 Coding Agent | 插件化 Agent 运行时       | 代码编排框架              |
+| 语言/生态 | TypeScript / npm      | TypeScript / npm        | Rust + TS / npm         | TypeScript / Cordis       | Python / TS               |
+| 核心大小  | 很小，四个工具        | 中，功能完整            | 中，功能完整            | 微内核 + 插件生态         | 库，不含运行时            |
+| 子 Agent  | 需扩展                | 内置                    | 内置（实验性）          | 内置插件                  | 自行编排                  |
+| MCP       | 需扩展                | 内置                    | 内置                    | 插件接入                  | 自行接入                  |
+| 沙箱      | 可选 gondolin         | 内置 OS 级沙箱 + 审批   | 内置 OS 级沙箱 + 审批   | 内置沙箱                  | 无                        |
+| 会话模型  | JSONL 会话树          | 会话 + 恢复             | rollout / 会话          | 追加式会话日志 + 回放     | checkpointer（thread_id） |
+| 可观测性  | 会话树 + 显式上下文   | 较完整                  | 较完整                  | 追加式会话日志 + 回放     | 依赖外部 tracing          |
+| 适合谁    | 想掌控 Harness 的团队 | 想马上干活的人          | 想马上干活的人          | 想搭企业 Agent 平台的团队 | 想精确编排流程的团队      |
+
+### 机制级差异：不要只看功能表
+
+功能表会骗人——"都有工具调用"不代表运行时的保证一样。真正决定选型的是四个机制：
+
+| 机制         | Pi                       | Claude Code / Codex  | DeepSeek Harness                   | LangGraph                            |
+| ------------ | ------------------------ | -------------------- | ---------------------------------- | ------------------------------------ |
+| 谁拥有主循环 | 你自己（可改源码）       | 厂商，你只能配置     | 插件组合出来的内核                 | 你写的图                             |
+| 状态持久化   | JSONL 会话树，文件即真相 | 厂商会话存储 + 恢复  | append-only 事件流，可 replay/fork | checkpointer 按 `thread_id` 存图状态 |
+| 权限边界     | 默认无，靠扩展补         | 内置沙箱 + 审批策略  | 能力接缝 + Provider 替换           | 无，需自己包                         |
+| 扩展方式     | 运行时 TS 扩展，进程内   | hooks / skills / MCP | Cordis 插件，可逆副作用            | 加节点/边                            |
+
+几条容易踩的事实边界：
+
+- **Claude Code 的沙箱**是 OS 级的：Linux 用 bubblewrap，macOS 用 seatbelt，网络走沙箱外代理<sup>[6]</sup>。这意味着"文件系统与网络"由运行时强制，而不是靠模型自觉。
+- **Codex CLI 的沙箱**同样是 OS 级（macOS Seatbelt、Linux bubblewrap + Landlock、Windows 受限令牌/DACL），并把 `.git`、`.codex` 设为只读<sup>[7]</sup>。它的审批策略与沙箱是两件事：沙箱限制"能碰什么"，审批决定"要不要问人"。
+- **LangGraph 的 checkpointer** 是图状态持久化，不是 Agent 会话日志。`MemorySaver` 只适合测试，生产要用 `PostgresSaver`/`SqliteSaver`，并且要自己设计保留策略<sup>[8]</sup>。
+- **Pi 和 DeepSeek Harness 都能"换实现"**，但换的层次不同：Pi 换的是扩展，DSH 换的是能力 Provider。前者改行为，后者改运行时本身。
+
+### 选择决策
+
+```text
+你要的是什么？
+├─ 马上写代码、少折腾
+│   ├─ 团队已经用 Anthropic 生态        → Claude Code
+│   └─ 团队偏 OpenAI / 需要开源可控     → Codex CLI
+├─ 完全掌控上下文与循环
+│   ├─ 只跑单 Agent、能接受自己补生产化 → Pi
+│   └─ 需要插件化、可回放、企业多租户   → DeepSeek Harness
+├─ 复杂业务流程、多 Agent 图编排        → LangGraph
+└─ 只是想接个模型做 Chat                → 直接用官方 SDK
+```
+
+再补三个反向问题，能快速排除错误选项：
+
+| 问题                                        | 如果答案是"是" | 结论                                     |
+| ------------------------------------------- | -------------- | ---------------------------------------- |
+| 需要私有化部署且不能改运行时源码？          | 是             | 排除 Pi（它的价值就是可改）              |
+| 需要精确重放到某一步、事后审计？            | 是             | 优先 DeepSeek Harness；Pi 需自建事件旁路 |
+| 主要是业务流程编排，不是单个 Agent 长任务？ | 是             | LangGraph，而不是任何 Harness            |
+
+<Tip title="面试技巧">
+
+不要背"哪个更好"，要讲清楚**约束条件**：团队规模、是否需要私有化、是否要审计、是否愿意维护 Harness 本身。能说出"我们选 Pi 是因为要把 Harness 当作产品的一部分来改"，比罗列功能更有说服力。
+
+</Tip>
+
+---
+
+## Q12: 把 Pi 用到生产，需要补哪些工程能力？
+
+Pi 的默认值适合个人开发者，生产环境至少要补齐六层：
+
+| 能力       | 要解决的问题            | 落地方式                             |
+| ---------- | ----------------------- | ------------------------------------ |
+| 权限与审批 | 模型执行危险命令        | 工具层 allowlist + 人工审批扩展      |
+| 沙箱       | 不可信代码与文件访问    | gondolin / 容器 / 远程执行环境       |
+| 密钥管理   | API Key 泄漏            | 环境变量注入，禁止写入会话与日志     |
+| 可观测性   | 出问题无法定位          | 会话树 + 工具级 trace + 成本记录     |
+| 评测回归   | 换模型/改提示后能力退化 | 固定 fixture + 工具级测试集          |
+| 成本控制   | 长任务烧 token          | 上下文预算、模型分级、缓存、最大步数 |
+
+### 生产化清单：八个维度，每个都要有"最低可接受答案"
+
+上面的六层是能力清单，真正上线前还要回答八个工程问题。表格里的"失败长什么样"比"该做什么"更重要，因为它决定了你能否验收。
+
+| 维度     | 必须回答的问题                  | 最低落地                                    | 失败长什么样                                    |
+| -------- | ------------------------------- | ------------------------------------------- | ----------------------------------------------- |
+| 权限     | 哪些命令永远不允许？谁来批？    | 工具层 allowlist + 危险命令拦截 + 审批扩展  | 模型 `rm -rf` 一次，仓库和未提交改动一起没了    |
+| 沙箱     | 不可信代码在哪执行？            | gondolin / 容器 / 远程执行，网络默认拒绝    | 恶意依赖在 `npm install` 时读走环境变量里的密钥 |
+| 密钥     | 密钥会不会进入上下文或会话？    | 环境注入 + 代理持有凭据 + 日志脱敏          | 会话 JSONL 被导出分享，token 随之外泄           |
+| 审计     | 事后能否还原"谁让它做了什么"？  | 会话归档 + 工具调用记录 + 审批记录          | 出事故只有一句"Agent 自己删的"，无法定责        |
+| 评测     | 换模型/改提示后怎么知道没退化？ | 固定 fixture + 工具级断言 + 成功率基线      | 升级后成功率从 80% 掉到 40%，一周后才发现       |
+| 成本     | 单任务、单租户的成本上限在哪？  | 上下文预算 + 模型分级 + 最大步数 + 金额告警 | 一个死循环跑掉一个月预算                        |
+| 多租户   | 租户之间怎么隔离文件和产物？    | 独立 worktree/进程 + 前缀隔离 + 越权测试    | A 租户的 Agent 读到 B 租户的产物                |
+| 升级回滚 | 升级 Pi 或扩展后怎么退回？      | 版本锁定 + 会话格式版本号 + 回滚演练        | 新版本扩展 API 变了，旧会话打不开               |
+
+### 升级与回滚：Pi 最容易被忽略的风险
+
+Pi 迭代快，扩展 API、会话条目格式、事件名都可能变。生产环境要把三件事当成契约来管理：
+
+1. **锁版本**：`package.json` 里锁死 `@earendil-works/pi-coding-agent` 与所有扩展版本，升级走 PR 而不是 `latest`。
+2. **会话格式带版本**：自定义条目里写 `schemaVersion`；读取端遇到未知版本要能降级或明确报错，而不是静默丢数据。
+3. **可回滚**：升级前用固定任务集跑一遍评测；保留旧版本二进制和旧会话的只读访问，出问题能切回。
+
+**什么场景会坏：** 扩展依赖了新版 API，回滚 Pi 后扩展直接加载失败；会话里新增了条目类型，旧版本解析器把它当未知行丢掉，压缩后上下文缺失。
+
+**怎么验证：** 做一次"升级 → 跑 fixture → 回滚 → 再跑 fixture"的演练；用旧版本读取新会话，确认失败是显式的。
+
+### 成本控制的核心：缓存友好
+
+Pi 的上下文是显式组装的，这带来一个额外好处：**前缀稳定**。把系统提示、工具定义、AGENTS.md 放在最前面并保持稳定，只把变化部分追加到后面，就能命中 Provider 的 Prompt Cache。
+
+```text
+[稳定前缀] 系统提示 + 工具定义 + AGENTS.md
+[半稳定]   项目结构摘要、当前任务计划
+[高频变化] 用户消息、工具结果
+                 ↑ 缓存断点应放在这里之前
+```
+
+反过来，如果你每一轮都动态调整工具数组顺序、在开头插入时间戳，缓存会全部失效，长任务成本可能翻几倍。
+
+---
+
+## Q13: Pi 的可观测性接点应该怎么设计？
+
+Pi 本身只给了"能看见"的基础设施：JSONL 会话、footer 的 token/cache/cost、`--print`/`--json`/RPC 三种非交互输出<sup>[2]</sup>。它没有内置 OpenTelemetry 导出，也没有 Langfuse 集成。所以关键问题在于**你要在哪些接点埋什么事件**，Pi 本身并不缺可观测性。
+
+### 五类事件：最小可用集合
+
+| 事件                             | 关键字段                                                  | 为什么必须有                      |
+| -------------------------------- | --------------------------------------------------------- | --------------------------------- |
+| `run.started` / `run.finished`   | runId、sessionId、model、入口、结束原因、总 token/成本    | 回答"这一次为什么跑这么久/这么贵" |
+| `step.started` / `step.finished` | stepIndex、上下文 token 估算、耗时                        | 定位是哪一步开始跑偏              |
+| `tool.call` / `tool.result`      | toolCallId、toolName、参数摘要、isError、耗时、是否被截断 | 统计误调用率、慢工具、失败集中点  |
+| `artifact.committed`             | artifactId、sha256、bytes、producer                       | 产物从哪来、被谁消费              |
+| `error`                          | code、retryable、stack 摘要、关联 toolCallId              | 区分"模型犯错"和"运行时故障"      |
+
+### 映射到 OTel / Langfuse
+
+```typescript
+// 概念示意：把 Pi 的事件挂到 OTel span 上
+const runSpan = tracer.startSpan("agent.run", {
+  attributes: { "gen_ai.operation.name": "invoke_agent" },
+});
+
+const stepSpan = tracer.startSpan(
+  "agent.step",
+  { attributes: { "agent.step.index": i } },
+  runSpan,
+);
+const toolSpan = tracer.startSpan(
+  `tool.${toolName}`,
+  {
+    attributes: {
+      "gen_ai.tool.name": toolName,
+      "gen_ai.tool.call.id": toolCallId,
+    },
+  },
+  stepSpan,
+);
+```
+
+对接时抓三个要点：
+
+1. **层级**：run 是根 span，step 是子 span，tool 和 model call 挂在 step 下。Langfuse 里对应 trace → span → generation；OTel 里对应嵌套 span，字段命名可参考 GenAI 语义约定<sup>[10]</sup>。
+2. **模型调用单独成 span**：把 model、input/output token、cache read/write、首 token 延迟、结束原因作为属性，才能算出真实单步成本。
+3. **默认脱敏**：工具参数和结果里可能有密钥、用户数据。记录摘要或哈希，完整内容留在会话归档里，按权限访问。
+
+### Pi 的优势与缺口
+
+| 项         | Pi 的情况                    | 结论                                  |
+| ---------- | ---------------------------- | ------------------------------------- |
+| 会话可回放 | JSONL 树可直接重建上下文     | 强于多数黑盒 Agent                    |
+| 成本可见   | footer 显示 token/cache/成本 | 适合开发期，不足以做聚合              |
+| 结构化输出 | `--json`/RPC 可被外部采集    | 适合做轻量埋点                        |
+| 分布式追踪 | 无内置 OTel                  | 需在扩展和模型调用层自行包            |
+| 工具级指标 | 无内置聚合                   | 用 `tool_call`/`tool_result` 事件自建 |
+
+**什么场景会坏：** 只记日志不记 trace，出问题只能按时间顺序猜；把完整工具参数打进日志，密钥进了 ELK；只统计总 token，不知道是上下文膨胀还是工具结果太大。
+
+**怎么验证：** 用一个固定任务跑一次，检查能否从 run 根 span 下钻到具体 tool span；人为让某工具超时，确认 error 事件带得上 toolCallId；做一次日志脱敏扫描，确认无密钥模式。
+
+---
+
+## Q14: 深度面试追问（Harness 运行时方向）
+
+<AccordionGroup>
+
+  <Accordion title="会话文件已经是 append-only 了，为什么还需要事件溯源?" icon="layer-group">
+
+    **及格回答（60-70 分）：**
+    "因为事件溯源可以回放，出问题能重跑。"
+
+    **满分回答（90-100 分）：**
+    "append-only 只保证'不丢'，不保证'可解释'。事件溯源要求每个事件是语义明确的事实（run 开始、step 结束、工具调用、产物提交），状态是事件的 fold 结果。区别在恢复能力：只有消息日志，你只能重建上下文；有事件流，你能知道崩溃时卡在第几步、哪个工具调用没有结果、重试是否安全。代价是事件设计要稳定、存储更大、还要处理快照和版本迁移。验证方法是杀掉进程后从事件流恢复，对比状态与预期是否一致。"
+
+  </Accordion>
+
+  <Accordion title="工具执行到一半进程崩了，恢复后怎么保证不重复副作用?" icon="skull">
+
+    **及格回答（60-70 分）：**
+    "重试的时候注意一下，别重复执行。"
+
+    **满分回答（90-100 分）：**
+    "三层：第一，工具调用要有幂等键，服务端按 key 去重；第二，会话里要有 pending tool call 记录，恢复时先查这个调用有没有外部结果，而不是直接重跑；第三，写操作尽量设计成可校验的（先读 checksum 或版本号，再提交）。如果外部系统不支持幂等，就要人工确认或走补偿。验证方法是注入 kill 在工具执行中点，恢复后检查外部系统只产生一次效果。"
+
+  </Accordion>
+
+  <Accordion title="上下文压缩和 Prompt Cache 为什么经常互相打架?" icon="node">
+
+    **及格回答（60-70 分）：**
+    "压缩会改上下文，缓存就失效了。"
+
+    **满分回答（90-100 分）：**
+    "Prompt Cache 命中依赖前缀逐字节稳定。压缩会重写历史，等于把缓存断点之前的内容全改了，下一次必然重新写缓存。所以压缩要低频、成块发生，而不是每轮微调；压缩后的摘要要作为稳定节点固定下来。另一个冲突是动态工具集：切换 active tools 会重建基础提示。解法是按阶段切换、在阶段边界压缩，把'变化'集中到同一次，减少缓存失效次数。验证看 footer 的 cache read/write 比例和单任务成本。"
+
+  </Accordion>
+
+  <Accordion title="为什么沙箱不能只靠 system prompt 约束?" icon="skull">
+
+    **及格回答（60-70 分）：**
+    "因为模型可能不听话，所以要在提示里写清楚不能做什么。"
+
+    **满分回答（90-100 分）：**
+    "提示是建议，边界要靠运行时。Prompt injection、模型误判、上下文被污染都会让约束失效。边界必须落在模型之外：OS 级沙箱限制文件与网络，工具层 allowlist 限制可执行命令，审批策略决定高风险动作要不要人确认。Pi 默认把这一层留空，所以生产必须用 gondolin、容器或远程执行补上。验证方法是做红队测试：让模型尝试读 `~/.ssh`、访问内网、写 `.git/`，看是否被运行时而不是提示拦住。"
+
+  </Accordion>
+
+  <Accordion title="Pi 的扩展没有 unregisterTool，这会带来什么工程问题?" icon="layer-group">
+
+    **及格回答（60-70 分）：**
+    "工具注册了就不能删，可能会冲突。"
+
+    **满分回答（90-100 分）：**
+    "三个问题：第一，同名工具冲突只能靠约定，后加载会覆盖或并存，行为不确定；第二，`/reload` 重载后旧扩展注册的定时器、连接、事件监听可能泄漏，因为没有自动副作用回收；第三，工具集只能'隐藏'不能'销毁'，长期运行会累积状态。解法是把扩展当成需要自己管理生命周期的模块：显式在 `session_start` 注册、在重载前清理句柄、用命名空间避免冲突，并在 CI 里做连续 reload 的泄漏测试。"
+
+  </Accordion>
+
+  <Accordion title="怎么证明一次失败是模型问题还是 Harness 问题?" icon="node">
+
+    **及格回答（60-70 分）：**
+    "看日志，如果模型输出不对就是模型的问题。"
+
+    **满分回答（90-100 分）：**
+    "要做控制变量。先固定模型和任务，只换 Harness 版本或提示组装方式；再看失败点的上下文：模型看到的工具定义是否完整、工具结果是否被截断、是否有报错被吞掉。如果同一模型在另一个 Harness 上成功，问题大概率在上下文组装或工具契约；如果换了模型仍失败，可能是任务本身或工具能力不足。证据要落到事件流：哪一步、哪个工具、返回了什么。"
+
+  </Accordion>
+
+  <Accordion title="长任务里，为什么 step 数比 token 数更能反映健康度?" icon="stopwatch">
+
+    **及格回答（60-70 分）：**
+    "step 多了说明 Agent 一直在试错。"
+
+    **满分回答（90-100 分）：**
+    "token 只反映'读了多少'，step 反映'做了多少次决策'。同样 10 万 token，一次读完和五十次来回，后者意味着反复试错、工具误调用或上下文不足。健康的长任务应该 step 数随任务复杂度线性增长，而不是指数增长。监控上要给 step 数设阈值和告警，并结合工具成功率、重复调用率一起看。token 高但 step 正常，通常是上下文材料多；step 高但 token 正常，通常是策略或工具契约有问题。"
+
+  </Accordion>
+
+  <Accordion title="如果让你从零设计一个 Harness，最先定哪三个接口?" icon="skull">
+
+    **及格回答（60-70 分）：**
+    "模型调用、工具调用、会话存储。"
+
+    **满分回答（90-100 分）：**
+    "先定三个边界：会话（append-only 的事件存储，能按位置读取和回放）、工具执行（统一的 `execute(name, input, signal)` 契约，带超时、取消和错误结构）、模型调用（可替换的 Provider 接口，带 token/成本/结束原因）。这三个接口决定了系统能不能恢复、能不能换模型、能不能换沙箱。UI、子 Agent、MCP 都应建在这三个之上，而不是反过来让核心依赖它们。定接口时优先保证'实现可替换'，而不是'功能齐全'。"
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## Q15: 满分回答 vs 及格回答
+
+### 问题："Pi 为什么不内置子 Agent 和 MCP？这算优点还是缺点？"
+
+**及格回答（60-70分）：**
+
+> "Pi 是一个很小的 Agent 工具，只有四个工具，子 Agent 和 MCP 需要装扩展。优点是轻量，缺点是功能少。"
+
+问题出在：**只描述了现象，没有解释设计取舍**。
+
+**满分回答（90-100分）：**
+
+> "这是有意的边界设计，不是能力缺失。Harness 每内置一个功能，就多一套状态、失败模式和维护成本；而子 Agent、MCP、审批流恰恰是最因团队而异的层。Pi 把核心压到四个工具和千 token 级提示，保证上下文可控、行为可解释，再把差异交给 Extension 和 Package。"
+
+> "代价是团队要自己补权限、沙箱、评测这些生产化能力。所以 Pi 适合把 Harness 当产品一部分来改的团队，不适合只想开箱即用的人。判断标准是是否愿意为可控性支付维护成本，跟功能多少关系不大。"
+
+### 常见追问
+
+<AccordionGroup>
+
+  <Accordion title="Harness 和 Agent Framework 的区别是什么?" icon="layer-group">
+
+    **答题要点：**
+    从"谁拥有主循环"切入。
+
+    **高分回答：**
+    "Framework 提供编排原语，主循环通常由你写；Harness 直接拥有主循环、工具执行、上下文组装和会话状态，模型只是其中一个依赖。LangGraph 是 Framework，Pi 和 DeepSeek Harness 是 Harness。二者可以组合：用 Harness 跑单个 Agent，用 Framework 编排多个 Harness。"
+
+  </Accordion>
+
+  <Accordion title="为什么 Pi 的会话要设计成树，而不是线性数组?" icon="layer-group">
+
+    **答题要点：**
+    回放、分支实验、压缩。
+
+    **高分回答：**
+    "线性会话只能前进，出错就只能重跑。树结构保留每个分支点，既能回放定位问题，也能从同一节点尝试不同策略；压缩时生成摘要节点但不丢原始消息，需要时可以回溯。代价是存储和 UI 更复杂，所以适合长任务和需要审计的场景。"
+
+  </Accordion>
+
+  <Accordion title="Pi 只有四个工具，为什么够用?" icon="stopwatch">
+
+    **答题要点：**
+    组合能力 + 扩展。
+
+    **高分回答：**
+    "read、write、edit、bash 覆盖了文件读写和任意命令执行，理论上可以组合出绝大多数操作。工具少意味着选择空间小、误调用率低、上下文便宜。真正缺失的能力通过 Extension 补，而不是把核心工具集做大。这是把'通用性'放在 bash，把'安全性'放在沙箱和权限层。"
+
+  </Accordion>
+
+  <Accordion title="如果把 Pi 接到生产，最先补什么?" icon="stopwatch">
+
+    **答题要点：**
+    权限、沙箱、可观测性优先。
+
+    **高分回答：**
+    "先补权限和沙箱，因为 bash 的破坏半径最大；再补 trace 和会话归档，否则出了问题无法定位；最后才是评测和成本优化。顺序不能反：没有安全边界就上线，一次误删比省下的 token 贵得多。"
+
+  </Accordion>
+
+  <Accordion title="Pi 的显式上下文设计对 Prompt Cache 有什么影响?" icon="node">
+
+    **答题要点：**
+    前缀稳定才能命中缓存。
+
+    **高分回答：**
+    "显式组装本身不保证缓存，关键是前缀稳定。把系统提示、工具定义、AGENTS.md 固定在最前面，变化内容追加到后面，缓存断点放在稳定区末尾。如果每轮重排工具或插入时间戳，缓存全失效。Pi 的优势是你能看见上下文，从而主动维护这个不变量。"
+
+  </Accordion>
+
+  <Accordion title="什么时候不该用 Pi?" icon="node">
+
+    **答题要点：**
+    无维护能力、强合规开箱需求。
+
+    **高分回答：**
+    "团队没有精力维护 Harness、又需要开箱即用的权限和审计时，不该用 Pi。它的价值在于可改造，而不是省事。另一个不适合的场景是需要大量内置多 Agent 协作的产品，直接用 DeepSeek Harness 或 LangGraph 更划算。"
+
+  </Accordion>
+
+  <Accordion title="如何证明换 Harness 后 Agent 变强了?" icon="skull">
+
+    **答题要点：**
+    固定模型、固定任务集、只改 Harness。
+
+    **高分回答：**
+    "控制变量：同一模型、同一温度、同一任务集，只改 Harness。指标看任务成功率、平均步数、工具误调用率、单任务成本和人工接管率。用固定 fixture 做回归，避免'这次感觉不错'。如果成功率没变但步数和成本下降，也是有效提升。"
+
+  </Accordion>
+
+  <Accordion title="Pi 的极简哲学在团队协作中会带来什么问题?" icon="skull">
+
+    **答题要点：**
+    标准不统一、重复造轮子。
+
+    **高分回答：**
+    "每个人都按自己习惯写扩展，最后工具命名、错误格式、权限策略全不一致，协作成本反而上升。解法是把团队约定沉淀成 Pi Package：统一工具契约、统一错误结构、统一审批扩展，再通过 npm 私服分发。极简内核必须配强约定，否则自由会变成混乱。"
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## 延伸阅读与引用参考
+
+- [1] [Pi 仓库文档目录（sessions / session format）](https://github.com/earendil-works/pi/tree/main/packages/coding-agent/docs)：会话 JSONL 条目类型、树形分支、压缩与恢复。
+- [2] [@earendil-works/pi-coding-agent（npm）](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)：README、运行模式、`/model`、`/reload`、footer 与成本显示。
+- [3] [Pi extensions 文档](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md)：jiti 运行时加载、TypeBox、`registerTool`、`tool_call`/`tool_result`、project trust、`getAllTools`/`setActiveTools` 与无 `unregisterTool` 的说明。
+- [4] [Anthropic Prompt Caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)：断点数量、回看窗口、TTL 与读写计费倍率。
+- [5] [Pi 官方扩展示例](https://github.com/earendil-works/pi/tree/main/packages/coding-agent/examples/extensions)：`executionMode: "sequential"`、`truncated-tool`、permission-gate、protected-paths、sandbox、gondolin、ssh。
+- [6] [Claude Code sandboxing](https://www.anthropic.com/engineering/claude-code-sandboxing)：Linux bubblewrap、macOS seatbelt 与网络代理边界。
+- [7] [Codex 沙箱实现整理](https://deepwiki.com/openai/codex)：Seatbelt、bubblewrap + Landlock、Windows 受限令牌，以及 `.git`/`.codex` 只读。
+- [8] [LangGraph Persistence](https://langchain-ai.github.io/langgraph/concepts/persistence/)：checkpointer、`thread_id`、`MemorySaver` 与生产级 saver 的取舍。
+- [9] [pi-ai 文档](https://github.com/earendil-works/pi/tree/main/packages/ai)：统一 LLM API、模型目录、token 与成本跟踪。
+- [10] [OpenTelemetry GenAI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)：`gen_ai.*` 属性与 agent/tool span 的命名约定。
+- [pi.dev](https://pi.dev/)：官网与安装入口。
+- [Pi (agent framework) - AI Wiki](https://aiwiki.ai/wiki/pi_agent)：项目历史、Earendil 收购与设计背景。
+- [DeepWiki: Built-in Tools](https://deepwiki.com/earendil-works/pi/2.4-built-in-tools)：内置工具与执行架构的源码级整理。

@@ -1,10 +1,9 @@
 ---
 title: "PRD 到代码生成"
+description: "PRD 解析、架构设计、代码与测试生成、人工审查卡点和工具链选型的面试要点。"
 ---
 
-> **面试官为什么问这个？**
->
-> PRD 到代码生成（PRD-to-Code）是 AI 辅助开发的端到端工作流。面试官问这个，本质上是在考察你：**是否理解 AI 如何重塑前端开发流程，以及能不能把 Prompt Engineering、Agent、工具调用串联成一个完整的工程化闭环。** 如果你答不清楚，说明你对 AI 的使用停留在"单点工具"而不是"系统化工作流"。
+> PRD 转代码我用过 V0、Cursor、Copilot，真正要盯的是哪一步最容易出错，以及生成之后怎么验收。
 
 ---
 
@@ -22,27 +21,27 @@ title: "PRD 到代码生成"
 
   <Step title="手动开发时代 (2010-2017)">
 
-  前端工程师拿到 PRD 后，手动编写每一行代码。从需求理解、架构设计、UI 实现到测试，全部依赖人工。一个中等复杂度的页面需要 3-5 天开发周期，沟通成本占项目时间的 30% 以上。
+前端工程师拿到 PRD 后，手动编写每一行代码。从需求理解、架构设计、UI 实现到测试，全部依赖人工。一个中等复杂度的页面需要数天开发周期，沟通成本占项目时间的相当大一部分。
 
   </Step>
   <Step title="低代码与可视化搭建 (2018-2020)">
 
-  低代码平台（如宜搭、微搭）通过拖拽组件和配置属性生成代码。解决了简单表单和中后台页面的快速搭建，但灵活性不足——复杂交互和定制需求仍然需要手写代码。
+低代码平台（如宜搭、微搭）通过拖拽组件和配置属性生成代码。解决了简单表单和中后台页面的快速搭建，但灵活性不足——复杂交互和定制需求仍然需要手写代码。
 
   </Step>
   <Step title="AI 代码补全 (2021-2023)">
 
-  GitHub Copilot 的出现改变了开发模式。AI 从"工具"变成了"副驾驶"——根据上下文自动补全代码行和函数。开发效率提升 30-55%，但仍然需要开发者主导架构和流程。
+GitHub Copilot 的出现改变了开发模式。AI 从"工具"变成了"副驾驶"——根据上下文自动补全代码行和函数。开发效率明显提升，但仍然需要开发者主导架构和流程。
 
   </Step>
   <Step title="对话式代码生成 (2024)">
 
-  Cursor、Claude Code、Windsurf 等 AI-native IDE 兴起。开发者通过自然语言描述需求，AI 生成完整的文件和模块。从"补全"进化到"生成"，但仍然需要人工串联各个步骤。
+Cursor、Claude Code、Windsurf 等 AI-native IDE 兴起。开发者通过自然语言描述需求，AI 生成完整的文件和模块。从"补全"进化到"生成"，但仍然需要人工串联各个步骤。
 
   </Step>
   <Step title="端到端 PRD→Code (2025+)">
 
-  V0、Bolt.new、Lovable、GitHub Copilot Workspace 等工具实现了从 PRD 到可部署代码的自动化管线。AI Agent 解析 PRD、生成架构、编写代码、生成测试、部署上线，开发者从"写代码"转变为"审代码"。
+V0、Bolt.new、Lovable、GitHub Copilot Workspace 等工具实现了从 PRD 到可部署代码的自动化管线。AI Agent 解析 PRD、生成架构、编写代码、生成测试、部署上线，开发者从"写代码"转变为"审代码"。
 
   </Step>
 
@@ -61,10 +60,10 @@ PRD 理解偏差 → 返工 → 延期 → 超预算
 
 PRD → AI 解析 → 自动生成架构 + 代码 + 测试 → 人工审查 → 部署
 
-开发周期从周级缩短到天级，沟通成本降低 60%+
+开发周期从周级缩短到天级，沟通成本显著下降
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 PRD→Code 的核心不是"让 AI 替代程序员"，而是"把开发流程从手工作坊升级为自动化管线"——开发者从写代码转变为审代码和定义规范。
 
@@ -72,19 +71,19 @@ PRD→Code 的核心不是"让 AI 替代程序员"，而是"把开发流程从�
 
 <CardGroup cols={2}>
 
-<Card title="🚫 没有 PRD→Code 工作流">
+<Card title="没有 PRD→Code 工作流">
 
-产品经理写 PRD → 设计师出设计稿 → 前端看 PRD 理解需求 → 手写代码 → 手写测试 → 部署。每个环节都有信息损耗，PRD 理解偏差导致返工率高达 25%。一个中等页面从 PRD 到上线需要 1-2 周。
+产品经理写 PRD → 设计师出设计稿 → 前端看 PRD 理解需求 → 手写代码 → 手写测试 → 部署。每个环节都有信息损耗，PRD 理解偏差容易导致返工。一个中等页面从 PRD 到上线需要 1-2 周。
 
 </Card>
-<Card title="✅ 引入 PRD→Code 工作流">
+<Card title="引入 PRD→Code 工作流">
 
 产品经理写 PRD → AI 解析 PRD 生成技术方案 → AI 生成代码和测试 → 开发者审查和调整 → 自动部署。信息在管线中无损流转，开发者聚焦在架构决策和质量把控上。同样的页面从 PRD 到上线缩短到 1-2 天。
 
 </Card>
 </CardGroup>
 
-<Tip title="🎢 通俗比喻: 从手工作坊到自动化工厂">
+<Tip title="通俗比喻: 从手工作坊到自动化工厂">
 
 传统开发就像手工作坊——师傅（开发者）拿到图纸（PRD），一锤一锤地敲出产品。PRD→Code 就像自动化工厂——图纸（PRD）送进流水线（AI 管线），机器自动切割（代码生成）、打磨（测试生成）、组装（部署），师傅只需要在最后检查质量（人工审查）。师傅不需要消失，但角色从"体力劳动者"变成了"质量管理者"。
 
@@ -116,7 +115,7 @@ PRD→Code 的本质是一条**自动化管线**，核心逻辑只有 5 步：
 └───────────────────────────────────────────────────────────────┘
 ```
 
-<Warning title="⚠️ 核心机制: 人工审查是不可省略的环节">
+<Warning title="核心机制: 人工审查是不可省略的环节">
 
 AI 生成的代码质量已经很高，但仍然存在三个风险：
 
@@ -128,7 +127,7 @@ AI 生成的代码质量已经很高，但仍然存在三个风险：
 
 </Warning>
 
-<Tip title="🎢 通俗比喻: 自动驾驶的 L2 与 L5">
+<Tip title="通俗比喻: 自动驾驶的 L2 与 L5">
 
 PRD→Code 的自动化程度就像自动驾驶的分级。L2（Copilot）：AI 做辅助（补全代码），人主导。L3（Cursor）：AI 做大部分工作（生成模块），人监督。L4（V0/Bolt）：AI 做全流程（PRD→代码→测试），人在关键节点审查。L5（完全自主）：AI 做全流程且不需要人——目前还不存在。大多数团队处在 L3-L4 阶段，核心瓶颈不是 AI 能力不够，而是信任不够——开发者还没有建立"审查 AI 代码"的工作习惯。
 
@@ -136,22 +135,22 @@ PRD→Code 的自动化程度就像自动驾驶的分级。L2（Copilot）：AI 
 
 ### 各阶段的工具链
 
-| 阶段 | 工具 | 作用 |
-|------|------|------|
-| **PRD 解析** | Claude / GPT-4 | 从 PRD 提取功能需求、非功能需求、技术方案 |
-| **设计稿生成** | Figma AI / V0 | 从需求描述生成 UI 设计稿 |
-| **代码生成** | V0 / Cursor / Claude Code | 从设计稿或需求生成前端代码 |
-| **测试生成** | Qodo / Copilot | 从代码自动生成单元测试和 E2E 测试 |
-| **部署** | Vercel / Netlify / GitHub Actions | 自动化 CI/CD 部署 |
+| 阶段           | 工具                              | 作用                                      |
+| -------------- | --------------------------------- | ----------------------------------------- |
+| **PRD 解析**   | Claude / GPT-4                    | 从 PRD 提取功能需求、非功能需求、技术方案 |
+| **设计稿生成** | Figma AI / V0                     | 从需求描述生成 UI 设计稿                  |
+| **代码生成**   | V0 / Cursor / Claude Code         | 从设计稿或需求生成前端代码                |
+| **测试生成**   | Qodo / Copilot                    | 从代码自动生成单元测试和 E2E 测试         |
+| **部署**       | Vercel / Netlify / GitHub Actions | 自动化 CI/CD 部署                         |
 
 ### 管线中的数据流
 
-| 输入 | 中间产物 | 输出 |
-|------|---------|------|
-| PRD 文档 | 结构化需求 JSON | 技术方案文档 |
-| 技术方案 | 组件树 + API 接口定义 | 前端代码 |
-| 前端代码 | 测试用例列表 | 测试代码 |
-| 测试代码 | 测试报告 | 部署就绪的产物 |
+| 输入     | 中间产物              | 输出           |
+| -------- | --------------------- | -------------- |
+| PRD 文档 | 结构化需求 JSON       | 技术方案文档   |
+| 技术方案 | 组件树 + API 接口定义 | 前端代码       |
+| 前端代码 | 测试用例列表          | 测试代码       |
+| 测试代码 | 测试报告              | 部署就绪的产物 |
 
 ---
 
@@ -263,7 +262,7 @@ ${structuredRequirements}
 `;
 ```
 
-<Tip title="🎢 通俗比喻: 同声传译">
+<Tip title="通俗比喻: 同声传译">
 
 PRD 解析就像同声传译——把产品经理的"方言"（非结构化 PRD）翻译成开发者的"标准语"（结构化需求 JSON）。好的翻译不是逐字翻译，而是理解语义后用目标语言重新表达。AI 解析 PRD 也是一样——不是提取原文中的关键词，而是理解业务意图后生成结构化描述。如果 PRD 写"用户体验要好"，AI 需要翻译成"首屏加载 &lt; 2s、交互响应 &lt; 100ms"。
 
@@ -273,11 +272,11 @@ PRD 解析就像同声传译——把产品经理的"方言"（非结构化 PRD�
 
 PRD 的质量直接决定 AI 生成代码的质量——这就是"Garbage In, Garbage Out"原则。
 
-| PRD 质量 | AI 输出质量 | 典型问题 |
-|---------|-----------|---------|
-| 高质量（有验收条件、有边界说明） | 高 | 几乎不需要修改 |
-| 中质量（有功能描述，缺边界条件） | 中 | 需要补充边界处理逻辑 |
-| 低质量（模糊的一句话需求） | 低 | 生成的代码与预期偏差大 |
+| PRD 质量                         | AI 输出质量 | 典型问题               |
+| -------------------------------- | ----------- | ---------------------- |
+| 高质量（有验收条件、有边界说明） | 高          | 几乎不需要修改         |
+| 中质量（有功能描述，缺边界条件） | 中          | 需要补充边界处理逻辑   |
+| 低质量（模糊的一句话需求）       | 低          | 生成的代码与预期偏差大 |
 
 ```javascript
 // ❌ 低质量 PRD → AI 无法生成准确代码
@@ -300,7 +299,7 @@ const goodPRD = `
 
 ## Q4: 设计稿到代码
 
-设计稿到代码（Design-to-Code）是 PRD→Code 管线中最直观的环节。核心原理是**AI 读取设计稿的结构化数据（图层、样式、布局），映射为对应的前端代码**。
+设计稿到代码（Design-to-Code）是 PRD→Code 管线中最直观的环节。核心原理是**AI 读取设计稿的结构化数据（图层、样式、布局），映射为对应的前端代码**。本文只把它当作管线中的一环；设计稿解析、Figma MCP、设计令牌与工具对比的完整内容见 [Design to Code](/ai/design-to-code)。
 
 ```text
 ┌─────────────┐      ┌─────────────┐      ┌─────────────┐
@@ -312,9 +311,9 @@ const goodPRD = `
        └────────────────────────────────────────┘
 ```
 
-<Warning title="⚠️ 核心机制: Figma MCP 是设计稿到代码的桥梁">
+<Warning title="核心机制: Figma MCP 是设计稿到代码的桥梁">
 
-Figma MCP（Model Context Protocol）是 Anthropic 提出的标准化协议，让 AI Agent 能直接读取 Figma 文件的结构化数据——图层树、样式、布局约束、设计 Token。传统方式是截图让 AI 识别（信息损耗大），MCP 方式是直接读取设计数据（信息无损）。
+MCP（Model Context Protocol）是 Anthropic 提出的标准化协议；Figma MCP Server 基于该协议，让 AI Agent 能直接读取 Figma 文件的结构化数据——图层树、样式、布局约束、设计 Token。传统方式是截图让 AI 识别（信息损耗大），MCP 方式是直接读取设计数据（信息无损）。
 
 - **截图方式**：AI 只能看到像素，无法精确获取间距、字号、颜色值
 - **MCP 方式**：AI 读取完整的图层树和样式数据，生成的代码与设计稿像素级一致
@@ -354,7 +353,7 @@ function generateComponent(figmaNode) {
 }
 ```
 
-<Tip title="🎢 通俗比喻: 从蓝图到工厂图纸">
+<Tip title="通俗比喻: 从蓝图到工厂图纸">
 
 Figma 设计稿就像建筑蓝图——好看但不能直接用来施工。传统方式是施工队（开发者）看着蓝图手动砌墙（写代码），容易出现偏差。Figma MCP 就像把蓝图数字化——AI 读取每个房间的尺寸、门窗位置、材料规格（图层树和样式数据），自动生成施工图纸（前端代码）。从"看着蓝图猜尺寸"变成"读取精确数据自动生成"。
 
@@ -381,15 +380,22 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
 function CartPage({ items }) {
-  const totalPrice = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const totalPrice = items.reduce(
+    (sum, item) => sum + item.price * item.quantity,
+    0,
+  );
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
       <div className="lg:col-span-2 space-y-4">
         <h2 className="text-2xl font-bold">购物车 ({items.length} 件商品)</h2>
-        {items.map(item => (
+        {items.map((item) => (
           <Card key={item.id} className="flex gap-4 p-4">
-            <img src={item.image} alt={item.name} className="w-24 h-24 object-cover rounded" />
+            <img
+              src={item.image}
+              alt={item.name}
+              className="w-24 h-24 object-cover rounded"
+            />
             <div className="flex-1">
               <h3 className="font-medium">{item.name}</h3>
               <p className="text-lg font-bold">¥{item.price}</p>
@@ -401,7 +407,8 @@ function CartPage({ items }) {
         <Card className="p-6 sticky top-4">
           <h3 className="text-lg font-bold mb-4">订单摘要</h3>
           <div className="flex justify-between mb-2">
-            <span>商品总价</span><span>¥{totalPrice}</span>
+            <span>商品总价</span>
+            <span>¥{totalPrice}</span>
           </div>
           <Button className="w-full mt-4">去结算</Button>
         </Card>
@@ -413,13 +420,13 @@ function CartPage({ items }) {
 
 ### Locofy 与 Anima 的对比
 
-| 维度 | Locofy | Anima |
-|------|--------|-------|
-| **核心定位** | 设计稿转生产级代码 | 设计稿转原型 + 代码 |
-| **支持框架** | React、Vue、Next.js、HTML/CSS | React、Vue、HTML/CSS |
-| **AI 能力** | AI 自动检测组件边界和布局 | AI 辅助但更依赖手动调整 |
-| **代码质量** | 接近生产级，可直接使用 | 需要较多手动调整 |
-| **最佳场景** | 开发者主导的快速实现 | 设计师主导的原型验证 |
+| 维度         | Locofy                        | Anima                   |
+| ------------ | ----------------------------- | ----------------------- |
+| **核心定位** | 设计稿转生产级代码            | 设计稿转原型 + 代码     |
+| **支持框架** | React、Vue、Next.js、HTML/CSS | React、Vue、HTML/CSS    |
+| **AI 能力**  | AI 自动检测组件边界和布局     | AI 辅助但更依赖手动调整 |
+| **代码质量** | 接近生产级，可直接使用        | 需要较多手动调整        |
+| **最佳场景** | 开发者主导的快速实现          | 设计师主导的原型验证    |
 
 ---
 
@@ -474,7 +481,9 @@ describe("CartItem", () => {
   };
 
   it("should render item name and price", () => {
-    render(<CartItem item={mockItem} onUpdate={() => {}} onDelete={() => {}} />);
+    render(
+      <CartItem item={mockItem} onUpdate={() => {}} onDelete={() => {}} />,
+    );
     expect(screen.getByText("React 实战")).toBeInTheDocument();
     expect(screen.getByText("¥99")).toBeInTheDocument();
   });
@@ -493,14 +502,16 @@ describe("CartItem", () => {
 
   it("should call onUpdate with new quantity when plus clicked", () => {
     const onUpdate = jest.fn();
-    render(<CartItem item={mockItem} onUpdate={onUpdate} onDelete={() => {}} />);
+    render(
+      <CartItem item={mockItem} onUpdate={onUpdate} onDelete={() => {}} />,
+    );
     fireEvent.click(screen.getByLabelText("增加数量"));
     expect(onUpdate).toHaveBeenCalledWith("1", 3);
   });
 });
 ```
 
-<Tip title="🎢 通俗比喻: 考试出题专家">
+<Tip title="通俗比喻: 考试出题专家">
 
 AI 生成测试就像请了一个考试出题专家。你把课本（源代码）给他，他能自动出一套覆盖所有知识点的试卷。正常路径是"基础题"（大部分学生都能做对），边界条件是"陷阱题"（考验细心程度），异常场景是"超纲题"（考验应变能力）。好的出题专家不会只出基础题——他会覆盖所有知识点，包括容易被忽略的边界和异常。
 
@@ -526,21 +537,29 @@ test.describe("购物车功能", () => {
 
   test("点击增加按钮应该更新数量和总价", async ({ page }) => {
     const firstItem = page.locator("[data-testid='cart-item']").first();
-    const quantityBefore = await firstItem.locator("[data-testid='quantity']").textContent();
+    const quantityBefore = await firstItem
+      .locator("[data-testid='quantity']")
+      .textContent();
 
     await firstItem.locator("[data-testid='increase-btn']").click();
 
-    const quantityAfter = await firstItem.locator("[data-testid='quantity']").textContent();
+    const quantityAfter = await firstItem
+      .locator("[data-testid='quantity']")
+      .textContent();
     expect(Number(quantityAfter)).toBe(Number(quantityBefore) + 1);
 
     // 验证总价更新
-    const totalPrice = await page.locator("[data-testid='total-price']").textContent();
+    const totalPrice = await page
+      .locator("[data-testid='total-price']")
+      .textContent();
     expect(totalPrice).toBeTruthy();
   });
 
   test("数量不能超过库存", async ({ page }) => {
     const firstItem = page.locator("[data-testid='cart-item']").first();
-    const stock = Number(await firstItem.locator("[data-testid='stock']").textContent());
+    const stock = Number(
+      await firstItem.locator("[data-testid='stock']").textContent(),
+    );
 
     // 连续点击增加按钮直到达到库存上限
     for (let i = 0; i < stock + 5; i++) {
@@ -548,14 +567,22 @@ test.describe("购物车功能", () => {
       if (await btn.isEnabled()) await btn.click();
     }
 
-    const quantity = Number(await firstItem.locator("[data-testid='quantity']").textContent());
+    const quantity = Number(
+      await firstItem.locator("[data-testid='quantity']").textContent(),
+    );
     expect(quantity).toBeLessThanOrEqual(stock);
   });
 
   test("删除商品应该显示确认弹窗", async ({ page }) => {
-    await page.locator("[data-testid='cart-item']").first().locator("[data-testid='delete-btn']").click();
+    await page
+      .locator("[data-testid='cart-item']")
+      .first()
+      .locator("[data-testid='delete-btn']")
+      .click();
     await expect(page.locator("[data-testid='confirm-dialog']")).toBeVisible();
-    await expect(page.locator("[data-testid='confirm-dialog']")).toContainText("确定要删除");
+    await expect(page.locator("[data-testid='confirm-dialog']")).toContainText(
+      "确定要删除",
+    );
   });
 });
 ```
@@ -564,12 +591,12 @@ test.describe("购物车功能", () => {
 
 AI 不仅能生成测试，还能分析测试覆盖率并补充缺失的测试用例。
 
-| 覆盖率指标 | 定义 | AI 生成目标 |
-|-----------|------|-----------|
-| **行覆盖率** | 被执行的代码行占比 | &gt; 80% |
-| **分支覆盖率** | 被执行的 if/else 分支占比 | &gt; 70% |
-| **函数覆盖率** | 被调用的函数占比 | &gt; 90% |
-| **边界覆盖率** | 边界条件是否被测试 | 100% 关键边界 |
+| 覆盖率指标     | 定义                      | AI 生成目标   |
+| -------------- | ------------------------- | ------------- |
+| **行覆盖率**   | 被执行的代码行占比        | &gt; 80%      |
+| **分支覆盖率** | 被执行的 if/else 分支占比 | &gt; 70%      |
+| **函数覆盖率** | 被调用的函数占比          | &gt; 90%      |
+| **边界覆盖率** | 边界条件是否被测试        | 100% 关键边界 |
 
 ```javascript
 // AI 分析覆盖率并补充测试
@@ -653,7 +680,8 @@ async function generateCode(design, requirements) {
 // Step 4: 生成测试
 async function generateTests(sourceCode) {
   const tests = await claude.chat({
-    system: "你是测试工程师。为以下代码生成 Jest 单元测试和 Playwright E2E 测试。",
+    system:
+      "你是测试工程师。为以下代码生成 Jest 单元测试和 Playwright E2E 测试。",
     message: sourceCode,
   });
   return tests;
@@ -694,24 +722,18 @@ async function prdToCode(prdPath) {
 
 ### 工具链选择矩阵
 
-| 场景 | 推荐工具链 | 原因 |
-|------|-----------|------|
-| 快速原型验证 | V0 + Vercel | 从描述到部署最快（分钟级） |
-| 企业级项目 | Cursor + Claude Code + Playwright | 代码质量和测试覆盖率最高 |
-| 设计驱动开发 | Figma MCP + Claude Code | 设计稿到代码精度最高 |
-| 全栈项目 | Bolt.new / Lovable | 前后端一体化生成 |
+| 场景         | 推荐工具链                        | 原因                       |
+| ------------ | --------------------------------- | -------------------------- |
+| 快速原型验证 | V0 + Vercel                       | 从描述到部署最快（分钟级） |
+| 企业级项目   | Cursor + Claude Code + Playwright | 代码质量和测试覆盖率最高   |
+| 设计驱动开发 | Figma MCP + Claude Code           | 设计稿到代码精度最高       |
+| 全栈项目     | Bolt.new / Lovable                | 前后端一体化生成           |
 
 ---
 
-## Q7: 高频面试题
+## Q7: 底层源码——AI Agent 如何编排 PRD→Code 管线
 
----
-
-## 🔍 底层源码：AI Agent 如何编排 PRD→Code 管线
-
-<div class="follow-up">
-AI Agent 是怎么编排 PRD→Code 管线的？
-</div>
+<div class="follow-up">AI Agent 是怎么编排 PRD→Code 管线的？</div>
 
 AI Agent 使用 LangGraph 的图结构来编排多步骤管线。每个节点是一个独立的任务（PRD 解析、代码生成、测试生成），边定义了数据流转关系（详见 [LangGraph 文档](https://langchain-ai.github.io/langgraph/)）：
 
@@ -767,14 +789,15 @@ result = await pipeline.invoke({"prd_content": prd_content})
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 满分回答 vs 及格回答
 
 ### 问题："说说 PRD 到代码生成的完整流程和你的实践经验"
 
 **及格回答（60-70分）：**
+
 > "PRD 到代码就是用 AI 工具把需求文档变成代码。可以用 V0 生成 UI，用 Cursor 写逻辑，用 Copilot 写测试。"
 
-面试官评价：**知道工具但不理解流程设计**。
+问题出在：**知道工具但不理解流程设计**。
 
 **满分回答（90-100分）：**
 
@@ -784,7 +807,7 @@ result = await pipeline.invoke({"prd_content": prd_content})
 
 > "实际项目中最大的挑战不是 AI 能力不够，而是**PRD 质量太低**。Garbage In, Garbage Out——如果 PRD 写'做一个购物车'，AI 只能生成一个最基本的骨架。如果 PRD 写清楚了功能清单、验收条件、边界情况、性能要求，AI 生成的代码质量能直接达到生产级。所以我的做法是在 PRD 模板中加入结构化字段（功能列表、验收条件、非功能需求），确保输入质量。<sup>[3]</sup>"
 
-### 大厂高频连环拷问
+### 常见追问
 
 > 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。每个模块 **8 个 Accordion**，覆盖 4 个难度层级。
 
@@ -818,9 +841,10 @@ result = await pipeline.invoke({"prd_content": prd_content})
 解释 MCP 协议的原理和 Figma MCP 的数据流。
 
 **高分回答：**
-"Figma MCP（Model Context Protocol）是 Anthropic 提出的标准化协议，让 AI Agent 能直接读取 Figma 文件的结构化数据。
+"MCP（Model Context Protocol）是 Anthropic 提出的标准化协议，Figma MCP Server 基于它让 AI Agent 直接读取 Figma 文件的结构化数据。
 
 工作原理：
+
 1. Figma MCP Server 作为中间层，连接 Figma API 和 AI Agent
 2. AI Agent 通过 MCP 协议调用 Figma Server 的工具（如 getFile、getNode）
 3. Figma Server 返回结构化数据（图层树、样式、布局约束、设计 Token）
@@ -858,7 +882,7 @@ MCP 的价值不只是 Figma——它是通用协议。同样的 MCP 架构可�
 **高分回答：**
 "AI 生成测试和手写测试的核心区别：
 
-**效率**：AI 生成测试的速度是手写的 10 倍以上。一个 500 行的组件，手写测试需要 2-3 小时，AI 生成只需要 2-3 分钟。
+**效率**：AI 生成测试的速度远高于手写。一个中等规模的组件，手写测试需要数小时，AI 生成往往只需几分钟。
 
 **覆盖率**：AI 擅长覆盖边界条件和异常场景——开发者手写测试时容易忽略的'数量为 0'、'API 超时'、'空数组'等边界，AI 都能自动识别并生成测试。
 
@@ -946,16 +970,16 @@ MCP 的价值不只是 Figma——它是通用协议。同样的 MCP 架构可�
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 🔗 [Vercel V0 官方文档](https://v0.dev/)：V0 是 Vercel 推出的 AI UI 生成工具，从文本描述生成 React + Tailwind CSS 生产级代码。<sup>[1]</sup>
-- 📖 [Figma MCP Server 文档](https://github.com/figma/figma-mcp-server)：Figma 官方的 MCP Server 实现，让 AI Agent 直接读取 Figma 设计数据。<sup>[2]</sup>
-- 🔗 [LangGraph 文档](https://langchain-ai.github.io/langgraph/)：LangChain 的图结构多 Agent 编排框架，PRD→Code 管线的底层编排引擎。<sup>[3]</sup>
-- 🧑‍💻 [Anthropic Claude Code 文档](https://docs.anthropic.com/en/docs/claude-code)：Claude Code 的完整文档，覆盖 MCP、Skills、Hooks 等企业级特性。<sup>[4]</sup>
-- 📖 [GitHub Copilot Workspace 文档](https://docs.github.com/en/copilot/copilot-workspace)：GitHub 的 PRD→Code 工具，从 issue/spec 自动生成代码实现。<sup>[5]</sup>
-- 🧑‍💻 [Andrej Karpathy - Vibe Coding](https://x.com/karpathy/status/1886192184808149214)：Andrej Karpathy 提出的 Vibe Coding 概念——用自然语言描述需求，AI 生成代码。<sup>[6]</sup>
-- 📖 [Cursor 官方文档](https://docs.cursor.com/)：Cursor AI 代码编辑器的使用指南，@codebase 上下文和 Agent 模式。<sup>[7]</sup>
-- 🔗 [Anthropic MCP 规范](https://modelcontextprotocol.io/)：Model Context Protocol 的官方规范，标准化 AI 与外部工具的连接协议。<sup>[8]</sup>
-- 📖 [Qodo (原 CodiumAI) 文档](https://www.qodo.ai/)：AI 驱动的测试生成工具，自动生成 Jest/Playwright 测试用例。
-- 🔗 [Bolt.new 文档](https://bolt.new/)：StackBlitz 推出的全栈 AI 代码生成工具，从描述到可运行应用。
-- 📖 [Lovable 文档](https://lovable.dev/)：原 GPT Engineer，PRD 到全栈应用的自动化管线。
+- [Vercel V0 官方文档](https://v0.dev/)：V0 是 Vercel 推出的 AI UI 生成工具，从文本描述生成 React + Tailwind CSS 生产级代码。<sup>[1]</sup>
+- [Figma 帮助中心](https://help.figma.com/)：Figma 官方文档入口，可查阅 Dev Mode MCP Server 的配置说明。<sup>[2]</sup>
+- [LangGraph 文档](https://langchain-ai.github.io/langgraph/)：LangChain 的图结构多 Agent 编排框架，PRD→Code 管线的底层编排引擎。<sup>[3]</sup>
+- [Anthropic Claude Code 文档](https://docs.anthropic.com/en/docs/claude-code)：Claude Code 的完整文档，覆盖 MCP、Skills、Hooks 等企业级特性。<sup>[4]</sup>
+- [GitHub Copilot Workspace 文档](https://docs.github.com/en/copilot/copilot-workspace)：GitHub 的 PRD→Code 工具，从 issue/spec 自动生成代码实现。<sup>[5]</sup>
+- [Andrej Karpathy - Vibe Coding](https://x.com/karpathy/status/1886192184808149214)：Andrej Karpathy 提出的 Vibe Coding 概念——用自然语言描述需求，AI 生成代码。<sup>[6]</sup>
+- [Cursor 官方文档](https://docs.cursor.com/)：Cursor AI 代码编辑器的使用指南，@codebase 上下文和 Agent 模式。<sup>[7]</sup>
+- [Anthropic MCP 规范](https://modelcontextprotocol.io/)：Model Context Protocol 的官方规范，标准化 AI 与外部工具的连接协议。<sup>[8]</sup>
+- [Qodo (原 CodiumAI) 文档](https://www.qodo.ai/)：AI 驱动的测试生成工具，自动生成 Jest/Playwright 测试用例。
+- [Bolt.new 文档](https://bolt.new/)：StackBlitz 推出的全栈 AI 代码生成工具，从描述到可运行应用。
+- [Lovable 文档](https://lovable.dev/)：原 GPT Engineer，PRD 到全栈应用的自动化管线。

@@ -1,10 +1,9 @@
 ---
 title: "鸿蒙（HarmonyOS）跨端开发"
+description: "HarmonyOS 的 ArkTS/ArkUI 声明式开发、方舟编译链路、Stage 模型与分布式能力。"
 ---
 
-> **面试官为什么问这个？**
->
-> HarmonyOS 是华为推出的分布式操作系统，覆盖手机、平板、智能手表、车机、IoT 等全场景设备。面试官问鸿蒙，本质上是在考察你：**你是否理解 ArkTS/ArkUI 的声明式开发范式与 Flutter/React Native 的异同，以及鸿蒙在国产替代和全场景分布式能力上的技术独特性？** 如果你只会用 ArkUI 写页面，但说不清方舟编译器的 AOT 机制、Stage 模型与 FA 模型的区别、分布式软总线的工作原理，说明你的理解停留在"会写 Hello World"。
+> 鸿蒙说到底是分布式软总线加上 ArkTS/ArkUI 这套应用框架。ArkTS 的类型限制我适应了一阵，习惯后就好理解了。
 
 ---
 
@@ -28,7 +27,7 @@ title: "鸿蒙（HarmonyOS）跨端开发"
   </Step>
   <Step title="2019 年: 鸿蒙 1.0 发布">
 
-    2019 年华为开发者大会上，鸿蒙 1.0 正式发布。首搭荣耀智慧屏。核心理念是**分布式架构**——多个设备可以组成一个"超级终端"，共享硬件能力（如手机的摄像头、手表的传感器、平板的屏幕）。但鸿蒙 1.0 的应用层仍然基于 AOSP（Android 开源项目），本质上是"Android + 分布式扩展"。
+    2019 年华为开发者大会上，鸿蒙 1.0 正式发布。首搭荣耀智慧屏。核心理念是**分布式架构**——多个设备可以组成一个"超级终端"，共享硬件能力（如手机的摄像头、手表的传感器、平板的屏幕）。不过鸿蒙 1.0 主要面向智慧屏等 IoT 设备，还没有覆盖手机；手机端的规模化落地要等到 2.0。
 
   </Step>
   <Step title="2020-2022 年: 鸿蒙 2.0/3.0 手机端落地">
@@ -62,7 +61,7 @@ IoT 设备 → 各厂商协议不互通 → 智能家居是"设备孤岛"
 
 鸿蒙 → 分布式软总线 → 多设备组成"超级终端"
      → ArkTS + ArkUI → 统一的应用开发框架
-     → 方舟编译器 → 高性能 AOT 编译
+     → 方舟编译器 → 编译为方舟字节码，AOT/JIT 混合执行
 ```
 
 <Note title="一句话总结">
@@ -87,7 +86,7 @@ IoT 设备 → 各厂商协议不互通 → 智能家居是"设备孤岛"
 
 <Tip title="面试技巧">
 
-回答鸿蒙历史时，重点说清三个关键节点：2019 年发布（分布式架构理念）、鸿蒙 NEXT（去除 AOSP，独立生态）、以及 ArkTS/ArkUI（前端开发者的新机会）。面试官想听的是你对"国产替代"和"全场景分布式"这两个核心价值的理解。
+回答鸿蒙历史时，重点说清三个关键节点：2019 年发布（分布式架构理念）、鸿蒙 NEXT（去除 AOSP，独立生态）、以及 ArkTS/ArkUI（前端开发者的新机会）。想听的是你对"国产替代"和"全场景分布式"这两个核心价值的理解。
 
 </Tip>
 
@@ -112,7 +111,7 @@ IoT 设备 → 各厂商协议不互通 → 智能家居是"设备孤岛"
 │                    框架层 (方舟运行时)                     │
 │  ┌────────────┐   ┌────────────┐   ┌────────────────┐  │
 │  │  方舟编译器│ → │  方舟运行时│ → │  垃圾回收     │  │
-│  │  AOT 编译  │   │  字节码执行│   │  并发 GC      │  │
+│  │  编译 ABC  │   │  AOT/JIT  │   │  并发 GC      │  │
 │  │  类型推导  │   │  模块管理  │   │  内存管理     │  │
 │  └────────────┘   └────────────┘   └────────────────┘  │
 └─────────────────────────────────────────────────────────┘
@@ -159,13 +158,13 @@ struct HelloWorld {
 
 **ArkTS vs TypeScript 的关键区别：**
 
-| 维度 | TypeScript | ArkTS |
-|------|-----------|-------|
-| **UI 描述** | 无（需要框架如 React/Vue）| 内置声明式 UI（build 函数）|
-| **状态管理** | 无（需要状态管理库）| 内置装饰器（@State、@Prop、@Link）|
-| **编译方式** | 编译为 JS，运行在 JS 引擎 | 方舟编译器 AOT 编译为原生代码 |
-| **运行时** | V8/JavaScriptCore | 方舟运行时（自研）|
-| **性能** | JIT + 解释执行 | AOT 编译，接近原生 |
+| 维度         | TypeScript                 | ArkTS                              |
+| ------------ | -------------------------- | ---------------------------------- |
+| **UI 描述**  | 无（需要框架如 React/Vue） | 内置声明式 UI（build 函数）        |
+| **状态管理** | 无（需要状态管理库）       | 内置装饰器（@State、@Prop、@Link） |
+| **编译方式** | 编译为 JS，运行在 JS 引擎  | 编译为方舟字节码（ABC）            |
+| **运行时**   | V8/JavaScriptCore          | 方舟运行时（AOT/JIT 混合）         |
+| **性能**     | JIT + 解释执行             | 静态类型 + AOT，启动更快           |
 
 ### ArkUI：声明式 UI 框架
 
@@ -175,16 +174,16 @@ ArkUI 是鸿蒙的声明式 UI 开发框架，设计理念类似 Flutter 的 Wid
 ArkUI 的核心概念：
 
 @Component（组件）
-├── @Entry：页面入口组件（类似 Flutter 的 MaterialApp）
-├── @Component：可复用的 UI 组件（类似 Flutter 的 StatelessWidget）
+├── @Entry：标记页面入口，一个页面有且只有一个
+├── @Component：可复用的 UI 组件（类似 React 的函数组件）
 └── @CustomDialog：自定义弹窗
 
 装饰器（状态管理）
-├── @State：组件内部状态（类似 Flutter 的 setState）
+├── @State：组件内部状态（类似 React 的 useState）
 ├── @Prop：父组件单向传值（类似 React 的 props）
 ├── @Link：父子组件双向绑定（类似 Vue 的 v-model）
 ├── @Provide/@Consume：跨组件层级共享状态（类似 React 的 Context）
-└── @Observed/@ObjectLink：嵌套对象的深度观察
+└── @Observed/@ObjectLink：嵌套对象的深度观察（配合 @Observed 类使用）
 ```
 
 ```typescript
@@ -219,30 +218,33 @@ struct ChildComponent {
 ```text
 方舟编译器的编译流程：
 
-ArkTS 源码 → 静态类型检查 → 方舟字节码（ABC） → AOT 编译 → 原生机器码
-                                        ↓
-                              方舟运行时解释执行（开发阶段）
+ArkTS 源码 → 静态类型检查 → 方舟字节码（ABC）
+                                │
+                                ├── 方舟运行时解释执行（开发阶段、冷门路径）
+                                └── AOT 编译为机器码（安装/空闲时，启动路径与热点）
 
 与 JavaScript 引擎的对比：
-JavaScript → V8 解析 → JIT 编译 → 原生代码（运行时编译，有延迟）
-ArkTS → 方舟编译器 → AOT 编译 → 原生代码（安装时编译，零运行时开销）
+JavaScript → V8 解析 → 字节码 → JIT（运行时按热点编译，有预热）
+ArkTS → 方舟编译器 → ABC → AOT/JIT 混合执行（启动路径提前编译）
 ```
 
-方舟编译器的核心优势：
-- **AOT 编译**：在安装阶段就将 ArkTS 编译为原生机器码，运行时零编译开销
-- **类型推导**：利用 ArkTS 的类型信息进行激进优化，生成更高效的机器码
+方舟编译链路的关键点：
+
+- **先编译成字节码**：ArkTS 源码先被编译为方舟字节码（ABC），由方舟运行时加载执行，并不是直接产出机器码
+- **AOT 与 JIT 混合**：可以在安装或设备空闲时把启动路径、热点代码提前 AOT 编译为机器码，运行期也能按需编译
+- **静态类型带来的优化空间**：ArkTS 去掉了动态特性，编译器能在编译期确定类型，生成更高效的代码
 - **并发 GC**：垃圾回收不阻塞主线程，减少卡顿
 
 <Warning title="核心机制: ArkTS 的类型限制">
 
-ArkTS 相比 TypeScript 做了**严格化限制**——移除了 TypeScript 中的动态特性（如 `any` 类型、`eval`、`with` 语句），目的是让方舟编译器能进行更激进的 AOT 优化。这意味着：
+ArkTS 相比 TypeScript 做了**严格化限制**——移除了 TypeScript 中的动态特性（如 `any` 类型、`eval`、`with` 语句），目的是让编译器能在编译期确定类型、做更激进的静态优化。这意味着：
 
 - 不支持 `any` 类型（必须明确类型）
 - 不支持动态属性访问（如 `obj[dynamicKey]`）
 - 不支持 `eval()` 和 `with` 语句
 - 不支持运行时修改对象结构（如给对象添加新属性）
 
-这些限制让习惯了 JavaScript 灵活性的开发者感到不适应，但它们是 AOT 编译高性能的前提。
+这些限制让习惯了 JavaScript 灵活性的开发者感到不适应，但它们是静态编译优化的前提。
 
 </Warning>
 
@@ -258,21 +260,21 @@ ArkTS 相比 TypeScript 做了**严格化限制**——移除了 TypeScript 中�
 
 ### 基础梳理
 
-| 对比维度 | 鸿蒙（HarmonyOS NEXT）| Android | iOS |
-|---------|----------------------|---------|-----|
-| **开发语言** | ArkTS（基于 TypeScript）| Kotlin/Java | Swift/ObjC |
-| **UI 框架** | ArkUI（声明式）| Jetpack Compose / XML | SwiftUI / UIKit |
-| **编译方式** | 方舟编译器 AOT | ART AOT/JIT | LLVM AOT |
-| **内核** | 鸿蒙微内核 | Linux 宏内核 | XNU 混合内核 |
-| **分布式能力** | 原生支持（分布式软总线）| 无原生支持 | Continuity（有限）|
-| **应用分发** | 华为应用市场 | Google Play | App Store |
-| **跨设备** | 手机/平板/手表/车机/IoT | 主要手机/平板 | 主要手机/平板/电脑 |
-| **生态成熟度** | 快速增长中 | 最成熟 | 最成熟 |
-| **包格式** | HAP（HarmonyOS Ability Package）| APK/AAB | IPA |
+| 对比维度       | 鸿蒙（HarmonyOS NEXT）           | Android               | iOS                |
+| -------------- | -------------------------------- | --------------------- | ------------------ |
+| **开发语言**   | ArkTS（基于 TypeScript）         | Kotlin/Java           | Swift/ObjC         |
+| **UI 框架**    | ArkUI（声明式）                  | Jetpack Compose / XML | SwiftUI / UIKit    |
+| **编译方式**   | 方舟字节码 + AOT/JIT             | ART AOT/JIT           | LLVM AOT           |
+| **内核**       | 鸿蒙微内核                       | Linux 宏内核          | XNU 混合内核       |
+| **分布式能力** | 原生支持（分布式软总线）         | 无原生支持            | Continuity（有限） |
+| **应用分发**   | 华为应用市场                     | Google Play           | App Store          |
+| **跨设备**     | 手机/平板/手表/车机/IoT          | 主要手机/平板         | 主要手机/平板/电脑 |
+| **生态成熟度** | 快速增长中                       | 最成熟                | 最成熟             |
+| **包格式**     | HAP（HarmonyOS Ability Package） | APK/AAB               | IPA                |
 
 ### 专家视角深度剖析
 
-很多候选人只知道"鸿蒙是华为做的操作系统"，但大厂面试官真正在意的是：**你是否理解鸿蒙在分布式能力和开发范式上的独特性，以及它与 Android/iOS 的本质差异？**
+很多人只知道"鸿蒙是华为做的操作系统"，但实际更在意的是：**你是否理解鸿蒙在分布式能力和开发范式上的独特性，以及它与 Android/iOS 的本质差异？**
 
 **鸿蒙的三个核心技术差异：**
 
@@ -291,16 +293,16 @@ ArkTS 相比 TypeScript 做了**严格化限制**——移除了 TypeScript 中�
 **2. Stage 模型 vs FA 模型**
 
 ```text
-FA 模型（旧版，鸿蒙 3.0 及以前）：
-├── 基于 Android 的 Activity 概念
-├── PageAbility + ServiceAbility
-├── 兼容 Android 生态
+FA 模型（API 8 及以前，已废弃）：
+├── 借鉴了 Android 的 Activity/Service 思路
+├── PageAbility + ServiceAbility + DataAbility
+├── 与早期兼容 Android 的生态绑定较深
 
-Stage 模型（新版，鸿蒙 NEXT）：
+Stage 模型（API 9 起主推，NEXT 唯一支持）：
 ├── 自研的应用模型
-├── UIAbility + ExtensionAbility
+├── UIAbility + ExtensionAbility + AbilityStage
 ├── 更好的分布式能力和生命周期管理
-└── 鸿蒙 NEXT 唯一支持的模型
+└── 鸿蒙 NEXT 只支持 Stage 模型
 ```
 
 **3. 一次开发，多端部署**
@@ -478,40 +480,37 @@ struct GrandChildComponent {
 
 ```typescript
 // HTTP 请求封装
-import { http } from '@kit.NetworkKit';
+import { http } from "@kit.NetworkKit";
 
 interface RequestConfig {
   url: string;
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method: "GET" | "POST" | "PUT" | "DELETE";
   data?: object;
   header?: object;
 }
 
 class HttpRequest {
-  private baseUrl: string = 'https://api.example.com';
+  private baseUrl: string = "https://api.example.com";
 
   async request<T>(config: RequestConfig): Promise<T> {
     const httpRequest = http.createHttp();
 
     try {
-      const response = await httpRequest.request(
-        this.baseUrl + config.url,
-        {
-          method: http.RequestMethod.GET,
-          header: {
-            'Content-Type': 'application/json',
-            ...config.header,
-          },
-          extraData: config.data ? JSON.stringify(config.data) : undefined,
-        }
-      );
+      const response = await httpRequest.request(this.baseUrl + config.url, {
+        method: http.RequestMethod.GET,
+        header: {
+          "Content-Type": "application/json",
+          ...config.header,
+        },
+        extraData: config.data ? JSON.stringify(config.data) : undefined,
+      });
 
       if (response.responseCode === 200) {
         return JSON.parse(response.result as string) as T;
       } else if (response.responseCode === 401) {
         // token 过期，跳转登录页
-        router.pushUrl({ url: 'pages/LoginPage' });
-        throw new Error('未授权');
+        router.pushUrl({ url: "pages/LoginPage" });
+        throw new Error("未授权");
       } else {
         throw new Error(`请求失败: ${response.responseCode}`);
       }
@@ -529,22 +528,26 @@ export const httpRequest = new HttpRequest();
 ```typescript
 // 分布式数据管理：跨设备同步数据
 import { distributedDataObject } from '@kit.ArkData';
+import { common } from '@kit.AbilityKit';
 
 @Entry
 @Component
 struct DistributedNote {
   @State noteContent: string = '';
+  private dataObject: distributedDataObject.DataObject | undefined = undefined;
 
-  async aboutToAppear() {
-    // 创建分布式数据对象
-    const dataObject = distributedDataObject.create(context, {
+  aboutToAppear() {
+    // create 需要一个 UIAbilityContext，页面里通过 getContext 获取
+    const context = getContext(this) as common.UIAbilityContext;
+
+    this.dataObject = distributedDataObject.create(context, {
       content: this.noteContent,
     });
 
-    // 监听跨设备数据变更
-    dataObject.on('change', (sessionId: string, field: string) => {
-      if (field === 'content') {
-        this.noteContent = dataObject['content'];
+    // 监听跨设备数据变更：fields 是本次发生变化的字段名数组
+    this.dataObject.on('change', (sessionId: string, fields: Array<string>) => {
+      if (fields.includes('content')) {
+        this.noteContent = this.dataObject!['content'] as string;
       }
     });
   }
@@ -554,6 +557,8 @@ struct DistributedNote {
       TextEditor({ text: this.noteContent })
         .onChange((value: string) => {
           this.noteContent = value;
+          // 本地修改写回分布式数据对象，其他设备才能收到变更
+          this.dataObject!['content'] = value;
         })
     }
   }
@@ -568,14 +573,14 @@ struct DistributedNote {
 
 ---
 
-## 大厂高频连环拷问
+## 常见追问
 
 <AccordionGroup>
 
   <Accordion title="ArkTS 和 TypeScript 有什么区别？为什么要单独做一个语言？" icon="layer-group">
 
     **答题要点：**
-    ArkTS 基于 TypeScript 但做了严格化限制，目的是支持 AOT 编译。
+    ArkTS 基于 TypeScript 但做了严格化限制，目的是让代码在编译期就能确定类型、支持方舟的编译优化。
 
     **高分回答：**
     "ArkTS 是基于 TypeScript 的扩展语言，但做了关键的**严格化限制**：
@@ -593,44 +598,43 @@ struct DistributedNote {
 
     **为什么要单独做语言？**
 
-    TypeScript 编译为 JavaScript 后运行在 V8 等 JS 引擎中，这些引擎使用 JIT 编译——首次执行时才编译为机器码，有性能延迟。方舟编译器需要**在安装阶段就将代码编译为原生机器码（AOT）**，这要求源代码的类型信息在编译时完全确定。TypeScript 的 `any`、动态属性访问等特性让 AOT 编译器无法进行激进优化，所以 ArkTS 移除了这些动态特性。
+    TypeScript 编译为 JavaScript 后运行在 V8 等 JS 引擎中，这些引擎以 JIT 为主——首次执行从字节码解释开始，热点代码才编译成机器码，存在预热成本。方舟编译器则先把 ArkTS 编译为方舟字节码（ABC），再在安装或空闲时把启动路径、热点代码 AOT 编译为机器码。要做到这一点，类型信息必须在编译期完全确定；TypeScript 的 `any`、动态属性访问等特性会让静态分析失效，所以 ArkTS 移除了这些动态特性。
 
     ```text
-    TypeScript → V8 JIT → 运行时编译（有延迟）
-    ArkTS → 方舟编译器 AOT → 安装时编译（零运行时开销）
+    TypeScript → V8 字节码 → JIT 按热点编译（有预热）
+    ArkTS → 方舟字节码 ABC → AOT/JIT 混合（启动路径提前编译）
     ```
 
-    对前端开发者的建议：如果你习惯了 TypeScript 的灵活性，ArkTS 的限制会让你不适应。但这些限制是 AOT 高性能的前提——和 Dart/Flutter 的设计思路类似。"
+    对前端开发者的建议：如果你习惯了 TypeScript 的灵活性，ArkTS 的限制会让你不适应。但这些限制是静态编译优化的前提——和 Dart/Flutter 在 AOT 上的取舍类似。"
 
   </Accordion>
 
   <Accordion title="鸿蒙的 Stage 模型和 FA 模型有什么区别？" icon="layer-group">
 
     **答题要点：**
-    Stage 模型是鸿蒙 NEXT 的新应用模型，取代了基于 Android 的 FA 模型。
+    Stage 模型是鸿蒙当前主推的应用模型，取代了早期的 FA 模型；鸿蒙 NEXT 只支持 Stage 模型。
 
     **高分回答：**
     "FA 模型（Feature Ability）和 Stage 模型是鸿蒙的两代应用模型：
 
-    **FA 模型（旧版）：**
-    - 基于 Android 的 Activity/Service 概念
+    **FA 模型（API 8 及以前，已废弃）：**
+    - 借鉴了 Android 的 Activity/Service 思路
     - 使用 PageAbility、ServiceAbility、DataAbility
-    - 鸿蒙 3.0 及以前的默认模型
-    - 兼容 Android 生态
+    - 早期与兼容 Android 的生态绑定较深
 
-    **Stage 模型（新版）：**
+    **Stage 模型（API 9 起主推）：**
     - 鸿蒙自研的应用模型
-    - 使用 UIAbility + ExtensionAbility
+    - 使用 UIAbility + ExtensionAbility + AbilityStage
     - 鸿蒙 NEXT 唯一支持的模型
     - 更好的分布式能力和生命周期管理
 
     ```text
     FA 模型：
-    PageAbility → 类似 Android Activity
+    PageAbility → 承担页面与生命周期
     生命周期：onInit → onShow → onHide → onDestroy
 
     Stage 模型：
-    UIAbility → 独立的 UI 容器
+    UIAbility → 应用组件，UI 由 WindowStage 承载
     生命周期：onCreate → onWindowStageCreate → onForeground → onBackground → onWindowStageDestroy → onDestroy
     ```
 
@@ -678,7 +682,7 @@ struct DistributedNote {
   <Accordion title="方舟编译器的 AOT 编译和 V8 的 JIT 编译有什么区别？" icon="stopwatch">
 
     **答题要点：**
-    AOT 在安装时编译，JIT 在运行时编译，各有优劣。
+    AOT 提前编译、JIT 运行时编译，方舟采用的是两者混合的策略。
 
     **高分回答：**
     "AOT（Ahead-of-Time）和 JIT（Just-in-Time）是两种不同的编译策略：
@@ -694,21 +698,21 @@ struct DistributedNote {
     - 优点：启动快（解释执行），可根据运行时信息优化（如类型推测）
     - 缺点：首次执行性能差，编译有延迟，需要存储编译缓存
 
-    **方舟编译器的 AOT 编译：**
+    **方舟编译器的编译策略：**
     ```text
-    ArkTS 源码 → 方舟编译器 → 原生机器码（安装时）
-    运行时直接执行机器码，零编译开销
+    ArkTS 源码 → 方舟字节码（ABC） → 安装/空闲时 AOT → 机器码
+                                    → 运行期 JIT 补充编译
     ```
-    - 优点：运行时零编译开销，启动即满性能，内存占用更可控
-    - 缺点：安装时间稍长，无法利用运行时类型信息优化
+    - 优点：启动路径提前编译，首屏和常用功能没有 JIT 预热；内存占用更可控
+    - 代价：AOT 需要额外的编译时间与产物体积，无法完全利用运行时类型信息
 
-    **为什么方舟选择 AOT？**
-    手机 App 对**启动速度和运行流畅度**要求极高。JIT 编译在首次执行时会有明显的性能延迟（用户首次打开某个功能时卡顿）。AOT 在安装时就完成了编译，用户打开 App 就是满性能。这对鸿蒙 NEXT 的用户体验至关重要。
+    **为什么强调 AOT？**
+    手机 App 对**启动速度和运行流畅度**要求极高。纯 JIT 在首次执行时有明显的预热延迟（用户首次打开某个功能时卡顿）。方舟把启动路径和热点代码在安装或设备空闲时提前 AOT 编译，用户打开 App 就是满性能；冷门路径仍交给运行时按需处理，避免为用不到的代码付出编译成本。
 
     **实际影响：**
-    - App 首次启动：AOT 更快（无解释执行阶段）
-    - App 安装时间：AOT 更慢（需要编译）
-    - 运行时内存：AOT 更可控（无 JIT 编译缓存）"
+    - App 首次启动：启动路径已 AOT，省掉预热
+    - App 安装时间：会变长（需要编译）
+    - 运行时内存：AOT 为主，减少 JIT 编译缓存的占用"
 
   </Accordion>
 
@@ -888,7 +892,7 @@ struct DistributedNote {
     鸿蒙 NEXT 去除 Android 兼容层后，需要大量原生应用。ArkTS 基于 TypeScript，前端开发者是**最容易转型**的群体。国内大厂（字节、阿里、腾讯、美团）都在组建鸿蒙团队，鸿蒙开发者的需求正在快速增长。
 
     **面试中的回答策略：**
-    不要回避鸿蒙的挑战（面试官会认为你不客观），但重点强调**机会**——分布式能力的差异化、前端开发者的转型优势、国产替代的大趋势。"
+    不要回避鸿蒙的挑战（对方会觉得你不客观），但重点强调**机会**——分布式能力的差异化、前端开发者的转型优势、国产替代的大趋势。"
 
   </Accordion>
 
@@ -913,7 +917,7 @@ struct DistributedNote {
     | **分布式能力** | 原生支持 | 不支持 |
     | **渲染方式** | 原生 UI 组件 | 自绘引擎（Skia/Impeller）|
     | **语言** | ArkTS | Dart |
-    | **编译** | 方舟编译器 AOT | Dart AOT |
+    | **编译** | 方舟字节码 + AOT/JIT | Dart AOT |
     | **生态** | 华为主导，国内为主 | Google 主导，全球性 |
     | **开源** | OpenHarmony 开源 | 完全开源 |
 
@@ -942,22 +946,23 @@ struct DistributedNote {
 
 ---
 
-## 面试官视角：满分回答 vs 及格回答
+## 及格回答 vs 满分回答
 
 ### 问题："鸿蒙和 Android 的本质区别是什么？"
 
 **及格回答（60-70分）：**
+
 > "鸿蒙是华为自己做的操作系统，不依赖 Google。开发语言是 ArkTS，UI 框架是 ArkUI。"
 
-面试官评价：**知道表面区别，但不理解技术架构和设计取舍。**
+问题出在：**知道表面区别，但不理解技术架构和设计取舍。**
 
-**满分回答（90-100分）：
+**满分回答（90-100分）：**
 
 > 鸿蒙和 Android 的本质区别在三个层面：**内核架构、应用框架、分布式能力**。
 
 > 内核层面，Android 基于 Linux 宏内核，鸿蒙使用自研的微内核。微内核将系统服务（如文件系统、驱动）从内核空间移到用户空间，提高了安全性和可维护性——单个服务崩溃不会导致整个系统崩溃。鸿蒙的微内核还通过了形式化验证（数学证明），安全性高于 Linux 内核。
 
-> 应用框架层面，Android 使用 Kotlin/Java + Jetpack Compose，鸿蒙使用 ArkTS + ArkUI。ArkTS 基于 TypeScript 但移除了动态特性，支持方舟编译器的 AOT 编译——在安装阶段就将代码编译为原生机器码，运行时零编译开销<sup>[2]</sup>。这和 Flutter 的 Dart AOT 编译思路类似，但方舟编译器针对 ArkTS 的类型系统做了更深度的优化。
+> 应用框架层面，Android 使用 Kotlin/Java + Jetpack Compose，鸿蒙使用 ArkTS + ArkUI。ArkTS 基于 TypeScript 但移除了 `any`、`eval` 等动态特性，源码先编译为方舟字节码（ABC），再由方舟运行时以 AOT/JIT 混合方式执行——启动路径和热点代码可以在安装或空闲时提前 AOT 编译<sup>[2]</sup>。这和 Flutter 的 Dart AOT 思路类似，区别在于方舟保留了字节码这一层，冷门代码路径仍可在运行期编译。
 
 > 分布式能力是鸿蒙最大的差异化。通过分布式软总线，多个鸿蒙设备可以组成"超级终端"，共享硬件能力和数据<sup>[1]</sup>。这是 Android 和 iOS 都没有的原生能力——Android 的 Nearby Share 只能传文件，iOS 的 Continuity 只能在 Apple 设备间接力，而鸿蒙的分布式能力可以让手机直接调用平板的摄像头、让手表的传感器数据实时同步到车机。
 

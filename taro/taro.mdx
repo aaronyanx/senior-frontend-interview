@@ -1,10 +1,9 @@
 ---
 title: "Taro 跨端开发"
+description: "Taro 编译时与运行时架构演进、Reconciler 与 setData 优化、条件编译写法与跨端对比。"
 ---
 
-> **面试官为什么问这个？**
->
-> Taro 是国内最流行的跨端框架之一，出自京东凹凸实验室。面试官问 Taro，本质上是在考察你：**你是否理解小程序的底层架构限制，以及跨端框架如何在"一套代码"和"多端性能"之间做取舍？** 如果你只停留在"用 Taro 写过页面"的层面，说明你不理解跨端的本质问题。
+> 接手 Taro 项目时，我先看目标平台，再看编译时和运行时的差异。这两点想清楚，跨端取舍就不容易返工。
 
 ---
 
@@ -27,7 +26,7 @@ title: "Taro 跨端开发"
   </Step>
   <Step title="2018 年: 京东凹凸实验室发布 Taro">
 
-    2018 年，京东凹凸实验室开源了 Taro（取名自意大利语"乌龟"，寓意稳健跨端）。Taro 的核心理念是：**用 React 的语法写一套代码，编译输出到微信/支付宝/百度/字节/京东小程序，以及 H5 和 React Native。**
+    2018 年，京东凹凸实验室开源了 Taro。Taro 的核心理念是：**用 React 的语法写一套代码，编译输出到微信/支付宝/百度/字节/京东小程序，以及 H5 和 React Native。**
 
   </Step>
   <Step title="Taro 1.x/2.x: 编译时方案">
@@ -84,7 +83,7 @@ Taro 让你用 React 语法写一套代码，编译或运行时适配到多个�
 
 <Tip title="面试技巧">
 
-回答 Taro 历史时，重点说清"为什么"——多端重复开发的痛点。面试官想听的是你理解问题的本质，而不是背版本号。
+回答 Taro 历史时，重点说清"为什么"——多端重复开发的痛点。想听的是你对问题本质的理解，而不是背版本号。
 
 </Tip>
 
@@ -113,14 +112,14 @@ Taro 的架构经历了从"编译时"到"运行时"的重大转变。理解这�
 
 **编译时方案的致命限制：**
 
-| 能力 | Web/React | 小程序模板 | 编译时能否映射？ |
-|------|-----------|-----------|----------------|
-| 条件渲染 `{flag && &lt;Comp /&gt;}` | 支持 | `wx:if` | 能 |
-| 列表渲染 `.map()` | 支持 | `wx:for` | 能 |
-| 动态组件 `&lt;Comps[type] /&gt;` | 支持 | 不支持 | 不能 |
-| 高阶组件 HOC | 支持 | 无对应概念 | 不能 |
-| render props | 支持 | 无对应概念 | 不能 |
-| `ref` 动态操作 DOM | 支持 | 不支持 | 不能 |
+| 能力                                | Web/React | 小程序模板 | 编译时能否映射？ |
+| ----------------------------------- | --------- | ---------- | ---------------- |
+| 条件渲染 `{flag && &lt;Comp /&gt;}` | 支持      | `wx:if`    | 能               |
+| 列表渲染 `.map()`                   | 支持      | `wx:for`   | 能               |
+| 动态组件 `&lt;Comps[type] /&gt;`    | 支持      | 不支持     | 不能             |
+| 高阶组件 HOC                        | 支持      | 无对应概念 | 不能             |
+| render props                        | 支持      | 无对应概念 | 不能             |
+| `ref` 动态操作 DOM                  | 支持      | 不支持     | 不能             |
 
 ### Taro 3.x: 运行时架构
 
@@ -176,15 +175,15 @@ Taro 3.x 的运行时方案意味着：React 的虚拟 DOM diff 在小程序的*
 
 </Tip>
 
-### Taro 4.x: 半编译半运行时
+### Taro 3.6.23+: 实验性的半编译模式（CompileMode）
 
-Taro 4.x 引入了"半编译半运行时"的思路——在编译阶段做更多静态分析，减少运行时的 setData 次数<sup>[4]</sup>。核心策略包括：
+Taro 3.x 依然是运行时方案，但在此之上提供了一个可选优化：**CompileMode（半编译模式）**，从 Taro 3.6.23 开始支持，目前只支持 React，属于实验性能力<sup>[4]</sup>。它在编译阶段把标记过的组件及其 children 编译成独立的小程序模板，减少运行时递归创建节点和生成的模板数据量：
 
-- **静态模板提取**：编译阶段分析 JSX 中的静态部分，直接生成原生模板
-- **按需 diff**：只有动态部分才走虚拟 DOM diff
-- **组件级别拆分**：每个组件独立 setData，减少单次通信数据量
+- **配置开关**：在 `mini.experimental.compileMode` 中开启
+- **使用方式**：给基础组件加 `compileMode` 属性，如 `<View compileMode>...</View>`；也可以用 `compileMode="subRenderFn"` 对渲染函数做拆分
+- **适用场景**：长列表 item 这类会被重复渲染多次的组件，官方给出的收益是长列表场景首开速度提升 30% 以上
 
-神光曾在掘金详细剖析过 Taro 的编译时逻辑（AST 语法树转换）和运行时渲染底层的差异<sup>[6]</sup>，指出半编译半运行时方案的本质是把编译时和运行时的优势结合起来：静态部分享受编译时的零开销，动态部分享受运行时的完整能力。
+它并没有把 Taro 变成编译型框架——React 运行时仍在逻辑层运行，只是让重复渲染的部分少走一次运行时递归。静态部分享受编译的零开销，动态部分仍靠运行时 diff，这才是"半编译"的含义。
 
 ---
 
@@ -192,16 +191,16 @@ Taro 4.x 引入了"半编译半运行时"的思路——在编译阶段做更多
 
 ### 基础梳理
 
-| 对比维度 | Taro | uni-app |
-|---------|------|---------|
-| **出品方** | 京东凹凸实验室 | DCloud |
-| **核心框架** | React（主推）/ Vue | Vue（主推）/ uts |
-| **架构方案** | 运行时（3.x）| 条件编译 + 运行时 |
-| **跨端范围** | 微信/支付宝/百度/字节/H5/RN | 微信/支付宝/百度/字节/H5/App(weex) |
-| **TypeScript** | 原生支持 | 支持（后期加强） |
-| **社区规模** | GitHub 34k+ star | 生态更广（插件市场丰富） |
-| **企业背书** | 京东、美团、B 站 | 600 万+ 开发者 |
-| **适用人群** | React 技术栈团队 | Vue 技术栈团队 |
+| 对比维度       | Taro                            | uni-app                            |
+| -------------- | ------------------------------- | ---------------------------------- |
+| **出品方**     | 京东凹凸实验室                  | DCloud                             |
+| **核心框架**   | React（主推）/ Vue              | Vue（主推）/ uts                   |
+| **架构方案**   | 运行时（3.x，可选 CompileMode） | 条件编译 + 运行时                  |
+| **跨端范围**   | 微信/支付宝/百度/字节/H5/RN     | 微信/支付宝/百度/字节/H5/App(weex) |
+| **TypeScript** | 原生支持                        | 支持（后期加强）                   |
+| **社区规模**   | GitHub 34k+ star                | 生态更广（插件市场丰富）           |
+| **企业背书**   | 京东、美团、B 站                | 600 万+ 开发者                     |
+| **适用人群**   | React 技术栈团队                | Vue 技术栈团队                     |
 
 ### 架构差异深度剖析
 
@@ -226,13 +225,13 @@ uni-app 更强调"条件编译"——用 `#ifdef` 指令在编译阶段为不同
 
 ### 性能对比
 
-| 场景 | Taro 3.x | uni-app |
-|------|----------|---------|
-| 首屏渲染 | 较慢（需要初始化 React 运行时） | 较快（条件编译产物更轻量） |
-| 列表滚动 | 需要虚拟列表优化 | 长列表性能较好 |
-| setData 效率 | 批量 diff，可能产生冗余数据 | 更精确的 setData 控制 |
-| 包体积 | 较大（包含 React 运行时） | 较小（按需引入） |
-| H5 性能 | 接近原生 React | 接近原生 Vue |
+| 场景         | Taro 3.x                        | uni-app                    |
+| ------------ | ------------------------------- | -------------------------- |
+| 首屏渲染     | 较慢（需要初始化 React 运行时） | 较快（条件编译产物更轻量） |
+| 列表滚动     | 需要虚拟列表优化                | 长列表性能较好             |
+| setData 效率 | 批量 diff，可能产生冗余数据     | 更精确的 setData 控制      |
+| 包体积       | 较大（包含 React 运行时）       | 较小（按需引入）           |
+| H5 性能      | 接近原生 React                  | 接近原生 Vue               |
 
 ### 适用场景
 
@@ -283,11 +282,13 @@ Babel 插件分析 JSX AST
 编译时的核心工作发生在**构建阶段**。Babel 插件会分析 JSX 的抽象语法树（AST），把 JSX 节点映射成小程序的模板语法。
 
 **编译时的优点：**
+
 - 运行时零开销——编译产物就是原生代码
 - 包体积小——不需要携带框架运行时
 - 渲染性能好——直接调用原生渲染
 
 **编译时的致命缺点：**
+
 - JSX 的动态能力无法完全映射到小程序模板
 - 不支持高阶组件、render props、动态组件等 React 高级特性
 - 每次 API 变更都需要更新编译器
@@ -312,7 +313,7 @@ Babel 插件分析 JSX AST
 
 ```javascript
 // Taro 3.x 的核心原理（简化版）
-import { Reconciler } from 'react-reconciler';
+import { Reconciler } from "react-reconciler";
 
 // 自定义 Renderer：把 React 的变更映射到小程序 setData
 const TaroRenderer = Reconciler({
@@ -326,32 +327,34 @@ const TaroRenderer = Reconciler({
   commitUpdate(instance, updatePayload, type, oldProps, newProps) {
     // 核心：把虚拟 DOM 变更转为 setData
     instance._page.setData({
-      [instance._path]: diff(oldProps, newProps)
+      [instance._path]: diff(oldProps, newProps),
     });
-  }
+  },
 });
 ```
 
 **运行时的优点：**
+
 - 支持 React/Vue 的全部能力（Hooks、Context、HOC 等）
 - 开发体验接近 Web 开发
 - 框架升级不需要更新编译器
 
 **运行时的代价：**
+
 - 需要携带 React/Vue 运行时，包体积增大
 - setData 是批量的，可能产生冗余通信
 - 首屏渲染较慢（需要初始化运行时）
 
 ### 关键区别总结
 
-| 维度 | 编译时（1.x/2.x） | 运行时（3.x） |
-|------|------------------|-------------|
-| 核心工作阶段 | 构建时 | 运行时 |
-| 运行时开销 | 零 | 需要 React/Vue 运行时 |
-| React 能力 | 受限（只能用 JSX 的子集） | 完整 |
-| 渲染性能 | 接近原生 | 有 setData 通信开销 |
-| 包体积 | 小 | 大 |
-| 维护成本 | 高（每个平台需要独立编译器） | 低（统一运行时适配层） |
+| 维度         | 编译时（1.x/2.x）            | 运行时（3.x）          |
+| ------------ | ---------------------------- | ---------------------- |
+| 核心工作阶段 | 构建时                       | 运行时                 |
+| 运行时开销   | 零                           | 需要 React/Vue 运行时  |
+| React 能力   | 受限（只能用 JSX 的子集）    | 完整                   |
+| 渲染性能     | 接近原生                     | 有 setData 通信开销    |
+| 包体积       | 小                           | 大                     |
+| 维护成本     | 高（每个平台需要独立编译器） | 低（统一运行时适配层） |
 
 <Warning title="核心机制: 为什么 Taro 3.x 选择运行时？">
 
@@ -413,6 +416,7 @@ Page({
 ```
 
 编译层不做 JSX 到模板的转换（那是 1.x 的做法），只做：
+
 - 语法降级（ES6+ → ES5）
 - 样式处理（CSS Modules、Sass → 各平台样式）
 - 平台差异代码注入
@@ -438,9 +442,9 @@ const document = {
       },
       appendChild(child) {
         this.children.push(child);
-      }
+      },
     };
-  }
+  },
 };
 
 // React 以为自己在操作真实 DOM，实际上在操作虚拟对象
@@ -455,12 +459,12 @@ Taro 3.x 的核心是基于 `react-reconciler` 实现的自定义协调器。崔
 
 适配层负责处理各平台的差异：
 
-| 差异类型 | 示例 | 适配方式 |
-|---------|------|---------|
-| 组件差异 | 微信用 `&lt;view&gt;`，H5 用 `&lt;div&gt;` | Taro 组件库统一抽象 |
-| API 差异 | 微信用 `wx.request`，支付宝用 `my.request` | Taro.request 统一封装 |
-| 生命周期差异 | 小程序有 `onShow`/`onHide`，Web 没有 | Taro Hooks 统一暴露 |
-| 导航差异 | 小程序用 `navigateTo`，H5 用 History API | Taro.navigateTo 统一调用 |
+| 差异类型     | 示例                                       | 适配方式                 |
+| ------------ | ------------------------------------------ | ------------------------ |
+| 组件差异     | 微信用 `&lt;view&gt;`，H5 用 `&lt;div&gt;` | Taro 组件库统一抽象      |
+| API 差异     | 微信用 `wx.request`，支付宝用 `my.request` | Taro.request 统一封装    |
+| 生命周期差异 | 小程序有 `onShow`/`onHide`，Web 没有       | Taro Hooks 统一暴露      |
+| 导航差异     | 小程序用 `navigateTo`，H5 用 History API   | Taro.navigateTo 统一调用 |
 
 ---
 
@@ -487,12 +491,12 @@ Taro 3.x 的性能瓶颈主要来自**setData 通信**。优化思路围绕"减�
 ```javascript
 // ❌ 错误：每次 setData 传整个列表
 this.setData({
-  list: this.state.list // 1000 条数据全部传输
+  list: this.state.list, // 1000 条数据全部传输
 });
 
 // ✅ 正确：只传变化的部分（路径更新）
 this.setData({
-  'list[0].name': 'new name' // 只传输一条数据
+  "list[0].name": "new name", // 只传输一条数据
 });
 ```
 
@@ -528,18 +532,21 @@ this.setData(updates); // 1 次 setData
 ```
 
 ```javascript
-// 使用 Taro 虚拟列表组件
-import { VirtualList } from '@tarojs/components';
+// Taro 内置虚拟列表（React）
+import VirtualList from "@tarojs/components-advanced/dist/components/virtual-list";
+import { View } from "@tarojs/components";
+
+const Row = ({ id, index, data }) => <View id={id}>{data[index].name}</View>;
 
 function LongList({ data }) {
   return (
     <VirtualList
-      height={500}       // 容器高度
-      itemSize={80}       // 每项高度
+      height={500} // 列表高度
+      width="100%" // 列表宽度
+      item={Row} // 单项组件，只能传一个
+      itemData={data} // 列表数据
       itemCount={data.length}
-      renderItem={({ index, style }) => (
-        <View style={style}>{data[index].name}</View>
-      )}
+      itemSize={80} // 单项高度
     />
   );
 }
@@ -556,13 +563,13 @@ function LongList({ data }) {
 function onPageScroll(event) {
   var scrollTop = event.scrollTop;
   // 在视图层直接计算，不需要传回逻辑层
-  return scrollTop > 100 ? 'fixed' : 'static';
+  return scrollTop > 100 ? "fixed" : "static";
 }
 ```
 
 ### 企业级 setData 优化实践
 
-网易云音乐大前端团队在百万级流量项目中使用 Taro 架构，积累了大量 setData 优化经验<sup>[9]</sup>。他们的核心策略是：将页面拆分为多个独立组件，每个组件单独管理自己的 setData，避免父组件变更导致整个页面重渲染。政采云前端团队（ZooTeam）在 Taro 企业级复杂业务落地中，也输出了跨端微侖前端基建的深度技术博文<sup>[10]</sup>。
+网易云音乐大前端团队在百万级流量项目中使用 Taro 架构，积累了大量 setData 优化经验<sup>[9]</sup>。他们的核心策略是：将页面拆分为多个独立组件，每个组件单独管理自己的 setData，避免父组件变更导致整个页面重渲染。政采云前端团队（ZooTeam）在 Taro 企业级复杂业务落地中，也输出了跨端微前端基建的深度技术博文<sup>[10]</sup>。
 
 ### 优化策略五：分包加载
 
@@ -614,22 +621,26 @@ Taro 在上层提供统一的组件（`View`、`Text`、`Image`）和统一的 A
 ### Taro 如何处理平台差异？
 
 ```javascript
-// 方式一：条件编译（编译阶段）
-// #ifdef MP-WEIXIN
-console.log('这段代码只在微信小程序中编译');
-// #endif
-
-// 方式二：平台判断（运行时）
-import Taro from '@tarojs/taro';
-
-if (process.env.TARO_ENV === 'weixin') {
+// 方式一：条件编译（编译阶段裁剪）
+// Taro 的 JS 里用 process.env.TARO_ENV，未命中分支在编译期被移除
+if (process.env.TARO_ENV === "weapp") {
   // 微信小程序专属逻辑
-} else if (process.env.TARO_ENV === 'alipay') {
-  // 支付宝专属逻辑
 }
 
-// 方式三：平台文件
-// index.weixin.ts   → 微信专属实现
+// 样式和 Vue 模板里才用 #ifdef 注释语法
+// /* #ifdef weapp */
+// .btn { padding: 8px; }
+// /* #endif */
+
+// 方式二：运行时判断（Taro.getEnv()，代码会保留在产物中）
+import Taro, { ENV_TYPE } from "@tarojs/taro";
+
+if (Taro.getEnv() === ENV_TYPE.WEAPP) {
+  // 微信小程序专属逻辑
+}
+
+// 方式三：多端文件
+// index.weapp.ts    → 微信专属实现
 // index.alipay.ts   → 支付宝专属实现
 // index.ts          → 通用实现
 ```
@@ -639,12 +650,13 @@ if (process.env.TARO_ENV === 'weixin') {
 Taro 提供了一些平台相关的 Hooks，是对 React Hooks 的扩展：
 
 ```javascript
-import { usePageScroll, useReachBottom, useDidShow } from '@tarojs/taro';
+import { useState, useEffect } from "react";
+import { usePageScroll, useReachBottom, useDidShow } from "@tarojs/taro";
 
 function MyPage() {
   // 页面滚动事件（小程序特有）
   usePageScroll(({ scrollTop }) => {
-    console.log('页面滚动:', scrollTop);
+    console.log("页面滚动:", scrollTop);
   });
 
   // 触底加载（小程序特有）
@@ -659,7 +671,9 @@ function MyPage() {
 
   // 以下就是标准的 React Hooks
   const [count, setCount] = useState(0);
-  useEffect(() => { /* ... */ }, []);
+  useEffect(() => {
+    /* ... */
+  }, []);
 }
 ```
 
@@ -694,9 +708,9 @@ function MyPage() {
 ### 状态管理选型
 
 ```javascript
-// 推荐：MobX（Taro 官方推荐的状态管理方案）
-import { observable, action } from 'mobx';
-import { observer } from '@tarojs/mobx';
+// 推荐：MobX（Taro 文档中有配套的 @tarojs/mobx 适配包）
+import { observable, action } from "mobx";
+import { observer } from "@tarojs/mobx";
 
 class CounterStore {
   @observable count = 0;
@@ -728,7 +742,7 @@ Taro 大型项目的关键实践：分包加载控制包体积、虚拟列表优
 
 ---
 
-## 大厂高频连环拷问
+## 常见追问
 
 <AccordionGroup>
 
@@ -761,7 +775,7 @@ Taro 大型项目的关键实践：分包加载控制包体积、虚拟列表优
     4. **WXS 处理动画**：在视图层直接执行交互逻辑，避免跨线程通信
     5. **分包加载**：首屏只加载主包，非首屏代码按需加载
 
-    Taro 4.x 还引入了'半编译半运行时'策略，在编译阶段做静态分析，把静态部分直接生成原生模板，只有动态部分才走虚拟 DOM diff，进一步减少 `setData` 次数。"
+    Taro 3.6.23 起还提供了实验性的 CompileMode（半编译模式，仅 React）：给组件加 `compileMode` 后，该子树在编译阶段生成独立小程序模板，减少运行时递归，长列表场景首开速度可提升 30% 以上。"
 
   </Accordion>
 
@@ -802,7 +816,7 @@ Taro 大型项目的关键实践：分包加载控制包体积、虚拟列表优
     **3. 页面切换：差异不大**
     页面切换的主要成本是页面初始化和数据请求，Taro 的运行时开销在这个场景中占比不大。
 
-    总结：对于大部分业务场景（非极致性能要求），Taro 3.x 的性能是可以接受的。对于高频交互场景（如实时聊天、游戏），建议用原生开发或 Taro 4.x 的半编译方案。"
+    总结：对于大部分业务场景（非极致性能要求），Taro 3.x 的性能是可以接受的。对于高频交互场景（如实时聊天、游戏），建议用原生开发，或针对长列表这类重复渲染的部分开启 CompileMode。"
 
   </Accordion>
 
@@ -816,7 +830,7 @@ Taro 大型项目的关键实践：分包加载控制包体积、虚拟列表优
 
     1. **Sass/Less/Stylus**：预处理器，Taro 内置支持
     2. **CSS Modules**：通过文件名 `.module.scss` 开启，自动避免类名冲突
-    3. **Tailwind CSS**：通过官方插件 `@tarojs/plugin-framework-react` 支持
+    3. **Tailwind CSS**：通过 `weapp-tailwindcss` 等社区方案接入，Taro 本身没有内置支持
     4. **CSS-in-JS**：如 styled-components，在 H5 端可用，小程序端受限
     5. **原子化 CSS**：如 UnoCSS，通过插件支持
 
@@ -868,30 +882,30 @@ Taro 大型项目的关键实践：分包加载控制包体积、虚拟列表优
 
   </Accordion>
 
-  <Accordion title='Taro 4.x 的半编译半运行时方案是怎么实现的？' icon="skull">
+  <Accordion title='Taro 的 CompileMode（半编译模式）是怎么工作的？' icon="skull">
 
     **答题要点：**
-    结合编译时的静态分析和运行时的动态能力，取两者之长。
+    说清它是运行时方案之上的可选优化，以及为什么不算编译型框架。
 
     **高分回答：**
-    "Taro 4.x 的核心改进是引入了'半编译半运行时'（也叫'静态模板 + 运行时'）方案。
+    "Taro 3.x 的主体仍是运行时方案，CompileMode（半编译模式）是在此之上的可选优化——从 Taro 3.6.23 开始支持，目前只支持 React，属于实验性能力。
+
+    **开启方式：**
+    在配置里打开 `mini.experimental.compileMode`，然后给基础组件加 `compileMode` 属性（也可以用 `compileMode="subRenderFn"` 把渲染函数拆开）。
 
     **原理：**
-    在编译阶段，Taro 会分析 JSX 的抽象语法树，识别出**静态部分**（如纯文本、固定结构的布局）和**动态部分**（如条件渲染、列表渲染、变量绑定）。静态部分直接生成小程序的原生模板，动态部分保留在运行时通过虚拟 DOM diff 处理。
+    被标记的组件及其 children 会在编译阶段被编译成一份**独立的小程序模板**。运行时不再逐层递归创建这棵子树，直接让模板渲染静态结构，只有真正动态的部分才走运行时 diff 与 `setData`。
 
     ```text
     编译阶段：
-    JSX → AST 分析 → 静态部分 → 原生模板（零运行时开销）
-                     → 动态部分 → 运行时 diff（React 能力完整保留）
+    JSX → AST 分析 → 标记 compileMode 的子树 → 独立小程序模板
+                     → 其余节点 → 运行时递归 + diff
     ```
 
-    **效果：**
-    - 静态内容的渲染不需要 `setData`，直接用原生模板渲染
-    - 只有动态变化的部分才触发 `setData`
-    - 首屏渲染速度提升 30%-50%（静态模板不需要初始化 React）
-    - 包体积减小（静态模板不携带 React 运行时代码）
-
-    这个方案的本质是**把编译时和运行时的优势结合起来**：静态部分享受编译时的零开销，动态部分享受运行时的完整能力。"
+    **效果与边界：**
+    - 适合长列表 item 这类会被重复渲染多次的组件，官方给出的口径是长列表场景首开速度提升 30% 以上
+    - 它不是把 Taro 改成编译型：React 运行时仍在逻辑层运行，包体积也不会因此去掉 React 运行时
+    - 静态结构少走一次运行时递归，动态绑定依然依赖运行时和 `setData`"
 
   </Accordion>
 
@@ -941,14 +955,15 @@ Taro 大型项目的关键实践：分包加载控制包体积、虚拟列表优
 
 ---
 
-## 面试官视角：满分回答 vs 及格回答
+## 及格回答 vs 满分回答
 
 ### 问题："说说 Taro 的架构演进"
 
 **及格回答（60-70分）：**
+
 > "Taro 1.x 是编译时方案，把 JSX 编译成小程序模板。Taro 3.x 改成了运行时方案，在小程序里跑 React。运行时性能差一些但开发体验好。"
 
-面试官评价：**知道版本变化，但不理解为什么变。**
+问题出在：**知道版本变化，但不理解为什么变。**
 
 **满分回答（90-100分）：**
 
@@ -956,7 +971,7 @@ Taro 大型项目的关键实践：分包加载控制包体积、虚拟列表优
 
 > Taro 3.x 重构为运行时方案——在小程序的逻辑层（JSCore）中运行一个完整的 React 运行时，通过自定义的 Reconciler 把虚拟 DOM 变更转换为 `setData()` 调用。这让 Taro 获得了 React 的全部能力，代价是运行时体积和 `setData` 的跨线程通信开销。核心性能瓶颈在于每次 `setData` 都需要 JSON 序列化 + 跨线程传输 + JSON 解析。
 
-> Taro 4.x 引入了"半编译半运行时"方案，在编译阶段做静态分析，静态部分直接生成原生模板（零运行时开销），动态部分保留虚拟 DOM diff。首屏渲染速度提升 30%-50%。
+> Taro 3.6.23 起补充了实验性的 CompileMode：给组件加 `compileMode` 后，该子树在编译阶段生成独立的小程序模板，运行时不再逐层递归，长列表场景首开速度可提升 30% 以上。注意它只是运行时方案之上的增量优化，不是把 Taro 变成编译型框架。
 
 > 实际项目建议：用虚拟列表优化长列表、批量合并 `setData` 减少通信频率、分包加载控制首屏包体积。对于极致性能场景，可以用 WXS 处理交互动画，避免跨线程通信。
 
@@ -967,7 +982,7 @@ Taro 大型项目的关键实践：分包加载控制包体积、虚拟列表优
 - 🔗 [Taro 官方文档](https://taro-docs.jd.com/docs/)：Taro 团队维护的最权威文档，覆盖架构原理和 API 参考。<sup>[1]</sup>
 - 📖 [Taro 3.x 设计思想](https://juejin.cn/post/6955055626359021575)：Taro 核心团队成员对 3.x 运行时架构设计的深度解读。详细解释了从编译时转向运行时的动因——JSX 的图灵完备性无法映射到小程序模板的受限表达能力。<sup>[2]</sup>
 - 🟢 [京东 Taro 最佳实践](https://juejin.cn/post/7139271619750166536)：京东 Taro 团队分享的大规模项目性能优化经验。<sup>[3]</sup>
-- 📖 [Taro 4.x 半编译半运行时方案](https://taro-docs.jd.com/docs/)：Taro 4.x 引入的静态模板 + 运行时混合方案，首屏渲染速度提升 30%-50%。<sup>[4]</sup>
+- 📖 [Taro 半编译模式（CompileMode）文档](https://docs.taro.zone/docs/complier-mode)：CompileMode 的开启方式、`compileMode` 属性用法与适用场景，长列表首开速度提升 30% 以上。<sup>[4]</sup>
 - 🔗 [微信小程序官方文档 - 双线程模型](https://developers.weixin.qq.com/miniprogram/dev/framework/)：小程序底层"双线程架构"的权威说明，逻辑层与视图层分离的设计动机。<sup>[5]</sup>
 - 📖 [神光 - Taro 编译时与运行时剖析](https://juejin.cn/user/2788017216685118)：极其详细地剖析过 Taro 的编译时逻辑（AST 语法树转换）和运行时渲染底层的差异。<sup>[6]</sup>
 - 🟢 [崔健（卡颂）- React 跨端渲染引擎](https://react.iamkasong.com/)：深入对比过 Taro 基于 React Reconciler 连接小程序双线程的极致实现。<sup>[7]</sup>

@@ -1,10 +1,9 @@
 ---
 title: "V8 垃圾回收"
+description: "V8 分代回收：新生代 Scavenge、老生代 Mark-Sweep/Compact、STW 优化与内存泄漏排查。"
 ---
 
-> **面试官为什么问这个？**
->
-> 垃圾回收（Garbage Collection）是 V8 引擎自动管理内存的核心机制。面试官问这个，本质上是在考察你：**你写的代码产生的对象，什么时候被回收、怎么被回收、为什么有时候回收不了导致内存泄漏？** 如果你答不清楚，说明你对 JS 内存管理的理解停留在"不用管"而不是"知道为什么不用管以及什么时候必须管"。
+> 我最早只管写代码不管内存，后来处理页面越用越卡的问题，才把分代回收和可达性分析补上。
 
 ---
 
@@ -74,7 +73,7 @@ V8 用分代策略把"大多数短命对象"和"少数长寿对象"分开处理�
 
 <Tip title="💡 面试技巧">
 
-先说"分代假说"（大多数对象朝生夕灭），再引出新生代/老生代的策略差异。面试官想听的是你理解**为什么这么设计**，而不是背诵算法名字。
+先说"分代假说"（大多数对象朝生夕灭），再引出新生代/老生代的策略差异。想听的是你对**为什么这么设计**的理解，而不是背诵算法名字。
 
 </Tip>
 
@@ -82,7 +81,7 @@ V8 用分代策略把"大多数短命对象"和"少数长寿对象"分开处理�
 
 ## Q2: 新生代的 Scavenge 算法
 
-新生代内存很小（默认 1-8MB），存放新创建的对象。V8 采用 Scavenge 算法（基于 Cheney 算法），将新生代空间一分为二：From 空间和 To 空间。
+新生代内存很小（默认只有几 MB 到十几 MB），存放新创建的对象。V8 采用 Scavenge 算法（基于 Cheney 算法），将新生代空间一分为二：From 空间和 To 空间。
 
 ```text
 ┌───────────────────────────────────────────────────────┐
@@ -141,7 +140,6 @@ Scavenge 用"空间换时间"——牺牲一半内存，换取只遍历存活对
 
 Scavenge 就像你有两张书桌（From 和 To）。每天下班时，你只把今天还要用的文件（存活对象）从左桌搬到右桌上，左桌上剩下的废纸（垃圾）直接连桌子一起清空。第二天两张桌子角色互换。你永远不用整理废纸——只搬有用的。
 
-
 </Tip>
 
 ### 对象晋升（Promotion）
@@ -154,8 +152,8 @@ Scavenge 就像你有两张书桌（From 和 To）。每天下班时，你只把
 // 2. To 空间已用内存超过 25%（防止 To 空间溢出）
 
 function createObjects() {
-  let temp = { data: 'short-lived' };  // 新生代，函数执行完就变成垃圾
-  let keeper = { data: 'long-lived' }; // 新生代，如果被外部引用则存活
+  let temp = { data: "short-lived" }; // 新生代，函数执行完就变成垃圾
+  let keeper = { data: "long-lived" }; // 新生代，如果被外部引用则存活
   return keeper; // keeper 被外部引用，经历一次 GC 后晋升到老生代
 }
 const obj = createObjects(); // temp 被回收，keeper 晋升
@@ -169,7 +167,7 @@ To 空间在 Scavenge 完成后会变成 From 空间（即下一轮的使用空�
 
 ## Q3: 老生代的 Mark-Sweep 与 Mark-Compact
 
-老生代空间较大（默认 700MB-1.4GB），存放存活时间长的对象。老生代采用标记清理（Mark-Sweep）和标记整理（Mark-Compact）两种算法交替使用。
+老生代空间较大（64 位下默认上限约 1.4GB），存放存活时间长的对象。老生代采用标记清理（Mark-Sweep）和标记整理（Mark-Compact）两种算法交替使用。
 
 ```text
 ┌───────────────────────────────────────────────────────┐
@@ -199,22 +197,20 @@ Mark-Sweep 只清除垃圾对象，不会移动存活对象。多次回收后，
 
 V8 的解决方案：当碎片化严重时，触发 Mark-Compact，把存活对象压缩到一端，腾出连续空间。但 Mark-Compact 需要移动对象并更新所有引用，代价比 Mark-Sweep 更高。
 
-
 </Warning>
 
 ### 何时用 Mark-Sweep，何时用 Mark-Compact？
 
-| 条件 | 使用算法 | 原因 |
-|------|---------|------|
-| 内存充足，碎片不多 | Mark-Sweep | 速度快，不移动对象 |
-| 内存紧张，碎片严重 | Mark-Compact | 消除碎片，腾出连续空间 |
-| 存活对象占比高 | Mark-Sweep | 移动大量对象代价太高 |
-| 存活对象占比低 | Mark-Compact | 移动少量对象就能消除碎片 |
+| 条件               | 使用算法     | 原因                     |
+| ------------------ | ------------ | ------------------------ |
+| 内存充足，碎片不多 | Mark-Sweep   | 速度快，不移动对象       |
+| 内存紧张，碎片严重 | Mark-Compact | 消除碎片，腾出连续空间   |
+| 存活对象占比高     | Mark-Sweep   | 移动大量对象代价太高     |
+| 存活对象占比低     | Mark-Compact | 移动少量对象就能消除碎片 |
 
 <Tip title="🎢 通俗比喻: 整理仓库">
 
 Mark-Sweep 就像仓库管理员把过期货物标记出来扔掉，但不挪动其他货物——扔完后仓库里东一个洞西一个洞（碎片）。Mark-Compact 则是把所有货物推到仓库一侧，另一侧腾出一整片连续空地。前者快但有碎片，后者慢但空间整齐。
-
 
 </Tip>
 
@@ -239,11 +235,11 @@ GC 在标记和清理阶段需要遍历对象图，如果整个过程都在主�
 
 **V8 的三层优化策略：**
 
-| 策略 | 作用域 | 原理 |
-|------|-------|------|
-| **增量标记 (Incremental Marking)** | 老生代 | 把标记工作拆成小块，穿插在 JS 执行之间 |
-| **并发标记 (Concurrent Marking)** | 老生代 | GC 标记工作在后台线程执行，不阻塞主线程 |
-| **并行回收 (Parallel Scavenge)** | 新生代 | 多个 GC 线程并行复制对象 |
+| 策略                               | 作用域 | 原理                                    |
+| ---------------------------------- | ------ | --------------------------------------- |
+| **增量标记 (Incremental Marking)** | 老生代 | 把标记工作拆成小块，穿插在 JS 执行之间  |
+| **并发标记 (Concurrent Marking)**  | 老生代 | GC 标记工作在后台线程执行，不阻塞主线程 |
+| **并行回收 (Parallel Scavenge)**   | 新生代 | 多个 GC 线程并行复制对象                |
 
 ```text
 增量标记（老生代）:
@@ -271,18 +267,17 @@ objA.ref = objC; // 原来指向 objB，现在指向 objC
 // V8 内部：写屏障记录这个变化，确保 objC 不会被误回收
 ```
 
-
 </Warning>
 
 ### 三色标记法
 
 V8 用三色标记法实现增量标记的可暂停性：
 
-| 颜色 | 含义 |
-|------|------|
+| 颜色             | 含义                                      |
+| ---------------- | ----------------------------------------- |
 | **白色 (White)** | 未被标记，GC 结束后仍为白色的对象会被回收 |
-| **灰色 (Gray)** | 已被标记，但其引用的对象还未被标记 |
-| **黑色 (Black)** | 已被标记，其引用的对象也已被标记 |
+| **灰色 (Gray)**  | 已被标记，但其引用的对象还未被标记        |
+| **黑色 (Black)** | 已被标记，其引用的对象也已被标记          |
 
 增量标记暂停时记录"当前灰色对象"，恢复时从灰色对象继续标记。写屏障确保 JS 修改引用时不会丢失标记。
 
@@ -295,8 +290,8 @@ V8 用三色标记法实现增量标记的可暂停性：
 ```javascript
 // ❌ 闭包导致的内存泄漏
 function createHeavyClosure() {
-  const largeArray = new Array(1000000).fill('data');
-  return function() {
+  const largeArray = new Array(1000000).fill("data");
+  return function () {
     // 闭包引用了 largeArray，即使只需要其中一项
     return largeArray[0];
   };
@@ -305,41 +300,40 @@ const getFirst = createHeavyClosure(); // largeArray 永远不会被回收
 
 // ✅ 只保留需要的数据
 function createLightClosure() {
-  const firstItem = new Array(1000000).fill('data')[0];
-  return function() {
+  const firstItem = new Array(1000000).fill("data")[0];
+  return function () {
     return firstItem; // 只引用一个值，大数组可以被回收
   };
 }
-const getFirst = createLightClosure(); // 大数组已被回收
+const getFirstLight = createLightClosure(); // 大数组已被回收
 ```
 
 ### 常见内存泄漏场景
 
-| 场景 | 原因 | 解决方案 |
-|------|------|---------|
-| **全局变量** | 挂在 window 上，根可达 | 用 `let/const`，避免隐式全局变量 |
-| **闭包** | 闭包引用了大对象 | 及时解除不需要的引用 |
-| **未清理的定时器** | `setInterval` 回调持有外部变量 | `clearInterval` / `clearTimeout` |
-| **未清理的事件监听器** | DOM 已移除但监听器还在 | `removeEventListener` 或 AbortController |
-| **Detached DOM** | DOM 已从页面移除，JS 还持有引用 | 设为 `null` |
-| **Map/Set 泄漏** | 不断往 Map/Set 中添加，从不删除 | 用 `WeakMap` / `WeakSet` |
+| 场景                   | 原因                            | 解决方案                                 |
+| ---------------------- | ------------------------------- | ---------------------------------------- |
+| **全局变量**           | 挂在 window 上，根可达          | 用 `let/const`，避免隐式全局变量         |
+| **闭包**               | 闭包引用了大对象                | 及时解除不需要的引用                     |
+| **未清理的定时器**     | `setInterval` 回调持有外部变量  | `clearInterval` / `clearTimeout`         |
+| **未清理的事件监听器** | DOM 已移除但监听器还在          | `removeEventListener` 或 AbortController |
+| **Detached DOM**       | DOM 已从页面移除，JS 还持有引用 | 设为 `null`                              |
+| **Map/Set 泄漏**       | 不断往 Map/Set 中添加，从不删除 | 用 `WeakMap` / `WeakSet`                 |
 
 ```javascript
 // ❌ Detached DOM 泄漏
-let detached = document.createElement('div');
+let detached = document.createElement("div");
 document.body.removeChild(detached); // DOM 从页面移除
 // 但 detached 变量仍然引用这个 DOM 节点，无法被回收
 
 // ✅ 及时解除引用
-let detached = document.createElement('div');
-document.body.removeChild(detached);
-detached = null; // 解除引用，GC 可以回收
+let detached2 = document.createElement("div");
+document.body.removeChild(detached2);
+detached2 = null; // 解除引用，GC 可以回收
 ```
 
 <Tip title="🎢 通俗比喻: 内存泄漏就像忘记关水龙头">
 
 内存泄漏就像家里的水龙头没关紧——每次用完水（创建对象）都没关好（没解除引用），水一滴一滴地流走（内存一点点被占用）。短时间内看不出问题，但几天后水漫金山（内存耗尽，页面崩溃）。
-
 
 </Tip>
 
@@ -351,15 +345,16 @@ ES2021 引入了 `WeakRef` 和 `FinalizationRegistry`，让开发者能更精细
 
 ```javascript
 // WeakRef：弱引用，不阻止 GC 回收目标对象
-let target = { data: 'important' };
+let target = { data: "important" };
 let weakRef = new WeakRef(target);
 
 console.log(weakRef.deref()); // { data: 'important' } — 对象还在
 
 target = null; // 解除强引用
-// GC 可以回收 { data: 'important' }
+// GC 之后才可能回收 { data: 'important' }，但回收时机不确定
 
-console.log(weakRef.deref()); // undefined — 对象已被回收
+console.log(weakRef.deref()); // 可能仍返回对象；只有 GC 真正回收后才返回 undefined
+// 注意：这不是同步可见的结论，不能据此判断对象是否已释放
 ```
 
 ```javascript
@@ -375,7 +370,7 @@ function createResource(name) {
   return resource;
 }
 
-let res = createResource('myResource');
+let res = createResource("myResource");
 res = null; // GC 回收时会触发回调
 ```
 
@@ -385,14 +380,13 @@ res = null; // GC 回收时会触发回调
 
 ```javascript
 // ❌ 错误用法：依赖 FinalizationRegistry 做业务逻辑
-registry.register(obj, 'critical-data');
+registry.register(obj, "critical-data");
 // 不要假设回调会在某个特定时间点执行
 
 // ✅ 正确用法：只做非关键的资源清理
-registry.register(obj, 'gpu-texture');
+registry.register(obj, "gpu-texture");
 // 回调中释放 GPU 纹理，即使延迟执行也没关系
 ```
-
 
 </Warning>
 
@@ -418,11 +412,11 @@ registry.register(obj, 'gpu-texture');
 
 **三种快照模式：**
 
-| 模式 | 用途 | 关注点 |
-|------|------|--------|
-| **Summary** | 查看对象总览 | 看哪些类型的对象占用最多 |
-| **Comparison** | 对比两次快照 | 看哪些对象在两次快照之间新增 |
-| **Containment** | 查看对象引用链 | 找到谁持有了泄漏对象的引用 |
+| 模式            | 用途           | 关注点                       |
+| --------------- | -------------- | ---------------------------- |
+| **Summary**     | 查看对象总览   | 看哪些类型的对象占用最多     |
+| **Comparison**  | 对比两次快照   | 看哪些对象在两次快照之间新增 |
+| **Containment** | 查看对象引用链 | 找到谁持有了泄漏对象的引用   |
 
 ```javascript
 // 用代码模拟内存泄漏，用于学习排查
@@ -431,7 +425,7 @@ class LeakDemo {
     this.cache = [];
   }
   addData() {
-    this.cache.push(new Array(10000).fill('leak'));
+    this.cache.push(new Array(10000).fill("leak"));
     // cache 只增不减 → 内存泄漏
   }
 }
@@ -474,11 +468,11 @@ Chrome DevTools 的 Performance Monitor 可以实时查看 JS 堆大小、DOM �
 
 ```javascript
 // ❌ 一次性加载 100MB JSON — 峰值内存翻倍
-const response = await fetch('/huge-data.json');
+const response = await fetch("/huge-data.json");
 const data = await response.json(); // 解析过程峰值 200MB+
 
 // ✅ 流式处理 — 内存占用恒定
-const response = await fetch('/huge-data.json');
+const response = await fetch("/huge-data.json");
 const reader = response.body.getReader();
 const decoder = new TextDecoder();
 
@@ -509,16 +503,13 @@ document.body.removeChild(domElement); // domElement 可被 GC 回收
 
 `WeakMap` 的 key 只能是对象（不能是原始值），且不可遍历（没有 `forEach`、`keys`、`values` 方法）。这是设计上的权衡——因为 GC 随时可能回收 key，遍历的结果是不确定的。
 
-
 </Warning>
 
 ---
 
-## 🔍 底层源码：V8 是如何实现 GC 的？
+## 底层源码：V8 是如何实现 GC 的？
 
-<div class="follow-up">
-V8 的堆内存布局是什么样的？
-</div>
+<div class="follow-up">V8 的堆内存布局是什么样的？</div>
 
 V8 将堆分为多个空间，每个空间有不同用途（详见 [V8 源码：src/heap/heap.h](https://github.com/v8/v8/blob/main/src/heap/heap.h)）：
 
@@ -541,9 +532,7 @@ class Heap {
 
 这段代码做了 3 件事：（1）`new_space_` 是新生代，用 Scavenge 算法回收；（2）`old_space_` 是老生代，用 Mark-Sweep/Mark-Compact 回收；（3）`lo_space_` 是大对象空间，大对象不经过新生代直接分配到老生代的大对象空间。
 
-<div class="follow-up">
-V8 的增量标记是怎么实现的？
-</div>
+<div class="follow-up">V8 的增量标记是怎么实现的？</div>
 
 V8 用三色标记法实现增量标记（详见 [V8 源码：src/heap/mark-compact.cc](https://github.com/v8/v8/blob/main/src/heap/mark-compact.cc)）：
 
@@ -572,26 +561,27 @@ void IncrementalMarking::Step() {
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 十、及格回答 vs 满分回答
 
 ### 问题："说说 V8 的垃圾回收机制"
 
 **及格回答（60-70分）：**
+
 > "V8 把内存分为新生代和老生代。新生代用 Scavenge 算法，分成 From 和 To 两半，复制存活对象。老生代用 Mark-Sweep 和 Mark-Compact。新生代存活的对象会晋升到老生代。"
 
-面试官评价：**知道算法名字但不理解设计取舍**。
+问题出在：**知道算法名字但不理解设计取舍**。
 
 **满分回答（90-100分）：**
 
-> V8 垃圾回收的核心设计基于"分代假说"——大多数对象的生命周期极短。基于此，V8 将堆分为新生代（1-8MB）和老生代（700MB-1.4GB），对不同代采用不同策略。<sup>[1]</sup>
+> V8 垃圾回收的核心设计基于"分代假说"——大多数对象的生命周期极短。基于此，V8 将堆分为新生代和老生代，新生代只有几 MB 到十几 MB，老生代默认上限约 1.4GB（64 位），对不同代采用不同策略。<sup>[1]</sup>
 
 > 新生代用 Scavenge 算法（基于 Cheney 算法），将空间一分为二，只复制存活对象到另一半，垃圾直接丢弃。代价是浪费一半空间，但因为新生代很小且存活率通常低于 25%，复制成本可控。存活过一次 GC 的对象或 To 空间使用率超过 25% 时，对象晋升到老生代。<sup>[1]</sup>
 
 > 老生代用 Mark-Sweep（标记清理）为主，Mark-Compact（标记整理）为辅。Mark-Sweep 速度快但会产生碎片，碎片严重时触发 Mark-Compact 压缩空间。为减少全堆停顿（STW），V8 对老生代采用增量标记（拆分工作穿插 JS 执行）和并发标记（后台线程标记，不阻塞主线程），通过写屏障保证并发标记的正确性。<sup>[2]</sup>
 
-> 实际开发中，最需要关注的是内存泄漏：闭包持有大对象、未清理的定时器/事件监听器、Detached DOM、Map/Set 只增不减。排查工具用 Chrome DevTools 的 Memory 面板拍快照对比。ES2021 的 `WeakRef` 和 `WeakMap` 可以让 GC 自动回收不需要的对象，是避免泄漏的好工具。
+> 实际开发中，最需要关注的是内存泄漏：闭包持有大对象、未清理的定时器/事件监听器、Detached DOM、Map/Set 只增不减。排查工具用 Chrome DevTools 的 Memory 面板拍快照对比。`WeakMap` 和 ES2021 的 `WeakRef` 可以让 GC 自动回收不需要的对象，是避免泄漏的好工具。
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
@@ -601,9 +591,9 @@ void IncrementalMarking::Step() {
     不能只答"为了复制"，要解释为什么不用 Mark-Sweep。
 
     **高分回答：**
-    "新生代空间很小（默认 1-8MB），对象存活率很低（通常 < 25%）。如果用 Mark-Sweep，需要遍历整个空间标记所有对象，包括大量即将死亡的垃圾——这是浪费。而 Scavenge 只需要遍历和复制存活对象，垃圾直接丢弃。
+    "新生代空间很小（默认只有几 MB 到十几 MB），对象存活率很低（通常 < 25%）。如果用 Mark-Sweep，需要遍历整个空间标记所有对象，包括大量即将死亡的垃圾——这是浪费。而 Scavenge 只需要遍历和复制存活对象，垃圾直接丢弃。
 
-    代价是永远浪费一半空间（To 空间空闲），但因为新生代总共才几 MB，浪费几 MB 换来极快的回收速度，这笔账很划算。如果在老生代（700MB+）用 Scavenge，浪费 350MB 就不可接受了，所以老生代用 Mark-Sweep。"
+    代价是永远浪费一半空间（To 空间空闲），但因为新生代总共才几 MB 到十几 MB，这笔账很划算。如果在老生代（默认上限约 1.4GB）用 Scavenge，浪费一半空间就不可接受了，所以老生代用 Mark-Sweep。"
 
   </Accordion>
 
@@ -727,7 +717,7 @@ void IncrementalMarking::Step() {
     2. **Scavenge 耗时增加**——空间越大，遍历和复制的时间越长
     3. **晋升延迟**——更多对象在新生代'赖着不走'，占用老生代应该处理的长寿对象的位置
 
-    所以 V8 默认新生代很小（1-8MB），只适合存放'朝生夕灭'的临时对象。大量长生命周期的对象应该直接分配到老生代。V8 有'直接分配到老生代'的机制：如果对象大小超过新生代的一定比例，会跳过新生代直接分配到老生代。"
+    所以 V8 默认新生代很小（几 MB 到十几 MB），只适合存放'朝生夕灭'的临时对象。大量长生命周期的对象应该直接分配到老生代。V8 有'直接分配到老生代'的机制：如果对象大小超过新生代的一定比例，会跳过新生代直接分配到老生代。"
 
   </Accordion>
 
@@ -759,9 +749,9 @@ void IncrementalMarking::Step() {
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 🔗 [V8 官方博客：Trash Talk — V8 垃圾回收系列](https://v8.dev/blog/trash-talk)：V8 团队对分代 GC、Scavenge、Mark-Sweep 的权威解释。<sup>[1]</sup>
-- 📖 [V8 官方博客：Orinoco — V8 的垃圾回收器](https://v8.dev/blog/orinoco)：深度剖析增量标记、并发标记、并行回收的实现细节。<sup>[2]</sup>
-- 🔗 [Chrome DevTools 文档：内存问题排查](https://developer.chrome.com/docs/devtools/memory-problems)：官方内存泄漏排查指南。<sup>[3]</sup>
-- 📖 [MDN：WeakRef 和 FinalizationRegistry](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakRef)：ES2021 弱引用 API 的完整文档。<sup>[4]</sup>
+- [V8 官方博客：Trash Talk — V8 垃圾回收系列](https://v8.dev/blog/trash-talk)：V8 团队对分代 GC、Scavenge、Mark-Sweep 的权威解释。<sup>[1]</sup>
+- [V8 官方博客：Orinoco — V8 的垃圾回收器](https://v8.dev/blog/orinoco)：深度剖析增量标记、并发标记、并行回收的实现细节。<sup>[2]</sup>
+- [Chrome DevTools 文档：内存问题排查](https://developer.chrome.com/docs/devtools/memory-problems)：官方内存泄漏排查指南。<sup>[3]</sup>
+- [MDN：WeakRef 和 FinalizationRegistry](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakRef)：ES2021 弱引用 API 的完整文档。<sup>[4]</sup>

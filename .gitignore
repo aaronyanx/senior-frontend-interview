@@ -5,3 +5,8 @@ _template.mdx
 SKILL_v2.md
 .history
 .claude
+.squad/
+.tmp-review/
+locks/
+.codex/
+.gemini/

@@ -1,10 +1,23 @@
 {
-  "name": "前端 & AI 工程化面试指南",
-  "description": "专为高级前端工程师打造的硬核进阶指南。深挖 V8 引擎底层、React/Vue 源码、复杂微前端架构，并涵盖前沿的 AI 工程化（Agent/MCP）大厂实战经验。",
+  "name": "AI 时代的前端工程师面试指南",
+  "description": "面向 AI 时代前端工程师的进阶指南：从浏览器底层与框架原理，到大模型应用、Agent Harness、Lead Agent 编排与 Tool Calling 工程实践。",
   "seo": {
-    "title": "前端 & AI 工程化面试指南 | Senior Frontend Interview Guide",
-    "description": "专为高级前端工程师打造的面试与进阶手册。全面深度解析 V8 底层机制、React Fiber 源码、微前端架构，以及最新的 AI 工程化（LangGraph/Agent/MCP）落地实践。",
-    "keywords": ["高级前端面试", "前端面试宝典", "前端架构", "V8引擎", "React源码", "Vue原理", "微前端", "AI工程化", "Agent", "前端进阶"],
+    "title": "AI 时代的前端工程师面试指南 | AI-Era Frontend Interview Guide",
+    "description": "面向 AI 时代前端工程师的面试与进阶手册：浏览器与网络底层、React/Vue 原理，以及大模型应用、Agent Harness、Lead Agent、Tool Calling 与 Agent 组织形态。",
+    "keywords": [
+      "AI 时代前端",
+      "前端面试",
+      "Agent 工程",
+      "Agent Harness",
+      "Lead Agent",
+      "Tool Calling",
+      "LLM 应用",
+      "RAG",
+      "MCP",
+      "V8 引擎",
+      "React 源码",
+      "AI 工程化"
+    ],
     "metatags": {
       "google-site-verification": "Lw5hytF6244ZY_C07aPkZ8H80Hr9O5VAI2aOuLXTaOs",
       "msvalidate.01": "335D8E95FFCA82116A876D46143584CF"
@@ -36,6 +49,91 @@
   "navigation": {
     "tabs": [
       {
+        "tab": "AI 应用工程",
+        "groups": [
+          {
+            "group": "LLM 基础与训练",
+            "pages": [
+              "ai/llm",
+              "ai/llm-training"
+            ]
+          },
+          {
+            "group": "AI 高频面试题",
+            "pages": [
+              "ai/ai-interview"
+            ]
+          },
+          {
+            "group": "提示词工程",
+            "pages": [
+              "ai/prompt"
+            ]
+          },
+          {
+            "group": "RAG 与知识库",
+            "pages": [
+              "ai/rag",
+              "ai/langchain",
+              "ai/embedding"
+            ]
+          },
+          {
+            "group": "Agent 运行时与 Harness",
+            "pages": [
+              "ai/agent",
+              "ai/pi-harness",
+              "ai/deepseek-harness"
+            ]
+          },
+          {
+            "group": "工具与协议",
+            "pages": [
+              "ai/mcp-skill",
+              "ai/tool-calling",
+              "ai/ag-ui"
+            ]
+          },
+          {
+            "group": "多智能体编排",
+            "pages": [
+              "ai/multi-agent",
+              "ai/lead-agent",
+              "ai/agent-artifacts",
+              "ai/agent-observability",
+              "ai/agent-stability"
+            ]
+          },
+          {
+            "group": "Agent 组织形态",
+            "pages": [
+              "ai/agent-org",
+              "ai/digital-employee",
+              "ai/expert-team"
+            ]
+          },
+          {
+            "group": "AI 工程化实践",
+            "pages": [
+              "ai/ai-engineering"
+            ]
+          },
+          {
+            "group": "AI 代码生成",
+            "pages": [
+              "ai/ai-code-generation"
+            ]
+          },
+          {
+            "group": "Design to Code",
+            "pages": [
+              "ai/design-to-code",
+              "ai/prd-to-code"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "JavaScript",
         "groups": [
           {
@@ -65,7 +163,9 @@
               "javascript/modules",
               "javascript/v8-gc",
               "javascript/v8-jit",
-              "javascript/v8-array"
+              "javascript/v8-array",
+              "javascript/memory-leak",
+              "javascript/proxy-reflect"
             ]
           },
           {
@@ -75,7 +175,9 @@
               "javascript/functional-programming",
               "javascript/js-handwrite",
               "javascript/dom-events",
-              "javascript/regex-engine"
+              "javascript/regex-engine",
+              "javascript/error-handling",
+              "javascript/service-worker"
             ]
           },
           {
@@ -93,6 +195,7 @@
           {
             "group": "基础与布局",
             "pages": [
+              "css/css",
               "css/box-model",
               "css/bfc",
               "css/flexbox",
@@ -117,7 +220,8 @@
             "group": "工程化与响应式",
             "pages": [
               "css/css-variables",
-              "css/responsive"
+              "css/responsive",
+              "css/mobile-adaptation"
             ]
           },
           {
@@ -305,70 +409,6 @@
             "pages": [
               "taro/taro",
               "uni-app/uni-app"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "大模型应用",
-        "groups": [
-          {
-            "group": "LLM 基础与训练",
-            "pages": [
-              "ai/llm",
-              "ai/llm-training"
-            ]
-          },
-          {
-            "group": "AI 高频面试题",
-            "pages": [
-              "ai/ai-interview"
-            ]
-          },
-          {
-            "group": "提示词工程",
-            "pages": [
-              "ai/prompt"
-            ]
-          },
-          {
-            "group": "RAG 与知识库",
-            "pages": [
-              "ai/rag",
-              "ai/langchain",
-              "ai/embedding"
-            ]
-          },
-          {
-            "group": "Agent 架构",
-            "pages": [
-              "ai/agent",
-              "ai/mcp-skill"
-            ]
-          },
-          {
-            "group": "多智能体编排",
-            "pages": [
-              "ai/multi-agent",
-              "ai/agent-stability"
-            ]
-          },
-          {
-            "group": "AI 工程化实践",
-            "pages": [
-              "ai/ai-engineering"
-            ]
-          },
-          {
-            "group": "AI 代码生成",
-            "pages": [
-              "ai/ai-code-generation"
-            ]
-          },
-          {
-            "group": "Design to Code",
-            "pages": [
-              "ai/design-to-code"
             ]
           }
         ]

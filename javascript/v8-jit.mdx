@@ -1,10 +1,9 @@
 ---
 title: "V8 JIT 编译"
+description: "V8 编译流水线：Ignition 字节码、Sparkplug 与 Maglev、TurboFan 优化与反优化、Hidden Class 与内联缓存。"
 ---
 
-> **面试官为什么问这个？**
->
-> JIT（Just-In-Time）编译是 V8 引擎将 JavaScript 代码转化为机器码的核心机制。面试官问这个，本质上是在考察你：**你写的 JS 代码是怎么从源码变成可执行的机器码的？V8 做了哪些优化让 JS 跑得更快？** 如果你答不清楚，说明你对 JS 性能的理解停留在"写完能跑"而不是"知道为什么快、为什么慢"。
+> 我看 JIT 是从"为什么同一段代码越跑越快"入手的，顺着解释器、基线编译和优化编译一路看下去。
 
 ---
 
@@ -75,7 +74,7 @@ JIT 让 JS 引擎"边跑边优化"——先用解释器快速启动，再对热�
 
 <Tip title="💡 面试技巧">
 
-先说"动态类型导致 AOT 不可行"这个痛点，再引出 JIT 的"运行时编译"思路。面试官想听的是你理解**为什么 JS 需要 JIT**，而不是背诵编译器的名字。
+先说"动态类型导致 AOT 不可行"这个痛点，再引出 JIT 的"运行时编译"思路。想听的是你对**为什么 JS 需要 JIT**的理解，而不是背诵编译器的名字。
 
 </Tip>
 
@@ -86,15 +85,14 @@ JIT 让 JS 引擎"边跑边优化"——先用解释器快速启动，再对热�
 V8 的编译流水线分为多个阶段，从源码到机器码：
 
 ```text
-┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐
-│  源码     │ → │  Parser  │ → │  Ignition │ → │  Sparkplug│ → │ TurboFan │
-│  JS Code  │   │  解析器   │   │  解释器   │   │ 基线编译  │   │ 优化编译  │
-│           │   │ → AST    │   │ → 字节码  │   │ → 无优化  │   │ → 优化   │
-│           │   │          │   │          │   │  机器码   │   │  机器码   │
-└──────────┘   └──────────┘   └──────────┘   └──────────┘   └──────────┘
-                                            ↑              ↑
-                                            │   反优化     │
-                                            └──────────────┘
+┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐
+│  源码     │ → │  Parser  │ → │ Ignition │ → │Sparkplug │ → │  Maglev  │ → │ TurboFan │
+│  JS Code  │   │  解析器   │   │  解释器   │   │ 基线编译  │   │ 中层优化  │   │ 优化编译  │
+│           │   │ → AST    │   │ → 字节码  │   │ → 无优化  │   │ → 中层优化│   │ → 优化   │
+│           │   │          │   │          │   │  机器码   │   │  机器码   │   │  机器码   │
+└──────────┘   └──────────┘   └──────────┘   └──────────┘   └──────────┘   └──────────┘
+
+反优化（Deoptimization）：已优化的机器码失效时，回退到上一层的字节码重新执行
 ```
 
 <Steps>
@@ -111,12 +109,17 @@ V8 的编译流水线分为多个阶段，从源码到机器码：
   </Step>
   <Step title="Sparkplug: 字节码 → 无优化机器码">
 
-    Sparkplug 是 V8 2021 年引入的基线编译器。它直接将字节码翻译为机器码，不做任何优化。优点是编译速度极快（几乎零延迟），生成的机器码比解释器执行字节码快，但不如 TurboFan 优化后的机器码。
+    Sparkplug 是 V8 2021 年引入的基线编译器。它直接将字节码翻译为机器码，不做任何优化。优点是编译速度极快（几乎零延迟），生成的机器码比解释器执行字节码快，但不如 Maglev、TurboFan 生成的中层或优化机器码。
+
+  </Step>
+  <Step title="Maglev: 字节码 → 中层优化机器码">
+
+    Maglev 是 Sparkplug 与 TurboFan 之间的中层（mid-tier）优化编译器：编译开销明显低于 TurboFan，生成代码又比 Sparkplug 快。热点函数常先进入 Maglev，只有更热的函数才继续交给 TurboFan 深度优化。
 
   </Step>
   <Step title="TurboFan: 字节码 → 优化机器码">
 
-    TurboFan 是 V8 的优化编译器。它根据 Ignition 收集的类型反馈，对热点函数进行激进优化——内联缓存、逃逸分析、冗余消除、循环优化等。生成的机器码比 Sparkplug 快数倍，但编译耗时更长。
+    TurboFan 是 V8 的优化编译器。它根据 Ignition 收集的类型反馈，对热点函数进行激进优化——内联、逃逸分析、冗余消除、循环优化等。生成的机器码通常比 Sparkplug 快数倍，但编译耗时更长。
 
   </Step>
 
@@ -124,17 +127,18 @@ V8 的编译流水线分为多个阶段，从源码到机器码：
 
 <Note title="💡 一句话总结">
 
-V8 的编译流水线是"逐层加速"：先解释执行（Ignition），再基线编译（Sparkplug），最后优化编译（TurboFan）。每多一层就多快一点，但编译成本也更高。
+V8 的编译流水线是"逐层加速"：先解释执行（Ignition），再基线编译（Sparkplug），再中层优化（Maglev），最后深度优化（TurboFan）。每多一层就多快一点，但编译成本也更高。
 
 </Note>
 
 ### 各阶段的性能对比
 
-| 阶段 | 编译速度 | 执行速度 | 适用场景 |
-|------|---------|---------|---------|
-| **Ignition** | 极快（无编译） | 慢（解释执行） | 所有代码的首次执行 |
-| **Sparkplug** | 极快（零延迟） | 中（无优化机器码） | 被调用几次的函数 |
-| **TurboFan** | 慢（需要优化） | 极快（优化机器码） | 被调用很多次的热点函数 |
+| 阶段          | 编译速度       | 执行速度           | 适用场景                     |
+| ------------- | -------------- | ------------------ | ---------------------------- |
+| **Ignition**  | 极快（无编译） | 慢（解释执行）     | 所有代码的首次执行           |
+| **Sparkplug** | 极快（零延迟） | 中（无优化机器码） | 被调用几次的函数             |
+| **Maglev**    | 中等           | 快（中层优化）     | 稳定热点但未到 TurboFan 阈值 |
+| **TurboFan**  | 慢（需要优化） | 极快（优化机器码） | 被调用很多次的热点函数       |
 
 ---
 
@@ -148,9 +152,9 @@ function add(a, b) {
   return a + b;
 }
 
-add(1, 2);       // 反馈：a 是 int32, b 是 int32
-add(3, 4);       // 反馈确认：a, b 都是 int32
-add('hello', ' '); // 反馈：a 也可以是 string, b 也可以是 string
+add(1, 2); // 反馈：a 是 int32, b 是 int32
+add(3, 4); // 反馈确认：a, b 都是 int32
+add("hello", " "); // 反馈：a 也可以是 string, b 也可以是 string
 ```
 
 ### 内联缓存（Inline Cache, IC）
@@ -175,11 +179,11 @@ add('hello', ' '); // 反馈：a 也可以是 string, b 也可以是 string
 
 **IC 的三种状态：**
 
-| 状态 | 含义 | 性能 |
-|------|------|------|
-| **MONOMORPHIC** | 只见过一种类型 | 最快（直接偏移访问） |
+| 状态            | 含义            | 性能                    |
+| --------------- | --------------- | ----------------------- |
+| **MONOMORPHIC** | 只见过一种类型  | 最快（直接偏移访问）    |
 | **POLYMORPHIC** | 见过 2-4 种类型 | 较快（类型检查 + 偏移） |
-| **MEGAMORPHIC** | 见过太多类型 | 慢（退化为通用查找） |
+| **MEGAMORPHIC** | 见过太多类型    | 慢（退化为通用查找）    |
 
 ```javascript
 // ❌ MEGAMORPHIC：太多类型，IC 失效
@@ -187,23 +191,22 @@ function getX(obj) {
   return obj.x; // 如果传入的对象类型太多，IC 退化
 }
 getX({ x: 1, y: 2 });
-getX({ x: 'a', b: 'c' });
+getX({ x: "a", b: "c" });
 getX({ x: true, z: null });
 // ... 太多不同类型 → MEGAMORPHIC → 性能下降
 
 // ✅ MONOMORPHIC：保持类型一致
-function getX(obj) {
+function getXStable(obj) {
   return obj.x; // 始终传入相同类型的对象
 }
-getX({ x: 1, y: 2 });
-getX({ x: 3, y: 4 });
+getXStable({ x: 1, y: 2 });
+getXStable({ x: 3, y: 4 });
 // 类型一致 → MONOMORPHIC → 最快
 ```
 
 <Tip title="🎢 通俗比喻: 快递柜取件">
 
 内联缓存就像快递柜的常用格子记忆。第一次取件要扫码查找（遍历原型链），快递柜记住你常用 3 号格子（缓存属性偏移）。下次取件直接开 3 号格子（直接偏移访问）。但如果每次来的快递都放不同格子（MEGAMORPHIC），快递柜就没法记忆了，只能每次都扫码查找。
-
 
 </Tip>
 
@@ -250,7 +253,6 @@ obj2.x = 1; // 复用 HC1
 obj2.y = 2; // 复用 HC2 — obj 和 obj2 共享同一个隐藏类！
 ```
 
-
 </Warning>
 
 ### 属性添加顺序影响 Hidden Class
@@ -265,19 +267,20 @@ let b = {};
 b.y = 2;
 b.x = 1; // HiddenClass: HC_y_x — 和 a 不同！
 
-function getX(obj) { return obj.x; }
+function getX(obj) {
+  return obj.x;
+}
 getX(a); // IC 缓存了 HC_x_y
 getX(b); // IC 发现 HC_y_x ≠ HC_x_y → POLYMORPHIC
 
 // ✅ 相同的属性添加顺序 → 相同的隐藏类 → MONOMORPHIC
-let a = { x: 1, y: 2 }; // 用字面量一次创建
-let b = { x: 3, y: 4 }; // 同样的形状 → 共享隐藏类
+let c1 = { x: 1, y: 2 }; // 用字面量一次创建
+let c2 = { x: 3, y: 4 }; // 同样的形状 → 共享隐藏类
 ```
 
 <Tip title="🎢 通俗比喻: 户型图">
 
 隐藏类就像房子的"户型图"——同样户型的房子（同类对象），知道客厅在偏移 0、卧室在偏移 1，直接走过去就行（偏移访问）。不同户型的房子（不同隐藏类）需要看不同的图纸。所以尽量让对象保持相同的"户型"（形状），V8 就能用同一张图纸（隐藏类）快速定位。
-
 
 </Tip>
 
@@ -298,24 +301,26 @@ TurboFan 是 V8 的优化编译器，对热点函数进行激进优化。它基�
 
 **TurboFan 的主要优化手段：**
 
-| 优化 | 说明 | 效果 |
-|------|------|------|
-| **类型特化** | 根据类型反馈，假设操作数类型固定 | 消除运行时类型检查 |
-| **内联 (Inlining)** | 把被调函数的代码展开到调用处 | 消除函数调用开销 |
-| **逃逸分析** | 分析对象是否逃出函数作用域 | 栈上分配、标量替换 |
-| **冗余消除** | 消除重复的计算和检查 | 减少指令数 |
-| **循环优化** | 循环不变量外提、循环展开 | 减少循环体指令 |
+| 优化                | 说明                             | 效果               |
+| ------------------- | -------------------------------- | ------------------ |
+| **类型特化**        | 根据类型反馈，假设操作数类型固定 | 消除运行时类型检查 |
+| **内联 (Inlining)** | 把被调函数的代码展开到调用处     | 消除函数调用开销   |
+| **逃逸分析**        | 分析对象是否逃出函数作用域       | 栈上分配、标量替换 |
+| **冗余消除**        | 消除重复的计算和检查             | 减少指令数         |
+| **循环优化**        | 循环不变量外提、循环展开         | 减少循环体指令     |
 
 ```javascript
 // 类型特化示例
-function add(a, b) { return a + b; }
+function add(a, b) {
+  return a + b;
+}
 
 // Ignition 收集反馈：a, b 都是 int32
 // TurboFan 优化：假设 a, b 永远是 int32
 // 生成的机器码：直接用 CPU 的 ADD 指令，不检查类型
 
 add(1, 2); // ✅ 符合假设，走优化路径
-add('a', 'b'); // ❌ 违反假设！触发反优化（Deoptimization）
+add("a", "b"); // ❌ 违反假设！触发反优化（Deoptimization）
 ```
 
 ### 反优化（Deoptimization）
@@ -327,10 +332,10 @@ add('a', 'b'); // ❌ 违反假设！触发反优化（Deoptimization）
 function process(val) {
   return val + 1;
 }
-process(1);       // TurboFan 优化：假设 val 是 int32
-process('hello'); // 反优化！回退到解释器
-process(2);       // 重新优化
-process(true);    // 又反优化！
+process(1); // TurboFan 优化：假设 val 是 int32
+process("hello"); // 反优化！回退到解释器
+process(2); // 重新优化
+process(true); // 又反优化！
 // 频繁反优化 → 函数始终在"优化-反优化"之间震荡
 
 // ✅ 保持类型一致——TurboFan 稳定优化
@@ -345,8 +350,7 @@ process(3);
 
 <Warning title="⚠️ 反优化的代价">
 
-反优化不只是"慢一点"——它会丢弃整个优化后的机器码，函数必须从 Ignition 重新开始执行，重新收集类型反馈，重新触发 TurboFan 优化。这个过程可能需要几百毫秒。如果一个热点函数频繁反优化，它的平均性能可能比从未优化过的函数还差。
-
+反优化不只是"慢一点"——它会丢弃整个优化后的机器码，函数必须重新从字节码开始执行，重新收集类型反馈，再排队等待下一次优化。这个过程本身不是免费的，如果一个热点函数频繁反优化，它的平均性能可能比从未优化过的函数还差。
 
 </Warning>
 
@@ -360,7 +364,7 @@ process(3);
 // 逃逸分析示例
 function calculate() {
   const temp = { x: 1, y: 2 }; // temp 只在函数内部使用
-  return temp.x + temp.y;       // temp 没有逃出函数
+  return temp.x + temp.y; // temp 没有逃出函数
 }
 // TurboFan 优化：temp 不需要在堆上分配，直接用局部变量 x=1, y=2
 // 这就是"标量替换"（Scalar Replacement）
@@ -394,21 +398,26 @@ function calculate() {
 
 没逃逸的对象就像你在便签纸上写的临时计算结果（栈上分配），用完直接扔。逃逸的对象就像要存档的文件（堆上分配），需要放进文件柜（堆），以后还得定期清理文件柜（GC）。所以尽量让临时对象"用完就扔"，不要让它们逃逸。
 
-
 </Tip>
 
 ### 单态/多态调用对内联的影响
 
 ```javascript
 // ✅ 单态调用 — 可以内联
-function area(shape) { return shape.width * shape.height; }
-const rect = { width: 10, height: 20, type: 'rect' };
-area(rect); area(rect); area(rect); // 始终传入同类型 → TurboFan 内联 area
+function area(shape) {
+  return shape.width * shape.height;
+}
+const rect = { width: 10, height: 20, type: "rect" };
+area(rect);
+area(rect);
+area(rect); // 始终传入同类型 → TurboFan 内联 area
 
 // ❌ 多态调用 — 难以内联
-function area(shape) { return shape.width * shape.height; }
-area({ width: 10, height: 20, type: 'rect' });
-area({ w: 10, h: 20, kind: 'circle' }); // 不同形状 → 多态 → 内联失败
+function areaPoly(shape) {
+  return shape.width * shape.height;
+}
+areaPoly({ width: 10, height: 20, type: "rect" });
+areaPoly({ w: 10, h: 20, kind: "circle" }); // 不同形状 → 多态 → 内联失败
 ```
 
 ---
@@ -439,12 +448,12 @@ V8 内部的数字表示：
 
 ```javascript
 // Smi — 最快，无堆分配
-let a = 42;       // Smi，直接存在变量槽中
-let b = 1000000;  // Smi（在范围内）
+let a = 42; // Smi，直接存在变量槽中
+let b = 1000000; // Smi（在范围内）
 
 // HeapNumber — 较慢，需要堆分配
-let c = 3.14;              // 浮点数 → HeapNumber
-let d = 2147483648;        // 超出 Smi 范围 → HeapNumber
+let c = 3.14; // 浮点数 → HeapNumber
+let d = 2147483648; // 超出 Smi 范围 → HeapNumber
 
 // TurboFan 会根据类型反馈选择最优的机器码
 function sum(arr) {
@@ -463,15 +472,14 @@ function sum(arr) {
 
 ```javascript
 // ❌ Holey Array（有空洞）— 性能差
-const arr = [1, 2, , 4]; // 索引 2 是空洞
-arr[99] = 5; // 稀疏数组
+const holeyArr = [1, 2, , 4]; // 索引 2 是空洞
+holeyArr[99] = 5; // 稀疏数组
 // V8 必须在每次访问时检查"这个位置有没有值"
 
 // ✅ Packed Array（密集）— 性能好
-const arr = [1, 2, 3, 4]; // 连续存储
+const packedArr = [1, 2, 3, 4]; // 连续存储
 // V8 可以直接用索引访问，不需要额外检查
 ```
-
 
 </Warning>
 
@@ -486,8 +494,8 @@ const arr = [1, 2, 3, 4]; // 连续存储
 function add(a, b) {
   return a + b;
 }
-add(1, 2);       // a: int32, b: int32
-add('a', 'b');   // a: string, b: string → 反优化
+add(1, 2); // a: int32, b: int32
+add("a", "b"); // a: string, b: string → 反优化
 
 // ✅ 类型一致 — TurboFan 稳定优化
 function addNumbers(a, b) {
@@ -497,7 +505,7 @@ function addStrings(a, b) {
   return a + b;
 }
 addNumbers(1, 2);
-addStrings('a', 'b');
+addStrings("a", "b");
 ```
 
 ### 使用单态函数
@@ -507,9 +515,9 @@ addStrings('a', 'b');
 function getPrice(item) {
   return item.price;
 }
-getPrice({ price: 10, name: 'apple' });
-getPrice({ price: 20, category: 'fruit' });
-getPrice({ price: 30, color: 'red', size: 'large' });
+getPrice({ price: 10, name: "apple" });
+getPrice({ price: 20, category: "fruit" });
+getPrice({ price: 30, color: "red", size: "large" });
 // 不同形状 → POLYMORPHIC → 性能下降
 
 // ✅ 统一形状 — MONOMORPHIC
@@ -531,35 +539,33 @@ delete obj.y; // 改变了对象形状 → 新的 Hidden Class
 // 所有引用旧 Hidden Class 的 IC 都失效
 
 // ✅ 设为 undefined — 不改变形状
-const obj = { x: 1, y: 2, z: 3 };
-obj.y = undefined; // 形状不变，只是值变了
+const obj2 = { x: 1, y: 2, z: 3 };
+obj2.y = undefined; // 形状不变，只是值变了
 ```
 
 ### 提前声明所有属性
 
 ```javascript
 // ❌ 动态添加属性 — 多次 Hidden Class 转换
-function Point() {
-  this.x = 0;      // HC0 → HC1
-  this.y = 0;      // HC1 → HC2
+function PointDynamic() {
+  this.x = 0; // HC0 → HC1
+  this.y = 0; // HC1 → HC2
   // 后续可能还会加 this.z → HC3
 }
 
 // ✅ 构造函数中一次性声明所有属性
 function Point(x, y) {
-  this.x = x;      // HC0 → HC1
-  this.y = y;      // HC1 → HC2
+  this.x = x; // HC0 → HC1
+  this.y = y; // HC1 → HC2
   // 不再添加新属性 → 形状稳定
 }
 ```
 
 ---
 
-## 🔍 底层源码：V8 是如何实现 JIT 的？
+## 底层源码：V8 是如何实现 JIT 的？
 
-<div class="follow-up">
-Ignition 解释器的字节码是什么样的？
-</div>
+<div class="follow-up">Ignition 解释器的字节码是什么样的？</div>
 
 V8 的 Ignition 解释器使用寄存器式字节码（详见 [V8 源码：src/interpreter/bytecodes.h](https://github.com/v8/v8/blob/main/src/interpreter/bytecodes.h)）：
 
@@ -587,9 +593,7 @@ enum class Bytecode : uint8_t {
 
 这段代码做了 3 件事：（1）Ignition 使用寄存器式字节码，累加器（Accumulator）是核心寄存器；（2）字节码约 200 种，覆盖所有 JS 操作；（3）字节码比 AST 更紧凑，解释执行更快。
 
-<div class="follow-up">
-TurboFan 的图表示（Sea of Nodes）是什么？
-</div>
+<div class="follow-up">TurboFan 的图表示（Sea of Nodes）是什么？</div>
 
 TurboFan 使用 Sea of Nodes 图表示进行优化（详见 [V8 源码：src/compiler/node.h](https://github.com/v8/v8/blob/main/src/compiler/node.h)）：
 
@@ -622,26 +626,27 @@ TurboFan 使用 Sea of Nodes 图表示进行优化（详见 [V8 源码：src/com
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 十、及格回答 vs 满分回答
 
 ### 问题："说说 V8 是怎么执行 JavaScript 的"
 
 **及格回答（60-70分）：**
+
 > "V8 先把 JS 编译成字节码，然后用解释器执行。热点代码会用 TurboFan 编译成机器码加速。"
 
-面试官评价：**知道流程但不理解优化细节**。
+问题出在：**知道流程但不理解优化细节**。
 
 **满分回答（90-100分）：**
 
-> V8 的编译流水线是分层设计的：Parser 将源码解析为 AST，Ignition 将 AST 编译为字节码并解释执行，同时收集类型反馈。被调用几次的函数会通过 Sparkplug（基线编译器）转为无优化机器码。被调用很多次的热点函数会通过 TurboFan（优化编译器）进行激进优化后生成高性能机器码。<sup>[1]</sup>
+> V8 的编译流水线是分层设计的：Parser 将源码解析为 AST，Ignition 将 AST 编译为字节码并解释执行，同时收集类型反馈。被调用几次的函数会通过 Sparkplug（基线编译器）转为无优化机器码；更热的函数先交给 Maglev 做中层优化；真正的高频热点才交给 TurboFan（优化编译器）激进优化。<sup>[1]</sup>
 
-> TurboFan 优化的核心是**类型特化**。它基于 Ignition 收集的类型反馈，假设操作数类型固定，生成针对性的机器码。比如整数加法直接用 CPU 的 ADD 指令，不需要运行时类型检查。关键的优化手段包括内联缓存（IC）、内联（Inlining）、逃逸分析、冗余消除等。如果假设被违反（比如变量突然变成不同类型），会触发反优化（Deoptimization），回退到解释执行。<sup>[2]</sup>
+> TurboFan 优化的核心是**类型特化**。它基于 Ignition 收集的类型反馈，假设操作数类型固定，生成针对性的机器码。比如整数加法直接用 CPU 的 ADD 指令，不需要运行时类型检查。关键的优化手段包括内联（Inlining）、逃逸分析、冗余消除、循环优化等。如果假设被违反（比如变量突然变成不同类型），会触发反优化（Deoptimization），回退到解释执行。<sup>[2]</sup>
 
 > 内联缓存（IC）和隐藏类（Hidden Class）是 V8 对象访问优化的基础。V8 给每个对象分配一个隐藏类（描述对象的属性布局），相同形状的对象共享同一个隐藏类。IC 缓存属性查找结果——如果连续访问的对象都是同一隐藏类，直接用偏移访问，跳过原型链查找。保持对象形状一致是写出 JIT 友好代码的关键。<sup>[3]</sup>
 
-> 实际开发建议：保持变量类型一致（避免反优化）、构造函数中一次性声明所有属性（稳定隐藏类）、避免 delete 操作（改变对象形状）、使用密集数组而非稀疏数组（Packed > Holey）。这些写法看起来是微优化，但在高频调用路径上差距可达 10 倍以上。
+> 实际开发建议：保持变量类型一致（避免反优化）、构造函数中一次性声明所有属性（稳定隐藏类）、避免 delete 操作（改变对象形状）、使用密集数组而非稀疏数组（Packed > Holey）。这些写法看起来是微优化，但在高频调用路径上差距会被明显放大。
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
@@ -654,7 +659,7 @@ TurboFan 使用 Sea of Nodes 图表示进行优化（详见 [V8 源码：src/com
     "解释器逐条读取字节码并执行，不需要编译阶段，启动快但执行慢——每条指令都要经过'读取-解码-执行'循环。
     编译器把整个程序翻译成机器码，启动慢但执行快——翻译完后直接运行机器码，没有解释开销。
 
-    JIT 是两者的结合：先用解释器快速启动（零编译延迟），同时收集运行时信息；对热点代码用编译器生成优化机器码（高执行速度）。V8 的分层设计（Ignition → Sparkplug → TurboFan）就是这个思路的极致体现——简单函数用解释器就够了，只有真正的热点才值得花时间编译优化。"
+    JIT 是两者的结合：先用解释器快速启动（零编译延迟），同时收集运行时信息；对热点代码用编译器生成优化机器码（高执行速度）。V8 的分层设计（Ignition → Sparkplug → Maglev → TurboFan）就是这个思路的极致体现——简单函数用解释器就够了，只有真正的热点才值得花时间编译优化。"
 
   </Accordion>
 
@@ -666,7 +671,7 @@ TurboFan 使用 Sea of Nodes 图表示进行优化（详见 [V8 源码：src/com
     **高分回答：**
     "直接从源码编译成机器码有两个问题：
     1. **编译耗时**：编译整个页面的 JS 为机器码需要时间，用户会看到白屏
-    2. **内存占用**：机器码比字节码大 3-10 倍，移动设备内存有限
+    2. **内存占用**：机器码通常比字节码大，移动设备内存有限
 
     字节码是折中方案：比源码紧凑（压缩后更小），比机器码小得多（节省内存），解释执行够快（对非热点代码足够）。只有真正的热点函数才值得编译成机器码。
 
@@ -677,18 +682,18 @@ TurboFan 使用 Sea of Nodes 图表示进行优化（详见 [V8 源码：src/com
   <Accordion title='内联缓存的 MONOMORPHIC/POLYMORPHIC/MEGAMORPHIC 分别意味着什么？' icon="stopwatch">
 
     **答题要点：**
-    三种状态对应不同的优化程度，关键是要给出具体的性能数字。
+    三种状态对应不同的优化程度，重点说清状态之间的退化关系。
 
     **高分回答：**
     "内联缓存（IC）记录了一个属性访问操作见过的类型数量：
 
-    **MONOMORPHIC**（单态）：只见过 1 种类型。IC 直接缓存该类型的隐藏类和属性偏移，下次访问直接读偏移，不需要查找。性能最好，约 1-2ns。
+    **MONOMORPHIC**（单态）：只见过 1 种类型。IC 直接缓存该类型的隐藏类和属性偏移，下次访问直接读偏移，不需要查找。性能最好。
 
-    **POLYMORPHIC**（多态）：见过 2-4 种类型。IC 用线性表存储多种类型的缓存，逐个检查。性能中等，约 5-10ns。
+    **POLYMORPHIC**（多态）：见过 2-4 种类型。IC 用线性表存储多种类型的缓存，逐个检查。性能中等。
 
-    **MEGAMORPHIC**（超态）：见过 5+ 种类型。IC 放弃缓存，退化为通用的属性查找（遍历原型链）。性能最差，约 50-100ns。
+    **MEGAMORPHIC**（超态）：见过 5+ 种类型。IC 放弃缓存，退化为通用的属性查找（遍历原型链）。性能最差。
 
-    所以在热点路径上，保持类型一致（MONOMORPHIC）可以获得 10-50 倍的性能提升。"
+    所以在热点路径上，保持类型一致（MONOMORPHIC）能省掉反复的类型判断和原型链查找，差距随调用次数被放大。"
 
   </Accordion>
 
@@ -759,11 +764,11 @@ TurboFan 使用 Sea of Nodes 图表示进行优化（详见 [V8 源码：src/com
 
     ```javascript
     // ✅ Packed — 最快
-    const arr = [1, 2, 3, 4]; // Packed SMI
+    const packedArr = [1, 2, 3, 4]; // Packed SMI
 
     // ❌ Holey — 较慢
-    const arr = [1, 2, , 4]; // Holey（索引 2 是空洞）
-    arr[100] = 5; // 变成稀疏数组
+    const holeyArr = [1, 2, , 4]; // Holey（索引 2 是空洞）
+    holeyArr[100] = 5; // 变成稀疏数组
     ```
 
     数组种类会'降级'但不会'升级'：Packed SMI → Packed Double → Packed Elements → Holey Elements。一旦降级就无法恢复。所以尽量保持数组元素类型一致、避免空洞。"
@@ -826,9 +831,9 @@ TurboFan 使用 Sea of Nodes 图表示进行优化（详见 [V8 源码：src/com
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 🔗 [V8 官方博客：Ignition — V8 的解释器](https://v8.dev/blog/ignition-interpreter)：V8 团队对 Ignition 字节码和解释执行的权威介绍。<sup>[1]</sup>
-- 📖 [V8 官方博客：TurboFan JIT 编译器](https://v8.dev/blog/turbofan-jit)：深度剖析 TurboFan 的 Sea of Nodes 图表示和优化 Pass。<sup>[2]</sup>
-- 🔗 [mraleph 博客：JavaScript 性能优化](https://mrale.ph/blog/)：V8 核心开发者 Vyacheslav Egorov 的博客，内联缓存和 Hidden Class 的权威解释。<sup>[3]</sup>
-- 📖 [MDN：V8 的优化与反优化](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Performance)：Mozilla 对 V8 优化机制的开发者指南。<sup>[4]</sup>
+- [V8 官方博客：Ignition — V8 的解释器](https://v8.dev/blog/ignition-interpreter)：V8 团队对 Ignition 字节码和解释执行的权威介绍。<sup>[1]</sup>
+- [V8 官方博客：TurboFan JIT 编译器](https://v8.dev/blog/turbofan-jit)：深度剖析 TurboFan 的 Sea of Nodes 图表示和优化 Pass。<sup>[2]</sup>
+- [mraleph 博客：JavaScript 性能优化](https://mrale.ph/blog/)：V8 核心开发者 Vyacheslav Egorov 的博客，内联缓存和 Hidden Class 的权威解释。<sup>[3]</sup>
+- [MDN：JavaScript 性能](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Performance)：基准测试与运行时优化的开发者指南。<sup>[4]</sup>

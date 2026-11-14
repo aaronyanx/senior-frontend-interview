@@ -1,10 +1,9 @@
 ---
 title: "原型与原型链"
+description: "原型链查找机制、手写 instanceof/new/Object.create、__proto__ 与 prototype 的区别及 V8 内联缓存。"
 ---
 
-> **面试官为什么问这个？**
->
-> 即使在 ES6 Class 满天飞的今天，JavaScript 依然是一门基于原型的动态语言。面试官问这个，本质上是在考察你：**是否理解 JS 对象之间复用方法和继承属性的底层纽带？** 不理解原型链，你就无法读懂 Vue/React 源码中的对象劫持，更无法理解 V8 引擎是如何通过 Inline Cache 优化对象属性访问性能的。
+> 原型链我最早只记"向上查找"，后来才把 `instanceof` 的原理和修改 `Object.prototype` 的性能代价串起来。
 
 ---
 
@@ -12,31 +11,31 @@ title: "原型与原型链"
 
 <Steps>
 
-  <Step title="1995年: JS 的原型继承设计">
+<Step title="1995年: JS 的原型继承设计">
 
-    JavaScript 没有采用传统的类继承，而是采用了**原型继承**——每个对象都有一个内部链接指向另一个对象（它的原型），形成一条链。
+JavaScript 没有采用传统的类继承，而是采用了**原型继承**——每个对象都有一个内部链接指向另一个对象（它的原型），形成一条链。
 
-  </Step>
-  <Step title="致命痛点: 方法复用">
+</Step>
+<Step title="致命痛点: 方法复用">
 
-    如果每个实例都独立拥有一份方法的拷贝，内存消耗会爆炸。原型链让所有实例共享原型上的方法，只存一份。
+如果每个实例都独立拥有一份方法的拷贝，内存消耗会爆炸。原型链让所有实例共享原型上的方法，只存一份。
 
-  </Step>
-  <Step title="核心机制: 沿 __proto__ 向上攀升">
+</Step>
+<Step title="核心机制: 沿 __proto__ 向上攀升">
 
-    当访问一个对象的属性时，如果对象自身没有，引擎就会沿着它的 `__proto__` 链条一直往上找，直到找到目标属性或者到达 `null` 为止。
+当访问一个对象的属性时，如果对象自身没有，引擎就会沿着它的 `__proto__` 链条一直往上找，直到找到目标属性或者到达 `null` 为止。
 
-  </Step>
-  <Step title="V8 的极致优化: Inline Cache">
+</Step>
+<Step title="V8 的极致优化: Inline Cache">
 
-    V8 并没有把对象当成哈希表，而是为每个对象生成了 Hidden Class（Map）。第一次访问 `obj.foo` 沿原型链找到后，V8 会缓存结果（Inline Cache）。下次同一行代码再访问时，直接根据缓存的偏移量取值，O(1) 复杂度。
+V8 并没有把对象当成哈希表，而是为每个对象生成了 Hidden Class（Map）。第一次访问 `obj.foo` 沿原型链找到后，V8 会缓存结果（Inline Cache）。下次同一行代码再访问时，直接根据缓存的偏移量取值，O(1) 复杂度。
 
-  </Step>
-  <Step title="关键洞察: 动态修改原型是致命的">
+</Step>
+<Step title="关键洞察: 动态修改原型是致命的">
 
-    给 `Object.prototype` 加属性会导致所有对象的 Map 失效，Inline Cache 瞬间破产，性能暴跌百倍。
+给 `Object.prototype` 加属性会导致所有对象的 Map 失效，Inline Cache 随之失效，性能明显下降。
 
-  </Step>
+</Step>
 
 </Steps>
 
@@ -54,10 +53,9 @@ title: "原型与原型链"
 1000 个对象只存一份 sayHello，挂在 Constructor.prototype 上。
 ```
 
-<Tip title="🎢 通俗比喻: 家族祠堂">
+<Tip title="通俗比喻: 家族祠堂">
 
 原型链就像一个家族的祠堂。每个族人（实例）自己身上没有的技能（属性/方法），就去祠堂（原型对象）里找。祠堂里挂了一块牌匾写着"会做饭"（`sayHello`），所有族人都会做饭——不是每个人都学了一遍，而是大家共享同一个祠堂的资源。如果祠堂里找不到，就去上级祠堂（`Object.prototype`）找，一直往上追溯到始祖（`null`）。给祠堂乱加东西（修改 `Object.prototype`）会影响所有族人，所以千万别这么干。
-
 
 </Tip>
 
@@ -84,26 +82,28 @@ title: "原型与原型链"
 └───────────────────────────────────────┘
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
-原型链是 JS 实现动态继承的基石，V8 用 Inline Cache 把 O(n) 的链式查找优化到 O(1)。
+原型链是 JS 实现动态继承的基石，V8 用 Inline Cache 让热点访问在命中缓存后降到 O(1)。
 
 </Note>
 
 <CardGroup cols={2}>
 
-<Card title="🚫 错误示范: 原型链污染">
+<Card title="错误示范: 原型链污染">
 
 直接修改全局构造函数的 prototype，会顺着原型链波及所有数组实例，引发极其难以排查的 Bug。
+
 ```javascript
-Object.prototype.say = function() { ... }
+Object.prototype.say = function () {};
 // 所有对象都被污染了！
 ```
 
 </Card>
-<Card title="✅ 正确解法: 安全的字典对象">
+<Card title="正确解法: 安全的字典对象">
 
 如果你只需要一个纯粹的 Key-Value 映射字典，不需要继承任何对象方法。
+
 ```javascript
 const dict = Object.create(null);
 // 原型链指向 null，没有 toString 等污染
@@ -119,7 +119,12 @@ const dict = Object.create(null);
 ```javascript
 // 手写 instanceof
 function myInstanceof(left, right) {
-  if (typeof left !== 'object' || left === null) return false;
+  if (
+    left === null ||
+    (typeof left !== "object" && typeof left !== "function")
+  ) {
+    return false; // 基本类型直接返回 false
+  }
   let proto = Object.getPrototypeOf(left);
   while (proto !== null) {
     if (proto === right.prototype) return true;
@@ -131,8 +136,12 @@ function myInstanceof(left, right) {
 // 手写 new 操作符
 function myNew(Constructor, ...args) {
   const obj = Object.create(Constructor.prototype); // 创建空对象，链接原型
-  const result = Constructor.apply(obj, args);       // 执行构造函数
-  return (result !== null && typeof result === 'object') ? result : obj; // 防御性判断
+  const result = Constructor.apply(obj, args); // 执行构造函数
+  // 构造函数返回对象（含函数）时以它为准，否则返回新实例
+  return result !== null &&
+    (typeof result === "object" || typeof result === "function")
+    ? result
+    : obj;
 }
 ```
 
@@ -164,19 +173,18 @@ function myCreate(proto) {
 }
 ```
 
-<Warning title="⚠️ 致命踩坑: new 的最后一步">
+<Warning title="致命踩坑: new 的最后一步">
 
 `new` 的最后一步（判断返回值）经常被遗漏。如果构造函数内部主动 `return` 了一个对象，必须以它为准；否则返回新创建的实例。这也是为什么在设计模式中，我们可以通过在构造函数内部 `return` 一个单例对象，来强行覆盖 `new` 的默认实例化行为。
-
 
 </Warning>
 
 ---
 
-## 🔍 底层源码：V8 的 Inline Cache 优化
+## 底层源码：V8 的 Inline Cache 优化
 
 <div class="follow-up">
-原型链查找明明要一层层往上找，为什么在 V8 里读取对象属性依然极快？
+  原型链查找明明要一层层往上找，为什么在 V8 里读取对象属性依然极快？
 </div>
 
 V8 对原型链查找做了极致的优化（详见 [V8 Blog: Inline Caches](https://v8.dev/blog/ic-under-the-hood)）：
@@ -187,14 +195,15 @@ V8 对原型链查找做了极致的优化（详见 [V8 Blog: Inline Caches](htt
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 十、及格回答 vs 满分回答
 
 ### 问题："请谈谈你对 JavaScript 原型链的理解？"
 
 **及格回答（60-70分）：**
+
 > "每个对象都有一个 `__proto__` 属性，指向它构造函数的 `prototype`。当访问一个属性时，如果自己身上没有，就会顺着 `[[Prototype]]` 链一直往上找。我们在原型上写方法可以实现内存复用。"
 
-面试官评价：**标准课本背诵，缺乏对底层引擎设计的认知。**
+问题出在：**标准课本背诵，缺乏对底层引擎设计的认知。**
 
 **满分回答（90-100分）：**
 
@@ -204,7 +213,7 @@ V8 对原型链查找做了极致的优化（详见 [V8 Blog: Inline Caches](htt
 
 > "基于上述底层优化，在实际业务中坚决反对随意篡改原生内置对象（如修改 `Array.prototype`）。这种操作会瞬间导致所有相关对象的 Map 失效，摧毁 V8 好不容易建立的 IC 缓存路径，引发大面积的性能断崖。<sup>[3]</sup>"
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
@@ -275,7 +284,7 @@ V8 对原型链查找做了极致的优化（详见 [V8 Blog: Inline Caches](htt
     ```javascript
     function Parent(name) { this.name = name; }
     Parent.prototype.sayHello = function() { return 'hello ' + this.name; };
-    
+
     function Child(name, age) {
       Parent.call(this, name); // 继承实例属性
       this.age = age;
@@ -293,18 +302,18 @@ V8 对原型链查找做了极致的优化（详见 [V8 Blog: Inline Caches](htt
     从 V8 Hidden Class 和 Inline Cache 的角度解释。
 
     **高分回答：**
-    "V8 为每个对象生成 Hidden Class（Map），描述对象的内存布局和属性偏移量。Inline Cache 缓存了 Map 与属性偏移量的映射关系。修改 `Object.prototype` 会导致**所有对象的 Map 失效**（因为所有对象的原型链都经过 `Object.prototype`），IC 缓存瞬间破产，V8 不得不重新逐层查找原型链，性能暴跌百倍。
+    "V8 为每个对象生成 Hidden Class（Map），描述对象的内存布局和属性偏移量。Inline Cache 缓存了 Map 与属性偏移量的映射关系。修改 `Object.prototype` 会导致**所有对象的 Map 失效**（因为所有对象的原型链都经过 `Object.prototype`），IC 缓存瞬间失效，V8 不得不重新逐层查找原型链，性能明显下降。
     ```javascript
     // ❌ 极其危险——摧毁所有对象的 IC 缓存
     Object.prototype.say = function() {};
-    
+
     // ✅ 用 Object.create(null) 创建纯净字典
     const dict = Object.create(null);
     ```
 
   </Accordion>
 
-  <Accordion title='🔥 手写一个 Object.create 并解释其原理' icon="skull">
+  <Accordion title='手写一个 Object.create 并解释其原理' icon="skull">
 
     **答题要点：**
     本质是创建空对象并设置原型指向。
@@ -327,7 +336,7 @@ V8 对原型链查找做了极致的优化（详见 [V8 Blog: Inline Caches](htt
 
   </Accordion>
 
-  <Accordion title='🔥 prototype 的 constructor 属性有什么用？丢失了怎么办?' icon="skull">
+  <Accordion title='prototype 的 constructor 属性有什么用？丢失了怎么办?' icon="skull">
 
     **答题要点：**
     constructor 指回构造函数，手动赋值原型对象时会丢失。
@@ -355,8 +364,8 @@ V8 对原型链查找做了极致的优化（详见 [V8 Blog: Inline Caches](htt
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 🔗 [V8 Deep Dive: Inline Caches](https://v8.dev/blog/ic-under-the-hood)：*V8 官方揭秘内联缓存与原型链性能优化底层原理。* <sup>[1]</sup>
-- 📖 [MDN Web Docs: 继承与原型链](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Inheritance_and_the_prototype_chain)：*MDN 最权威的基础语言特性梳理。* <sup>[2]</sup>
-- 🟢 [V8 Source Code: ic.cc](https://github.com/v8/v8/blob/main/src/ic/ic.cc)：*V8 内联缓存的核心实现源码。* <sup>[3]</sup>
+- [V8 Deep Dive: Inline Caches](https://v8.dev/blog/ic-under-the-hood)：_V8 官方揭秘内联缓存与原型链性能优化底层原理。_ <sup>[1]</sup>
+- [MDN Web Docs: 继承与原型链](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Inheritance_and_the_prototype_chain)：_MDN 最权威的基础语言特性梳理。_ <sup>[2]</sup>
+- [V8 Source Code: ic.cc](https://github.com/v8/v8/blob/main/src/ic/ic.cc)：_V8 内联缓存的核心实现源码。_ <sup>[3]</sup>

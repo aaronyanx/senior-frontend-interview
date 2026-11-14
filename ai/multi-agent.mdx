@@ -1,10 +1,9 @@
 ---
 title: "Multi-Agent"
+description: "多 Agent 协作模式、通信方式、错误隔离、长任务设计，以及 Supervisor/Handoff/GroupChat 等编排面试要点。"
 ---
 
-> **面试官为什么问这个？**
->
-> Multi-Agent 是 AI 工程化的前沿方向。面试官问这个，本质上是在考察你：**是否理解多 Agent 系统的架构设计、通信机制、错误处理——这些直接决定了你能不能设计可靠的 AI 工作流。** 如果你答不清楚，说明你对 AI 系统的理解停留在"单个 Agent 调工具"而不是"设计协作系统"。
+> 多 Agent 我最怕的是把工作流节点当成 Agent：拆完没有状态归属、没有终止条件，系统一跑就互相甩锅。
 
 ---
 
@@ -52,7 +51,7 @@ Multi-Agent 可以并行执行多个任务，加速处理。但 Agent 之间的�
 Multi-Agent：Supervisor 分配任务 → 各 Agent 专注执行 → 结果汇总
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 Multi-Agent 把"一个全能选手"拆成"多个专业选手"，各司其职、并行协作。
 
@@ -60,19 +59,19 @@ Multi-Agent 把"一个全能选手"拆成"多个专业选手"，各司其职、�
 
 <CardGroup cols={2}>
 
-<Card title="🚫 没有 Multi-Agent">
+<Card title="没有 Multi-Agent">
 
 你让一个 Agent 同时负责写代码、审查代码、写测试。它的 prompt 有 5000 字，上下文窗口快满了。写出来的代码有 bug，审查时又漏掉了，测试也没覆盖到边界情况。
 
 </Card>
-<Card title="✅ 引入 Multi-Agent">
+<Card title="引入 Multi-Agent">
 
 你拆成三个 Agent：Coder Agent 专注写代码（prompt 500 字），Reviewer Agent 专注审查（prompt 300 字），Tester Agent 专注写测试（prompt 400 字）。三个 Agent 并行执行，各自的 prompt 简短精准，输出质量大幅提升。
 
 </Card>
 </CardGroup>
 
-<Tip title="🎢 通俗比喻: 专科医院 vs 全科诊所">
+<Tip title="通俗比喻: 专科医院 vs 全科诊所">
 
 Multi-Agent 就像从全科诊所升级为专科医院。单 Agent 是全科诊所——一个医生看所有病（写代码 + 审查 + 测试），什么都懂一点但什么都不精，病人多了（上下文窗口溢出）就手忙脚乱。Multi-Agent 是专科医院——内科只看内科、外科只看外科、检验科只做化验（专业化分工），各科室可以同时接诊不同病人（并行执行），院长（Supervisor）负责分诊和协调。每个专科医生的诊疗手册（prompt）简短精准，诊断质量远高于全科医生。
 
@@ -151,7 +150,7 @@ const debate = new StateGraph()
   .compile();
 ```
 
-<Warning title="⚠️ 核心机制: 错误处理策略">
+<Warning title="核心机制: 错误处理策略">
 
 Agent A 输出错误内容时，B 和 C 怎么办？有三种策略：
 
@@ -163,7 +162,7 @@ Agent A 输出错误内容时，B 和 C 怎么办？有三种策略：
 
 </Warning>
 
-<Tip title="🎢 通俗比喻: 医院会诊">
+<Tip title="通俗比喻: 医院会诊">
 
 Multi-Agent 就像医院的多科会诊。Pipeline 是先看内科、再看外科、最后看康复科（有先后顺序）。Fan-out 是同时查血常规、CT、心电图（并行检查），然后汇总结果。Supervisor 是主治医师根据检查结果决定下一步（看哪个科室）。Debate 是多个专家对同一个病例给出不同诊断，最后由主任医师裁定。
 
@@ -185,13 +184,13 @@ Multi-Agent 就像医院的多科会诊。Pipeline 是先看内科、再看外�
 
 ### Multi-Agent 架构的五大模式详解
 
-| 模式 | 拓扑结构 | 通信方式 | 适用场景 | 复杂度 |
-|------|---------|---------|---------|--------|
-| **Pipeline** | 线性链 | 上游输出 → 下游输入 | 数据处理流水线 | 低 |
-| **Fan-out/Fan-in** | 扇出/扇入 | 并行执行 + Reducer 合并 | 独立子任务并行 | 中 |
-| **Supervisor** | 星形 | 主管路由 + Agent 执行 | 动态任务分配 | 中 |
-| **Hierarchical** | 树形 | 多层路由 | 大型复杂任务 | 高 |
-| **Debate** | 全连接 | 并行输出 + 仲裁 | 技术决策、代码审查 | 中 |
+| 模式               | 拓扑结构  | 通信方式                | 适用场景           | 复杂度 |
+| ------------------ | --------- | ----------------------- | ------------------ | ------ |
+| **Pipeline**       | 线性链    | 上游输出 → 下游输入     | 数据处理流水线     | 低     |
+| **Fan-out/Fan-in** | 扇出/扇入 | 并行执行 + Reducer 合并 | 独立子任务并行     | 中     |
+| **Supervisor**     | 星形      | 主管路由 + Agent 执行   | 动态任务分配       | 中     |
+| **Hierarchical**   | 树形      | 多层路由                | 大型复杂任务       | 高     |
+| **Debate**         | 全连接    | 并行输出 + 仲裁         | 技术决策、代码审查 | 中     |
 
 ---
 
@@ -199,12 +198,12 @@ Multi-Agent 就像医院的多科会诊。Pipeline 是先看内科、再看外�
 
 ### 基础梳理
 
-| 通信方式 | 实现 | 适用场景 |
-|---------|------|---------|
-| **共享 State** | 所有 Agent 读写同一个 State 对象 | LangGraph（最常用） |
-| **消息传递** | Agent 之间直接发消息 | 独立进程的 Agent |
-| **黑板模式** | 共享的"黑板"，所有 Agent 都可以读写 | 传统 AI 系统 |
-| **事件总线** | Agent 发布事件，其他 Agent 订阅 | 松耦合系统 |
+| 通信方式       | 实现                                | 适用场景            |
+| -------------- | ----------------------------------- | ------------------- |
+| **共享 State** | 所有 Agent 读写同一个 State 对象    | LangGraph（最常用） |
+| **消息传递**   | Agent 之间直接发消息                | 独立进程的 Agent    |
+| **黑板模式**   | 共享的"黑板"，所有 Agent 都可以读写 | 传统 AI 系统        |
+| **事件总线**   | Agent 发布事件，其他 Agent 订阅     | 松耦合系统          |
 
 ### 专家视角深度剖析
 
@@ -251,12 +250,12 @@ const eventBus = {
     this.listeners[event].push(callback);
   },
   emit(event, data) {
-    (this.listeners[event] || []).forEach(cb => cb(data));
+    (this.listeners[event] || []).forEach((cb) => cb(data));
   },
 };
 ```
 
-<Tip title="🎢 通俗比喻: 办公室沟通方式">
+<Tip title="通俗比喻: 办公室沟通方式">
 
 Agent 之间的通信就像办公室里的不同沟通方式。共享 State 是"白板"——所有人围着同一块白板工作，谁都能看、谁都能写（LangGraph 的方式，最常用但需要约定规则避免冲突）。消息传递是"发邮件"——你写好内容发给对方，对方有空再看（独立进程的 Agent）。事件总线是"广播喇叭"——你广播一条消息"会议室有咖啡"，感兴趣的人自己来拿（松耦合系统）。选择哪种取决于团队规模和协作紧密度——小团队用白板（共享 State），大团队用邮件（消息传递），跨部门用广播（事件总线）。
 
@@ -264,13 +263,13 @@ Agent 之间的通信就像办公室里的不同沟通方式。共享 State 是"
 
 ### 通信协议的选择标准
 
-| 通信方式 | 延迟 | 解耦程度 | 实现复杂度 | 适用场景 |
-|---------|------|---------|-----------|---------|
-| **共享 State** | 最低 | 低（紧耦合） | 低 | 同一进程内的 LangGraph |
-| **消息传递** | 中 | 中 | 中 | 独立进程的 Agent |
-| **事件总线** | 中 | 高（松耦合） | 高 | 分布式系统 |
-| **REST API** | 高 | 高 | 中 | 跨机器的 Agent |
-| **gRPC** | 低 | 高 | 高 | 高性能分布式系统 |
+| 通信方式       | 延迟 | 解耦程度     | 实现复杂度 | 适用场景               |
+| -------------- | ---- | ------------ | ---------- | ---------------------- |
+| **共享 State** | 最低 | 低（紧耦合） | 低         | 同一进程内的 LangGraph |
+| **消息传递**   | 中   | 中           | 中         | 独立进程的 Agent       |
+| **事件总线**   | 中   | 高（松耦合） | 高         | 分布式系统             |
+| **REST API**   | 高   | 高           | 中         | 跨机器的 Agent         |
+| **gRPC**       | 低   | 高           | 高         | 高性能分布式系统       |
 
 ### Agent 间通信的 Token 开销
 
@@ -318,7 +317,7 @@ async function summarizeAndPass(output) {
 // 解决：用弱模型做简单任务、缓存结果、按需调用
 ```
 
-<Tip title="🎢 通俗比喻: 团队协作的隐形成本">
+<Tip title="通俗比喻: 团队协作的隐形成本">
 
 Multi-Agent 的核心挑战就像管理一个大团队。通信开销是"开会成本"——10 个人的团队，每次开会所有人的时间都算成本（token 消耗是单 Agent 的 N 倍）。错误传播是"传递错误信息"——A 给了 B 错误数据，B 基于错误数据做了错误决策，C 又基于 B 的错误继续错下去。死循环是"互相推诿"——A 说"这事该 B 做"，B 说"这事该 A 做"，无限循环。一致性是"多人同时改同一份文档"——需要锁定机制（Reducer 合并）避免冲突。
 
@@ -336,7 +335,7 @@ const agent = createReactAgent({
 
 // 用弱模型处理简单任务
 const simpleAgent = createReactAgent({
-  llm: new ChatOpenAI({ model: 'gpt-4o-mini' }), // 便宜的模型
+  llm: new ChatOpenAI({ model: "gpt-4o-mini" }), // 便宜的模型
   tools: [basicTool],
 });
 
@@ -436,7 +435,7 @@ const collaborativeGraph = new StateGraph()
   .compile();
 ```
 
-<Warning title="⚠️ 核心机制: 模式选择的决策树">
+<Warning title="核心机制: 模式选择的决策树">
 
 选择协作模式的决策树：
 
@@ -450,7 +449,7 @@ const collaborativeGraph = new StateGraph()
 
 </Warning>
 
-<Tip title="🎢 通俗比喻: 公司组织架构">
+<Tip title="通俗比喻: 公司组织架构">
 
 Hierarchical 就像大公司的组织架构——CEO（顶层 Supervisor）决定大方向，VP（中层 Supervisor）分配具体任务，员工（底层 Agent）执行。Collaborative 就像创业小团队——没有严格的上下级，大家平等地讨论和协作，最后达成共识。大公司适合层级模式（任务复杂、需要分工），小团队适合协作模式（需要快速决策、多视角输入）。
 
@@ -506,7 +505,7 @@ Hierarchical 就像大公司的组织架构——CEO（顶层 Supervisor）决�
 
 </Steps>
 
-<Tip title="🎢 通俗比喻: 考试应急方案">
+<Tip title="通俗比喻: 考试应急方案">
 
 Multi-Agent 的错误处理就像考试时的应急方案。容错继续是"一道题不会不影响做其他题"——A 题卡住了（Agent A 失败），先跳过做 B 和 C，最后再回来处理 A。快速失败是"发现作弊立即收卷"——任何一个环节出大错（致命错误），立即终止整个流程。重试降级是"写错了用修正带"——先尝试修正（重试 3 次），修正不了就换个方案（降级到弱模型）。Human-in-the-Loop 是"关键题请老师确认"——高风险操作（删除数据、发邮件）前暂停，等人类审批后才执行。
 
@@ -536,11 +535,11 @@ async function faultTolerant(state) {
   ]);
   // 区分成功和失败的结果
   const succeeded = results
-    .filter(r => r.status === 'fulfilled')
-    .map(r => r.value);
+    .filter((r) => r.status === "fulfilled")
+    .map((r) => r.value);
   const failed = results
-    .filter(r => r.status === 'rejected')
-    .map(r => r.reason.message);
+    .filter((r) => r.status === "rejected")
+    .map((r) => r.reason.message);
   return { results: succeeded, errors: failed };
 }
 
@@ -556,15 +555,15 @@ async function failFast(state) {
 }
 
 // 策略 3：重试 + 降级
-import { RetryPolicy } from '@langchain/langgraph';
+import { RetryPolicy } from "@langchain/langgraph";
 
 const retryPolicy = new RetryPolicy({
-  maxAttempts: 3,           // 最多重试 3 次
-  backoffFactor: 2,         // 退避倍数：1s → 2s → 4s
+  maxAttempts: 3, // 最多重试 3 次
+  backoffFactor: 2, // 退避倍数：1s → 2s → 4s
   retryOn: (error) => {
     // 只重试临时性错误（网络超时、API 限流）
     // 不重试永久性错误（参数错误、权限不足）
-    return error.code === 'TIMEOUT' || error.code === 'RATE_LIMIT';
+    return error.code === "TIMEOUT" || error.code === "RATE_LIMIT";
   },
 });
 
@@ -600,21 +599,21 @@ async function humanApproval(state) {
 
 function getRetryDelay(attempt) {
   const base = Math.pow(2, attempt) * 1000; // 指数退避
-  const jitter = Math.random() * 1000;       // 随机抖动
+  const jitter = Math.random() * 1000; // 随机抖动
   return base + jitter;
 }
 
 // 重试的错误分类
 const retryableErrors = [
-  'TIMEOUT',        // 网络超时
-  'RATE_LIMIT',     // API 限流
-  'SERVER_ERROR',   // 服务端 500 错误
+  "TIMEOUT", // 网络超时
+  "RATE_LIMIT", // API 限流
+  "SERVER_ERROR", // 服务端 500 错误
 ];
 
 const nonRetryableErrors = [
-  'INVALID_PARAMS', // 参数错误（重试也不会成功）
-  'AUTH_FAILED',    // 认证失败
-  'NOT_FOUND',      // 资源不存在
+  "INVALID_PARAMS", // 参数错误（重试也不会成功）
+  "AUTH_FAILED", // 认证失败
+  "NOT_FOUND", // 资源不存在
 ];
 ```
 
@@ -692,7 +691,7 @@ Checkpoint：每个节点执行后自动保存快照，中断后从最近快照�
 进度追踪：子任务拆分 + 状态机 + 依赖解锁
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 长时间运行 Agent 的核心是"异步 + 快照 + 压缩"——后台异步执行，每个节点保存 checkpoint，定期压缩长期记忆。
 
@@ -700,12 +699,12 @@ Checkpoint：每个节点执行后自动保存快照，中断后从最近快照�
 
 <CardGroup cols={2}>
 
-<Card title="🚫 没有长时间运行设计">
+<Card title="没有长时间运行设计">
 
 你让 Agent 连续工作 8 小时重写一个项目。3 小时后上下文溢出，Agent 忘记了之前的技术选型，开始重复劳动。6 小时后进程 OOM 崩溃，所有进度丢失，从头再来。token 费用已经花了 $50。
 
 </Card>
-<Card title="✅ 引入长时间运行设计">
+<Card title="引入长时间运行设计">
 
 你把任务拆成 15 个子任务，异步执行。每完成一个节点自动保存 checkpoint。第 5 个子任务中断了，从 checkpoint 恢复继续。上下文用 Haiku 定期压缩，只保留关键决策。用户随时可以查看进度和暂停。
 
@@ -716,13 +715,13 @@ Checkpoint：每个节点执行后自动保存快照，中断后从最近快照�
 
 ```javascript
 // 异步执行 + 进度追踪
-import { Client } from '@langchain/langgraph-sdk';
+import { Client } from "@langchain/langgraph-sdk";
 
-const client = new Client({ apiUrl: 'http://localhost:2024' });
+const client = new Client({ apiUrl: "http://localhost:2024" });
 
 // 1. 创建异步 run（不阻塞）
-const run = await client.runs.create(threadId, 'agent-graph', {
-  input: { task: '重写用户认证模块' },
+const run = await client.runs.create(threadId, "agent-graph", {
+  input: { task: "重写用户认证模块" },
 });
 
 // 2. 轮询进度
@@ -743,31 +742,31 @@ await client.runs.resume(run.id, { input: { approved: true } });
 // 子任务拆分 + 依赖管理 + 断点续传
 const taskPlan = {
   quests: [
-    { id: 'Q1', name: '分析现有代码', status: 'completed', dependsOn: [] },
-    { id: 'Q2', name: '设计新架构', status: 'completed', dependsOn: ['Q1'] },
-    { id: 'Q3', name: '编写核心模块', status: 'running', dependsOn: ['Q2'] },
-    { id: 'Q4', name: '编写测试', status: 'pending', dependsOn: ['Q3'] },
-    { id: 'Q5', name: '集成测试', status: 'pending', dependsOn: ['Q3', 'Q4'] },
+    { id: "Q1", name: "分析现有代码", status: "completed", dependsOn: [] },
+    { id: "Q2", name: "设计新架构", status: "completed", dependsOn: ["Q1"] },
+    { id: "Q3", name: "编写核心模块", status: "running", dependsOn: ["Q2"] },
+    { id: "Q4", name: "编写测试", status: "pending", dependsOn: ["Q3"] },
+    { id: "Q5", name: "集成测试", status: "pending", dependsOn: ["Q3", "Q4"] },
   ],
 };
 
 // Q3 完成后自动 cascade-unblock Q4
 function onComplete(questId) {
-  const quest = quests.find(q => q.id === questId);
-  quest.status = 'completed';
+  const quest = quests.find((q) => q.id === questId);
+  quest.status = "completed";
   // 解锁依赖此任务的后续任务
   quests
-    .filter(q => q.dependsOn.includes(questId))
-    .forEach(q => {
+    .filter((q) => q.dependsOn.includes(questId))
+    .forEach((q) => {
       const allDepsCompleted = q.dependsOn.every(
-        depId => quests.find(d => d.id === depId).status === 'completed'
+        (depId) => quests.find((d) => d.id === depId).status === "completed",
       );
-      if (allDepsCompleted) q.status = 'unlocked';
+      if (allDepsCompleted) q.status = "unlocked";
     });
 }
 ```
 
-<Tip title="🎢 通俗比喻: 建筑工地施工">
+<Tip title="通俗比喻: 建筑工地施工">
 
 长时间运行 Agent 就像一个大型建筑工地的施工队。异步执行是施工队在后台干活，业主（用户）可以随时来看进度。进度追踪是把工程拆成"打地基→搭框架→砌墙→装修"等子任务，每个子任务有依赖关系（砌墙前必须搭好框架）。Checkpoint 是每完成一步就拍照存档，如果停电了（进程中断），来电后从上次存档的地方继续，不用推倒重来。长期记忆是施工日志——记录了所有关键决策（"承重墙用 C30 混凝土"），新工人（新 session）看了日志就能无缝接续。
 
@@ -819,7 +818,7 @@ function onComplete(questId) {
 成本控制：token 预算 + 模型分级 + Prompt Cache
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 企业级 Agent 的核心是"可控"——权限可控、行为可审计、输出可验证、成本可预测。
 
@@ -876,7 +875,7 @@ const budgetConfig = {
   perAgent: { maxTokens: 4000 },
   perWorkflow: { maxTokens: 50000 },
   totalDaily: { maxTokens: 1000000 },
-  onExceed: 'degrade', // 超预算时降级到弱模型
+  onExceed: "degrade", // 超预算时降级到弱模型
 };
 ```
 
@@ -898,7 +897,7 @@ const budgetConfig = {
 关键原则：不确定性只存在于理解层，执行层必须确定性
 ```
 
-<Tip title="🎢 通俗比喻: 银行柜员">
+<Tip title="通俗比喻: 银行柜员">
 
 企业级 Agent 就像银行柜员。权限收敛是柜员只能操作自己权限内的业务（普通柜员不能做大额转账审批）。审计日志是每笔交易都有记录（时间、金额、操作人、审批人），出了问题可以完整追溯。确定性边界是柜员理解客户需求（LLM 理解意图），但具体操作必须按银行的规章制度来（规则引擎执行），不能随意发挥。容错降级是系统出问题时，柜员可以切换到手工记账模式（降级到规则引擎），不会因为系统故障停止服务。
 
@@ -938,17 +937,19 @@ Supervisor 模式是最常用的编排模式。一个 Supervisor Agent 根据当
 
 ```javascript
 // Supervisor 模式：动态路由 + Agent 执行
-import { StateGraph, END } from '@langchain/langgraph';
-import { ChatOpenAI } from '@langchain/openai';
+import { StateGraph, END } from "@langchain/langgraph";
+import { ChatOpenAI } from "@langchain/openai";
 
-const llm = new ChatOpenAI({ model: 'gpt-4o' });
+const llm = new ChatOpenAI({ model: "gpt-4o" });
 
 // Supervisor 节点：用 LLM 决定下一步
 async function supervisorNode(state) {
   const response = await llm.invoke([
-    SystemMessage(content=`你是主管，决定下一步调用哪个 Agent。
+    SystemMessage(
+      (content = `你是主管，决定下一步调用哪个 Agent。
 可用 Agent：coder（写代码）、reviewer（审查代码）、tester（写测试）。
 输出 JSON：{"next": "coder"} 或 {"next": "reviewer"} 或 {"next": "FINISH"}`),
+    ),
     ...state.messages,
   ]);
   const decision = JSON.parse(response.content);
@@ -963,19 +964,19 @@ async function coderNode(state) {
 
 // 组装图
 const graph = new StateGraph(State)
-  .addNode('supervisor', supervisorNode)
-  .addNode('coder', coderNode)
-  .addNode('reviewer', reviewerNode)
-  .addNode('tester', testerNode)
-  .addConditionalEdges('supervisor', (state) => state.next, {
-    coder: 'coder',
-    reviewer: 'reviewer',
-    tester: 'tester',
+  .addNode("supervisor", supervisorNode)
+  .addNode("coder", coderNode)
+  .addNode("reviewer", reviewerNode)
+  .addNode("tester", testerNode)
+  .addConditionalEdges("supervisor", (state) => state.next, {
+    coder: "coder",
+    reviewer: "reviewer",
+    tester: "tester",
     FINISH: END,
   })
-  .addEdge('coder', 'supervisor')
-  .addEdge('reviewer', 'supervisor')
-  .addEdge('tester', 'supervisor')
+  .addEdge("coder", "supervisor")
+  .addEdge("reviewer", "supervisor")
+  .addEdge("tester", "supervisor")
   .compile();
 ```
 
@@ -987,27 +988,27 @@ Hierarchical 模式把 Supervisor 拆成多层。顶层 Supervisor 做宏观决�
 // Hierarchical 模式：多层 Supervisor
 const hierarchicalGraph = new StateGraph(State)
   // 顶层：宏观决策
-  .addNode('topSupervisor', topSupervisorNode)
+  .addNode("topSupervisor", topSupervisorNode)
   // 中层：领域分配
-  .addNode('devSupervisor', devSupervisorNode)
-  .addNode('qaSupervisor', qaSupervisorNode)
+  .addNode("devSupervisor", devSupervisorNode)
+  .addNode("qaSupervisor", qaSupervisorNode)
   // 底层：执行
-  .addNode('coder', coderAgent)
-  .addNode('reviewer', reviewerAgent)
-  .addNode('tester', testerAgent)
+  .addNode("coder", coderAgent)
+  .addNode("reviewer", reviewerAgent)
+  .addNode("tester", testerAgent)
   // 顶层 → 中层
-  .addConditionalEdges('topSupervisor', (state) => state.domain, {
-    dev: 'devSupervisor',
-    qa: 'qaSupervisor',
+  .addConditionalEdges("topSupervisor", (state) => state.domain, {
+    dev: "devSupervisor",
+    qa: "qaSupervisor",
   })
   // 中层 → 底层
-  .addConditionalEdges('devSupervisor', (state) => state.task, {
-    code: 'coder',
-    review: 'reviewer',
+  .addConditionalEdges("devSupervisor", (state) => state.task, {
+    code: "coder",
+    review: "reviewer",
   })
   // 底层 → 回到中层
-  .addEdge('coder', 'devSupervisor')
-  .addEdge('reviewer', 'devSupervisor')
+  .addEdge("coder", "devSupervisor")
+  .addEdge("reviewer", "devSupervisor")
   .compile();
 ```
 
@@ -1018,23 +1019,23 @@ Network 模式没有固定的主管，所有 Agent 地位平等，可以直接�
 ```javascript
 // Network 模式：Agent 之间直接通信
 const networkGraph = new StateGraph(State)
-  .addNode('architect', architectAgent)
-  .addNode('securityExpert', securityAgent)
-  .addNode('perfExpert', perfAgent)
+  .addNode("architect", architectAgent)
+  .addNode("securityExpert", securityAgent)
+  .addNode("perfExpert", perfAgent)
   // 每个 Agent 可以决定调用其他 Agent 或结束
-  .addConditionalEdges('architect', (state) => state.next, {
-    securityExpert: 'securityExpert',
-    perfExpert: 'perfExpert',
+  .addConditionalEdges("architect", (state) => state.next, {
+    securityExpert: "securityExpert",
+    perfExpert: "perfExpert",
     FINISH: END,
   })
-  .addConditionalEdges('securityExpert', (state) => state.next, {
-    architect: 'architect',
-    perfExpert: 'perfExpert',
+  .addConditionalEdges("securityExpert", (state) => state.next, {
+    architect: "architect",
+    perfExpert: "perfExpert",
     FINISH: END,
   })
-  .addConditionalEdges('perfExpert', (state) => state.next, {
-    architect: 'architect',
-    securityExpert: 'securityExpert',
+  .addConditionalEdges("perfExpert", (state) => state.next, {
+    architect: "architect",
+    securityExpert: "securityExpert",
     FINISH: END,
   })
   .compile();
@@ -1048,30 +1049,30 @@ const networkGraph = new StateGraph(State)
 // 自定义拓扑：Supervisor + Collaborative + Pipeline
 const customGraph = new StateGraph(State)
   // 顶层 Supervisor 路由
-  .addNode('router', routerNode)
+  .addNode("router", routerNode)
   // 并行分析（Collaborative）
-  .addNode('securityCheck', securityAgent)
-  .addNode('perfCheck', perfAgent)
-  .addNode('readabilityCheck', readabilityAgent)
+  .addNode("securityCheck", securityAgent)
+  .addNode("perfCheck", perfAgent)
+  .addNode("readabilityCheck", readabilityAgent)
   // 汇总 + Pipeline 后处理
-  .addNode('consensus', consensusNode)
-  .addNode('formatter', formatterNode)
+  .addNode("consensus", consensusNode)
+  .addNode("formatter", formatterNode)
   // Supervisor → 并行分析
-  .addConditionalEdges('router', () => [
-    new Send('securityCheck', state),
-    new Send('perfCheck', state),
-    new Send('readabilityCheck', state),
+  .addConditionalEdges("router", () => [
+    new Send("securityCheck", state),
+    new Send("perfCheck", state),
+    new Send("readabilityCheck", state),
   ])
   // 并行分析 → 汇总
-  .addEdge('securityCheck', 'consensus')
-  .addEdge('perfCheck', 'consensus')
-  .addEdge('readabilityCheck', 'consensus')
+  .addEdge("securityCheck", "consensus")
+  .addEdge("perfCheck", "consensus")
+  .addEdge("readabilityCheck", "consensus")
   // 汇总 → Pipeline
-  .addEdge('consensus', 'formatter')
+  .addEdge("consensus", "formatter")
   .compile();
 ```
 
-<Tip title="🎢 通俗比喻: 交通调度中心">
+<Tip title="通俗比喻: 交通调度中心">
 
 LangGraph 的编排模式就像不同的交通调度方式。Supervisor 模式是"出租车调度中心"——乘客打电话（用户请求），调度员（Supervisor）根据目的地分配给合适的司机（Worker Agent），司机完成后回来等下一单。Hierarchical 模式是"公交公司层级管理"——总经理管分公司（顶层 Supervisor），分公司管车队（中层），车队管具体线路（底层 Agent）。Network 模式是"拼车群"——没有调度员，乘客和司机在群里直接沟通，灵活但容易乱。自定义拓扑是"综合交通枢纽"——地铁、公交、出租车、共享单车组合使用，按需选择最合适的交通方式。
 
@@ -1079,12 +1080,12 @@ LangGraph 的编排模式就像不同的交通调度方式。Supervisor 模式�
 
 ### 编排模式的选择标准
 
-| 模式 | 控制流 | 适用场景 | 复杂度 | 死循环风险 |
-|------|--------|---------|--------|-----------|
-| **Supervisor** | 中心化路由 | 动态任务分配 | 中 | 低 |
-| **Hierarchical** | 多层路由 | 大型复杂任务 | 高 | 低 |
-| **Network** | 去中心化 | 多轮协商 | 高 | 高 |
-| **自定义拓扑** | 按需组合 | 复杂业务流程 | 最高 | 取决于设计 |
+| 模式             | 控制流     | 适用场景     | 复杂度 | 死循环风险 |
+| ---------------- | ---------- | ------------ | ------ | ---------- |
+| **Supervisor**   | 中心化路由 | 动态任务分配 | 中     | 低         |
+| **Hierarchical** | 多层路由   | 大型复杂任务 | 高     | 低         |
+| **Network**      | 去中心化   | 多轮协商     | 高     | 高         |
+| **自定义拓扑**   | 按需组合   | 复杂业务流程 | 最高   | 取决于设计 |
 
 <Tip title="最佳实践:">
 
@@ -1094,11 +1095,133 @@ LangGraph 的编排模式就像不同的交通调度方式。Supervisor 模式�
 
 ---
 
-## 🔍 底层源码：LangGraph 的 Multi-Agent 实现
+## Q10: Supervisor、Orchestrator-Workers、Handoff、GroupChat、Evaluator-Optimizer 到底差在哪？
 
-<div class="follow-up">
-LangGraph 的 Supervisor 模式是怎么实现的？
-</div>
+> 背定义没有意义。这五种模式的真正差别只有三个问题：**谁决定下一步、状态放在哪、失败怎么传播。** 答不出这三点，就等于只会背名词。
+
+### 一张表看穿五种模式
+
+| 模式                 | 谁决定下一步              | 状态归属              | 代表实现                       | 主要失败模式                           |
+| -------------------- | ------------------------- | --------------------- | ------------------------------ | -------------------------------------- |
+| Supervisor           | 中心 Router（通常是 LLM） | 共享图状态            | LangGraph supervisor           | 路由震荡、Router prompt 膨胀、单点瓶颈 |
+| Orchestrator-Workers | Orchestrator 运行时拆解   | Orchestrator + 结果表 | Anthropic orchestrator-workers | 过度拆解、成本乘法、汇总冲突           |
+| Handoff              | 当前 Agent 主动移交       | 随会话一起移交        | OpenAI Agents SDK handoffs     | 击鼓传花、责任丢失、无全局预算         |
+| GroupChat            | 发言选择器（轮询或 LLM）  | 共享消息记录          | AutoGen GroupChat              | 无限闲聊、上下文爆炸、共识偏差         |
+| Evaluator-Optimizer  | 固定循环：生成 → 评估     | 草稿 + 反馈           | Anthropic evaluator-optimizer  | 不收敛、评估器放水、来回震荡           |
+
+### 状态归属决定"能不能恢复"
+
+这是最容易被忽略、但工程上最关键的一点：
+
+- **共享图状态**（Supervisor）：状态集中，checkpoint 好做，但所有 Worker 争用同一份状态，必须用 reducer 定义合并规则。
+- **会话移交**（Handoff）：状态跟着对话走，实现简单，但没有全局视图，超时和预算难以统一收口。
+- **消息记录**（GroupChat）：状态就是聊天记录，可回放，但 token 随轮次增长很快。
+- **草稿 + 反馈**（Evaluator-Optimizer）：状态最小，适合可自动判分的任务，不适合开放式任务。
+
+<Warning title="失败模式比优点更值得背">
+
+更想听的是失败模式：Supervisor 会**路由震荡**（A 说交给 B，B 又交回 A）；Handoff 会**击鼓传花**（没人对最终结果负责）；GroupChat 会**无限闲聊**；Evaluator-Optimizer 会因为**评估标准模糊而不收敛**。能说出这些，说明你真跑过。
+
+</Warning>
+
+### 每个模式都要能回答"机制 / 替代 / 代价 / 失败 / 验证"
+
+| 模式                 | 机制                             | 替代方案          | 代价                 | 怎么验证                       |
+| -------------------- | -------------------------------- | ----------------- | -------------------- | ------------------------------ |
+| Supervisor           | 每轮由 Router 选下一个 Worker    | 固定路由表        | 每轮多一次 LLM 调用  | 回放 trace，看路由决策是否稳定 |
+| Orchestrator-Workers | 先拆解再并发执行                 | 人工预先拆好      | 拆解质量决定系统上限 | 固定任务集对比拆解前后成功率   |
+| Handoff              | 把控制权和上下文交给下一个 Agent | 中心调度          | 容易丢责任           | 检查每个任务是否有唯一 owner   |
+| GroupChat            | 共享会话 + 选发言人              | Supervisor        | token 随轮次增长     | 统计平均轮次与无效发言占比     |
+| Evaluator-Optimizer  | 生成与评估循环直到达标           | 一次生成 + 人工审 | 评估器偏差会被放大   | 对比评估分与人工分的一致性     |
+
+---
+
+## Q11: 动态拆解 vs 固定工作流路由，什么时候该让模型决定？
+
+这是多 Agent 设计里最常被问、也最容易答错的判断题。
+
+### 机制差异
+
+| 维度       | 固定工作流路由              | 动态拆解                     |
+| ---------- | --------------------------- | ---------------------------- |
+| 谁决定路径 | 代码里的 if/switch 或路由表 | LLM 在运行时决定             |
+| 可预测性   | 高，可穷举所有分支          | 低，同输入可能走不同路径     |
+| 适用前提   | 分支稳定、可枚举            | 任务形态未知、步骤随输入变化 |
+| 测试方式   | 分支覆盖 + 单测             | 回放数据集 + 统计稳定性      |
+| 主要风险   | 覆盖不到新情况              | 拆解发散、不可复现、成本失控 |
+
+### 判断标准：能否"预先枚举"
+
+```text
+问自己三个问题：
+1. 这类请求的分支能不能列全？        能 → 固定路由
+2. 每个分支的处理步骤是否长期稳定？    是 → 固定路由
+3. 任务规模是否随输入剧烈变化？        是 → 动态拆解
+```
+
+多数生产系统不是二选一，而是**固定骨架 + 动态内核**：外层用确定性工作流保证可观测、可回滚，只在"需要拆几个子任务"这类不确定的地方交给模型。
+
+```ts
+type Route =
+  | { kind: "fixed"; handler: "export-pdf" | "export-csv" }
+  | { kind: "dynamic"; goal: string };
+
+// 能枚举的走固定分支，枚举不了的才进动态编排
+function route(intent: Intent): Route {
+  if (intent.type === "export") {
+    return {
+      kind: "fixed",
+      handler: intent.format === "pdf" ? "export-pdf" : "export-csv",
+    };
+  }
+  return { kind: "dynamic", goal: intent.raw };
+}
+```
+
+<Warning title="动态拆解的隐性代价">
+
+动态拆解不是"更高级"，而是把不确定性从业务层搬到了编排层。一旦编排由模型决定，你就失去了对步数、成本和路径的静态保证，必须额外投入 trace、预算和回归评测。没有这三样，动态拆解上线就是事故。
+
+</Warning>
+
+---
+
+## Q12: 多 Agent 为什么会放大错误？三层防线怎么建？
+
+### 错误会被结构放大
+
+```text
+串行链路：整体成功率 ≈ (1 - p)^N      （p 为单步成功率）
+并行扇出：任一失败概率 ≈ 1 - (1 - p)^N
+```
+
+单 Agent 成功率 95% 听起来不错，但 10 步串联后只剩约 60%。多 Agent 不仅步数更多，还叠加了三种特有的放大机制：
+
+| 放大机制   | 表现                                        | 后果                              |
+| ---------- | ------------------------------------------- | --------------------------------- |
+| 上下文污染 | 一个 Agent 的错误结论写进共享记忆           | 后续所有 Agent 都基于错误前提工作 |
+| 共识偏差   | 多个 Agent 共享同一份错误上下文还互相"确认" | 投票无法纠错，反而放大            |
+| 重试风暴   | 上游失败触发下游重派，重派又触发重试        | 限流、雪崩、成本飙升              |
+
+### 三层防线
+
+| 防线   | 目标             | 具体手段                                     |
+| ------ | ---------------- | -------------------------------------------- |
+| 契约层 | 不让脏数据往下传 | 输出 Schema 校验、验收标准逐条检查、幻觉检测 |
+| 隔离层 | 不让错误横向扩散 | 上下文隔离、独立评估器、只读共享事实表       |
+| 收口层 | 不让错误无限放大 | 预算上限、熔断、最大轮次、死信队列、升级人工 |
+
+<Note title="一句话总结">
+
+多 Agent 的可靠性不来自"更多 Agent"，而来自"每一步都能校验、每个错误都有边界、每次失败都有出口"。
+
+</Note>
+
+---
+
+## Q13: 底层源码——LangGraph 的 Multi-Agent 实现
+
+<div class="follow-up">LangGraph 的 Supervisor 模式是怎么实现的？</div>
 
 Supervisor 模式的核心是一个 Router 节点，根据当前状态决定下一步调用哪个 Agent（详见 [LangGraph 源码：libs/langgraph/langgraph/prebuilt/chat_agent_executor.py](https://github.com/langchain-ai/langgraph/blob/main/libs/langgraph/langgraph/prebuilt/chat_agent_executor.py)）：
 
@@ -1131,14 +1254,15 @@ graph.add_edge("reviewer", "supervisor")
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## Q14: 及格回答 vs 满分回答
 
 ### 问题："说说 Multi-Agent 的架构模式"
 
 **及格回答（60-70分）：**
+
 > "有 Pipeline、Fan-out/Fan-in、Supervisor、Debate 等模式。Pipeline 是串行，Fan-out 是并行，Supervisor 有主管调度。"
 
-面试官评价：**知道模式但不理解挑战**。
+问题出在：**知道模式但不理解挑战**。
 
 **满分回答（90-100分）：**
 
@@ -1148,7 +1272,7 @@ graph.add_edge("reviewer", "supervisor")
 
 > "错误处理有三种策略：容错继续（A 失败不影响 B 和 C，用 `Promise.allSettled`）、快速失败（A 失败立即终止，用 `Promise.all`）、条件传播（A 失败则 B 不执行）。选择取决于业务场景——实时系统选容错优先，批处理选完整性优先。成本控制是另一个核心挑战：用弱模型处理简单任务、限制 token 预算、缓存重复查询。<sup>[3]</sup>"
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
@@ -1159,11 +1283,9 @@ graph.add_edge("reviewer", "supervisor")
 
 **高分回答：**
 "成本控制有三个关键策略：
-    
+
 1. **弱模型分级**：80% 的简单任务用 gpt-4o-mini（便宜 10 倍），20% 的决策用 gpt-4o。在 LangGraph 中，不同节点可以用不同的模型。
-    
 2. **token 预算**：限制每个 Agent 的单次调用 token 数（maxTokens），限制整个工作流的总 token 消耗（budget.total）。超出预算时降级到更简单的处理方式。
-    
 3. **Prompt Cache**：Anthropic 的 Prompt Cache 可以节省 90% 的输入 token 费用。优化方法：把稳定的 System Prompt 放在前面，变化的用户输入放在后面。相同前缀的请求直接复用缓存的 KV Cache。"
 
   </Accordion>
@@ -1175,11 +1297,9 @@ graph.add_edge("reviewer", "supervisor")
 
 **高分回答：**
 "死循环是 Multi-Agent 系统最常见的问题之一。防止方法：
-    
+
 1. **最大循环次数**：设置 Supervisor 的最大轮转次数（如 `maxIterations: 10`）。超过次数强制终止，返回当前最佳结果。
-    
 2. **状态变化检测**：如果连续两轮的状态没有变化（Agent 的输出和上一轮相同），说明陷入了死循环，强制终止。
-    
 3. **Supervisor 决策**：Supervisor 的 prompt 中明确写'如果 Agent A 和 Agent B 互相推诿，直接交给人工处理'。LLM 会理解这个指令，避免无限循环。"
 
   </Accordion>
@@ -1191,13 +1311,10 @@ graph.add_edge("reviewer", "supervisor")
 
 **高分回答：**
 "调试 Multi-Agent 系统有四个关键手段：
-    
+
 1. **日志聚合**：每个 Agent 的输入输出记录到同一个日志流，用 `run_id` 关联同一轮执行的所有 Agent 调用。LangSmith 自动做这件事。
-    
 2. **可视化执行流**：LangGraph Studio 可以看到图的执行过程——哪个节点执行了、状态怎么变化的、走了哪条边。这是最直观的调试方式。
-    
 3. **断点调试**：在某个节点加 `interrupt`，暂停执行等待人类检查。发现问题可以修改 State 后重试。
-    
 4. **成本追踪**：记录每个 Agent 的 token 消耗和执行时间，找出性能瓶颈。LangSmith 的 Dashboard 可以看到每个节点的耗时和 token 消耗。"
 
   </Accordion>
@@ -1245,11 +1362,13 @@ graph.add_edge("reviewer", "supervisor")
 "单 Agent + 工具链是线性的（一个 Agent 调用多个工具，串行执行），Multi-Agent 是并行的（多个 Agent 同时执行）。
 
 Multi-Agent 的优势：
+
 1. **并行加速**：Fan-out 模式可以把一个大任务拆成 N 个子任务并行执行，时间从 O(N) 降到 O(1)。
 2. **专业化分工**：每个 Agent 专注一个领域，prompt 简短精准，输出质量更高。
 3. **容错隔离**：一个 Agent 失败不影响其他 Agent，系统整体更健壮。
 
 代价：
+
 1. **通信开销**：Agent 之间传递信息需要 tokens，成本是单 Agent 的 N 倍。
 2. **状态同步复杂度**：需要 Reducer 处理并行节点的状态冲突。
 3. **调试难度**：多 Agent 系统的行为难以预测和复现。
@@ -1344,7 +1463,7 @@ Multi-Agent 的优势：
 
   </Accordion>
 
-  <Accordion title="🔥 Multi-Agent 在生产环境的可观测性怎么设计?" icon="skull">
+  <Accordion title="Multi-Agent 在生产环境的可观测性怎么设计?" icon="skull">
 
 **答题要点：**
 从日志、追踪、指标三个维度回答可观测性设计。
@@ -1365,11 +1484,67 @@ Multi-Agent 的优势：
 
 ---
 
-## 📚 延伸阅读与引用参考
+## Q15: 八道深度追问：及格 vs 满分
 
-- 🔗 [LangGraph Multi-Agent 文档](https://langchain-ai.github.io/langgraphjs/concepts/multi_agent)：*LangGraph 官方对 Multi-Agent 模式的详细说明。* <sup>[1]</sup>
-- 📖 [LangGraph 源码](https://github.com/langchain-ai/langgraph)：*LangGraph 的完整源码，理解 Supervisor、Send、Reducer 的底层实现。* <sup>[2]</sup>
-- 🟢 [Anthropic: Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)：*Anthropic 官方对 Agent 架构设计的最佳实践指南。* <sup>[3]</sup>
-- 🔗 [LangGraph Persistence 文档](https://langchain-ai.github.io/langgraphjs/concepts/persistence)：*LangGraph 的 Checkpoint 机制详解，长时间运行 Agent 的状态保存基础。*
-- 📖 [Andrew Ng: Agentic Design Patterns](https://www.deeplearning.ai/the-batch/how-agents-can-improve-llm-performance/)：*Andrew Ng 对 Agentic Workflow 和多 Agent 协作模式的系统性总结。*
-- 🟢 [LangGraph Streaming & Human-in-the-Loop](https://langchain-ai.github.io/langgraphjs/concepts/streaming)：*异步执行、进度追踪、Human-in-the-Loop 的官方实现指南。*
+> 以下八题覆盖"机制差异、状态归属、失败模式、动态 vs 固定、错误放大"，每题给出及格与满分对照。面试时按"结论 → 机制 → 代价 → 验证"的顺序讲。
+
+### 追问 1：五种编排模式的状态分别放在哪？
+
+**及格回答：** 都放在共享的 State 里，节点读写同一个状态对象。
+
+**满分回答：** 不同模式的状态归属不同，直接决定能不能做断点恢复。Supervisor 是共享图状态，集中但需要 reducer 合并；Handoff 是会话移交，状态跟着对话走，简单但没有全局视图；GroupChat 状态就是消息记录，可回放但 token 增长快；Evaluator-Optimizer 状态只有草稿和反馈，最小但只适合可判分任务。选型时我会先问"这个状态需不需要跨 Agent 共享、需不需要恢复"，再决定模式。
+
+### 追问 2：什么时候必须用动态拆解，什么时候固定路由更好？
+
+**及格回答：** 任务复杂就用动态拆解，简单就用固定路由。
+
+**满分回答：** 判断标准是"分支能否预先枚举"。分支可穷举、步骤稳定，就用固定工作流，因为可测试、可观测、可回滚；只有任务规模随输入剧烈变化、无法预先拆好时，才交给模型动态拆解。生产里我优先选"固定骨架 + 动态内核"：外层确定性工作流保证收口，只在拆几个子任务这种不确定点上用模型。动态拆解的真实代价是把不确定性搬到编排层，必须配套 trace、预算和回归评测。
+
+### 追问 3：Supervisor 路由震荡怎么治？
+
+**及格回答：** 加最大轮次限制，超过就停。
+
+**满分回答：** 先定位震荡原因：通常是 Router 的 prompt 缺少"当前已完成什么"的摘要，导致它反复改判。治法分三层：一是在 Router 输入里加入已完成任务和剩余目标的结构化摘要，减少信息缺失；二是给每个任务记 owner，禁止把同一任务交回上一个 Agent；三是设最大轮次和重复决策检测，连续两轮路由相同就强制收敛或升级人工。单纯加轮次上限只是兜底，不解决根因。
+
+### 追问 4：Handoff 模式怎么避免"击鼓传花、无人负责"？
+
+**及格回答：** 让最后一个 Agent 负责汇总。
+
+**满分回答：** Handoff 的根本风险是责任随控制权一起被移交出去。工程上要做三件事：第一，任务始终有唯一 owner 字段，移交只是换执行者，不换责任人；第二，全局预算和超时挂在任务上而不是某个 Agent 上，避免每换一次手就重置；第三，设终止条件——谁收到"最终交付"指令谁负责收口，禁止无 owner 的悬空移交。没有这三条，Handoff 在复杂任务里几乎必然失控。
+
+### 追问 5：Orchestrator-Workers 的拆解粒度怎么定？
+
+**及格回答：** 拆到每个子任务能独立完成为止。
+
+**满分回答：** 粒度由"产物边界"决定，不由"步骤多少"决定。一个子任务应该对应一个明确产物和一组相关工具调用，经验上控制在 5 到 15 次工具调用；太小则调度和汇总开销超过执行成本，太大则单点失败重试代价高、上下文膨胀。还要设最大树深和最大叶子数，防止 Orchestrator 无限拆解。验证方式是固定任务集对比不同粒度下的成功率与总成本，而不是凭感觉。
+
+### 追问 6：GroupChat 怎么防无限闲聊和上下文爆炸？
+
+**及格回答：** 限制最大轮数，到点就结束。
+
+**满分回答：** GroupChat 要同时管住"发言"和"上下文"两件事。发言侧：用明确的发言选择策略（轮询或 LLM 选择），设最大轮次和"连续无新增信息"检测，检测到重复观点就终止。上下文侧：不是把全部历史塞给每个 Agent，而是维护一份共享摘要加各自私有上下文，避免 token 随轮次平方增长。另外要有裁决者，否则多人 Agent 容易形成共识偏差——大家共享同一份错误上下文还互相确认。
+
+### 追问 7：Evaluator-Optimizer 怎么保证收敛，评估器放水怎么办？
+
+**及格回答：** 设个最大迭代次数就行。
+
+**满分回答：** 收敛要靠"明确的验收标准 + 分数阈值 + 最大轮次"三者共同约束。评估标准必须是可逐条检查的，而不是"写得好不好"；每轮要输出差在哪里，让生成器有明确改进方向，否则会来回震荡。评估器放水是常见问题：同源模型容易给自己人打高分，所以评估器要么换模型、要么用规则校验兜底、要么定期用人工标注校准。上线前我会对比评估分和人工分的一致性，一致性低就说明评估器不可信。
+
+### 追问 8：多 Agent 的错误放大怎么量化、怎么防？
+
+**及格回答：** 多加校验，出错就重试。
+
+**满分回答：** 先量化：串行链路整体成功率约等于单步成功率的 N 次方，所以单步 95% 在 10 步后只剩六成左右；并行扇出则是任一失败概率随分支数上升。放大机制有三类：上下文污染、共识偏差、重试风暴。防线也分三层：契约层用 Schema 和验收标准挡住脏数据；隔离层用上下文隔离和独立评估器阻断横向扩散；收口层用预算、熔断、死信队列和升级人工兜住底线。关键认知是——多 Agent 的可靠性来自边界和出口，不来自 Agent 数量。
+
+---
+
+## 延伸阅读与引用参考
+
+- [LangGraph Multi-Agent 文档](https://langchain-ai.github.io/langgraphjs/concepts/multi_agent)：LangGraph 官方对 Multi-Agent 模式的详细说明。<sup>[1]</sup>
+- [LangGraph 源码](https://github.com/langchain-ai/langgraph)：LangGraph 的完整源码，理解 Supervisor、Send、Reducer 的底层实现。<sup>[2]</sup>
+- [Anthropic: Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)：Orchestrator-Workers、Evaluator-Optimizer 等模式的原始出处，并明确区分"工作流"与"Agent"。<sup>[3]</sup>
+- [LangGraph Persistence 文档](https://langchain-ai.github.io/langgraphjs/concepts/persistence)：LangGraph 的 Checkpoint 机制详解，长时间运行 Agent 的状态保存基础。
+- [Andrew Ng: Agentic Design Patterns](https://www.deeplearning.ai/the-batch/how-agents-can-improve-llm-performance/)：Andrew Ng 对 Agentic Workflow 和多 Agent 协作模式的总结。
+- [OpenAI Agents SDK: Handoffs](https://openai.github.io/openai-agents-python/handoffs/)：Handoff 模式把控制权与上下文交给另一个 Agent 的官方实现与语义。
+- [AutoGen: Group Chat](https://microsoft.github.io/autogen/stable/user-guide/core-user-guide/design-patterns/group-chat.html)：GroupChat 的发言选择与共享消息模型。
+- [LangGraph Streaming & Human-in-the-Loop](https://langchain-ai.github.io/langgraphjs/concepts/streaming)：异步执行、进度追踪、Human-in-the-Loop 的官方实现指南。

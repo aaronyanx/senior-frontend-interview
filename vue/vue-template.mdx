@@ -1,10 +1,9 @@
 ---
 title: "模板编译与渲染"
+description: "拆解模板到渲染函数的三阶段编译，讲清 v-model 编译产物、nextTick 调度与 script setup 的版本边界。"
 ---
 
-> **面试官为什么问这个？**
->
-> 模板编译和渲染机制是 Vue 的核心流程。面试官问这个，是在考察你是否理解：模板是怎么变成真实 DOM 的？v-model 的本质是什么？nextTick 为什么能拿到更新后的 DOM？如果你只停留在"写模板"的层面，说明你不理解 Vue 到底在帮你做什么。
+> 我最早写模板只当它是语法糖，后来查过 nextTick 和 v-model 的编译产物，才明白模板到 DOM 中间隔着一层编译：PatchFlag 和静态提升都发生在这里。
 
 ---
 
@@ -14,27 +13,27 @@ title: "模板编译与渲染"
 
   <Step title="模板是语法糖">
 
-  你写的 `<template>` 不是真实 DOM，也不是虚拟 DOM--它是一种**DSL（领域特定语言）**。Vue 的编译器会把它转换成 JavaScript 函数（渲染函数），这个函数返回虚拟 DOM 树。
+你写的 `<template>` 不是真实 DOM，也不是虚拟 DOM--它是一种**DSL（领域特定语言）**。Vue 的编译器会把它转换成 JavaScript 函数（渲染函数），这个函数返回虚拟 DOM 树。
 
   </Step>
   <Step title='编译器的工作'>
 
-  编译器做三件事：**解析**（把模板字符串变成 AST）、**转换**（对 AST 做优化标记，如 PatchFlag、静态提升）、**生成**（把 AST 变成渲染函数代码）。
+编译器做三件事：**解析**（把模板字符串变成 AST）、**转换**（对 AST 做优化标记，如 PatchFlag、静态提升）、**生成**（把 AST 变成渲染函数代码）。
 
   </Step>
   <Step title="运行时的工作">
 
-  渲染函数执行时创建虚拟 DOM 树。数据变化时重新执行渲染函数得到新的虚拟 DOM 树，用 diff 算法比较新旧树，把差异应用到真实 DOM。
+渲染函数执行时创建虚拟 DOM 树。数据变化时重新执行渲染函数得到新的虚拟 DOM 树，用 diff 算法比较新旧树，把差异应用到真实 DOM。
 
   </Step>
   <Step title='编译时优化：PatchFlag 与 Block Tree'>
 
-  Vue 3 的编译器在编译阶段为每个动态节点打上 **PatchFlag** 标记，告诉运行时"这个节点的哪些部分会变化"--比如只有文本变化（TEXT）、只有 class 变化（CLASS）。配合 **Block Tree** 结构，运行时只需遍历有标记的节点，跳过所有静态节点，将 diff 的开销降到最低。
+Vue 3 的编译器在编译阶段为每个动态节点打上 **PatchFlag** 标记，告诉运行时"这个节点的哪些部分会变化"--比如只有文本变化（TEXT）、只有 class 变化（CLASS）。配合 **Block Tree** 结构，运行时只需遍历有标记的节点，跳过所有静态节点，将 diff 的开销降到最低。
 
   </Step>
   <Step title="关键启示: 编译时 + 运行时的协同优势">
 
-  Vue 的模板编译策略证明了一个设计理念：**让编译器做尽可能多的优化，减轻运行时的负担**。相比 React 的 JSX（运行时才做 diff），Vue 的模板在编译时就掌握了结构信息，这使得 Vue 3 在大型应用中的更新性能显著优于"纯运行时'方案。面试中说清这一点，比单纯背诵编译流程更能打动面试官。
+Vue 的模板编译策略证明了一个设计理念：**让编译器做尽可能多的优化，减轻运行时的负担**。比起 React 的 JSX（运行时才做 diff），Vue 的模板在编译时就掌握了结构信息，这使得 Vue 3 在大型应用中的更新性能通常优于"纯运行时"方案。面试中说清这一点，比单纯背诵编译流程更能打动对方。
 
   </Step>
 
@@ -71,7 +70,7 @@ title: "模板编译与渲染"
   └──────────┘     └──────────┘     └──────────┘     └──────────┘
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 模板是给开发者用的语法糖，编译器把它变成渲染函数，运行时负责把渲染函数的输出变成真实 DOM。
 
@@ -79,27 +78,27 @@ title: "模板编译与渲染"
 
 <CardGroup cols={2}>
 
-<Card title="🚫 手写渲染函数">
+<Card title="手写渲染函数">
 
 用 `h('div', { class: 'app' }, [...])` 描述 UI，代码冗长难以维护。就像用机器码写程序--你能做到，但效率极低，而且编译器无法帮你优化。
 
 </Card>
-<Card title='✅ 模板语法'>
+<Card title='模板语法'>
 
 用 `&lt;div class="app"&gt;...&lt;/div&gt;` 描述 UI，简洁直观。就像用高级语言写程序--编译器帮你做 PatchFlag、静态提升、Block Tree 等优化，你只管描述"要什么"。
 
 </Card>
 </CardGroup>
 
-<Tip title="🎢 通俗比喻: 菜谱翻译官">
+<Tip title="通俗比喻: 菜谱翻译官">
 
 模板编译就像一个"菜谱翻译官"。你用中文写菜谱（模板语法），翻译官把它翻译成英文（渲染函数），外国厨师（浏览器）按英文菜谱做菜（渲染 DOM）。翻译官还会在菜谱上标注"这道菜的口味可能会变"（PatchFlag）和"这些配料是固定的"（静态提升），这样厨师下次只需要重新调味，不用从头开始做。
 
 </Tip>
 
-<Tip title="💡 面试技巧">
+<Tip title="面试技巧">
 
-回答时重点说**编译器做了什么优化**（PatchFlag、静态提升、Block Tree），不要只说"模板变成渲染函数'--面试官想听的是你理解为什么模板比手写 render 函数性能好。
+回答时重点说**编译器做了什么优化**（PatchFlag、静态提升、Block Tree），不要只说"模板变成渲染函数'--想听的是你对为什么模板比手写 render 函数性能好的理解。
 
 </Tip>
 
@@ -150,13 +149,15 @@ v-model 在原生元素上的本质是 **`value` + `input` 事件**的语法糖�
 
 ```javascript
 // 你写的：
-<input v-model="name" />
+<input v-model="name" />;
 
 // 编译器转换后（简化）：
-h('input', {
+h("input", {
   value: name,
-  onInput: (e) => { name = e.target.value }
-})
+  onInput: (e) => {
+    name = e.target.value;
+  },
+});
 ```
 
 ### 组件上的 v-model
@@ -165,48 +166,57 @@ v-model 在组件上的本质是 **`modelValue` prop + `update:modelValue` 事�
 
 ```javascript
 // 你写的：
-<MyInput v-model="name" />
+<MyInput v-model="name" />;
 
 // 编译器转换后（简化）：
 h(MyInput, {
   modelValue: name,
-  'onUpdate:modelValue': (val) => { name = val }
-})
+  "onUpdate:modelValue": (val) => {
+    name = val;
+  },
+});
 
 // 子组件内部：
-defineProps(['modelValue'])
-defineEmits(['update:modelValue'])
+defineProps(["modelValue"]);
+defineEmits(["update:modelValue"]);
 ```
 
 Vue 3 还支持多个 v-model：
 
 ```javascript
 // 你写的：
-<UserForm v-model:name="name" v-model:age="age" />
+<UserForm v-model:name="name" v-model:age="age" />;
 
 // 编译器转换后：
 h(UserForm, {
-  name: name, 'onUpdate:name': (val) => { name = val },
-  age: age, 'onUpdate:age': (val) => { age = val }
-})
+  name: name,
+  "onUpdate:name": (val) => {
+    name = val;
+  },
+  age: age,
+  "onUpdate:age": (val) => {
+    age = val;
+  },
+});
 ```
 
-<Warning title="⚠️ v-model 和 .sync 修饰符的区别">
+<Warning title="v-model 和 .sync 修饰符的区别">
 
 Vue 2 中，`.sync` 修饰符和 `v-model` 都是双向绑定的语法糖，但它们的编译产物不同：
+
 - `v-model`：`value` + `input`（原生）或 `modelValue` + `update:modelValue`（组件）
-- `.sync`：`prop` + `update:prop`（Vue 2 已废弃，Vue 3 用多个 v-model 替代）
+- `.sync`：Vue 2 的 `prop` + `update:prop` 语法，Vue 3 已移除，改用多个 `v-model` 替代
 
 </Warning>
 
-<Tip title='🎢 通俗比喻：对讲机'>
+<Tip title='通俗比喻：对讲机'>
 
 v-model 的本质是"两条独立线路的语法糖"--编译器把它拆成 `value` prop（数据→视图）和 `input` 事件（视图→数据）。
 就像一个对讲机。你对着麦克风说话（输入框输入），对方的喇叭立刻播放你的声音（数据更新）。但实际上对讲机内部是两条独立的线路：一条从你到对方（`value` prop），一条从对方到你（`input` 事件）。v-model 只是帮你把这两条线路打包成了一个按钮。
 
 </Tip>
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 v-model 是编译器语法糖——原生元素编译为 `value` + `input` 事件，组件编译为 `modelValue` + `update:modelValue` 事件。
 
@@ -218,18 +228,18 @@ v-model 是编译器语法糖——原生元素编译为 `value` + `input` 事�
 
 ### 基础梳理
 
-| 对比维度 | Vue 2 | Vue 3 |
-|---------|-------|-------|
-| **实现方式** | 微任务（Promise/MutationObserver/setTimeout） | 微任务（Promise） |
-| **返回值** | Promise（如果传入回调则无返回值） | 总是返回 Promise |
-| **使用方式** | `this.$nextTick(cb)` 或 `Vue.nextTick(cb)` | `await nextTick()` |
-| **执行时机** | DOM 更新完成后 | DOM 更新完成后 |
+| 对比维度     | Vue 2                                                              | Vue 3              |
+| ------------ | ------------------------------------------------------------------ | ------------------ |
+| **实现方式** | 异步任务（Promise/MutationObserver，降级 setImmediate/setTimeout） | 微任务（Promise）  |
+| **返回值**   | Promise（如果传入回调则无返回值）                                  | 总是返回 Promise   |
+| **使用方式** | `this.$nextTick(cb)` 或 `Vue.nextTick(cb)`                         | `await nextTick()` |
+| **执行时机** | DOM 更新完成后                                                     | DOM 更新完成后     |
 
 ### 专家视角深度剖析
 
 ### 为什么需要 nextTick
 
-很多候选人知道"nextTick 能拿到更新后的 DOM"，但说不清**为什么**。
+很多人知道"nextTick 能拿到更新后的 DOM"，但说不清**为什么**。
 
 Vue 的数据更新是**异步批量**的--你修改 `this.count = 1` 时，Vue 不会立刻更新 DOM，而是把更新任务放入队列（`queueJob`），等同步代码全部执行完后，在微任务中统一刷新队列、更新 DOM。
 
@@ -241,6 +251,7 @@ Vue 的数据更新是**异步批量**的--你修改 `this.count = 1` 时，Vue 
 // 源码简化
 const queue = [];
 let isFlushing = false;
+let currentFlushPromise = null;
 const resolvedPromise = Promise.resolve();
 
 function queueJob(job) {
@@ -253,13 +264,13 @@ function queueJob(job) {
 function queueFlush() {
   if (!isFlushing) {
     isFlushing = true;
-    resolvedPromise.then(flushJobs);  // 微任务中刷新队列
+    currentFlushPromise = resolvedPromise.then(flushJobs); // 微任务中刷新队列
   }
 }
 
 function nextTick(fn) {
-  const p = resolvedPromise;
-  return fn ? p.then(fn) : p;  // 在 flushJobs 之后执行
+  const p = currentFlushPromise || resolvedPromise;
+  return fn ? p.then(fn) : p; // 排在 flushJobs 之后执行
 }
 ```
 
@@ -274,15 +285,16 @@ function nextTick(fn) {
   2. nextTick 的回调 → 此时 DOM 已经是最新状态
 ```
 
-<Warning title="⚠️ 为什么 Vue 用微任务而不是宏任务?">
+<Warning title="为什么 Vue 用微任务而不是宏任务?">
 
 微任务在当前同步代码执行完毕后、浏览器渲染之前执行。这意味着：
+
 - DOM 更新发生在渲染之前，用户看到的永远是最新状态。
 - 如果用宏任务（setTimeout），DOM 更新会推迟到浏览器渲染之后，用户可能先看到旧状态，再看到新状态（闪烁）。
 
 </Warning>
 
-<Tip title='🎢 通俗比喻：快递代收点'>
+<Tip title='通俗比喻：快递代收点'>
 
 nextTick 的本质是"等批量更新完成后再执行"--Vue 把多个数据修改合并成一次 DOM 更新，nextTick 的微任务在更新完成后执行。
 就像快递代收点。你下了好几个单（修改多个响应式数据），快递不会每到一个就敲你家门（不会每次数据变化都更新 DOM）。它们先统一放到代收点（队列）。等所有快递都到了（同步代码执行完），代收点一次性通知你去取（微任务中刷新队列、更新 DOM）。nextTick 就是"等代收点通知完之后再执行"--你去取的时候，快递肯定已经到了。
@@ -301,31 +313,37 @@ nextTick 的本质是"等批量更新完成后再执行"--Vue 把多个数据修
 
 ```vue
 <!-- 你写的 -->
-[script setup]
-import { ref } from 'vue';
-import MyButton from './MyButton.vue';
-const count = ref(0);
-function increment() { count.value++; }
-[/script]
+<script setup>
+import { ref } from "vue";
+import MyButton from "./MyButton.vue";
 
-<!-- 编译器转换后（简化） -->
-[script]
-import { ref } from 'vue';
-import MyButton from './MyButton.vue';
+const count = ref(0);
+function increment() {
+  count.value++;
+}
+</script>
+```
+
+```javascript
+// 编译器转换后（简化）
+import { ref } from "vue";
+import MyButton from "./MyButton.vue";
+
 export default {
   setup() {
     const count = ref(0);
-    function increment() { count.value++; }
+    function increment() {
+      count.value++;
+    }
     return { count, increment, MyButton };
   },
-  components: { MyButton }
-}
-[/script]
+  components: { MyButton },
+};
 ```
 
-<Warning title="⚠️ script setup 的限制">
+<Warning title="script setup 的限制">
 
-`[script setup]` 中不能使用以下选项：`name`、`inheritAttrs`、`props`（用 `defineProps`）、`emits`（用 `defineEmits`）。如果需要这些选项，可以用两个 `[script]` 块--一个普通 `[script]` 定义选项，一个 `[script setup]` 定义逻辑。
+`[script setup]` 中不能使用以下选项：`name`、`inheritAttrs`、`props`（用 `defineProps`）、`emits`（用 `defineEmits`）。Vue 3.3+ 新增了 `defineOptions` 宏，可以在 `[script setup]` 中声明 `name`、`inheritAttrs` 等选项。如果需要更多自定义选项，也可以用两个 `[script]` 块--一个普通 `[script]` 定义选项，一个 `[script setup]` 定义逻辑。
 
 </Warning>
 
@@ -369,20 +387,20 @@ export default {
 ```javascript
 // defineProps 和 defineEmits 是编译器宏，不是运行时 API
 // 你写的：
-const props = defineProps({ count: Number })
-const emit = defineEmits(['increment'])
+const props = defineProps({ count: Number });
+const emit = defineEmits(["increment"]);
 
 // 编译器转换后（简化）：
 export default {
   props: { count: Number },
-  emits: ['increment'],
+  emits: ["increment"],
   setup(props, { emit }) {
     // props 和 emit 已经作为参数传入
-  }
-}
+  },
+};
 ```
 
-<Warning title="⚠️ script setup 的性能优势">
+<Warning title="script setup 的性能优势">
 
 `[script setup]` 相比普通 `setup()` 有三个性能优势：
 
@@ -392,13 +410,13 @@ export default {
 
 </Warning>
 
-<Tip title="🎢 通俗比喻: 代码生成器">
+<Tip title="通俗比喻: 代码生成器">
 
 `[script setup]` 就像一个智能代码生成器。你只需要写核心逻辑（ref、函数、import），它自动帮你生成样板代码（return、components、directives）。就像你填一个表单的几个关键字段，系统自动生成完整的合同——你不用手动填写每个条款，但最终合同是完整的。
 
 </Tip>
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 `[script setup]` 是 `setup()` 的编译时语法糖——编译器自动暴露顶层变量、注册导入组件、处理 defineProps/defineEmits 编译器宏。
 
@@ -445,29 +463,29 @@ PatchFlag 位掩码的图解：
 ```javascript
 // 模板编译后的代码（有优化）
 createElementVNode("div", null, [
-  _createElementVNode("span", null, "静态"),  // 静态提升（_hoisted_1），只创建一次
-  _createElementVNode("span", null, _toDisplayString(_ctx.msg), 1 /* TEXT */)
+  _createElementVNode("span", null, "静态"), // 静态提升（_hoisted_1），只创建一次
+  _createElementVNode("span", null, _toDisplayString(_ctx.msg), 1 /* TEXT */),
   //                                                       ↑ PatchFlag
   // 运行时只比较文本内容，跳过 class/style/props 等静态属性
-])
+]);
 
 // render 函数（无优化，全量 diff）
-h('div', [
-  h('span', '静态'),  // 每次都要比较这个节点的所有属性
-  h('span', msg)       // 每次都要比较这个节点的所有属性
-])
+h("div", [
+  h("span", "静态"), // 每次都要比较这个节点的所有属性
+  h("span", msg), // 每次都要比较这个节点的所有属性
+]);
 ```
 
 **关键区别：**
 
-| 对比维度 | 模板 | render 函数 |
-|---------|------|-----------|
-| **静态分析** | ✅ 编译器可以分析 | ❌ 无法分析 |
-| **PatchFlag** | ✅ 有 | ❌ 没有 |
-| **Block Tree** | ✅ 有 | ❌ 没有 |
-| **静态提升** | ✅ 有 | ❌ 没有 |
-| **灵活性** | 一般 | 高（可以写任意 JS 逻辑） |
-| **适用场景** | 绝大多数场景 | 动态组件、高阶组件、库开发 |
+| 对比维度       | 模板              | render 函数                |
+| -------------- | ----------------- | -------------------------- |
+| **静态分析**   | ✅ 编译器可以分析 | ❌ 无法分析                |
+| **PatchFlag**  | ✅ 有             | ❌ 没有                    |
+| **Block Tree** | ✅ 有             | ❌ 没有                    |
+| **静态提升**   | ✅ 有             | ❌ 没有                    |
+| **灵活性**     | 一般              | 高（可以写任意 JS 逻辑）   |
+| **适用场景**   | 绝大多数场景      | 动态组件、高阶组件、库开发 |
 
 <Tip title="最佳实践: ">
 
@@ -475,7 +493,7 @@ Vue 官方推荐用模板而不是手写 render 函数。如果你需要动态�
 
 </Tip>
 
-<Tip title="🎢 通俗比喻: 手写作业 vs 印刷厂">
+<Tip title="通俗比喻: 手写作业 vs 印刷厂">
 
 render 函数就像手写作业——你必须一笔一画地描述每个字（手动创建 VNode），老师（浏览器）也不知道哪些字是重点、哪些是废话。模板就像交给印刷厂（编译器）——你只需要提供原稿（模板），印刷厂会自动帮你用红色标注重点（PatchFlag）、把不变的标题做成铅字模板（静态提升）、把动态内容单独排版（Block Tree），印刷效率远高于手抄。
 
@@ -487,11 +505,9 @@ Vue 3 的设计理念是"让编译器做尽可能多的优化，减轻运行时�
 
 ---
 
-## 🔍 底层源码：模板编译器是怎么工作的？
+## 底层源码：模板编译器是怎么工作的？
 
-<div class="follow-up">
-模板编译的三个阶段是什么？
-</div>
+<div class="follow-up">模板编译的三个阶段是什么？</div>
 
 Vue 的模板编译器分三个阶段（详见 [Vue 3 源码 packages/compiler-core/src/compile.ts](https://github.com/vuejs/core/blob/main/packages/compiler-core/src/compile.ts)）：
 
@@ -505,11 +521,11 @@ function baseCompile(template, options) {
   transform(ast, {
     ...options,
     nodeTransforms: [
-      transformElement,    // 处理元素节点
-      transformText,       // 处理文本节点
+      transformElement, // 处理元素节点
+      transformText, // 处理文本节点
       transformExpression, // 处理表达式（如 {{ count }}）
       // ... 其他转换
-    ]
+    ],
   });
 
   // 3. 生成：把 AST 变成渲染函数代码
@@ -525,27 +541,27 @@ function baseCompile(template, options) {
 
 3. **generate（生成）**：把 AST 转换成 JavaScript 代码字符串，就是你看到的 `createElementVNode("div", null, ...)` 这种代码。
 
-<div class="follow-up">
-v-model 在编译器中是怎么处理的？
-</div>
+<div class="follow-up">v-model 在编译器中是怎么处理的？</div>
 
 v-model 的编译实现在 `packages/compiler-core/src/transforms/vModel.ts` 中（详见 [Vue 3 源码 packages/compiler-core/src/transforms/vModel.ts](https://github.com/vuejs/core/blob/main/packages/compiler-core/src/transforms/vModel.ts)）。
 
 编译器遇到 `v-model` 时，会根据元素类型生成不同的代码：
+
 - **原生元素**（input/textarea/select）：生成 `value` prop + `onInput`/`onChange` 事件
 - **组件**：生成 `modelValue` prop + `onUpdate:modelValue` 事件
 - **带参数的 v-model**（如 `v-model:name`）：生成 `name` prop + `onUpdate:name` 事件
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 十、及格回答 vs 满分回答
 
 ### 问题："Vue 的模板是怎么编译的？"
 
 **及格回答（60-70分）：**
+
 > "模板经过编译器变成渲染函数，渲染函数返回虚拟 DOM，然后 diff 更新真实 DOM。"
 
-面试官评价：**知道流程但不理解优化**。
+问题出在：**知道流程但不理解优化**。
 
 **满分回答（90-100分）：**
 
@@ -557,34 +573,35 @@ v-model 的编译实现在 `packages/compiler-core/src/transforms/vModel.ts` 中
 
 > **静态提升**：不依赖响应式数据的节点（如 `<div>静态文本</div>`）被提升到渲染函数外部，只创建一次。后续更新时直接复用，不需要 diff。这就是为什么 Vue 3 的模板编译后代码里经常出现 `_hoisted_1`、`_hoisted_2` 这种变量。
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
   <Accordion title="v-model 的本质是什么?" icon="layer-group">
 
-  **答题要点：** 原生元素是 value + input 事件，组件是 modelValue + update:modelValue 事件。
+**答题要点：** 原生元素是 value + input 事件，组件是 modelValue + update:modelValue 事件。
 
-  **高分回答：**
-  "v-model 是双向绑定的语法糖。在原生元素上，它编译为 `value` prop + `onInput` 事件。在组件上，它编译为 `modelValue` prop + `onUpdate:modelValue` 事件。
-  ```javascript
-    // 你写的：
-    <input v-model="name" />
-    // 编译器转换后：
-    h('input', { value: name, onInput: e => name = e.target.value })
+**高分回答：**
+"v-model 是双向绑定的语法糖。在原生元素上，它编译为 `value` prop + `onInput` 事件。在组件上，它编译为 `modelValue` prop + `onUpdate:modelValue` 事件。
 
-    // 组件上：
-    <MyInput v-model="name" />
-    // 编译器转换后：
-    h(MyInput, { modelValue: name, 'onUpdate:modelValue': val => name = val })
+```javascript
+  // 你写的：
+  <input v-model="name" />
+  // 编译器转换后：
+  h('input', { value: name, onInput: e => name = e.target.value })
 
-    // 多个 v-model：
-    <UserForm v-model:name="name" v-model:age="age" />
-    // 编译器转换后：
-    h(UserForm, {
-      name: name, 'onUpdate:name': val => name = val,
-      age: age, 'onUpdate:age': val => age = val
-    })
+  // 组件上：
+  <MyInput v-model="name" />
+  // 编译器转换后：
+  h(MyInput, { modelValue: name, 'onUpdate:modelValue': val => name = val })
+
+  // 多个 v-model：
+  <UserForm v-model:name="name" v-model:age="age" />
+  // 编译器转换后：
+  h(UserForm, {
+    name: name, 'onUpdate:name': val => name = val,
+    age: age, 'onUpdate:age': val => age = val
+  })
 ```
 
 "
@@ -593,26 +610,27 @@ v-model 的编译实现在 `packages/compiler-core/src/transforms/vModel.ts` 中
 
   <Accordion title="nextTick 的原理?为什么能拿到更新后的 DOM?" icon="stopwatch">
 
-  **答题要点：** Vue 的数据更新是异步批量的，nextTick 的微任务在队列刷新之后执行。
+**答题要点：** Vue 的数据更新是异步批量的，nextTick 的微任务在队列刷新之后执行。
 
-  **高分回答：**
-  "Vue 的数据更新是异步批量的--修改响应式数据后，更新任务被放入队列（`queueJob`），等同步代码执行完后在微任务中统一刷新。`nextTick` 也用 `Promise.resolve().then()` 创建微任务，但它在队列刷新之后执行，所以能拿到更新后的 DOM。
-  ```javascript
-    // 源码简化（packages/runtime-core/src/scheduler.ts）
-    const queue = [];
-    const resolvedPromise = Promise.resolve();
+**高分回答：**
+"Vue 的数据更新是异步批量的--修改响应式数据后，更新任务被放入队列（`queueJob`），等同步代码执行完后在微任务中统一刷新。`nextTick` 也用 `Promise.resolve().then()` 创建微任务，但它在队列刷新之后执行，所以能拿到更新后的 DOM。
 
-    function queueJob(job) {
-      if (!queue.includes(job)) {
-        queue.push(job);
-        resolvedPromise.then(flushJobs);  // 微任务中刷新
-      }
-    }
+```javascript
+// 源码简化（packages/runtime-core/src/scheduler.ts）
+const queue = [];
+const resolvedPromise = Promise.resolve();
 
-    function nextTick(fn) {
-      return fn ? resolvedPromise.then(fn) : resolvedPromise;
-      // 在 flushJobs 之后执行，所以 DOM 已更新
-    }
+function queueJob(job) {
+  if (!queue.includes(job)) {
+    queue.push(job);
+    resolvedPromise.then(flushJobs); // 微任务中刷新
+  }
+}
+
+function nextTick(fn) {
+  return fn ? resolvedPromise.then(fn) : resolvedPromise;
+  // 在 flushJobs 之后执行，所以 DOM 已更新
+}
 ```
 
 "
@@ -621,82 +639,84 @@ v-model 的编译实现在 `packages/compiler-core/src/transforms/vModel.ts` 中
 
   <Accordion title="模板和 render 函数的性能差异?" icon="node">
 
-  **答题要点：** 模板可以被编译器静态分析，render 函数不行。
+**答题要点：** 模板可以被编译器静态分析，render 函数不行。
 
-  **高分回答：**
-  "模板可以被编译器静态分析，生成的代码包含 PatchFlag（标记动态绑定）、Block Tree（扁平化动态节点）、静态提升（静态节点只创建一次）。render 函数是运行时执行的，编译器无法分析这些信息，只能全量 diff。所以 Vue 官方推荐用模板。"
+**高分回答：**
+"模板可以被编译器静态分析，生成的代码包含 PatchFlag（标记动态绑定）、Block Tree（扁平化动态节点）、静态提升（静态节点只创建一次）。render 函数是运行时执行的，编译器无法分析这些信息，只能全量 diff。所以 Vue 官方推荐用模板。"
 
   </Accordion>
 
-  <Accordion title="🔥 编译器的静态提升是怎么实现的?" icon="skull">
+  <Accordion title="编译器的静态提升是怎么实现的?" icon="skull">
 
-  **答题要点：** 编译器在转换阶段识别不依赖响应式数据的节点，把它提升到渲染函数外部。
+**答题要点：** 编译器在转换阶段识别不依赖响应式数据的节点，把它提升到渲染函数外部。
 
-  **高分回答：**
-  "编译器在转换阶段遍历 AST，检查每个节点是否依赖响应式数据。如果一个节点的所有子节点和属性都是静态的（没有绑定变量），编译器会把它从渲染函数中提取出来，赋值给一个外部变量（如 `_hoisted_1`）。这样每次执行渲染函数时，这个节点只被引用，不被重新创建。Vue 3 的源码中，这个优化在 `hoistStatic` 转换中实现。"
+**高分回答：**
+"编译器在转换阶段遍历 AST，检查每个节点是否依赖响应式数据。如果一个节点的所有子节点和属性都是静态的（没有绑定变量），编译器会把它从渲染函数中提取出来，赋值给一个外部变量（如 `_hoisted_1`）。这样每次执行渲染函数时，这个节点只被引用，不被重新创建。Vue 3 的源码中，这个优化在 `hoistStatic` 转换中实现。"
 
   </Accordion>
 
   <Accordion title="[script setup] 和普通 setup() 函数有什么区别?" icon="layer-group">
 
-  **答题要点：** script setup 是编译时语法糖，自动暴露顶层变量和导入的组件。
+**答题要点：** script setup 是编译时语法糖，自动暴露顶层变量和导入的组件。
 
-  **高分回答：**
-  "`[script setup]` 是 `setup()` 函数的编译时语法糖，编译器会自动做三件事：
-  1. **自动暴露**：顶层变量（ref、reactive、函数）自动暴露给模板，不需要手动 return。
-  2. **自动注册组件**：import 的组件自动注册，不需要 components 选项。
-  3. **编译为 setup 函数**：代码被编译为 `setup()` 的函数体。
+**高分回答：**
+"`[script setup]` 是 `setup()` 函数的编译时语法糖，编译器会自动做三件事：
 
-  性能优势：`[script setup]` 编译后的代码有更好的 tree-shaking 和类型推断。因为编译器在编译时就知道哪些变量被模板使用了，可以精确地生成代码。普通 `setup()` 是运行时函数，编译器无法静态分析。"
+1. **自动暴露**：顶层变量（ref、reactive、函数）自动暴露给模板，不需要手动 return。
+2. **自动注册组件**：import 的组件自动注册，不需要 components 选项。
+3. **编译为 setup 函数**：代码被编译为 `setup()` 的函数体。
+
+性能优势：`[script setup]` 编译后的代码有更好的 tree-shaking 和类型推断。因为编译器在编译时就知道哪些变量被模板使用了，可以精确地生成代码。普通 `setup()` 是运行时函数，编译器无法静态分析。"
 
   </Accordion>
 
   <Accordion title="v-show 和 v-if 在编译器中有什么区别?" icon="stopwatch">
 
-  **答题要点：** v-if 编译为条件 Block，v-show 编译为带 display 样式的节点。
+**答题要点：** v-if 编译为条件 Block，v-show 编译为带 display 样式的节点。
 
-  **高分回答：**
-  "`v-if` 在编译器中被转换为三元表达式：`v-if="cond"` 编译为 `cond ? createVNode(...) : createCommentVNode(...)`。当条件为 false 时，节点不会被创建（卸载），这会影响 Block Tree 的结构——`v-if` 的每个分支都是一个独立的 Block。
+**高分回答：**
+"`v-if` 在编译器中被转换为三元表达式：`v-if="cond"` 编译为 `cond ? createVNode(...) : createCommentVNode(...)`。当条件为 false 时，节点不会被创建（卸载），这会影响 Block Tree 的结构——`v-if` 的每个分支都是一个独立的 Block。
 
-  `v-show` 在编译器中不改变节点结构，只在运行时通过 `transitionHooks` 切换 `display: none`。节点始终存在于 DOM 中，不影响 Block Tree。
+`v-show` 在编译器中不改变节点结构，只在运行时通过 `transitionHooks` 切换 `display: none`。节点始终存在于 DOM 中，不影响 Block Tree。
 
-  选型建议：频繁切换用 `v-show`（只改 CSS，不触发组件卸载/重建），条件很少改变用 `v-if`（不渲染的节点不占 DOM 空间）。"
+选型建议：频繁切换用 `v-show`（只改 CSS，不触发组件卸载/重建），条件很少改变用 `v-if`（不渲染的节点不占 DOM 空间）。"
 
   </Accordion>
 
   <Accordion title="编译器是怎么处理 slot 的?" icon="node">
 
-  **答题要点：** 具名 slot 编译为函数，作用域 slot 通过参数传递数据。
+**答题要点：** 具名 slot 编译为函数，作用域 slot 通过参数传递数据。
 
-  **高分回答：**
-  "Vue 3 的 slot 编译为函数。具名 slot `<slot name="header">` 在父组件中编译为 `h(Comp, { header: () => h('div', 'content') })`。子组件通过 `renderSlot($slots, 'header')` 调用这个函数来渲染。
+**高分回答：**
+"Vue 3 的 slot 编译为函数。具名 slot `<slot name="header">` 在父组件中编译为 `h(Comp, { header: () => h('div', 'content') })`。子组件通过 `renderSlot($slots, 'header')` 调用这个函数来渲染。
 
-  作用域 slot `<slot :data="items">` 编译时会在 slot 函数中传入参数：`header: (data) => h('div', data)`。父组件通过 `#header="{ data }"` 解构获取数据。
+作用域 slot `<slot :data="items">` 编译时会在 slot 函数中传入参数：`header: (data) => h('div', data)`。父组件通过 `#header="{ data }"` 解构获取数据。
 
-  这种函数式设计让 slot 的内容是惰性渲染的——只有当子组件实际调用 `renderSlot` 时，slot 的内容才会被渲染。如果子组件有条件地渲染 slot（`v-if` 控制），不满足条件时 slot 的 VNode 不会被创建。"
+这种函数式设计让 slot 的内容是惰性渲染的——只有当子组件实际调用 `renderSlot` 时，slot 的内容才会被渲染。如果子组件有条件地渲染 slot（`v-if` 控制），不满足条件时 slot 的 VNode 不会被创建。"
 
   </Accordion>
 
-  <Accordion title="🔥 Vue 3 的模板编译和 Vue 2 有什么区别?" icon="skull">
+  <Accordion title="Vue 3 的模板编译和 Vue 2 有什么区别?" icon="skull">
 
-  **答题要点：** Vue 3 的编译器新增了 PatchFlag、Block Tree、静态提升等优化。
+**答题要点：** Vue 3 的编译器新增了 PatchFlag、Block Tree、静态提升等优化。
 
-  **高分回答：**
-  "Vue 2 的编译器只做基本的模板到 render 函数的转换，不附加任何优化信息。生成的 render 函数和手写的一样——每次渲染都遍历整棵 VNode 树。
+**高分回答：**
+"Vue 2 的编译器只做基本的模板到 render 函数的转换，不附加任何优化信息。生成的 render 函数和手写的一样——每次渲染都遍历整棵 VNode 树。
 
-  Vue 3 的编译器在转换阶段做了三层优化：
-  1. **PatchFlag**：给动态节点附加位掩码，告诉运行时哪些属性会变化。
-  2. **Block Tree**：把模板中结构稳定的区域标记为 Block，维护扁平化的动态后代数组。
-  3. **静态提升**：不依赖响应式的 VNode 提升到模块级别，只创建一次。
+Vue 3 的编译器在转换阶段做了三层优化：
 
-  这些优化让 Vue 3 的模板编译后性能显著优于 Vue 2，甚至在特定场景下超越手写 render 函数——因为手写 render 无法享受编译器的静态分析。"
+1. **PatchFlag**：给动态节点附加位掩码，告诉运行时哪些属性会变化。
+2. **Block Tree**：把模板中结构稳定的区域标记为 Block，维护扁平化的动态后代数组。
+3. **静态提升**：不依赖响应式的 VNode 提升到模块级别，只创建一次。
+
+这些优化让 Vue 3 的模板编译后性能显著优于 Vue 2，甚至在特定场景下超越手写 render 函数——因为手写 render 无法享受编译器的静态分析。"
 
   </Accordion>
 </AccordionGroup>
 
 ---
 
-<Note title="💡 关于 Composition API、Options API 对比和 Composables 最佳实践">
+<Note title="关于 Composition API、Options API 对比和 Composables 最佳实践">
 
 Composition API 的详细对比和 Composables 最佳实践等内容，详见 [Vue 生态与工程](/vue/vue-ecosystem)。
 
@@ -704,11 +724,11 @@ Composition API 的详细对比和 Composables 最佳实践等内容，详见 [V
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 🔗 [Vue 3 编译器源码 packages/compiler-core](https://github.com/vuejs/core/tree/main/packages/compiler-core)：Vue 3 模板编译器的核心实现，包含 parse、transform、generate 三个阶段。<sup>[1]</sup>
-- 📖 [Vue 3 源码 packages/compiler-core/src/transforms/vModel.ts](https://github.com/vuejs/core/blob/main/packages/compiler-core/src/transforms/vModel.ts)：v-model 的编译实现。<sup>[2]</sup>
-- 📖 [Vue 3 源码 packages/runtime-core/src/scheduler.ts](https://github.com/vuejs/core/blob/main/packages/runtime-core/src/scheduler.ts)：nextTick 和 queueJob 的实现。<sup>[3]</sup>
-- 🟢 [Vue 3 官方文档 - 渲染机制](https://vuejs.org/guide/extras/rendering-mechanism.html)：尤雨溪对模板编译和渲染机制的深度解析，包含 PatchFlag、Block Tree、静态提升的完整说明。
-- 📖 [霍春阳《Vue.js 设计与实现》](https://book.douban.com/subject/35768338/)：从编译器 parse 到渲染器 patch 的完整源码剖析，包含模板编译三阶段的详细实现。
-- 📖 [黄轶《Vue.js 技术揭秘》](https://ustbhuangyi.github.io/vue-analysis/)：从 Vue 2 编译器到 Vue 3 编译器的演进脉络，对 v-model 的编译转换有源码级分析。
+- [Vue 3 编译器源码 packages/compiler-core](https://github.com/vuejs/core/tree/main/packages/compiler-core)：Vue 3 模板编译器的核心实现，包含 parse、transform、generate 三个阶段。<sup>[1]</sup>
+- [Vue 3 源码 packages/compiler-core/src/transforms/vModel.ts](https://github.com/vuejs/core/blob/main/packages/compiler-core/src/transforms/vModel.ts)：v-model 的编译实现。<sup>[2]</sup>
+- [Vue 3 源码 packages/runtime-core/src/scheduler.ts](https://github.com/vuejs/core/blob/main/packages/runtime-core/src/scheduler.ts)：nextTick 和 queueJob 的实现。<sup>[3]</sup>
+- [Vue 3 官方文档 - 渲染机制](https://vuejs.org/guide/extras/rendering-mechanism.html)：尤雨溪对模板编译和渲染机制的深度解析，包含 PatchFlag、Block Tree、静态提升的完整说明。
+- [霍春阳《Vue.js 设计与实现》](https://book.douban.com/subject/35768338/)：从编译器 parse 到渲染器 patch 的完整源码剖析，包含模板编译三阶段的详细实现。
+- [黄轶《Vue.js 技术揭秘》](https://ustbhuangyi.github.io/vue-analysis/)：从 Vue 2 编译器到 Vue 3 编译器的演进脉络，对 v-model 的编译转换有源码级分析。

@@ -126,3 +126,11 @@ All 58 interview questions across all 7 files are verified to exist in real inte
 ## [2026-07-22] query | 使用 agent-reach Exa 搜索；Exa DNS 不可用，按回退路径读取 Jina Reader 官方页面
 ## [2026-07-22] lint | 检查新 MDX 的组件闭合、代码块边界、引用链接和导航路径
 ## [2026-07-22] query | 核验题目出处：掘金面经 https://juejin.cn/post/7657453685375369267，逐项匹配本页 Q1-Q10
+## [2026-07-22] query | 扩展核验牛客、掘金、思否、LinuxDo、InfoQ、CSDN、GitHub 与腾讯/字节/美团相关 Agent 面经和题库，区分 interview-report、question-bank、secondary-report
+## [2026-07-22] ingest | 将跨渠道 Agent 与前端 Agent 题源、题面数量和证据边界写入 ai/ai-interview.mdx
+## [2026-07-22] rewrite | 将 8 篇直接面经的题面与答案、跨渠道题库补充题完整展开写入 ai/ai-interview.mdx，共 186 道题
+## [2026-07-22] query | 使用 agent-reach 核验牛客 857300424817160192、6506d4b4addf447c8e2c135b5088cdc8、1639746、08701e6651134e49a363c55a7bf4b129、a0306a045d594b02b63fb0654d517901，以及掘金/腾讯云/GitHub 整理型题库
+## [2026-07-22] rewrite | 补齐 ai/ai-interview.mdx 的题目与来源映射、逐类证据边界和规范延伸阅读章节；保留 S 题 121 道、B 题 65 道
+## [2026-07-22] lint | MDX 编译通过，组件标签闭合通过；Mintlify 全站检查受既有 .mintlify/.DS_Store 权限和 ai/prompt.mdx 既有解析错误阻塞
+## [2026-07-22] query | 追加核验 LinuxDo 1791257、思否 1190000047697204、InfoQ LDHE0QxhWuxTehd076R4，补入 B 题来源映射
+## [2026-07-22] lint | 最终验收：MDX_OK、git diff --check、121 条 S 题、65 条 B 题、8 个 Q 和 8 个 Accordion 均通过

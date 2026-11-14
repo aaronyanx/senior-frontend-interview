@@ -1,10 +1,9 @@
 ---
 title: "Agent 稳定性"
+description: "长任务 Agent 的上下文压缩、会话分段、Checkpoint 恢复、重试分层、熔断与错误放大防护面试要点。"
 ---
 
-> **面试官为什么问这个？**
->
-> Agent 稳定性是 AI 工程化中最难的问题之一。面试官问这个，本质上是在考察你：**是否处理过 Agent 长时间运行的实际问题（上下文溢出、状态丢失、错误累积），以及能不能设计可靠的多 Agent 记忆共享方案。** 如果你答不清楚，说明你的 AI 经验停留在 demo 阶段。
+> Agent 能不能上线，最后都落在稳定性上。上下文、状态、重试和失败放大，这四件事我一般会一起考虑，单加重试和超时解决不了。
 
 ---
 
@@ -19,7 +18,7 @@ LLM 的上下文窗口有限（128K/200K tokens），长时间运行会填满。
   </Step>
   <Step title="致命痛点: 上下文窗口溢出">
 
-当 Agent 工作 5 小时以上，上下文窗口必然溢出。如果直接截断，Agent 会丢失关键信息。如果从头开始，之前的工作全部白费。
+当 Agent 长时间连续工作，上下文窗口终会被填满。如果直接截断，Agent 会丢失关键信息。如果从头开始，之前的工作全部白费。
 
   </Step>
   <Step title="方案 1: 上下文压缩 (Context Compression) ">
@@ -43,9 +42,9 @@ LLM 的上下文窗口有限（128K/200K tokens），长时间运行会填满。
 **Agent 长时间稳定解决的核心问题：**
 
 ```text
-问题：LLM 有上下文窗口限制，长时间运行必然溢出
+问题：LLM 有上下文窗口限制，长时间运行终会填满
 
-128K/200K tokens 的上下文窗口在 5 小时以上的工作中必然填满。
+上下文窗口在长时间工作中终会被填满。
 直接截断丢失关键信息，从头开始则之前的工作全部白费。
 加上进程中断、错误累积、token 成本爆炸，Agent 无法长期可靠工作。
 
@@ -70,7 +69,7 @@ Agent 运行 5 小时：
 └── 重复劳动（Agent 不记得已经做过了什么）
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 Agent 长时间稳定的核心是"分段 + 压缩 + 检查点"——把长任务拆成短 session，定期压缩上下文，用 checkpoint 保存状态。
 
@@ -78,21 +77,21 @@ Agent 长时间稳定的核心是"分段 + 压缩 + 检查点"——把长任务
 
 <CardGroup cols={2}>
 
-<Card title="🚫 没有稳定性方案">
+<Card title="没有稳定性方案">
 
 你让 Agent 连续工作 8 小时写一个项目。3 小时后上下文溢出，Agent 忘记了之前的设计决策，开始重复劳动。6 小时后进程 OOM 崩溃，所有进度丢失，从头再来。
 
 </Card>
-<Card title="✅ 引入稳定性方案">
+<Card title="引入稳定性方案">
 
 你把任务拆成 10 个 session，每个 session 结束时保存交接笔记和 checkpoint。第 5 个 session 中断了，从 checkpoint 恢复继续。上下文用 Haiku 定期压缩，只保留关键决策和事实。
 
 </Card>
 </CardGroup>
 
-<Tip title="💡 面试技巧">
+<Tip title="面试技巧">
 
-回答时先说"为什么"（上下文窗口溢出 + 状态丢失），再说"怎么解决"（上下文压缩 + session 分段 + 检查点恢复）。面试官想听的是你实际处理过这些问题，而不只是理论。
+回答时先说"为什么"（上下文窗口溢出 + 状态丢失），再说"怎么解决"（上下文压缩 + session 分段 + 检查点恢复）。想听的是你实际处理过这些问题，而不只是理论。
 
 </Tip>
 
@@ -140,7 +139,7 @@ const memoryTiers = {
 // Agent A 完成 QUEST-1 → QUEST-2 自动解锁 → Agent B 可以继续
 ```
 
-<Warning title="⚠️ 核心机制: 上下文压缩的信息保留策略">
+<Warning title="核心机制: 上下文压缩的信息保留策略">
 
 压缩时保留什么、丢弃什么，决定了 Agent 能否正确接续工作。
 
@@ -150,7 +149,7 @@ const memoryTiers = {
 
 </Warning>
 
-<Tip title="🎢 通俗比喻: 交接工作">
+<Tip title="通俗比喻: 交接工作">
 
 Agent 长时间运行就像一个人连续加班 8 小时。到了第 4 小时，他需要把前 4 小时的工作整理成交接笔记（上下文压缩），然后休息一下（新建 session），醒来后看交接笔记继续工作（自动接续）。交接笔记不能太长（压缩），也不能太短（保留关键信息），要让"下一个自己"能无缝接续。
 
@@ -160,12 +159,12 @@ Agent 长时间运行就像一个人连续加班 8 小时。到了第 4 小时�
 
 Agent 长时间运行面临五个核心挑战，每个都需要专门的应对策略：
 
-| 挑战 | 表现 | 解决方案 |
-|------|------|---------|
-| **上下文窗口溢出** | Agent 忘记之前的决策 | 上下文压缩（4 层记忆模型） |
-| **上下文漂移** | Agent 偏离最初的目标 | 定期回溯目标、Session 分段 |
-| **错误累积** | 小错误逐步放大 | 检查点 + 回滚、Reviewer 节点 |
-| **进程中断** | 网络断开、OOM、超时 | Checkpoint 恢复、Session 接续 |
+| 挑战               | 表现                  | 解决方案                       |
+| ------------------ | --------------------- | ------------------------------ |
+| **上下文窗口溢出** | Agent 忘记之前的决策  | 上下文压缩（4 层记忆模型）     |
+| **上下文漂移**     | Agent 偏离最初的目标  | 定期回溯目标、Session 分段     |
+| **错误累积**       | 小错误逐步放大        | 检查点 + 回滚、Reviewer 节点   |
+| **进程中断**       | 网络断开、OOM、超时   | Checkpoint 恢复、Session 接续  |
 | **Token 成本爆炸** | 长对话消耗大量 tokens | 压缩 + 模型分级 + Prompt Cache |
 
 ### 上下文漂移的检测与预防
@@ -177,14 +176,14 @@ Agent 长时间运行面临五个核心挑战，每个都需要专门的应对�
 async function checkDrift(currentState, originalGoal) {
   const similarity = await embedding.similarity(
     currentState.summary,
-    originalGoal.description
+    originalGoal.description,
   );
 
   if (similarity < 0.7) {
     // 漂移了！强制回顾目标
     return {
       drifted: true,
-      message: `你偏离了最初的目标：${originalGoal.description}。请回顾并调整方向。`
+      message: `你偏离了最初的目标：${originalGoal.description}。请回顾并调整方向。`,
     };
   }
   return { drifted: false };
@@ -204,12 +203,12 @@ if (drift.drifted) {
 
 ### 基础梳理
 
-| 方案 | 实现 | 适用场景 |
-|------|------|---------|
-| **共享数据库（MCP Server）** | 所有 Agent 连接同一个 MCP Server，共享 SQLite | 最推荐，结构化数据 |
-| **共享文件系统** | 所有 Agent 读写同一个目录 | 最简单，非结构化数据 |
-| **REST API** | 集中式记忆服务器 | 需要远程访问 |
-| **事件总线** | Agent 发布记忆事件，其他 Agent 订阅 | 松耦合系统 |
+| 方案                         | 实现                                          | 适用场景             |
+| ---------------------------- | --------------------------------------------- | -------------------- |
+| **共享数据库（MCP Server）** | 所有 Agent 连接同一个 MCP Server，共享 SQLite | 最推荐，结构化数据   |
+| **共享文件系统**             | 所有 Agent 读写同一个目录                     | 最简单，非结构化数据 |
+| **REST API**                 | 集中式记忆服务器                              | 需要远程访问         |
+| **事件总线**                 | Agent 发布记忆事件，其他 Agent 订阅           | 松耦合系统           |
 
 ### 专家视角深度剖析
 
@@ -264,8 +263,12 @@ const memory = {
 
 // 方案 2：写入锁（同一时间只有一个 Agent 可以写入）
 const lock = {
-  acquire(agentId) { /* 获取锁 */ },
-  release(agentId) { /* 释放锁 */ },
+  acquire(agentId) {
+    /* 获取锁 */
+  },
+  release(agentId) {
+    /* 释放锁 */
+  },
 };
 
 // 方案 3：人工审核（关键决策需要人类确认）
@@ -306,7 +309,8 @@ Agent 的记忆不是扁平的——它有层次结构，不同层次有不同�
 ```javascript
 // 遗忘曲线实现
 function calculateRetention(memory) {
-  const daysSinceAccess = (Date.now() - memory.lastAccessed) / (1000 * 60 * 60 * 24);
+  const daysSinceAccess =
+    (Date.now() - memory.lastAccessed) / (1000 * 60 * 60 * 24);
   const accessCount = memory.accessCount;
 
   // 艾宾浩斯遗忘曲线的简化版
@@ -324,7 +328,7 @@ function calculateRetention(memory) {
 
 ```javascript
 // LangGraph 的 Checkpoint 机制：
-import { MemorySaver } from '@langchain/langgraph';
+import { MemorySaver } from "@langchain/langgraph";
 
 const graph = new StateGraph()
   .addNode("step1", step1)
@@ -335,16 +339,16 @@ const graph = new StateGraph()
 // 如果中断，可以从最近的 checkpoint 恢复
 const config = { configurable: { thread_id: "task-1" } };
 await graph.invoke(input, config); // 从头开始
-await graph.invoke(null, config);  // 从上次中断的地方继续
+await graph.invoke(null, config); // 从上次中断的地方继续
 ```
 
 **Checkpoint 的三个核心能力：**
 
-| 能力 | 说明 | 实现 |
-|------|------|------|
-| **暂停/恢复** | interrupt + Command 实现人机协作 | interrupt() 保存 checkpoint，Command(resume=...) 恢复 |
-| **错误重试** | 节点失败后从最近成功的 checkpoint 恢复 | retry_policy 配置重试次数和退避策略 |
-| **时间旅行** | 回到任意 checkpoint 查看历史状态 | LangGraph Studio 可视化查看每个 checkpoint |
+| 能力          | 说明                                   | 实现                                                  |
+| ------------- | -------------------------------------- | ----------------------------------------------------- |
+| **暂停/恢复** | interrupt + Command 实现人机协作       | interrupt() 保存 checkpoint，Command(resume=...) 恢复 |
+| **错误重试**  | 节点失败后从最近成功的 checkpoint 恢复 | retry_policy 配置重试次数和退避策略                   |
+| **时间旅行**  | 回到任意 checkpoint 查看历史状态       | LangGraph Studio 可视化查看每个 checkpoint            |
 
 <Tip title="最佳实践: ">
 
@@ -401,7 +405,7 @@ Checkpoint 的存储后端选择：开发环境用 MemorySaver（内存，重启
 Token 预算：每 Agent 4K tokens，工作流总计 50K tokens
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 Token 优化的核心是"只保留必要的"——压缩历史、摘要传递、选择性记忆、预算控制。
 
@@ -465,12 +469,12 @@ const tokenBudget = {
 
 不同复杂度的任务用不同模型，是 token 优化最有效的手段：
 
-| 任务类型 | 模型选择 | Token 成本 | 适用场景 |
-|---------|---------|-----------|---------|
-| **格式化/转换** | gpt-4o-mini / Haiku | 低 | JSON 格式化、数据转换、简单分类 |
-| **摘要/压缩** | gpt-4o-mini / Haiku | 低 | 上下文压缩、Agent 间摘要 |
-| **代码生成** | gpt-4o / Sonnet | 中 | 写代码、重构、修复 bug |
-| **复杂决策** | gpt-4o / Opus | 高 | 架构设计、技术选型、多因素分析 |
+| 任务类型        | 模型选择            | Token 成本 | 适用场景                        |
+| --------------- | ------------------- | ---------- | ------------------------------- |
+| **格式化/转换** | gpt-4o-mini / Haiku | 低         | JSON 格式化、数据转换、简单分类 |
+| **摘要/压缩**   | gpt-4o-mini / Haiku | 低         | 上下文压缩、Agent 间摘要        |
+| **代码生成**    | gpt-4o / Sonnet     | 中         | 写代码、重构、修复 bug          |
+| **复杂决策**    | gpt-4o / Opus       | 高         | 架构设计、技术选型、多因素分析  |
 
 ```javascript
 // 模型分级：不同节点用不同模型
@@ -490,7 +494,7 @@ const cachedPrompt = [
 ];
 ```
 
-<Tip title="🎢 通俗比喻: 家庭记账">
+<Tip title="通俗比喻: 家庭记账">
 
 Token 优化就像家庭记账。上下文压缩是把一个月的消费小票整理成一张汇总表（100 张→1 张）。摘要链是妻子告诉丈夫"今天花了 200 块买菜"，而不是把每张小票都念一遍。选择性记忆是只记大额支出（房租、工资），日常零钱不记。模型分级是买菜用普通袋子（便宜），装贵重物品用好袋子（贵）。Token 预算是每月设定消费上限，超了就降低生活标准（降级到弱模型）。
 
@@ -541,7 +545,7 @@ Agent：同一输入 → 可能成功也可能失败 → 重试可能成功
 超时：单次调用 30s，整个工作流 10min
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 Agent 错误处理的核心是"重试 + 降级 + 防死循环"——临时性错误重试，重试失败降级，死循环检测 + 超时兜底。
 
@@ -553,23 +557,23 @@ Agent 错误处理的核心是"重试 + 降级 + 防死循环"——临时性错
 // 指数退避（Exponential Backoff）+ 随机抖动（Jitter）
 function getRetryDelay(attempt) {
   const base = Math.pow(2, attempt) * 1000; // 1s → 2s → 4s → 8s
-  const jitter = Math.random() * 1000;       // 随机 0-1s 抖动
+  const jitter = Math.random() * 1000; // 随机 0-1s 抖动
   return base + jitter;
 }
 
 // 错误分类：区分临时性错误和永久性错误
 const retryableErrors = [
-  'TIMEOUT',        // 网络超时
-  'RATE_LIMIT',     // API 限流（429）
-  'SERVER_ERROR',   // 服务端 500 错误
-  'OVERLOADED',     // 模型过载
+  "TIMEOUT", // 网络超时
+  "RATE_LIMIT", // API 限流（429）
+  "SERVER_ERROR", // 服务端 500 错误
+  "OVERLOADED", // 模型过载
 ];
 
 const nonRetryableErrors = [
-  'INVALID_PARAMS', // 参数错误（重试也不会成功）
-  'AUTH_FAILED',    // 认证失败（401/403）
-  'NOT_FOUND',      // 资源不存在（404）
-  'CONTEXT_OVERFLOW', // 上下文溢出（需要压缩后重试，不是简单重试）
+  "INVALID_PARAMS", // 参数错误（重试也不会成功）
+  "AUTH_FAILED", // 认证失败（401/403）
+  "NOT_FOUND", // 资源不存在（404）
+  "CONTEXT_OVERFLOW", // 上下文溢出（需要压缩后重试，不是简单重试）
 ];
 
 // 带重试的 Agent 调用
@@ -598,19 +602,19 @@ async function invokeWithRetry(agent, input, maxAttempts = 3) {
 // 降级链：强模型 → 弱模型 → 规则引擎 → 人工处理
 const fallbackChain = [
   {
-    name: 'gpt-4o',
-    model: new ChatOpenAI({ model: 'gpt-4o', maxTokens: 4000 }),
-    cost: 'high',
+    name: "gpt-4o",
+    model: new ChatOpenAI({ model: "gpt-4o", maxTokens: 4000 }),
+    cost: "high",
   },
   {
-    name: 'gpt-4o-mini',
-    model: new ChatOpenAI({ model: 'gpt-4o-mini', maxTokens: 4000 }),
-    cost: 'low',
+    name: "gpt-4o-mini",
+    model: new ChatOpenAI({ model: "gpt-4o-mini", maxTokens: 4000 }),
+    cost: "low",
   },
   {
-    name: 'rule-engine',
+    name: "rule-engine",
     model: null, // 不用 LLM，用规则引擎
-    cost: 'zero',
+    cost: "zero",
   },
 ];
 
@@ -628,7 +632,7 @@ async function invokeWithFallback(input) {
     }
   }
   // 所有降级都失败，交给人工
-  return { type: 'human_review', message: '请人工处理此任务' };
+  return { type: "human_review", message: "请人工处理此任务" };
 }
 ```
 
@@ -656,7 +660,7 @@ class LoopDetector {
     if (this.lastOutput && hash(currentOutput) === hash(this.lastOutput)) {
       this.staleRounds++;
       if (this.staleRounds >= this.maxStaleRounds) {
-        throw new Error('死循环检测：连续输出无变化');
+        throw new Error("死循环检测：连续输出无变化");
       }
     } else {
       this.staleRounds = 0;
@@ -666,9 +670,10 @@ class LoopDetector {
 }
 
 // 机制 3：全局超时控制
-async function withTimeout(promise, timeoutMs = 600000) { // 默认 10 分钟
+async function withTimeout(promise, timeoutMs = 600000) {
+  // 默认 10 分钟
   const timeout = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error('工作流超时')), timeoutMs);
+    setTimeout(() => reject(new Error("工作流超时")), timeoutMs);
   });
   return Promise.race([promise, timeout]);
 }
@@ -677,7 +682,7 @@ async function withTimeout(promise, timeoutMs = 600000) { // 默认 10 分钟
 const detector = new LoopDetector(10, 2);
 const result = await withTimeout(
   runWorkflow(detector),
-  600000 // 10 分钟超时
+  600000, // 10 分钟超时
 );
 ```
 
@@ -696,7 +701,7 @@ Agent 调用失败：
     └── 强制终止，返回当前最佳结果
 ```
 
-<Tip title="🎢 通俗比喻: 快递配送">
+<Tip title="通俗比喻: 快递配送">
 
 Agent 错误处理就像快递配送。重试策略是快递员第一次送没人签收，等 1 小时后再来，再等 2 小时再来（指数退避）。多个快递员同时来会导致门口拥堵（随机抖动防止雪崩）。降级策略是快递送不到就放驿站（强模型→弱模型），驿站也放不了就退回发件人（降级到规则引擎）。死循环检测是快递员在两个地址之间来回跑（A 说送到 B，B 说送到 A），系统检测到后强制送到最近的代收点（强制终止）。超时控制是包裹必须在 3 天内送达，超时就自动退回（全局超时兜底）。
 
@@ -704,11 +709,9 @@ Agent 错误处理就像快递配送。重试策略是快递员第一次送没�
 
 ---
 
-## 🔍 底层源码：Agent 记忆系统的实现
+## 底层源码：Agent 记忆系统的实现
 
-<div class="follow-up">
-agentmemory 的 4 层记忆模型是怎么实现的？
-</div>
+<div class="follow-up">agentmemory 的 4 层记忆模型是怎么实现的？</div>
 
 agentmemory 用 REST API 提供记忆服务（详见 [agentmemory GitHub](https://github.com/agentmemory/agentmemory)）：
 
@@ -719,38 +722,39 @@ agentmemory 用 REST API 提供记忆服务（详见 [agentmemory GitHub](https:
 // 3. 向量化索引支持语义检索
 
 // 写入记忆：
-await fetch('http://localhost:3111/memory', {
-  method: 'POST',
+await fetch("http://localhost:3111/memory", {
+  method: "POST",
   body: JSON.stringify({
-    agent_id: 'claude-code',
-    content: '决定使用 Zustand 而不是 Redux',
-    type: 'decision',
-    tier: 'semantic', // 4 层：working / episodic / semantic / procedural
+    agent_id: "claude-code",
+    content: "决定使用 Zustand 而不是 Redux",
+    type: "decision",
+    tier: "semantic", // 4 层：working / episodic / semantic / procedural
   }),
 });
 
 // 检索记忆（语义搜索）：
-const memories = await fetch('http://localhost:3111/memory/search?q=状态管理');
+const memories = await fetch("http://localhost:3111/memory/search?q=状态管理");
 // 返回 Claude Code 之前记录的决策
 
 // 压缩记忆（用小模型总结）：
-await fetch('http://localhost:3111/memory/compress', {
-  method: 'POST',
-  body: JSON.stringify({ agent_id: 'claude-code', tier: 'working' }),
+await fetch("http://localhost:3111/memory/compress", {
+  method: "POST",
+  body: JSON.stringify({ agent_id: "claude-code", tier: "working" }),
 });
 // working 层的原始记录被压缩为 episodic 层的摘要
 ```
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 及格回答 vs 满分回答
 
 ### 问题："Agent 长时间运行怎么保持稳定？"
 
 **及格回答（60-70分）：**
+
 > "分段 session、定期总结上下文、用 checkpoint 保存状态。"
 
-面试官评价：**知道方案但不理解细节**。
+问题出在：**知道方案但不理解细节**。
 
 **满分回答（90-100分）：**
 
@@ -760,7 +764,7 @@ await fetch('http://localhost:3111/memory/compress', {
 
 > "容错设计：Agent 中断后用 checkpoint 恢复（LangGraph 的 Checkpoint 机制，每个节点执行后自动保存状态快照）。Session 分段把长任务拆成多个短 session，每个 session 结束时保存交接笔记（Brief），下一个 session 开始时自动加载。quest 完成后自动 cascade-unblock 依赖它的其他任务。<sup>[3]</sup>"
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
@@ -771,11 +775,9 @@ await fetch('http://localhost:3111/memory/compress', {
 
 **高分回答：**
 "用重要性评分决定保留什么：
-    
+
 1. **必须保留**：技术决策（'用 Zustand 不用 Redux'）、任务目标（'实现用户登录模块'）、关键约束（'不要修改 API 层'）。这些信息对下一步工作有直接影响。
-    
 2. **可以丢弃**：中间推理过程、工具调用的原始输出、已验证的中间结果。这些信息已经完成了使命，不影响后续工作。
-    
 3. **压缩策略**：用小模型（Haiku）做压缩，把 100 条对话记录压缩为 10 条结构化事实。压缩时保留事实和决策，丢弃推理过程。频繁访问的记忆强化，陈旧记忆自动淘汰（遗忘曲线）。"
 
   </Accordion>
@@ -787,13 +789,11 @@ await fetch('http://localhost:3111/memory/compress', {
 
 **高分回答：**
 "记忆冲突有三种解决策略：
-    
+
 1. **时间戳优先**：最新的信息覆盖旧的。简单有效，但可能丢失旧信息中的有效部分。
-    
 2. **写入锁**：同一时间只有一个 Agent 可以写入。避免冲突，但降低并行度。
-    
 3. **人工审核**：关键决策需要人类确认。Agent A 记录'用 Redux'，Agent B 记录'用 Zustand'，冲突时交给人类决定。
-    
+
 实际项目中通常组合使用：普通信息用时间戳优先，关键决策用人工审核。MCP Server 的 SQLite 支持事务，可以实现原子写入，避免部分写入导致的不一致。"
 
   </Accordion>
@@ -805,11 +805,9 @@ await fetch('http://localhost:3111/memory/compress', {
 
 **高分回答：**
 "token 成本控制有三个关键：
-    
+
 1. **模型分级**：80% 的简单任务用 gpt-4o-mini（便宜 10 倍），20% 的决策用 gpt-4o。不同 Agent 用不同模型——格式化用弱模型，决策用强模型。
-    
 2. **上下文压缩**：定期压缩历史对话，只保留关键信息。100K tokens 的历史压缩为 5K tokens 的摘要，节省 95% 的 token。
-    
 3. **Prompt Cache**：Anthropic 的 Prompt Cache 可以节省 90% 的输入 token 费用。把稳定的 System Prompt 放在前面，变化的用户输入放在后面，相同前缀的请求直接复用缓存。"
 
   </Accordion>
@@ -884,7 +882,7 @@ await fetch('http://localhost:3111/memory/compress', {
 
   </Accordion>
 
-  <Accordion title="🔥 Agent 长时间运行的 Token 成本怎么控制?" icon="skull">
+  <Accordion title="Agent 长时间运行的 Token 成本怎么控制?" icon="skull">
 
 **答题要点：**
 从压缩、缓存、模型分级三个维度回答成本控制。
@@ -974,7 +972,7 @@ await fetch('http://localhost:3111/memory/compress', {
 
   </Accordion>
 
-  <Accordion title="🔥 多 Agent 共享记忆的一致性怎么保证?" icon="skull">
+  <Accordion title="多 Agent 共享记忆的一致性怎么保证?" icon="skull">
 
 **答题要点：**
 从事务、锁、冲突解决三个维度回答。
@@ -1009,8 +1007,8 @@ Agent 长时间运行时，上下文窗口必然溢出。上下文压缩不是"�
 ```javascript
 // 滑动窗口：保留最近 N 条消息
 function slidingWindow(messages, maxMessages = 20) {
-  const system = messages.filter(m => m.role === "system");
-  const history = messages.filter(m => m.role !== "system");
+  const system = messages.filter((m) => m.role === "system");
+  const history = messages.filter((m) => m.role !== "system");
   const recent = history.slice(-maxMessages);
   return [...system, ...recent];
 }
@@ -1032,12 +1030,15 @@ async function summarizeChain(messages, targetTokens = 5000) {
 
   // 用小模型（Haiku）做压缩，成本极低
   const summary = await haiku.invoke([
-    { role: "system", content: `将以下对话压缩为结构化摘要，保留：
+    {
+      role: "system",
+      content: `将以下对话压缩为结构化摘要，保留：
     1. 技术决策（如"用 Zustand 不用 Redux"）
     2. 关键约束（如"不要修改 API 层"）
     3. 未完成的任务
     4. 当前进度
-    丢弃中间推理过程和工具调用的原始输出。` },
+    丢弃中间推理过程和工具调用的原始输出。`,
+    },
     { role: "user", content: JSON.stringify(messages) },
   ]);
 
@@ -1062,10 +1063,13 @@ async function selectiveContext(projectFiles, currentTask, maxTokens = 10000) {
   // 1. 用 Embedding 计算任务和文件的语义相似度
   const taskEmbedding = await embed(currentTask);
   const scoredFiles = await Promise.all(
-    projectFiles.map(async file => ({
+    projectFiles.map(async (file) => ({
       file,
-      score: cosineSimilarity(taskEmbedding, await embed(file.path + file.summary)),
-    }))
+      score: cosineSimilarity(
+        taskEmbedding,
+        await embed(file.path + file.summary),
+      ),
+    })),
   );
 
   // 2. 按相关性排序，只取 top-K
@@ -1081,7 +1085,7 @@ async function selectiveContext(projectFiles, currentTask, maxTokens = 10000) {
     totalTokens += tokens;
   }
 
-  return selected.map(f => `// ${f.path}\n${f.content}`).join("\n\n");
+  return selected.map((f) => `// ${f.path}\n${f.content}`).join("\n\n");
 }
 
 // 优点：token 效率最高，只给 LLM 需要的信息
@@ -1128,10 +1132,10 @@ const tokenBudget = {
 
 // 超预算时的降级链
 const degradeChain = [
-  { action: "compress", desc: "压缩上下文" },      // 第一步：压缩
-  { action: "summarize", desc: "摘要历史" },        // 第二步：摘要
-  { action: "degrade", desc: "切换弱模型" },        // 第三步：降级模型
-  { action: "pause", desc: "暂停等待审批" },        // 最后一步：暂停
+  { action: "compress", desc: "压缩上下文" }, // 第一步：压缩
+  { action: "summarize", desc: "摘要历史" }, // 第二步：摘要
+  { action: "degrade", desc: "切换弱模型" }, // 第三步：降级模型
+  { action: "pause", desc: "暂停等待审批" }, // 最后一步：暂停
 ];
 ```
 
@@ -1155,12 +1159,12 @@ Agent 上下文管理的完整流程：
    └── 全天用量超限 → 暂停执行，等待人工审批
 ```
 
-| 组合场景 | 策略组合 | 效果 |
-|---------|---------|------|
-| 短期对话（&lt; 30 分钟） | 滑动窗口 | 简单高效，token 可控 |
-| 长时间编码（1-5 小时） | 摘要链 + Token 预算 | 保留决策历史，成本可控 |
-| 大型项目重构 | 选择性注入 + 摘要链 + Token 预算 | 只给相关信息，压缩历史 |
-| 多 Agent 协作 | 选择性注入 + 摘要链 + Token 预算 + 模型分级 | 全方位优化 |
+| 组合场景                 | 策略组合                                    | 效果                   |
+| ------------------------ | ------------------------------------------- | ---------------------- |
+| 短期对话（&lt; 30 分钟） | 滑动窗口                                    | 简单高效，token 可控   |
+| 长时间编码（1-5 小时）   | 摘要链 + Token 预算                         | 保留决策历史，成本可控 |
+| 大型项目重构             | 选择性注入 + 摘要链 + Token 预算            | 只给相关信息，压缩历史 |
+| 多 Agent 协作            | 选择性注入 + 摘要链 + Token 预算 + 模型分级 | 全方位优化             |
 
 <Note title="一句话总结">
 
@@ -1184,17 +1188,240 @@ Agent 运行 2 小时后自动触发摘要压缩，100K tokens 历史压缩为 5
 
 <Tip title="面试技巧">
 
-回答时重点说**四种策略的适用场景和组合方式**，而不是只罗列策略名称。面试官想听的是"我在项目中用选择性注入把 10 万行项目的上下文从 200K tokens 压缩到 10K tokens，再用摘要链每 30 分钟压缩历史，Token 成本从 $200/天降到 $30/天"。
+回答时重点说**四种策略的适用场景和组合方式**，而不是只罗列策略名称。想听的是"我在项目中用选择性注入把 10 万行项目的上下文从 200K tokens 压缩到 10K tokens，再用摘要链每 30 分钟压缩历史，Token 成本从 $200/天降到 $30/天"。
 
 </Tip>
 
 ---
 
-## 📚 延伸阅读与引用参考
+## Q8: 重试为什么要分层？哪些错误能重试、哪些绝对不能？
 
-- 🔗 [agentmemory GitHub](https://github.com/agentmemory/agentmemory)：*开源的 AI 记忆系统，实现了 4 层记忆模型和 REST API 记忆服务。* <sup>[1]</sup>
-- 📖 [Guild GitHub](https://github.com/mathomhaus/guild)：*开源的 MCP 记忆服务器，实现了 quest 系统和 session 分段。* <sup>[2]</sup>
-- 🟢 [LangGraph Checkpoint 文档](https://langchain-ai.github.io/langgraphjs/concepts/persistence)：*LangGraph 官方对 Checkpoint 机制的详细说明。* <sup>[3]</sup>
-- 🔗 [Anthropic: Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)：*Anthropic 官方对 Agent 错误处理和降级策略的最佳实践指南。*
-- 📖 [OpenAI Cookbook: Token Optimization](https://cookbook.openai.com/)：*OpenAI 官方对 token 消耗优化的实战指南，包含 Prompt Cache 和模型分级策略。*
-- 🟢 [LangGraph Retry Policy 文档](https://langchain-ai.github.io/langgraphjs/how-tos/)：*LangGraph 的重试策略和错误处理机制详解。*
+> "出错就重试"是新手最危险的本能。重试用错地方，会把一次瞬时故障放大成雪崩。
+
+### 四层重试，职责不同
+
+| 层级   | 重试对象                    | 退避            | 上限   | 失败后交给谁 |
+| ------ | --------------------------- | --------------- | ------ | ------------ |
+| 工具层 | 单次 HTTP / SDK 调用        | 立即或短退避    | 2-3 次 | 模型层       |
+| 模型层 | 一次 LLM 调用（限流、超时） | 指数退避 + 抖动 | 3 次   | 任务层       |
+| 任务层 | 一个子任务整体              | 较长退避        | 2 次   | 编排层       |
+| 编排层 | 重派给其他 Worker / 降级    | 不自动重试      | 1 次   | 人工 / 死信  |
+
+分层的意义在于：**不同层能承受的重试代价不同**。工具层重试最便宜，编排层重试最贵（可能重复副作用），所以越往上越谨慎。
+
+### 可重试 vs 不可重试
+
+| 可重试（瞬时）           | 不可重试（确定性）       |
+| ------------------------ | ------------------------ |
+| 网络超时、连接重置       | 参数错误、Schema 不合法  |
+| 429 限流、503 服务不可用 | 鉴权失败、权限不足       |
+| 临时锁冲突               | 业务规则拒绝（余额不足） |
+| 上游短暂抖动             | 提示词导致的稳定幻觉     |
+
+把"Schema 不合法"拿去重试，只会浪费 token 并稳定复现同一个错误。正确做法是带错误信息打回，让模型修正，而不是原样重跑。
+
+### 指数退避 + 抖动
+
+```ts
+function getRetryDelay(attempt: number, baseMs = 500, capMs = 30_000) {
+  const exp = Math.min(capMs, baseMs * 2 ** attempt);
+  const jitter = Math.random() * exp * 0.5; // 抖动，避免重试风暴同步
+  return exp + jitter;
+}
+```
+
+抖动不是可有可无：没有抖动时，一批同时失败的请求会在同一时刻重试，形成新的尖峰。
+
+<Warning title="重试预算">
+
+重试必须有全局预算，否则"每个请求重试 3 次"在故障时会把流量放大 4 倍。按任务记录剩余重试次数，并设总时间上限，超限直接进入降级或死信。
+
+</Warning>
+
+---
+
+## Q9: 熔断、死信队列、补偿事务分别解决什么问题？
+
+这三个机制经常被混为一谈，其实它们处理的是故障的不同阶段：
+
+| 机制     | 处理阶段           | 解决的问题                             | 不做会怎样             |
+| -------- | ------------------ | -------------------------------------- | ---------------------- |
+| 熔断     | 故障进行中         | 阻止继续打向已知不可用的依赖           | 重试风暴、级联雪崩     |
+| 死信队列 | 故障已确定失败     | 保存无法处理的消息，等待人工或延迟重放 | 任务凭空消失、无法追溯 |
+| 补偿事务 | 故障导致部分副作用 | 撤销或抵消已完成的步骤                 | 数据不一致、重复下单   |
+
+### 熔断器三态
+
+```text
+Closed（正常）──连续失败达阈值──→ Open（熔断，直接快速失败）
+   ↑                                      │
+   │                              冷却时间到
+   │                                      ▼
+   └────探测成功──── Half-Open（放少量请求试探）
+```
+
+熔断的关键参数是**失败阈值、冷却时间、半开探测数量**。阈值太低会误伤正常抖动，太高则失去保护意义。多 Agent 场景里，熔断要按 Agent 或工具粒度做，而不是全局一个开关。
+
+### 死信队列
+
+```text
+任务失败
+   ├─ 可重试 ──→ 退避重试
+   └─ 重试耗尽 ──→ 死信队列
+                     ├─ 记录：输入、错误、trace、重试次数
+                     ├─ 告警：人工介入
+                     └─ 延迟重放：修复后批量再处理
+```
+
+死信的要点是**保留完整上下文**。只存一个错误码，等于把问题丢了。
+
+### 补偿事务 vs 回滚
+
+- **回滚**通常指数据库事务层面的原子撤销。
+- **补偿**针对已经对外产生副作用的操作（发消息、调用第三方、上传文件），只能再发一个反向操作去抵消。
+
+补偿必须满足：幂等、可重入、有 trace、有失败兜底（补偿失败要告警，不能静默）。
+
+---
+
+## Q10: Checkpoint / Resume、Canary、混沌测试怎么做才不是形式主义？
+
+### Checkpoint 存什么
+
+checkpoint 不是"存一下 state"这么简单，要明确三件事：
+
+| 内容         | 说明                                     |
+| ------------ | ---------------------------------------- |
+| 任务状态     | 已完成 / 进行中 / 失败、当前节点         |
+| 关键产物引用 | 产物在对象存储的版本引用，不存大对象本身 |
+| 幂等上下文   | 已执行的副作用记录、idempotencyKey       |
+| 版本信息     | 代码版本、prompt 版本、模型版本          |
+
+恢复时最容易犯错的是**重复执行已完成节点**。所以恢复逻辑要先读 checkpoint 判断节点状态，而不是从头再跑一遍。
+
+```text
+恢复流程：
+1. 读 checkpoint → 当前节点 N、已完成集合 S
+2. 跳过 S 中的节点
+3. 对"已执行但未确认"的副作用先查状态
+4. 从 N 继续，并记录 resume 事件到 trace
+```
+
+### Canary 不是"发 5% 流量"就完事
+
+Canary 的核心是**对照与回滚条件**：
+
+- 必须和基线同口径对比：成功率、P95 延迟、单位任务成本、重派率。
+- 必须有自动回滚阈值，而不是靠人盯。
+- 灰度维度要合理：按用户、按任务类型，而不是纯随机。
+
+### 混沌测试测什么
+
+多 Agent 系统最该注入的故障：
+
+| 注入故障       | 验证目标                 |
+| -------------- | ------------------------ |
+| 工具超时 / 500 | 重试与降级是否生效       |
+| 模型限流 429   | 退避与熔断是否工作       |
+| 子 Agent 卡死  | 心跳与超时重派是否触发   |
+| 消息重复投递   | 幂等是否真的幂等         |
+| 对象存储不可用 | 产物写入失败是否可恢复   |
+| 上下文被截断   | 是否有降级路径而非直接崩 |
+
+混沌测试的价值在于验证**失败路径**，而不是证明正常路径能跑。只测 happy path 的系统，等于没测。
+
+---
+
+## Q11: 多 Agent 为什么会把一次小错误放大成系统性故障？
+
+单 Agent 的失败通常是"这一步错了"；多 Agent 的失败往往是"一个错误被结构放大"。三类典型放大：
+
+| 放大机制     | 触发条件               | 表现                        | 对策                             |
+| ------------ | ---------------------- | --------------------------- | -------------------------------- |
+| 共享记忆污染 | 错误结论写入共享事实表 | 所有 Agent 基于错误前提工作 | 共享表只读 + 写入需校验 + 版本化 |
+| 重试风暴     | 上游失败触发下游重派   | 流量成倍放大，触发限流雪崩  | 全局重试预算 + 熔断 + 抖动       |
+| 级联超时     | 一个慢节点阻塞依赖链   | 整条链路超时，资源被占满    | 超时隔离 + 并发上限 + 快速失败   |
+
+### 防线顺序
+
+```text
+1. 契约校验：脏数据不往下传
+2. 上下文隔离：错误不横向扩散
+3. 熔断限流：错误不纵向放大
+4. 死信 + 补偿：失败有出口、副作用可抵消
+5. 告警 + 人工：超出自动处理能力时接管
+```
+
+<Note title="一句话总结">
+
+稳定性不是"让错误不发生"，而是"让错误发生时影响可控、可定位、可恢复"。多 Agent 的每一步都要能回答：错了会怎样？谁来兜底？
+
+</Note>
+
+---
+
+## 八道深度追问：及格 vs 满分
+
+> 八题覆盖"重试分层 / 错误分类 / 退避抖动 / 熔断 / 死信 / 补偿 / checkpoint / 混沌测试"。
+
+### 追问 1：重试为什么要分层，不能统一在一个地方重试吗？
+
+**及格回答：** 分层是为了代码清晰，在哪一层重试都行。
+
+**满分回答：** 分层的本质是不同层能承受的重试代价不同。工具层重试最便宜，只影响一次调用；模型层重试要重新消耗 token；任务层重试可能重复执行整段逻辑；编排层重派可能重复副作用。如果统一在最外层重试，一次抖动就会被放大成整条链路重跑。所以我按工具、模型、任务、编排四层分别设退避和上限，越往上越谨慎，并在任务维度设全局重试预算。
+
+### 追问 2：哪些错误可以重试，哪些绝对不能？
+
+**及格回答：** 网络错误可以重试，其他看情况。
+
+**满分回答：** 判断标准是"重试能不能改变结果"。瞬时错误可以重试：超时、连接重置、429、503、临时锁冲突。确定性错误不能重试：参数不合法、Schema 校验失败、鉴权失败、业务规则拒绝，以及提示词导致的稳定幻觉——这些原样重跑只会稳定复现。对确定性错误正确做法是带错误信息打回让模型修正，或直接走降级和人工，而不是浪费 token。
+
+### 追问 3：指数退避为什么一定要加抖动？
+
+**及格回答：** 加抖动是为了看起来更随机一点。
+
+**满分回答：** 抖动是为了打散重试的同步性。如果一批请求同时失败、又用同样的指数退避，它们会在同一时刻集中重试，形成新的流量尖峰，把刚恢复的依赖再次打垮。加随机抖动后，重试时间被摊开，削平尖峰。工程上通常取指数部分的一半作为抖动范围，并配合全局重试预算，防止总流量被放大。
+
+### 追问 4：熔断器和重试是什么关系？
+
+**及格回答：** 都是处理错误的手段，可以一起用。
+
+**满分回答：** 它们方向相反：重试是"再试一次"，熔断是"先别试了"。正确组合是先重试、再熔断：瞬时错误靠重试消化，连续失败达到阈值后熔断快速失败，保护下游不被持续打。熔断要有三态——关闭、打开、半开，半开时放少量探测请求决定是否恢复。多 Agent 场景里熔断应按 Agent 或工具粒度做，避免一个依赖挂了拖垮全局。
+
+### 追问 5：死信队列到底解决什么问题？
+
+**及格回答：** 存失败的消息，以后再看。
+
+**满分回答：** 死信解决的是"失败任务不能凭空消失"。重试耗尽的任务进入死信，并保留完整上下文：输入、错误、trace、重试次数、当时的 prompt 和模型版本。没有这些，事后根本无法复现。死信还承载两个动作：告警通知人工介入，以及修复后的延迟重放。只存一个错误码的死信，等于把问题丢掉。
+
+### 追问 6：补偿事务和回滚有什么区别？
+
+**及格回答：** 补偿就是回滚，把之前的操作撤销掉。
+
+**满分回答：** 回滚通常是数据库事务层面的原子撤销，而补偿针对的是已经对外产生副作用的操作，比如发了消息、调了第三方、上传了文件，这些没法真正"撤销"，只能再发一个反向操作去抵消。补偿必须幂等、可重入、有 trace，并且要处理补偿本身失败的情况——补偿失败必须告警，不能静默，否则回滚会变成二次事故。
+
+### 追问 7：Checkpoint 应该存什么，怎么保证恢复时幂等？
+
+**及格回答：** 存当前状态，恢复时从断点继续跑。
+
+**满分回答：** 要存四类东西：任务状态和当前节点、关键产物的版本引用（不存大对象本身）、已执行副作用的 idempotencyKey、以及代码和 prompt 的版本信息。恢复时先读 checkpoint 拿到已完成集合，跳过已完成节点；对"已执行但未确认"的副作用先查真实状态再决定是否重做。很多人恢复时从头重跑，结果重复执行了已完成节点，这就是没有把幂等上下文存进去。
+
+### 追问 8：多 Agent 系统怎么做混沌测试和 canary？
+
+**及格回答：** 灰度发一点流量，出问题就回滚。
+
+**满分回答：** Canary 的关键是对照和自动回滚：和基线同口径比较成功率、P95 延迟、单位任务成本、重派率，并设自动回滚阈值，而不是靠人盯。混沌测试要注入真实故障：工具超时、429 限流、子 Agent 卡死、消息重复投递、对象存储不可用、上下文被截断，重点验证失败路径是否按设计降级、熔断、进死信。只测正常路径等于没测。灰度维度也要合理，按用户或任务类型切，而不是纯随机。
+
+---
+
+## 延伸阅读与引用参考
+
+- [agentmemory GitHub](https://github.com/agentmemory/agentmemory)：开源的 AI 记忆系统，实现了 4 层记忆模型和 REST API 记忆服务。<sup>[1]</sup>
+- [Guild GitHub](https://github.com/mathomhaus/guild)：开源的 MCP 记忆服务器，实现了 quest 系统和 session 分段。<sup>[2]</sup>
+- [LangGraph Checkpoint 文档](https://langchain-ai.github.io/langgraphjs/concepts/persistence)：LangGraph 官方对 Checkpoint 机制的详细说明。<sup>[3]</sup>
+- [Anthropic: Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)：Agent 错误处理和降级策略的实践参考。
+- [OpenAI Cookbook](https://cookbook.openai.com/)：token 消耗优化的实战示例，包含 Prompt Cache 和模型分级策略。
+- [LangGraph How-tos](https://langchain-ai.github.io/langgraphjs/how-tos/)：LangGraph 的重试策略和错误处理机制。
+- [AWS: Exponential Backoff and Jitter](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/)：指数退避与抖动对重试风暴的影响。
+- [Microsoft Azure: Circuit Breaker Pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/circuit-breaker)：熔断器三态与参数设计。
+- [Google SRE Book: Handling Overload](https://sre.google/sre-book/handling-overload/)：重试预算、熔断与降级的工程实践。

@@ -1,10 +1,9 @@
 ---
 title: "Agent"
+description: "Agent 原理、企业级设计、长任务运行时与 Harness 面试考点全梳理"
 ---
 
-> **面试官为什么问这个？**
->
-> Agent 是 2024-2025 年 AI 工程化最核心的话题。面试官问这个，本质上是在考察你：**是否理解从"对话式 AI"到"自主执行 AI"的范式转移，以及如何设计一个企业级、可长时间运行、能控制成本和风险的 Agent 系统。** 如果你答不清楚，说明你对 AI 的理解停留在"调 API 聊天"而不是"设计工程化系统"。
+> 我最早把 Agent 当成会调 API 的聊天框，后来做长任务才明白，难的是循环怎么停、权限怎么控、崩了怎么恢复。
 
 ---
 
@@ -80,7 +79,7 @@ Agent = 让 LLM 从"说话"变成"做事"——LLM 负责理解和决策，工�
 </Card>
 </CardGroup>
 
-<Tip title="🎢 通俗比喻: 从传话筒到项目经理">
+<Tip title="通俗比喻: 从传话筒到项目经理">
 
 没有 Agent 的 ChatGPT 就像一个传话筒——你说什么它就转述什么，但不能帮你做任何事（"我无法访问实时数据"）。有了 Agent，它变成了项目经理——你说"帮我写竞品报告"，它自己安排：先派调研员（搜索工具）收集资料，再派分析师（数据工具）提炼数据，最后派写手（文档工具）整理成报告。整个过程它自己决策、自己调度，你只需要验收结果。
 
@@ -92,7 +91,7 @@ Agent = 让 LLM 从"说话"变成"做事"——LLM 负责理解和决策，工�
 
 ```text
 ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
-│   2023-2024     │ → │   2024          │ → │   2024          │ → │   2025          │
+│   2023-2024     │ → │   2025 初       │ → │   2025 中       │ → │   2025 至今     │
 │   AI 编程工具    │ → │   Claude Code   │ → │   OpenAI Codex   │ → │   社区标准化    │
 │   各自为政      │ → │   CLAUDE.md     │ → │   AGENTS.md     │ → │   AGENT.md      │
 └─────────────────┘   └─────────────────┘   └─────────────────┘   └─────────────────┘
@@ -105,12 +104,12 @@ Agent = 让 LLM 从"说话"变成"做事"——LLM 负责理解和决策，工�
 2023-2024 年，AI 编程工具（Cursor、Copilot、Claude Code 等）快速崛起。每个工具都引入了自己的配置文件格式，用于告诉 Agent "你是谁、你能做什么、你要遵守什么规则"。但这些配置文件互不兼容——在 Claude Code 写的配置，Cursor 读不了；在 Copilot 写的配置，Claude Code 不认。开发者在不同工具之间切换时，需要反复重写配置。
 
   </Step>
-  <Step title="2024: Anthropic Claude Code 引入 CLAUDE.md">
+  <Step title="2025: Anthropic Claude Code 引入 CLAUDE.md">
 
 Anthropic 在 Claude Code 中引入了 `CLAUDE.md` 作为 Agent 的配置文件。它放在项目根目录，定义了 Agent 的角色、可用工具、行为约束和项目上下文。CLAUDE.md 是最早被广泛使用的 Agent 配置文件格式，但它绑定在 Anthropic 的 Claude Code 生态中，是专有格式。
 
   </Step>
-  <Step title="2024: OpenAI Codex 引入 AGENTS.md">
+  <Step title="2025: OpenAI Codex 引入 AGENTS.md">
 
 OpenAI 在 Codex 中引入了 `AGENTS.md` 作为 Agent 配置文件，功能类似 CLAUDE.md——定义 Agent 的角色和行为规范。AGENTS.md 是 OpenAI 生态的专有格式，与 CLAUDE.md 互不兼容。
 
@@ -202,14 +201,14 @@ AGENT.md 文件内容：
 
 **CLAUDE.md vs AGENTS.md vs AGENT.md 对比：**
 
-| 对比维度 | CLAUDE.md | AGENTS.md | AGENT.md |
-|---------|-----------|-----------|----------|
-| **归属** | Anthropic 专有 | OpenAI 专有 | 社区通用标准 |
-| **适用工具** | Claude Code | Codex | Claude Code、Codex、Amp 等 |
-| **首次出现** | 2024 | 2024 | 2025-05 |
-| **标准化程度** | 厂商定义 | 厂商定义 | 社区推动中 |
-| **文件位置** | 项目根目录 | 项目根目录 | 项目根目录 |
-| **核心功能** | 角色 + 工具 + 规则 | 角色 + 工具 + 规则 | 角色 + 工具 + 规则 |
+| 对比维度       | CLAUDE.md          | AGENTS.md          | AGENT.md                   |
+| -------------- | ------------------ | ------------------ | -------------------------- |
+| **归属**       | Anthropic 专有     | OpenAI 专有        | 社区通用标准               |
+| **适用工具**   | Claude Code        | Codex              | Claude Code、Codex、Amp 等 |
+| **首次出现**   | 2025               | 2025               | 2025-05                    |
+| **标准化程度** | 厂商定义           | 厂商定义           | 社区推动中                 |
+| **文件位置**   | 项目根目录         | 项目根目录         | 项目根目录                 |
+| **核心功能**   | 角色 + 工具 + 规则 | 角色 + 工具 + 规则 | 角色 + 工具 + 规则         |
 
 <Note title="一句话总结">
 
@@ -305,6 +304,8 @@ async def agent_loop(user_goal: str, tools: list, llm, max_iterations: int = 10)
 
         # --- 第 3 步：Acting（执行）---
         # LLM 选择了要调用的工具和参数，现在真正执行
+        # AI 的工具调用请求只追加一次，不要放进下面的循环里
+        messages.append(response)
         for tool_call in response.tool_calls:
             # 找到对应的工具
             tool = next(t for t in tools if t.name == tool_call["name"])
@@ -315,7 +316,6 @@ async def agent_loop(user_goal: str, tools: list, llm, max_iterations: int = 10)
             # --- 第 4 步：Observing（观察）---
             # 把工具执行结果存回对话历史，让 LLM 知道结果
             # 比喻：调研员把调研报告交回给项目经理
-            messages.append(response)  # AI 的工具调用请求
             messages.append(ToolMessage(  # 工具的执行结果
                 content=str(result),
                 tool_call_id=tool_call["id"],
@@ -360,7 +360,7 @@ async function agentLoop(userGoal, tools, maxIterations = 10) {
 
     // 3. Acting：执行工具调用
     for (const toolCall of response.tool_calls) {
-      const tool = tools.find(t => t.name === toolCall.name);
+      const tool = tools.find((t) => t.name === toolCall.name);
       const result = await tool.invoke(toolCall.args);
 
       // 4. 记忆：把结果存入上下文
@@ -443,14 +443,14 @@ const tools = [
 // LLM 的工具调用输出（结构化 JSON）
 // 用户："帮我搜索最新的 React 19 特性，然后写到文件里"
 // LLM 输出：
-{
-  "tool_calls": [
+const llmOutput = {
+  tool_calls: [
     {
-      "name": "searchWeb",
-      "args": { "query": "React 19 new features 2024" }
-    }
-  ]
-}
+      name: "searchWeb",
+      args: { query: "React 19 new features 2024" },
+    },
+  ],
+};
 ```
 
 ### 记忆系统（短期记忆、长期记忆）
@@ -461,16 +461,16 @@ Agent 的记忆系统决定了它能处理多复杂的任务、能记住多少�
 // 4 层记忆模型
 const memorySystem = {
   // 1. Working Memory（工作记忆）：当前对话的上下文
-  working: [],      // 当前 LLM 调用的消息历史，容量有限（128K/200K tokens）
+  working: [], // 当前 LLM 调用的消息历史，容量有限（128K/200K tokens）
 
   // 2. Episodic Memory（情景记忆）：过去任务的具体经历
-  episodic: [],     // "上次查天气时用了 searchWeb 工具，返回了 JSON 格式"
+  episodic: [], // "上次查天气时用了 searchWeb 工具，返回了 JSON 格式"
 
   // 3. Semantic Memory（语义记忆）：抽象的知识和经验
-  semantic: [],     // "搜索工具的 query 要用英文效果更好"
+  semantic: [], // "搜索工具的 query 要用英文效果更好"
 
   // 4. Procedural Memory（程序记忆）：如何执行任务的流程
-  procedural: [],   // "查竞品报告的标准流程：搜索 → 提取 → 分析 → 写报告"
+  procedural: [], // "查竞品报告的标准流程：搜索 → 提取 → 分析 → 写报告"
 };
 
 // 短期记忆 = Working Memory（当前对话上下文）
@@ -480,7 +480,7 @@ const memorySystem = {
 async function compressMemory(memory) {
   // 用小模型把 100K tokens 的历史压缩为 5K tokens 的摘要
   const summary = await smallLLM.invoke(
-    `总结以下对话历史的关键信息，压缩到 500 字以内：\n${memory}`
+    `总结以下对话历史的关键信息，压缩到 500 字以内：\n${memory}`,
   );
   return summary;
 }
@@ -520,13 +520,13 @@ const planningStrategies = {
 
 Anthropic 在《Building Effective Agents》中提出了五种可以组合使用的构建模式，这是目前最权威的 Agent 架构设计指南：
 
-| 模式 | 原理 | 适用场景 |
-|------|------|---------|
-| **Prompt Chaining** | 将任务分解为多个顺序步骤，每步的输出是下一步的输入 | 流程明确、每步可验证的任务（如：翻译 → 审校） |
-| **Routing** | LLM 根据输入类型将其分类，路由到专门的处理流程 | 客服分流、多语言处理 |
-| **Parallelization** | 多个子任务同时执行，结果汇总 | 独立的并行任务（如：多文件分析） |
-| **Orchestrator-Workers** | 中央 LLM 动态拆解任务，分配给 Worker LLM | 复杂、步骤不确定的任务（如：代码重构） |
-| **Evaluator-Optimizer** | 一个 LLM 生成，另一个 LLM 评估，循环迭代 | 质量敏感场景（如：文案生成、代码审查） |
+| 模式                     | 原理                                               | 适用场景                                      |
+| ------------------------ | -------------------------------------------------- | --------------------------------------------- |
+| **Prompt Chaining**      | 将任务分解为多个顺序步骤，每步的输出是下一步的输入 | 流程明确、每步可验证的任务（如：翻译 → 审校） |
+| **Routing**              | LLM 根据输入类型将其分类，路由到专门的处理流程     | 客服分流、多语言处理                          |
+| **Parallelization**      | 多个子任务同时执行，结果汇总                       | 独立的并行任务（如：多文件分析）              |
+| **Orchestrator-Workers** | 中央 LLM 动态拆解任务，分配给 Worker LLM           | 复杂、步骤不确定的任务（如：代码重构）        |
+| **Evaluator-Optimizer**  | 一个 LLM 生成，另一个 LLM 评估，循环迭代           | 质量敏感场景（如：文案生成、代码审查）        |
 
 Anthropic 的核心建议：**从简单开始，只在简单方案不够用时才增加复杂度。** 大多数场景用 Prompt Chaining 或 Routing 就够了，只有真正需要动态决策的场景才用完整的 Agent Loop。<sup>[1]</sup>
 
@@ -551,7 +551,7 @@ Anthropic 的核心建议：**从简单开始，只在简单方案不够用时�
 └──────────────────────────────────────────────────────┘
 ```
 
-<Tip title="🎢 通俗比喻: 银行柜员权限体系">
+<Tip title="通俗比喻: 银行柜员权限体系">
 
 企业级 Agent 就像银行的柜员体系。权限收敛是每个柜员只有自己岗位的权限——普通柜员能办存取款，但不能审批大额转账（代码审查 Agent 只能读文件不能写文件）。审计日志是每笔业务都有录像和流水记录（操作留痕），出了问题能完整追溯。容错降级是系统故障时切换到手工记账模式（降级到规则引擎），不会因为系统崩溃停止服务。确定性边界是柜员理解你的需求（LLM 理解意图），但具体操作必须按银行规章制度来（规则引擎执行），不能随意发挥。
 
@@ -610,14 +610,14 @@ function auditLog(agentId, action) {
   const logEntry = {
     timestamp: new Date().toISOString(),
     agentId,
-    runId: action.runId,           // 关联同一次执行的所有操作
-    step: action.step,             // 当前步骤编号
-    tool: action.toolName,         // 调用的工具
-    input: action.args,            // 工具输入
-    output: action.result,         // 工具输出
-    tokenUsage: action.tokens,     // Token 消耗
-    duration: action.durationMs,   // 执行耗时
-    status: action.status,         // success / failure / timeout
+    runId: action.runId, // 关联同一次执行的所有操作
+    step: action.step, // 当前步骤编号
+    tool: action.toolName, // 调用的工具
+    input: action.args, // 工具输入
+    output: action.result, // 工具输出
+    tokenUsage: action.tokens, // Token 消耗
+    duration: action.durationMs, // 执行耗时
+    status: action.status, // success / failure / timeout
     humanApproval: action.approved, // 是否经过人工审批
   };
 
@@ -640,14 +640,20 @@ async function executeWithFallback(agent, task) {
   } catch (primaryError) {
     try {
       // 第 2 层：备用模型 + 精简工具集
-      return await agent.invoke(task, { model: "gpt-4o-mini", basicTools: true });
+      return await agent.invoke(task, {
+        model: "gpt-4o-mini",
+        basicTools: true,
+      });
     } catch (secondaryError) {
       try {
         // 第 3 层：规则引擎（完全确定性，不依赖 LLM）
         return await ruleEngine.process(task);
       } catch (ruleError) {
         // 第 4 层：返回默认响应 + 人工工单
-        createHumanTicket(task, { primaryError, secondaryError });
+        const ticketId = await createHumanTicket(task, {
+          primaryError,
+          secondaryError,
+        });
         return { message: "任务已提交人工处理", ticketId };
       }
     }
@@ -688,14 +694,14 @@ LLM 的输出天然是不确定的，但企业级系统需要确定性。解决�
 // Token 预算管理
 const tokenBudget = {
   // 全局预算
-  daily: 1_000_000,     // 每天最多 100 万 tokens
-  perRequest: 10_000,   // 单次请求最多 1 万 tokens
-  perAgent: 50_000,     // 单个 Agent 最多 5 万 tokens
+  daily: 1_000_000, // 每天最多 100 万 tokens
+  perRequest: 10_000, // 单次请求最多 1 万 tokens
+  perAgent: 50_000, // 单个 Agent 最多 5 万 tokens
 
   // 模型分级
   models: {
-    simple: "gpt-4o-mini",  // 简单任务用便宜模型（便宜 10 倍）
-    complex: "gpt-4o",      // 复杂任务用强模型
+    simple: "gpt-4o-mini", // 简单任务用便宜模型（便宜 10 倍）
+    complex: "gpt-4o", // 复杂任务用强模型
   },
 };
 
@@ -704,7 +710,7 @@ function checkBudget(agentId, estimatedTokens) {
   const used = getDailyUsage(agentId);
   if (used + estimatedTokens > tokenBudget.daily) {
     throw new BudgetExceededError(
-      `Agent ${agentId} 已用 ${used} tokens，超出每日预算`
+      `Agent ${agentId} 已用 ${used} tokens，超出每日预算`,
     );
   }
 }
@@ -751,7 +757,7 @@ Anthropic 在《Building Effective Agents》中强调了三个关键设计原则
 └───────────────────────────────────────────────────────┘
 ```
 
-<Tip title="🎢 通俗比喻: 建筑工地施工">
+<Tip title="通俗比喻: 建筑工地施工">
 
 长时间运行 Agent 就像一个大型建筑工地。异步执行是施工队在后台干活，业主（用户）可以随时来看进度、拍照发朋友圈。进度追踪是把工程拆成"打地基→搭框架→砌墙→装修"等子任务，每个子任务有依赖关系（砌墙前必须搭好框架）。Checkpoint 是每完成一步就拍照存档，如果停电了（进程中断），来电后从上次存档的地方继续，不用推倒重来。长期记忆是施工日志——记录了所有关键决策（"承重墙用 C30 混凝土"），新工人看了日志就能无缝接续。
 
@@ -764,10 +770,11 @@ Anthropic 在《Building Effective Agents》中强调了三个关键设计原则
 ```javascript
 // 长时间运行 Agent 的异步架构
 class LongRunningAgent {
-  constructor(taskId, tools, checkpointStore) {
+  constructor(taskId, tools, checkpointStore, maxSteps = 20) {
     this.taskId = taskId;
     this.tools = tools;
     this.checkpoint = checkpointStore;
+    this.maxSteps = maxSteps;
   }
 
   async execute(goal) {
@@ -810,7 +817,10 @@ class LongRunningAgent {
       }
     }
 
-    await this.publishEvent("task.completed", { taskId: this.taskId, result: state.results });
+    await this.publishEvent("task.completed", {
+      taskId: this.taskId,
+      result: state.results,
+    });
     return state.results;
   }
 }
@@ -823,14 +833,14 @@ Checkpoint 是长时间运行 Agent 的生命线——中断后必须能从断�
 ```javascript
 // Checkpoint 存储结构
 const checkpointSchema = {
-  taskId: "string",           // 任务 ID
-  step: "number",             // 当前步骤
-  messages: "array",          // LLM 对话历史
+  taskId: "string", // 任务 ID
+  step: "number", // 当前步骤
+  messages: "array", // LLM 对话历史
   intermediateResults: "object", // 中间结果
-  toolState: "object",        // 工具执行状态（已处理/未处理）
-  memorySnapshot: "object",   // 记忆快照
-  timestamp: "number",        // 快照时间
-  tokenUsage: "number",       // 已消耗 tokens
+  toolState: "object", // 工具执行状态（已处理/未处理）
+  memorySnapshot: "object", // 记忆快照
+  timestamp: "number", // 快照时间
+  tokenUsage: "number", // 已消耗 tokens
 };
 
 // 恢复策略
@@ -862,7 +872,7 @@ async function manageLongTermMemory(memory, maxTokens = 5000) {
     // 1. 压缩旧记忆：用小模型生成摘要
     const oldMemory = memory.slice(0, Math.floor(memory.length / 2));
     const summary = await smallLLM.invoke(
-      `将以下对话历史压缩为关键要点：\n${JSON.stringify(oldMemory)}`
+      `将以下对话历史压缩为关键要点：\n${JSON.stringify(oldMemory)}`,
     );
 
     // 2. 保留近期记忆 + 压缩摘要
@@ -880,12 +890,14 @@ async function manageLongTermMemory(memory, maxTokens = 5000) {
 function applyForgettingCurve(memories) {
   const now = Date.now();
   return memories
-    .map(m => ({
+    .map((m) => ({
       ...m,
       // 记忆强度 = 访问次数 × recency 衰减
-      strength: m.accessCount * Math.exp(-(now - m.lastAccess) / (7 * 24 * 3600 * 1000)),
+      strength:
+        m.accessCount *
+        Math.exp(-(now - m.lastAccess) / (7 * 24 * 3600 * 1000)),
     }))
-    .filter(m => m.strength > 0.1) // 淘汰强度过低的记忆
+    .filter((m) => m.strength > 0.1) // 淘汰强度过低的记忆
     .sort((a, b) => b.strength - a.strength);
 }
 ```
@@ -899,19 +911,19 @@ function applyForgettingCurve(memories) {
 const progressTracker = {
   // 进度事件发布
   events: {
-    "task.started":    (data) => notify(`任务开始: ${data.taskId}`),
-    "task.progress":   (data) => notify(`进度: ${data.progress}`),
-    "task.blocked":    (data) => notify(`阻塞: ${data.reason}，等待人工审批`),
-    "task.error":      (data) => notify(`错误: ${data.error}，正在重试`),
-    "task.completed":  (data) => notify(`完成: ${data.taskId}`),
+    "task.started": (data) => notify(`任务开始: ${data.taskId}`),
+    "task.progress": (data) => notify(`进度: ${data.progress}`),
+    "task.blocked": (data) => notify(`阻塞: ${data.reason}，等待人工审批`),
+    "task.error": (data) => notify(`错误: ${data.error}，正在重试`),
+    "task.completed": (data) => notify(`完成: ${data.taskId}`),
   },
 
   // 人工干预点（Human-in-the-Loop）
   interventionPoints: [
-    "before_high_risk_action",   // 高风险操作前
-    "on_error",                  // 遇到错误时
-    "on_budget_threshold",       // Token 预算达到阈值时
-    "on_timeout",                // 超时时
+    "before_high_risk_action", // 高风险操作前
+    "on_error", // 遇到错误时
+    "on_budget_threshold", // Token 预算达到阈值时
+    "on_timeout", // 超时时
   ],
 };
 ```
@@ -953,7 +965,7 @@ Human-in-the-Loop（人机协同）是企业级 Agent 的关键机制——不�
 └───────────────────────────────────────────────────────┘
 ```
 
-<Tip title="🎢 通俗比喻: 银行大额转账审批">
+<Tip title="通俗比喻: 银行大额转账审批">
 
 Human-in-the-Loop 就像银行的大额转账审批流程。普通柜员（Agent）可以自主处理 5 万元以下的转账（低风险操作），但超过 5 万元的转账必须暂停，等主管审批（人工审批）。审批时，主管会看到转账的完整信息（金额、收款人、用途），然后决定"批准"或"拒绝"。批准后系统继续执行转账，拒绝后柜员需要和客户重新确认。整个过程中，转账信息被完整保存（Checkpoint），即使审批过程中系统重启，也不会丢失任何数据。
 
@@ -1045,7 +1057,9 @@ import { interrupt, Command } from "@langchain/langgraph";
 
 // 普通执行节点
 async function agentNode(state) {
-  const riskLevel = await classifyRisk(state.messages[state.messages.length - 1]);
+  const riskLevel = await classifyRisk(
+    state.messages[state.messages.length - 1],
+  );
   return { riskLevel };
 }
 
@@ -1086,17 +1100,17 @@ const app = graph.compile({ checkpointer });
 
 // 第一次调用：执行到 interrupt 处暂停
 const config = { configurable: { threadId: "user-123" } };
-let result = await app.invoke({
-  messages: [{ role: "user", content: "删除生产环境数据" }],
-  riskLevel: "",
-  approved: false,
-}, config);
+let result = await app.invoke(
+  {
+    messages: [{ role: "user", content: "删除生产环境数据" }],
+    riskLevel: "",
+    approved: false,
+  },
+  config,
+);
 
 // 第二次调用：用 Command 恢复执行
-result = await app.invoke(
-  new Command({ resume: "approved" }),
-  config
-);
+result = await app.invoke(new Command({ resume: "approved" }), config);
 ```
 
 ### 审批流设计：哪些操作需要人工审批
@@ -1254,7 +1268,7 @@ import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 
 // 生产环境用 PostgresSaver
 const checkpointer = PostgresSaver.fromConnectionString(
-  "postgresql://user:pass@localhost:5432/langgraph"
+  "postgresql://user:pass@localhost:5432/langgraph",
 );
 
 async function toolExecutionNode(state) {
@@ -1329,10 +1343,9 @@ class ApprovalNotifier {
     }
 
     // 用 Command(resume=...) 恢复图的执行
-    const result = await this.app.invoke(
-      new Command({ resume: decision }),
-      { configurable: { threadId: request.threadId } }
-    );
+    const result = await this.app.invoke(new Command({ resume: decision }), {
+      configurable: { threadId: request.threadId },
+    });
 
     await this.updateApprovalRequest(approvalId, {
       status: decision === "approved" ? "approved" : "rejected",
@@ -1356,7 +1369,7 @@ Human-in-the-Loop 是企业级 Agent 的安全阀——通过 LangGraph 的 `int
 
 RAG（Retrieval-Augmented Generation，检索增强生成）和 Agent Skills（工具调用）是两种完全不同的技术，解决不同的问题。
 
-<Tip title="🎢 通俗比喻: 百科全书 vs 瑞士军刀">
+<Tip title="通俗比喻: 百科全书 vs 瑞士军刀">
 
 RAG 和 Agent Skills 就像百科全书和瑞士军刀。RAG 是百科全书——给 Agent 一本厚厚的参考资料（知识库），遇到不懂的就翻书查（检索文档），减少"瞎编"的概率。Agent Skills 是瑞士军刀——给 Agent 一套工具（小刀、剪刀、螺丝刀），让它能真正动手做事（读文件、调 API、写代码）。一个完整的 Agent 既需要百科全书（知道怎么做），也需要瑞士军刀（能动手做）。光有书没有工具，Agent 只能"纸上谈兵"；光有工具没有书，Agent 可能"乱来"。
 
@@ -1364,18 +1377,18 @@ RAG 和 Agent Skills 就像百科全书和瑞士军刀。RAG 是百科全书—�
 
 ### 基础梳理
 
-| 对比维度 | RAG | Agent Skills |
-|---------|-----|-------------|
-| **本质** | 知识注入（给模型"参考资料"） | 能力扩展（给模型"做事的手"） |
-| **输入** | 用户查询 → 检索相关文档 → 注入 Prompt | 用户意图 → LLM 选择工具 → 执行操作 |
-| **数据流** | 查询 → 向量检索 → 文档片段 → LLM 生成 | 意图 → 工具选择 → 参数构造 → 工具执行 |
-| **解决的问题** | 模型缺乏领域知识、幻觉 | 模型不能执行操作、不能访问外部系统 |
-| **典型场景** | 企业知识库问答、文档搜索 | 发邮件、查数据库、调 API、操作文件 |
-| **延迟** | 检索延迟（向量搜索 ~100ms） | 工具执行延迟（取决于工具，可能数秒） |
+| 对比维度       | RAG                                   | Agent Skills                          |
+| -------------- | ------------------------------------- | ------------------------------------- |
+| **本质**       | 知识注入（给模型"参考资料"）          | 能力扩展（给模型"做事的手"）          |
+| **输入**       | 用户查询 → 检索相关文档 → 注入 Prompt | 用户意图 → LLM 选择工具 → 执行操作    |
+| **数据流**     | 查询 → 向量检索 → 文档片段 → LLM 生成 | 意图 → 工具选择 → 参数构造 → 工具执行 |
+| **解决的问题** | 模型缺乏领域知识、幻觉                | 模型不能执行操作、不能访问外部系统    |
+| **典型场景**   | 企业知识库问答、文档搜索              | 发邮件、查数据库、调 API、操作文件    |
+| **延迟**       | 检索延迟（向量搜索 ~100ms）           | 工具执行延迟（取决于工具，可能数秒）  |
 
 ### 专家视角深度剖析
 
-很多候选人会混淆 RAG 和 Skills，但它们是正交的两个维度。**RAG 解决"知不知道"的问题，Skills 解决"做不做得到"的问题。** 一个完整的 Agent 系统通常同时需要两者。
+很多人会混淆 RAG 和 Skills，但它们是正交的两个维度。**RAG 解决"知不知道"的问题，Skills 解决"做不做得到"的问题。** 一个完整的 Agent 系统通常同时需要两者。
 
 ```text
 RAG 的数据流：
@@ -1399,15 +1412,15 @@ const agent = new Agent({
   // RAG：知识注入
   knowledgeBase: new VectorStore("company-docs"),
   retrievalConfig: {
-    topK: 5,           // 检索最相关的 5 个文档片段
-    threshold: 0.7,    // 相似度阈值
+    topK: 5, // 检索最相关的 5 个文档片段
+    threshold: 0.7, // 相似度阈值
   },
 
   // Skills：工具调用
   tools: [
-    searchCompanyPolicy,  // 搜索公司政策（RAG）
-    applyLeave,           // 申请假期（Skills）
-    checkLeaveBalance,    // 查询假期余额（Skills）
+    searchCompanyPolicy, // 搜索公司政策（RAG）
+    applyLeave, // 申请假期（Skills）
+    checkLeaveBalance, // 查询假期余额（Skills）
   ],
 });
 
@@ -1423,7 +1436,7 @@ const agent = new Agent({
 
 ## Q7: n8n 和 Dify 在 Agent 中的应用
 
-<Tip title="🎢 通俗比喻: 乐高编程 vs 精装样板间">
+<Tip title="通俗比喻: 乐高编程 vs 精装样板间">
 
 n8n、Dify 和 LangGraph 就像三种不同的"造房子"方式。n8n 是乐高编程——拖拽积木块（节点）拼出工作流，不需要写代码，400+ 种现成积木（集成）随便用，适合快速搭建。Dify 是精装样板间——RAG、Agent、工作流都是现成的，上传文档就能用，适合不懂技术的产品经理。LangGraph 是自己画图纸盖房子——用代码定义任意复杂的图结构，灵活度最高，但需要建筑师（AI 工程师）才能搞定。
 
@@ -1518,17 +1531,17 @@ Dify 的核心优势：
 
 ### LangGraph vs n8n vs Dify 对比
 
-| 对比维度 | LangGraph | n8n | Dify |
-|---------|-----------|-----|------|
-| **定位** | Agent 编排框架（代码级） | 工作流自动化平台 | LLM 应用开发平台 |
-| **编排方式** | 代码定义图结构 | 节点式拖拽 UI | 可视化配置 |
-| **灵活性** | 最高（任意图拓扑） | 中（预定义节点组合） | 中（配置化） |
-| **学习曲线** | 高（需要 Python/TS） | 低（无代码） | 低（低代码） |
-| **Agent 能力** | 最强（原生支持多 Agent） | 中（通过 AI 节点） | 强（内置 Agent 模式） |
-| **RAG 集成** | 需手动集成 | 通过 RAG 节点 | 内置 RAG |
-| **适用场景** | 复杂 Agent 系统、多 Agent 协作 | 业务流程自动化 | 快速构建 Agent 应用 |
-| **生产就绪** | 高（LangSmith 可观测性） | 中（需要额外监控） | 中（内置基础监控） |
-| **部署方式** | 自托管 / LangChain Cloud | 自托管 / n8n Cloud | 自托管 / Dify Cloud |
+| 对比维度       | LangGraph                      | n8n                  | Dify                  |
+| -------------- | ------------------------------ | -------------------- | --------------------- |
+| **定位**       | Agent 编排框架（代码级）       | 工作流自动化平台     | LLM 应用开发平台      |
+| **编排方式**   | 代码定义图结构                 | 节点式拖拽 UI        | 可视化配置            |
+| **灵活性**     | 最高（任意图拓扑）             | 中（预定义节点组合） | 中（配置化）          |
+| **学习曲线**   | 高（需要 Python/TS）           | 低（无代码）         | 低（低代码）          |
+| **Agent 能力** | 最强（原生支持多 Agent）       | 中（通过 AI 节点）   | 强（内置 Agent 模式） |
+| **RAG 集成**   | 需手动集成                     | 通过 RAG 节点        | 内置 RAG              |
+| **适用场景**   | 复杂 Agent 系统、多 Agent 协作 | 业务流程自动化       | 快速构建 Agent 应用   |
+| **生产就绪**   | 高（LangSmith 可观测性）       | 中（需要额外监控）   | 中（内置基础监控）    |
+| **部署方式**   | 自托管 / LangChain Cloud       | 自托管 / n8n Cloud   | 自托管 / Dify Cloud   |
 
 <Tip title="最佳实践">
 
@@ -1557,7 +1570,7 @@ Dify 的核心优势：
 └───────────────────────────────────────────────────────┘
 ```
 
-<Tip title="🎢 通俗比喻: 客服投诉处理">
+<Tip title="通俗比喻: 客服投诉处理">
 
 Agent 的错误处理就像客服的投诉处理流程。重试策略是"请稍等，我再帮您查一下"——第一次没查到等 1 秒再查，第二次等 2 秒，第三次等 4 秒（指数退避），但不会无限查下去。降级策略是"我帮您转接高级客服"——普通客服（gpt-4o-mini）搞不定，转给资深客服（gpt-4o），再搞不定转给主管（规则引擎），最后转给经理（人工处理）。死循环检测是"您已经打了 10 次电话了，我们安排专人跟进"——防止 Agent 在两个工具之间无限循环。
 
@@ -1593,10 +1606,10 @@ async function retryWithExponentialBackoff(fn, options = {}) {
 }
 
 // 使用示例
-const result = await retryWithExponentialBackoff(
-  () => llm.invoke(messages),
-  { maxRetries: 3, baseDelay: 1000 }
-);
+const result = await retryWithExponentialBackoff(() => llm.invoke(messages), {
+  maxRetries: 3,
+  baseDelay: 1000,
+});
 ```
 
 ### 降级策略（Fallback）
@@ -1604,10 +1617,10 @@ const result = await retryWithExponentialBackoff(
 ```javascript
 // 多层降级
 const fallbackChain = [
-  { model: "gpt-4o",          tools: "full",    label: "主模型" },
-  { model: "gpt-4o-mini",     tools: "basic",   label: "备用模型" },
-  { model: "rule-engine",     tools: "none",    label: "规则引擎" },
-  { model: "human-escalation", tools: "none",   label: "人工处理" },
+  { model: "gpt-4o", tools: "full", label: "主模型" },
+  { model: "gpt-4o-mini", tools: "basic", label: "备用模型" },
+  { model: "rule-engine", tools: "none", label: "规则引擎" },
+  { model: "human-escalation", tools: "none", label: "人工处理" },
 ];
 
 async function executeWithFallbackChain(task) {
@@ -1633,8 +1646,11 @@ function detectInfiniteLoop(state, history) {
   }
 
   // 2. 状态变化检测：连续 N 步输出相同
-  const recentOutputs = history.slice(-3).map(h => h.output);
-  if (recentOutputs.length >= 3 && recentOutputs.every(o => o === recentOutputs[0])) {
+  const recentOutputs = history.slice(-3).map((h) => h.output);
+  if (
+    recentOutputs.length >= 3 &&
+    recentOutputs.every((o) => o === recentOutputs[0])
+  ) {
     return { detected: true, reason: "no_progress" };
   }
 
@@ -1657,17 +1673,20 @@ function detectInfiniteLoop(state, history) {
 ```javascript
 // 分层超时控制
 const timeoutConfig = {
-  global: 30 * 60 * 1000,   // 全局超时：30 分钟
-  perStep: 60 * 1000,       // 单步超时：60 秒
-  llmCall: 30 * 1000,       // LLM 调用超时：30 秒
-  toolCall: 60 * 1000,      // 工具调用超时：60 秒
+  global: 30 * 60 * 1000, // 全局超时：30 分钟
+  perStep: 60 * 1000, // 单步超时：60 秒
+  llmCall: 30 * 1000, // LLM 调用超时：30 秒
+  toolCall: 60 * 1000, // 工具调用超时：60 秒
 };
 
 async function executeWithTimeout(fn, timeoutMs, label) {
   return Promise.race([
     fn(),
     new Promise((_, reject) =>
-      setTimeout(() => reject(new TimeoutError(`${label} 超时 (${timeoutMs}ms)`)), timeoutMs)
+      setTimeout(
+        () => reject(new TimeoutError(`${label} 超时 (${timeoutMs}ms)`)),
+        timeoutMs,
+      ),
     ),
   ]);
 }
@@ -1710,7 +1729,7 @@ const tokenOptimization = {
 
 ## Q9: 高频面试题
 
-<Tip title="🎢 通俗比喻: 快递站运营">
+<Tip title="通俗比喻: 快递站运营">
 
 Agent 面试的核心就像运营一个快递站。Agent 和 RAG 的区别是"快递员和仓库"——RAG 是仓库里的货架（存放知识），Agent 是快递员（执行操作），快递员既要会查货架（RAG 检索）也要会送货（工具调用）。企业级设计是"快递站管理规范"——权限控制（每个快递员只能送自己片区的件）、审计日志（每单都有签收记录）、容错降级（快递车坏了换一辆）、成本控制（不能每个包裹都派专车）。
 
@@ -1719,9 +1738,10 @@ Agent 面试的核心就像运营一个快递站。Agent 和 RAG 的区别是"�
 ### 问题："Agent 和 RAG 的区别？如何设计一个企业级 Agent？"
 
 **及格回答（60-70分）：**
+
 > "RAG 是检索增强生成，给模型注入外部知识。Agent 是自主执行，让模型调用工具做事。企业级 Agent 需要权限控制和审计日志。"
 
-面试官评价：**知道概念但不理解工程细节**。
+问题出在：**知道概念但不理解工程细节**。
 
 **满分回答（90-100分）：**
 
@@ -1731,7 +1751,7 @@ Agent 面试的核心就像运营一个快递站。Agent 和 RAG 的区别是"�
 
 > "长时间运行 Agent（5 小时+）还需要额外的工程保障：**异步执行**（不阻塞主线程）、**状态快照**（每步保存 Checkpoint，中断后从断点恢复，不需要从头开始）、**长期记忆压缩**（定期用小模型把 100K tokens 压缩为 5K 摘要）、**进度追踪**（实时汇报进度 + Human-in-the-Loop 高风险操作人工审批）。<sup>[3]</sup>"
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
@@ -1813,7 +1833,7 @@ Agent 面试的核心就像运营一个快递站。Agent 和 RAG 的区别是"�
 **高分回答：**
 "Token 消耗控制有四个关键策略：
 
-1. **模型分级**：80% 的简单任务用 gpt-4o-mini（便宜 10 倍），20% 的决策任务用 gpt-4o。在 LangGraph 中，不同节点可以用不同模型。
+1. **模型分级**：大部分简单任务用 gpt-4o-mini（小模型单价显著更低），关键的决策任务用 gpt-4o。在 LangGraph 中，不同节点可以用不同模型。
 
 2. **Token 预算**：设置三级限额——每日全局预算（100 万 tokens）、单次请求预算（1 万 tokens）、单 Agent 预算（5 万 tokens）。超出预算时降级到更简单的处理方式。
 
@@ -1859,7 +1879,7 @@ Agent 面试的核心就像运营一个快递站。Agent 和 RAG 的区别是"�
 
   </Accordion>
 
-  <Accordion title="🔥 Agent 在生产环境出过什么问题?" icon="skull">
+  <Accordion title="Agent 在生产环境出过什么问题?" icon="skull">
 
 **答题要点：**
 结合真实案例，说明 Agent 在生产环境的常见问题和解决方案。
@@ -1880,95 +1900,64 @@ Agent 面试的核心就像运营一个快递站。Agent 和 RAG 的区别是"�
 
 ---
 
-## Q10: OpenAI Harness Engineering 是什么？
+## Q10: Harness Engineering 到底是什么？（先纠正一个流行误读）
 
-Harness Engineering（注意：不是 CI/CD 平台 Harness）是 OpenAI 推出的 Agent 编排框架，核心理念是**声明式定义多 Agent 协作**——你不需要手动写 Agent 之间的通信逻辑，只需声明"有哪些 Agent、各自负责什么、怎么协作"，Harness 负责编排执行。
+中文技术圈长期流传一种说法：OpenAI 发布了一个叫 "Harness Engineering" 的声明式多 Agent 编排框架，用 `defineHarness({ agents, flow })` 描述 Agent 协作。**这个说法不准确。** 截至 2026 年 11 月，OpenAI 没有发布过名为 Harness Engineering 的编排框架，也没有 `defineHarness` 这个 API。把「Harness Engineering」当成一个 SDK，会在面试里直接暴露事实错误。
 
-<Tip title="🎢 通俗比喻: 交响乐团指挥">
+准确的说法是：**Harness Engineering 是一套工程方法论的名字，指围绕模型设计执行环境——工具、上下文、约束、反馈回路——让 Agent 在无人监督下可靠工作。** 它不是运行时，也不是编排 DSL。
 
-Harness Engineering 就像交响乐团的指挥系统。每个 Agent 是一个乐手（小提琴手、钢琴手、鼓手），各有专长。Harness 是指挥——你不需要告诉每个乐手具体怎么拉琴（不需要写编排代码），只需要声明"第一乐章由弦乐组先演奏，然后铜管组加入"（声明式配置），指挥负责协调所有乐手的演奏顺序和配合。和 LangGraph 的区别是：LangGraph 让你自己当指挥（代码定义图结构），Harness 给你配了一个自动指挥（配置驱动）。
+### 事实时间线（均可核对）
 
-</Tip>
+| 时间       | 事件                                                                                    | 关键内容                                                                                                               |
+| ---------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 2026-02-05 | Mitchell Hashimoto《My AI Adoption Journey》                                            | 提出 "engineering the harness"：Agent 每犯一次错，就把修复做进环境，而不是下次再手工纠正                               |
+| 2026-02-11 | OpenAI / Ryan Lopopolo《Harness engineering: leveraging Codex in an agent-first world》 | 零手写代码实验：5 个月、约 100 万行代码、约 1500 个 PR、3 人起步扩到 7 人、人均每天 3.5 个 PR                          |
+| 2026-03~04 | Thoughtworks / martinfowler.com                                                         | 把 harness 控制分为 guides（前馈）与 sensors（反馈），各自再分为 computational（确定性程序）与 inferential（模型判断） |
+| 2026-09-10 | OpenAI Agents API                                                                       | 这是真正可调用的托管产品：托管 Codex harness、沙箱、子 Agent。它和「Harness Engineering」是两件事                      |
 
-### 核心概念
+三者的层次关系：
 
 ```text
-┌──────────────────────────────────────────────────────────┐
-│                    Harness 编排层                          │
-│                                                           │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
-│  │ Agent A  │  │ Agent B  │  │ Agent C  │               │
-│  │ 代码生成  │  │ 测试执行  │  │ 部署发布  │               │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘               │
-│       │              │              │                     │
-│       └──────────────┼──────────────┘                     │
-│                      ▼                                    │
-│              ┌──────────────┐                             │
-│              │  Orchestrator │  ← 声明式编排               │
-│              │  协调 Agent 间 │                            │
-│              │  的数据流和控制流│                           │
-│              └──────────────┘                             │
-└──────────────────────────────────────────────────────────┘
+Prompt Engineering       → 一次调用里说什么
+Context Engineering      → 每次调用让模型看到什么
+Harness Engineering      → 模型之外的整个世界：工具、约束、反馈回路、环境
+Agents API / Codex CLI   → 这套方法论的一个具体实现载体
 ```
 
-| 概念 | 说明 |
-|------|------|
-| **Harness** | 编排层，管理多个 Agent 的生命周期和协作 |
-| **Agent** | 独立的执行单元，有自己的 Prompt 和工具集 |
-| **Orchestrator** | 协调器，决定 Agent 的执行顺序和数据传递 |
-| **声明式配置** | 用配置描述 Agent 关系，不需要写编排代码 |
+### OpenAI 实验真正做对的五件事
 
-### Harness vs LangGraph 对比
+**1. AGENTS.md 是目录，不是手册。** 他们先试了"一个大 AGENTS.md"，失败得很典型：上下文是稀缺资源，巨型指令文件会挤掉任务本身；什么都标"重要"等于没有重点；单体手册会迅速腐烂成过时规则；而且无法机械校验。最终 AGENTS.md 压到约 100 行，只做地图，真正的知识库放在结构化 `docs/` 目录，配套 linter 和 CI 校验交叉链接与新鲜度，还有定期的 "doc-gardening" Agent 提交修复 PR。这叫渐进式披露（progressive disclosure）。
 
-| 对比维度 | OpenAI Harness | LangGraph |
-|---------|---------------|-----------|
-| **编排方式** | 声明式（配置驱动） | 代码定义图结构 |
-| **灵活性** | 中（预定义编排模式） | 最高（任意图拓扑） |
-| **学习曲线** | 低（配置即可） | 高（需要理解图编程） |
-| **多 Agent** | 原生支持（核心设计目标） | 原生支持（State Graph） |
-| **适用场景** | 标准化的多 Agent 工作流 | 复杂、非标准的 Agent 协作 |
-| **生态** | OpenAI 原生 | LangChain 生态 |
+**2. 约束机械化，而不是写进 Prompt。** 每个业务域只能沿固定层次向前依赖：`Types → Config → Repo → Service → Runtime → UI`；鉴权、连接器、遥测、Feature Flag 等横切关注点只能通过单一 `Providers` 接口进入。违反规则由自定义 linter 和结构化测试报错，**错误信息里直接写入修复指令**，等于把"怎么改"喂回模型上下文。
 
-```javascript
-// Harness 的声明式配置（伪代码）
-const harness = defineHarness({
-  agents: [
-    {
-      name: "codeGenerator",
-      model: "gpt-4o",
-      tools: ["writeFile", "searchDocs"],
-      responsibility: "根据需求生成代码",
-    },
-    {
-      name: "codeReviewer",
-      model: "gpt-4o",
-      tools: ["readFile", "lint"],
-      responsibility: "审查代码质量和规范",
-    },
-    {
-      name: "deployer",
-      model: "gpt-4o-mini",
-      tools: ["deploy", "checkHealth"],
-      responsibility: "部署到目标环境",
-    },
-  ],
-  // 声明协作流程：代码生成 → 代码审查 → 部署
-  flow: [
-    { from: "user", to: "codeGenerator", trigger: "需求输入" },
-    { from: "codeGenerator", to: "codeReviewer", trigger: "代码生成完成" },
-    { from: "codeReviewer", to: "deployer", condition: "审查通过" },
-    { from: "codeReviewer", to: "codeGenerator", condition: "审查不通过，要求修改" },
-  ],
-});
-```
+**3. 让应用本身对 Agent 可读。** 每个 git worktree 都能独立启动一份应用实例，接入 Chrome DevTools Protocol，让 Agent 自己截屏、取 DOM、跑导航；每个 worktree 配一套临时的日志/指标/Trace 栈，Agent 可以用 LogQL、PromQL 查询。于是验收标准从"看起来对"变成可判定的"服务启动小于 800ms""四条关键链路的 span 不超过 2 秒"。
 
-### 与 LangGraph 的核心区别
+**4. Agent 审 Agent。** 让 Codex 先本地自审，再请求其他 Agent 在本地和云端审查，读完反馈后继续迭代，直到所有 Agent reviewer 满意；人类 review 从必需项变成可选项。这就是社区说的 Ralph Wiggum Loop：不追求一次做对，而是把"改到通过"做成循环。
 
-LangGraph 用代码定义图结构，灵活但复杂；Harness 用声明式配置描述 Agent 关系，简单但受限于预定义模式。选择标准：**需要极致灵活性用 LangGraph，需要快速搭建标准化多 Agent 流程用 Harness**。
+**5. 熵治理（garbage collection）。** Agent 会复制仓库里已有的模式，包括坏模式。OpenAI 最初每周五花 20% 时间人工清理 "AI slop"，不可扩展；后来把 "golden principles" 编码进仓库，用周期性后台 Codex 任务扫描偏差、更新质量评级、提交定向重构 PR，多数一分钟内可审完并自动合并。技术债像高利贷，持续小额偿还比集中爆发更便宜。
+
+### 必须一起说出口的代价与边界
+
+- **不可直接照搬。** OpenAI 自己在文末强调：这套行为高度依赖该仓库的结构与工具链，"不应假设在没有同等投入的情况下可以泛化"。
+- **吞吐改变合并哲学。** 他们的 PR 短命、阻塞性门禁极少、flake 用重跑而不是阻塞处理。作者同时承认这在低吞吐环境是"不负责任的"。照抄流程而不具备吞吐，只会放大事故。
+- **早期反而更慢。** 进展慢的原因不是模型不行，而是环境未定义：缺工具、缺抽象、缺内部结构。harness 工程的前期投入是纯成本。
+- **基础设施不是免费的。** 每 worktree 一套应用和一套可观测栈，意味着显著的计算与运维开销。
+- **安全边界要单独设计。** 生成的代码所在的沙箱不能触达凭据；否则一次 Prompt Injection 就能拿到 token 并派生新的无限制会话。
+- **人的判断没有消失。** 人负责排优先级、把用户反馈翻译成验收标准、验证结果；只是工作层级上移了。
+
+### 三个容易混淆的概念
+
+| 名字                | 是什么                                                            | 不是什么                                     |
+| ------------------- | ----------------------------------------------------------------- | -------------------------------------------- |
+| Harness Engineering | 工程方法论：设计 Agent 的执行环境与反馈回路                       | 不是 SDK、不是框架、没有 `defineHarness` API |
+| Codex Harness       | Codex CLI / Agents API 内部那层运行时（循环、工具、上下文、沙箱） | 不是 OpenAI 对外发布的编排语言               |
+| LangGraph           | 用代码定义状态图的 Agent 编排框架                                 | 不是 harness 本身，主循环仍由你定义          |
+
+如果被问到"OpenAI Harness 和 LangGraph 怎么选"，正确做法是先澄清层次：**Harness Engineering 是方法论，无法与 LangGraph 二选一；能对比的是 Codex/Agents API 这类托管 harness 与 LangGraph 这类编排框架。** 托管 harness 提供循环、会话、沙箱，你用 API 驱动；LangGraph 提供图、状态、checkpoint，循环和工具都得自己写。前者省基础设施但受限于厂商，后者自由但要自己承担运行时。
 
 <Note title="一句话总结">
 
-Harness Engineering 是 OpenAI 的声明式 Agent 编排框架——你定义 Agent 职责和协作关系，Harness 负责编排执行。和 LangGraph 的区别是"声明式 vs 代码式"。
+Harness Engineering 不是 OpenAI 的编排框架，而是一种把"人工纠错"转化为"环境约束"的工程纪律。它的产出物是 AGENTS.md 地图、机械化 lint、可被 Agent 读取的应用与可观测性、Agent 互审循环和持续熵治理——而不是一段 `defineHarness` 配置。
 
 </Note>
 
@@ -1976,32 +1965,17 @@ Harness Engineering 是 OpenAI 的声明式 Agent 编排框架——你定义 Ag
 
 ## Q11: OpenClaw 和 Hermes 是什么？
 
-<Tip title="🎢 通俗比喻: 乐高积木 vs 大脑">
+<Tip title="通俗比喻: 本地网关 vs 大脑">
 
-OpenClaw 和 Hermes 就像乐高积木和大脑的关系。OpenClaw 是乐高积木套装——提供各种能力模块（搜索 Claw、代码 Claw、文件 Claw），你把它们拼在一起就组成了一个 Agent。Hermes 是大脑——负责思考和决策（推理能力），大脑越好，Agent 越聪明。两者配合：用 OpenClaw 的积木搭好 Agent 的身体（框架），装上 Hermes 的大脑（模型），Agent 就能干活了。你可以换不同的大脑（换模型），也可以加减积木（增删 Claw）。
+OpenClaw 更像一个把消息渠道、工具和模型接起来的"本地网关"——它运行在你自己的机器上，管理会话与记忆、加载技能（Skills），再把请求交给 Agent 处理。Hermes 是大脑，是负责思考和决策的模型。两者不是"框架 + 模型"的拼装关系：OpenClaw 是一个可本地部署的助手应用，Hermes 是可以被它调用的模型之一。至于 OpenClaw 内部具体怎么接模型、怎么划分模块，公开资料有限，不要凭想象补全。
 
 </Tip>
 
-### OpenClaw：开源 AI Agent 框架
+### OpenClaw：可本地部署的个人 AI 助手
 
-OpenClaw 是一个开源的 AI Agent 框架，专注于**构建可组合、可扩展的 Agent 系统**。它的核心设计思想是把 Agent 拆分为独立的"能力模块"（Claw），每个 Claw 负责一个特定能力，通过组合不同的 Claw 构建完整的 Agent。
+OpenClaw 是一个开源的**个人 AI 助手 / 本地网关**（MIT 协议），它并不是一个"可组合的 Agent 框架"。按公开信息的描述，它大致由四块组成：**Gateway**（接入各类消息渠道、负责收发的本地网关）、**Agent**（实际执行任务的主体）、**Skills**（可插拔的能力扩展）和 **Memory**（会话与长期记忆）。用户把它部署在自己的机器上，通过熟悉的聊天渠道与它交互。
 
-```text
-OpenClaw 的模块化设计：
-
-┌─────────────────────────────────────┐
-│              Agent                   │
-│                                      │
-│  ┌─────────┐  ┌─────────┐          │
-│  │ Claw 1  │  │ Claw 2  │          │
-│  │ 搜索能力  │  │ 代码能力  │         │
-│  └─────────┘  └─────────┘          │
-│  ┌─────────┐  ┌─────────┐          │
-│  │ Claw 3  │  │ Claw 4  │          │
-│  │ 文件操作  │  │ API 调用  │         │
-│  └─────────┘  └─────────┘          │
-└─────────────────────────────────────┘
-```
+需要克制：公开资料对它的内部分层和编排细节披露有限，并不存在 SearchClaw、CodeClaw、FileClaw 这类公开子模块，也没有 `openclaw` 这样的 npm 编程 API。面试时不要把这些名字当作事实讲出来。
 
 ### Hermes：Nous Research 的开源 LLM
 
@@ -2016,34 +1990,17 @@ Hermes 的特点：
 
 ### OpenClaw vs Hermes 区别
 
-| 对比维度 | OpenClaw | Hermes |
-|---------|----------|--------|
-| **本质** | Agent 框架（编排层） | 大语言模型（推理层） |
-| **作用** | 定义 Agent 的行为和协作 | 提供 Agent 的推理能力 |
-| **类比** | 相当于 LangChain / LangGraph | 相当于 GPT-4o / Claude |
-| **使用方式** | 框架 API 调用 | 模型 API 调用或本地部署 |
-| **配合使用** | OpenClaw 用 Hermes 作为底层 LLM | Hermes 被 OpenClaw 调用 |
-
-```javascript
-// OpenClaw + Hermes 的组合使用（伪代码）
-import { Agent, Claw } from "openclaw";
-
-const agent = new Agent({
-  model: "nous-hermes-2-mixtral",  // 底层用 Hermes 模型
-  claws: [
-    new SearchClaw(),    // 搜索能力
-    new CodeClaw(),      // 代码能力
-    new FileClaw(),      // 文件操作
-  ],
-});
-
-// Agent 使用 Hermes 模型做推理，通过 Claw 执行操作
-const result = await agent.run("帮我分析这个项目的依赖关系并生成报告");
-```
+| 对比维度     | OpenClaw                                  | Hermes                         |
+| ------------ | ----------------------------------------- | ------------------------------ |
+| **本质**     | 本地部署的个人 AI 助手 / 网关（应用形态） | 大语言模型（推理层）           |
+| **作用**     | 接入渠道、管理会话与记忆、加载技能        | 提供推理与生成能力             |
+| **类比**     | 更接近一个自托管的助手应用                | 相当于其他开源或闭源 LLM       |
+| **使用方式** | 本地部署，接入聊天渠道                    | 模型 API 调用或本地部署        |
+| **配合使用** | OpenClaw 需要底层模型来推理               | Hermes 可被各种 Agent 应用调用 |
 
 <Note title="一句话总结">
 
-OpenClaw 是 Agent 框架（怎么编排），Hermes 是 LLM 模型（怎么推理）——框架决定 Agent 的行为结构，模型决定 Agent 的推理质量，两者配合使用。
+OpenClaw 是可本地部署的 AI 助手 / 网关（怎么接入和运行），Hermes 是 LLM 模型（怎么推理）。前者是应用形态，后者是模型，二者不是"框架 + 模型"的拼装关系。
 
 </Note>
 
@@ -2067,7 +2024,7 @@ AI 编码工具正在从"代码补全插件"进化为"自主编程 Agent"。理�
 └──────────────────────────────────────────────────────────────┘
 ```
 
-<Tip title="🎢 通俗比喻: 从自动铅笔到机器人程序员">
+<Tip title="通俗比喻: 从自动铅笔到机器人程序员">
 
 AI 编码工具的进化就像工具的升级。Codex 是自动铅笔——你写前半句，它帮你补后半句（代码补全），但不能自己写字。GitHub Copilot 是智能自动铅笔——能根据上下文猜你想写什么，但还是你握着笔。Claude Code 是机器人程序员——你给它一个任务（"重构这个模块"），它自己读代码、写代码、跑测试、提 PR，你只需要 Code Review。从"辅助写字"到"独立干活"，这就是从 Codex 到 Claude Code 的范式转移。
 
@@ -2093,7 +2050,7 @@ Codex 的关键设计：
 
 - **训练数据**：从 GitHub 筛选 179 种编程语言的开源代码，去重后 159 GB
 - **上下文窗口**：4096 tokens，通过"前缀拼接"把光标前后的代码都喂给模型
-- **沙箱执行**：Codex 的 Harness Engineering 建立了安全沙箱环境，让模型生成的代码可以在隔离环境中执行和验证，这是 Agent 自主执行的工程基础
+- **沙箱执行**：Codex CLI 用 OS 级沙箱执行模型生成的命令（macOS Seatbelt、Linux bubblewrap + Landlock、Windows 受限令牌/DACL），再叠加审批策略；这是 Agent 自主执行而不失控的工程基础，与「Harness Engineering」方法论不是同一个概念
 - **评测体系**：HumanEval 基准测试（164 道编程题），定义了代码生成能力的行业标准
 
 ### Claude Code 的原理
@@ -2122,14 +2079,14 @@ Claude Code 的架构：
 
 Claude Code 与传统 IDE 插件的核心区别：
 
-| 对比维度 | 传统 IDE 插件（Copilot） | Claude Code（自主 Agent） |
-|---------|------------------------|------------------------|
-| **交互方式** | 被动补全，用户逐行确认 | 主动执行，给指令后自主完成 |
-| **工具集** | 只有代码补全 | 读写文件、执行命令、搜索、Git |
-| **上下文范围** | 当前文件 + 光标附近 | 整个代码库（跨文件理解） |
-| **执行能力** | 不能执行代码 | 可以运行测试、构建、部署 |
-| **协议集成** | 无 | MCP 协议 + Skills 系统 + Hooks |
-| **自主程度** | 零自主，100% 人工驱动 | 高度自主，人工监督 |
+| 对比维度       | 传统 IDE 插件（Copilot） | Claude Code（自主 Agent）      |
+| -------------- | ------------------------ | ------------------------------ |
+| **交互方式**   | 被动补全，用户逐行确认   | 主动执行，给指令后自主完成     |
+| **工具集**     | 只有代码补全             | 读写文件、执行命令、搜索、Git  |
+| **上下文范围** | 当前文件 + 光标附近      | 整个代码库（跨文件理解）       |
+| **执行能力**   | 不能执行代码             | 可以运行测试、构建、部署       |
+| **协议集成**   | 无                       | MCP 协议 + Skills 系统 + Hooks |
+| **自主程度**   | 零自主，100% 人工驱动    | 高度自主，人工监督             |
 
 Claude Code 的三大核心机制：
 
@@ -2165,12 +2122,12 @@ Andrew Ng 的多 Agent 角色分工模型：
 
 每个 Agent 的职责、工具集和模型选择：
 
-| Agent 角色 | 职责 | 核心工具集 | 模型选择 |
-|-----------|------|----------|---------|
-| **Code Agent** | 根据需求生成代码实现 | readFile, writeFile, searchCode, terminal | 强模型（Claude Opus / GPT-4o） |
-| **Test Agent** | 为生成的代码编写单元测试和集成测试 | readFile, writeFile, runTest, coverage | 强模型（需要理解代码逻辑） |
-| **Review Agent** | 审查代码质量、安全漏洞、性能问题 | readFile, searchCode, lint, analyze | 强模型（需要推理能力） |
-| **Deploy Agent** | 执行构建、部署到目标环境 | build, deploy, checkHealth, rollback | 轻量模型（执行确定性操作） |
+| Agent 角色       | 职责                               | 核心工具集                                | 模型选择                       |
+| ---------------- | ---------------------------------- | ----------------------------------------- | ------------------------------ |
+| **Code Agent**   | 根据需求生成代码实现               | readFile, writeFile, searchCode, terminal | 强模型（Claude Opus / GPT-4o） |
+| **Test Agent**   | 为生成的代码编写单元测试和集成测试 | readFile, writeFile, runTest, coverage    | 强模型（需要理解代码逻辑）     |
+| **Review Agent** | 审查代码质量、安全漏洞、性能问题   | readFile, searchCode, lint, analyze       | 强模型（需要推理能力）         |
+| **Deploy Agent** | 执行构建、部署到目标环境           | build, deploy, checkHealth, rollback      | 轻量模型（执行确定性操作）     |
 
 协作模式有三种：
 
@@ -2190,7 +2147,7 @@ const feedbackFlow = "Code → Review → [通过] → Deploy / [不通过] → 
 
 ### 企业级多 Agent 设计
 
-字节跳动 Coze 团队和阿里百炼团队在企业级 Agent 编排上有深度实践。他们的经验表明，多 Agent 系统在生产环境中面临四大核心挑战：
+多 Agent 系统在生产环境中面临四大核心挑战：
 
 **1. 权限边界收敛**
 
@@ -2224,68 +2181,64 @@ const agentPermissions = {
 
 **2. 审计日志（Audit Logging）**
 
-每个 Agent 的每次工具调用都必须记录完整上下文，支持事后追溯和合规审计。字节跳动 Coze 团队的做法是用 runId 关联同一次任务的所有 Agent 操作。
+每个 Agent 的每次工具调用都必须记录完整上下文，支持事后追溯和合规审计。常见做法是用 runId 关联同一次任务的所有 Agent 操作。
 
 **3. 容错降级（Fallback）**
 
-Agent 调用失败时的降级策略：主 Agent 失败 → 备用 Agent 接管 → 规则引擎兜底 → 人工处理。阿里百炼团队在实际生产中发现，Agent 调用失败率约为 3-5%，必须有完善的降级机制。
+Agent 调用失败时的降级策略：主 Agent 失败 → 备用 Agent 接管 → 规则引擎兜底 → 人工处理。线上 Agent 的工具调用失败是常态，必须有完善的降级机制。
 
 **4. 确定性输出边界**
 
-LLM 的输出天然是不确定的，但企业级系统需要确定性。字节跳动 Coze 团队的做法是：LLM 只做意图理解和路由（不确定性层），Schema 校验输出格式（半确定性层），规则引擎执行具体操作（确定性层）。
+LLM 的输出天然是不确定的，但企业级系统需要确定性。常见做法是：LLM 只做意图理解和路由（不确定性层），Schema 校验输出格式（半确定性层），规则引擎执行具体操作（确定性层）。
 
 ### 实战：用 Claude Code 实现多 Agent 协作
 
 以一个真实的"代码重构 + 测试 + 审查"流水线为例，展示如何用 Claude Code 的 Skills 系统实现多 Agent 协作：
 
-```javascript
-// .claude/skills/code-pipeline/SKILL.md
-// 定义一个多 Agent 代码流水线 Skill
+```markdown
+---
+name: code-pipeline
+description: 自动化代码重构 → 测试 → 审查流水线
+---
 
-export default {
-  name: "code-pipeline",
-  description: "自动化代码重构 → 测试 → 审查流水线",
-  agents: [
-    {
-      name: "refactor-agent",
-      role: "执行代码重构",
-      tools: ["Read", "Write", "Edit", "Bash"],
-      prompt: `你是代码重构专家。执行以下步骤：
-        1. 读取目标文件，分析代码结构
-        2. 识别可优化的模式（重复代码、过长函数、复杂条件）
-        3. 执行重构，保持功能不变
-        4. 运行现有测试确认没有破坏`,
-    },
-    {
-      name: "test-agent",
-      role: "编写和运行测试",
-      tools: ["Read", "Write", "Bash"],
-      prompt: `你是测试专家。执行以下步骤：
-        1. 读取重构后的代码
-        2. 分析已有的测试覆盖率
-        3. 为新增/修改的逻辑补充测试用例
-        4. 运行全部测试，确保通过`,
-    },
-    {
-      name: "review-agent",
-      role: "代码审查",
-      tools: ["Read", "Bash"],
-      prompt: `你是代码审查专家。审查以下内容：
-        1. 代码质量：命名规范、函数长度、圈复杂度
-        2. 安全性：SQL 注入、XSS、敏感信息泄露
-        3. 性能：N+1 查询、不必要的重渲染、内存泄漏风险
-        4. 输出审查报告，标记问题等级（Error / Warning / Info）`,
-    },
-  ],
-  // 协作流程：串行 + 反馈循环
-  flow: [
-    { from: "user", to: "refactor-agent", trigger: "输入重构目标" },
-    { from: "refactor-agent", to: "test-agent", trigger: "重构完成" },
-    { from: "test-agent", to: "review-agent", trigger: "测试通过" },
-    { from: "review-agent", to: "refactor-agent", condition: "发现 Error 级问题", trigger: "要求修改" },
-    { from: "review-agent", to: "user", condition: "审查通过", trigger: "输出最终报告" },
-  ],
-};
+# Code Pipeline
+
+按下面的顺序依次调用子 Agent，任一步失败则回到上一步。
+
+## 1. refactor-agent
+
+可用工具：Read、Write、Edit、Bash。
+
+1. 读取目标文件，分析代码结构
+2. 识别可优化的模式（重复代码、过长函数、复杂条件）
+3. 执行重构，保持功能不变
+4. 运行现有测试确认没有破坏
+
+## 2. test-agent
+
+可用工具：Read、Write、Bash。
+
+1. 读取重构后的代码
+2. 分析已有的测试覆盖率
+3. 为新增/修改的逻辑补充测试用例
+4. 运行全部测试，确保通过
+
+## 3. review-agent
+
+可用工具：Read、Bash。
+
+1. 代码质量：命名规范、函数长度、圈复杂度
+2. 安全性：SQL 注入、XSS、敏感信息泄露
+3. 性能：N+1 查询、不必要的重渲染、内存泄漏风险
+4. 输出审查报告，标记问题等级（Error / Warning / Info）
+
+## 协作流程
+
+- 输入重构目标 → refactor-agent
+- 重构完成 → test-agent
+- 测试通过 → review-agent
+- review-agent 发现 Error → 回到 refactor-agent，修改后重走流水线
+- 审查通过 → 输出最终报告
 ```
 
 ```bash
@@ -2315,9 +2268,9 @@ AI 编码工具从 Codex 的代码补全底座，进化到 Claude Code 的自主
 **高分回答：**
 "Codex 和 Claude Code 代表了 AI 编码工具的两个时代：
 
-**Codex 是代码生成底座**：OpenAI Engineering 团队在 2021 年推出，基于 GPT-3 在 159 GB GitHub 代码上微调，参数量 12B，上下文窗口 4096 tokens。它的核心能力是根据上下文生成代码补全，最直接的产物是 GitHub Copilot。Codex 本身是被动的——你输入代码，它补全建议，不能自主执行任何操作。OpenAI 的 Harness Engineering 团队为 Codex 建立了沙箱执行环境和 HumanEval 评测体系，这些工程沉淀为后来的 Agent 能力奠定了基础。
+**Codex 是代码生成底座**：OpenAI Engineering 团队在 2021 年推出，基于 GPT-3 在 159 GB GitHub 代码上微调，参数量 12B，上下文窗口 4096 tokens。它的核心能力是根据上下文生成代码补全，最直接的产物是 GitHub Copilot。Codex 本身是被动的——你输入代码，它补全建议，不能自主执行任何操作。OpenAI 后来围绕 Codex 补上了沙箱执行环境和 HumanEval 评测体系，这些工程沉淀为后来的 Agent 能力奠定了基础。
 
-**Claude Code 是自主编程 Agent**：Anthropic Claude Code 团队在 2024 年推出，深度集成在终端 CLI 中。它不是被动补全，而是自主执行——给一个指令（如'重构这个模块并补充测试'），它会自主读写文件、执行命令、搜索代码库、管理 Git。核心区别是 Claude Code 有完整的工具调用能力（读写文件、执行命令、搜索代码、Git 操作），加上 MCP 协议、Skills 系统、Hooks 机制三大扩展能力。
+**Claude Code 是自主编程 Agent**：Anthropic Claude Code 团队在 2025 年推出，深度集成在终端 CLI 中。它不是被动补全，而是自主执行——给一个指令（如'重构这个模块并补充测试'），它会自主读写文件、执行命令、搜索代码库、管理 Git。核心区别是 Claude Code 有完整的工具调用能力（读写文件、执行命令、搜索代码、Git 操作），加上 MCP 协议、Skills 系统、Hooks 机制三大扩展能力。
 
 **类比**：Codex 像一个只能给你提建议的代码助手，Claude Code 像一个能独立干活的初级开发者。"
 
@@ -2381,7 +2334,7 @@ AI 编码工具从 Codex 的代码补全底座，进化到 Claude Code 的自主
 **高分回答：**
 "多 Agent 系统的成本比单 Agent 高 N 倍（N = Agent 数量），必须严格控制：
 
-**模型分级策略**：不同 Agent 用不同模型。Code Agent 和 Review Agent 需要强推理能力，用 Claude Opus 或 GPT-4o；Test Agent 的代码生成相对模式化，可以用 Sonnet；Deploy Agent 执行的是确定性操作，用 Haiku 或 GPT-4o-mini 就够。这样整体成本可以降低 60-70%。
+**模型分级策略**：不同 Agent 用不同模型。Code Agent 和 Review Agent 需要强推理能力，用 Claude Opus 或 GPT-4o；Test Agent 的代码生成相对模式化，可以用 Sonnet；Deploy Agent 执行的是确定性操作，用 Haiku 或 GPT-4o-mini 就够。这样整体成本可以明显降低。
 
 **Prompt 缓存**：Anthropic 的 Prompt Cache 对多 Agent 场景效果显著。多个 Agent 共享的 System Prompt（如项目上下文、代码规范）放在 Prompt 前缀，相同前缀的请求复用缓存的 KV Cache，节省 90% 输入 token 费用。
 
@@ -2411,7 +2364,7 @@ AI 编码工具从 Codex 的代码补全底座，进化到 Claude Code 的自主
 
   </Accordion>
 
-  <Accordion title="🔥 多 Agent 系统在生产环境出过什么问题?" icon="skull">
+  <Accordion title="多 Agent 系统在生产环境出过什么问题?" icon="skull">
 
 **答题要点：**
 结合真实案例，说明多 Agent 系统特有的坑——单 Agent 不会遇到的问题。
@@ -2429,7 +2382,7 @@ AI 编码工具从 Codex 的代码补全底座，进化到 Claude Code 的自主
 
   </Accordion>
 
-  <Accordion title="🔥 AI 编码工具会取代前端工程师吗?" icon="skull">
+  <Accordion title="AI 编码工具会取代前端工程师吗?" icon="skull">
 
 **答题要点：**
 这是争议性问题，需要从多个角度分析，给出有层次的判断。
@@ -2450,21 +2403,756 @@ AI 编码工具从 Codex 的代码补全底座，进化到 Claude Code 的自主
 
 ---
 
-## 📚 延伸阅读与引用参考
+## Q13: Harness 运行时：状态机、事件与崩溃恢复怎么做？
 
-- 🔗 [Anthropic: Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)：*Anthropic 官方对 Agent 架构设计的最佳实践指南，提出五种核心构建模式（Prompt Chaining、Routing、Parallelization、Orchestrator-Workers、Evaluator-Optimizer），强调"从简单开始"的设计哲学。* <sup>[1]</sup>
-- 🔗 [Andrew Ng: Agentic Design Patterns](https://www.deeplearning.ai/the-batch/how-agents-can-improve-llm-performance/)：*Andrew Ng 对 Agentic Workflow 的系统性总结，定义 Reflection、Tool Use、Planning、Multi-Agent 四种设计模式，是多 Agent 协作的方法论基础。* <sup>[2]</sup>
-- 🔗 [LangGraph 官方文档](https://langchain-ai.github.io/langgraphjs/)：*LangGraph 的完整文档，Agent 编排、Checkpoint、Multi-Agent 的核心框架。* <sup>[3]</sup>
-- 📖 [Lilian Weng - LLM Agents](https://lilianweng.github.io/posts/2023-06-23-agent/)：*OpenAI 应用研究主管对 Agent 架构的深度分析，涵盖 Planning（任务分解）、Memory（记忆管理）、Tool Use（工具调用）三大核心组件。* <sup>[4]</sup>
-- 🔗 [OpenAI Function Calling 文档](https://platform.openai.com/docs/guides/function-calling)：*OpenAI 官方对 Function Calling 的详细说明，Agent 工具调用的底层规范。* <sup>[5]</sup>
-- 📖 [Chip Huyen - AI Engineering (2025)](https://huyenchip.com/ai-engineering/)：*系统性梳理 Agent 的工程化落地方法论，涵盖评估体系、成本控制、生产部署等核心主题。* <sup>[6]</sup>
-- 🔗 [OpenAI Harness Engineering](https://openai.com/index/harness/)：*OpenAI 的声明式 Agent 编排框架，多 Agent 协作的核心架构设计。* <sup>[7]</sup>
-- 🔗 [Anthropic Claude Code 官方文档](https://docs.anthropic.com/en/docs/claude-code)：*Anthropic Claude Code 团队对终端 Agent 的完整文档，包括 MCP 集成、Skills 系统和 Hooks 机制。* <sup>[8]</sup>
-- 🔗 [OpenAI: Codex - Evaluating Large Language Models Trained on Code](https://arxiv.org/abs/2107.03374)：*OpenAI Engineering 团队对 Codex 代码生成底座的原始论文，定义了 HumanEval 评测基准。* <sup>[9]</sup>
-- 🔗 [n8n 官方文档](https://docs.n8n.io/)：*n8n 工作流自动化平台的完整文档，节点式 Agent 编排指南。* <sup>[10]</sup>
-- 🔗 [Dify 官方文档](https://docs.dify.ai/)：*Dify LLM 应用开发平台的完整文档，Agent 应用构建指南。* <sup>[11]</sup>
-- 📖 [Yohei Nakajima: BabyAGI](https://github.com/yoheinakajima/babyagi)：*BabyAGI 源码，理解 Agent Loop 的最简实现。* <sup>[12]</sup>
-- 🟢 [字节跳动 Coze / 阿里百炼](https://www.coze.com/)：*国内"企业级 Agent"编排的先驱平台，深谙权限收敛、审计容错、复杂 RAG 知识检索与 Skill 调度。* <sup>[13]</sup>
-- 🔗 [Nous Research Hermes](https://nousresearch.com/)：*Nous Research 的开源 LLM 系列，专注 Agent 场景优化（工具调用、长上下文、指令遵循）。* <sup>[14]</sup>
-- 🔗 [OpenClaw](https://github.com/openclaw)：*开源 AI Agent 框架，模块化的 Agent 能力组合设计。* <sup>[15]</sup>
-- 🔗 [LangGraph Human-in-the-Loop 文档](https://langchain-ai.github.io/langgraph/concepts/human_in_the_loop/)：*LangGraph 官方对 Human-in-the-Loop 的概念文档，涵盖 interrupt、Command、Checkpoint 三件套的完整说明。* <sup>[3]</sup>
+前面的章节讲的是"Agent 应该具备什么能力"，这一节讲"这些能力靠什么运行时结构撑住"。如果被追问"你说的 Agent Loop 到底怎么落地"，答不上状态机、事件和恢复，就还是概念层。
+
+### 一次 run 的四层状态
+
+| 层       | 含义                                  | 生命周期      | 典型持久化        |
+| -------- | ------------------------------------- | ------------- | ----------------- |
+| Run      | 一次完整任务，从用户提交到终态        | 分钟到小时    | 会话头 + 终态事件 |
+| Turn     | 一次用户输入引发的处理批次            | 一个用户回合  | turn 边界事件     |
+| Step     | 一次模型请求 + 它产生的工具调用与结果 | 一次 LLM 往返 | step 边界事件     |
+| ToolCall | 单个工具的调用记录                    | 秒到分钟      | tool 事件 + 结果  |
+
+DeepSeek Harness 公开文档把 turn 和 step 明确分开：一个 step 包含一次模型请求、该请求产生的工具调用及其结果；一个 turn 可以包含零到多个 step。Anthropic 的 Managed Agents 则把运行时拆成三个可独立替换的接口：session（只追加的事件日志）、harness（调模型并把工具调用路由出去的循环）、sandbox（执行代码和改文件的环境）<sup>[16]</sup>。两个设计指向同一个结论：**循环可以无状态，状态必须外置。**
+
+```text
+run/started
+   │
+   ├── turn/started
+   │      ├── step/started ── model/requested ── model/delta* ── model/completed
+   │      │        ├── tool/requested ── tool/started ── tool/completed | tool/failed
+   │      │        └── step/completed
+   │      ├── turn/interrupted ──（人工审批 / 用户中断 / 预算耗尽）
+   │      └── turn/completed
+   ├── run/resumed（从 last_event_id 继续）
+   └── run/completed | run/failed | run/cancelled
+```
+
+### 事件要分"耐久"和"瞬时"两类
+
+这是很多自研 Harness 会踩的坑：把所有东西都塞进一个事件流，结果回放时被流式 token 淹没。
+
+| 类型     | 例子                                                                       | 是否写入会话日志 | 用途             |
+| -------- | -------------------------------------------------------------------------- | ---------------- | ---------------- |
+| 耐久事件 | 用户消息、模型最终消息、工具调用与结果、审批决定、turn/step 边界、产物创建 | 是               | 回放、审计、恢复 |
+| 瞬时事件 | token delta、thinking 增量、进度百分比、UI 状态                            | 否（或采样）     | 实时展示、取消   |
+
+DeepSeek Harness 的公开资料明确区分 session events（必须活过 reload 和 replay 的持久事实）与 agent events（描述进行中的工作，可被观察或拦截）<sup>[17]</sup>。Pi 的会话文件是 JSONL，每行一个条目，通过 `id` / `parentId` 组成树，条目类型包括会话头、消息、模型切换、思考等级切换、压缩、分支摘要和自定义条目<sup>[18]</sup>。
+
+### 事件溯源：状态是事件的折叠
+
+```typescript
+// 事件是最小事实，状态是可重建的投影
+type RunEvent =
+  | {
+      type: "run/started";
+      runId: string;
+      tenantId: string;
+      at: number;
+      input: string;
+    }
+  | { type: "turn/started"; runId: string; turnId: string; at: number }
+  | { type: "step/started"; runId: string; stepId: string; at: number }
+  | {
+      type: "model/completed";
+      runId: string;
+      stepId: string;
+      message: Message;
+      usage: Usage;
+    }
+  | { type: "tool/requested"; runId: string; stepId: string; call: ToolCall }
+  | {
+      type: "tool/completed";
+      runId: string;
+      stepId: string;
+      callId: string;
+      result: ToolResult;
+    }
+  | {
+      type: "tool/failed";
+      runId: string;
+      stepId: string;
+      callId: string;
+      error: ToolError;
+    }
+  | {
+      type: "artifact/created";
+      runId: string;
+      artifactId: string;
+      manifest: ArtifactManifest;
+    }
+  | {
+      type: "run/interrupted";
+      runId: string;
+      reason: "approval" | "user" | "budget";
+    }
+  | { type: "run/resumed"; runId: string; fromEventId: string }
+  | {
+      type: "run/completed";
+      runId: string;
+      status: "ok" | "failed" | "cancelled";
+    };
+
+type RunState = {
+  status: "running" | "waiting_approval" | "completed" | "failed";
+  step: number;
+  pendingCalls: Map<string, ToolCall>; // 已请求未落结果的调用
+  messages: Message[];
+  artifacts: string[];
+};
+
+function fold(events: RunEvent[]): RunState {
+  return events.reduce(apply, initialState);
+}
+
+function apply(state: RunState, e: RunEvent): RunState {
+  switch (e.type) {
+    case "model/completed":
+      return { ...state, messages: [...state.messages, e.message] };
+    case "tool/requested":
+      return {
+        ...state,
+        pendingCalls: new Map(state.pendingCalls).set(e.call.id, e.call),
+      };
+    case "tool/completed":
+    case "tool/failed": {
+      const pending = new Map(state.pendingCalls);
+      pending.delete(e.callId);
+      return { ...state, pendingCalls: pending, step: state.step + 1 };
+    }
+    case "run/interrupted":
+      return { ...state, status: "waiting_approval" };
+    default:
+      return state;
+  }
+}
+```
+
+事件溯源带来三个能力，也带来三个必须付的代价：
+
+| 能力     | 实现方式                                             | 代价                                       |
+| -------- | ---------------------------------------------------- | ------------------------------------------ |
+| 回放定位 | 从任意事件重建当时的上下文                           | 事件体量大，需要快照和分层存储             |
+| 分支实验 | 从某个事件 fork 出新 run，指定新的 `parent_event_id` | 分支之间共享前缀，但工具副作用不能自动回滚 |
+| 崩溃恢复 | 新进程读日志，从最后一条可继续事件恢复               | 必须处理"事件已写、副作用未完成"的中间态   |
+
+### 回放不是重跑：区分 record-replay 与 re-execute
+
+模型调用和工具副作用都不是确定性的。同一个 Prompt 重跑，模型可能给出不同答案；`bash` 重跑可能重复写文件。所以生产级回放必须区分两种模式：
+
+- **record-replay（审计/调试）**：只读日志，**复用记录下来的模型输出和工具结果**，不再真正调用外部系统。适合复现"当时到底看到了什么"。
+- **re-execute（回归/评测）**：模型重新推理，但工具执行打上 `replay_mode=strict`，对写操作返回 `replayed` 而不是真的执行；或整体切到隔离沙箱。
+
+如果把两者混为一谈，回放会变成"带副作用的第二次执行"，这是事故的常见来源。
+
+### Checkpoint 应该存在哪一层
+
+| 方案                                       | 恢复粒度 | 优点                                | 缺点                                    |
+| ------------------------------------------ | -------- | ----------------------------------- | --------------------------------------- |
+| 只存消息数组                               | 整轮     | 实现简单                            | 无法恢复 pending tool call，分支困难    |
+| 每 step 存图状态（LangGraph checkpointer） | step     | 框架原生支持 interrupt、time travel | 状态图与业务代码耦合，checkpoint 会膨胀 |
+| 事件日志 + 周期快照                        | 任意事件 | 审计、分支、恢复统一                | 存储与重放成本高，需要事件 schema 治理  |
+
+LangGraph 的 checkpointer 按 `thread_id` 持久化图状态快照，支持对话连续性、Human-in-the-Loop、time travel 和容错；`MemorySaver` 只存在内存，生产必须换 `PostgresSaver` 或 `SqliteSaver`，并且要设保留策略，否则 checkpoint 无界增长<sup>[19]</sup>。事件日志方案则更适合需要审计和跨 Agent 共享的场景。
+
+### 崩溃恢复协议（最容易被忽略的部分）
+
+一个可用的恢复流程至少要回答四个问题：
+
+1. **谁有权恢复？** 用租约（lease）+ fencing token。旧 worker 即使还活着，写事件时 token 过期也会被拒绝，避免两个 harness 同时跑同一个 run。
+2. **pending tool call 怎么办？** 恢复时先查工具侧账本（按 `idempotency_key`），已完成的直接补写 `tool/completed`，未完成的重新执行或标记为失败。
+3. **半写文件怎么办？** 产物先写临时路径再原子 rename，并用 checksum 校验；沙箱崩溃后不信任任何未提交的产物。
+4. **从哪条事件继续？** 记录 `last_applied_event_id`，恢复时只重放其后的事件；快照作为加速，不作为真相。
+
+```typescript
+async function recover(runId: string, workerId: string) {
+  const lease = await leases.acquire(runId, workerId, { ttlMs: 30_000 });
+  if (!lease) throw new Error("run is owned by another worker");
+
+  const events = await session.read(runId, { after: "snapshot" });
+  const state = fold(events);
+
+  for (const call of state.pendingCalls.values()) {
+    const recorded = await toolLedger.lookup(call.idempotencyKey);
+    if (recorded) {
+      await session.append({
+        type: "tool/completed",
+        callId: call.id,
+        result: recorded,
+      });
+    } else {
+      await resumeOrFail(call, lease.fencingToken);
+    }
+  }
+  return state;
+}
+```
+
+**什么场景会坏：** 事件写入成功但进程在副作用完成前崩溃，恢复时重复执行写操作；两个 worker 因网络分区同时认为自己是 owner；压缩摘要覆盖了原始事件，回放无法还原；事件 schema 升级后老日志解析失败。
+
+**怎么验证：** 在 step/tool 边界做故障注入（kill -9、断网、磁盘满），断言恢复后事件序列无重复、无丢失；用固定事件集跑 fold，对比快照与全量重放的结果；对每个工具做"执行两次结果一致"的幂等测试。
+
+---
+
+## Q14: 上下文工程：预算、压缩和 Prompt Cache 怎么一起设计？
+
+上下文工程不是"把资料塞进 Prompt"，而是在有限窗口里做资源分配，并且让分配结果**对缓存友好**。
+
+### 组装顺序与预算
+
+一个可解释的组装顺序（顺序本身就是契约）：
+
+```text
+┌─────────────────────────────────────────────┐
+│ 1. 系统提示（角色、硬约束、输出契约）        │  稳定，跨 run 不变
+│ 2. 工具定义（名称、描述、JSON Schema）       │  稳定，按固定顺序序列化
+│ 3. 项目上下文（AGENTS.md / 目录地图）        │  半稳定，按仓库版本
+│ 4. 长期记忆 / 用户偏好                       │  半稳定，按用户
+│ 5. 检索结果 / 相关文件片段                    │  每轮变化
+│ 6. 会话历史（消息、工具调用与结果）           │  持续增长
+│ 7. 当前用户输入                              │  每轮变化
+└─────────────────────────────────────────────┘
+        ↑ 缓存断点应放在 3 或 4 的末尾
+```
+
+预算不是平均分配。以一个 200K 窗口为例（具体数字随模型变化，这里只演示方法）：
+
+| 区域                | 预算 | 超限策略                            |
+| ------------------- | ---- | ----------------------------------- |
+| 系统提示 + 工具定义 | 10K  | 不裁剪，超了说明工具设计有问题      |
+| 项目上下文          | 15K  | 超了改为"目录 + 按需读取"，不要硬塞 |
+| 长期记忆            | 10K  | 只保留与当前任务相关的条目          |
+| 检索/文件片段       | 25K  | 按相关性截断，保留来源引用          |
+| 历史                | 100K | 压缩早期、保留近期完整              |
+| 输出预留            | 40K  | 绝不占用，否则模型会被截断          |
+
+### 四种上下文操作，不要只会"压缩"
+
+Anthropic 的上下文工程文章把操作分为 write、select、compress、isolate 四类<sup>[20]</sup>。落到 Harness 上：
+
+| 操作     | 具体手段                            | 适合什么         | 代价                             |
+| -------- | ----------------------------------- | ---------------- | -------------------------------- |
+| Write    | 把状态写到文件/草稿本/产物          | 长任务、跨会话   | 需要设计文件结构，模型要记得去读 |
+| Select   | 检索、按需加载 Skill、工具搜索      | 知识量大、工具多 | 检索失败时模型不知道存在什么     |
+| Compress | 摘要、裁剪旧工具结果、折叠 thinking | 历史过长         | 不可逆，可能丢关键细节           |
+| Isolate  | 子 Agent 独立上下文、沙箱           | 探索、并行       | 上下文传递与汇总成本             |
+
+Anthropic 在长任务实践中进一步区分了 compaction 与 context reset：compaction 是原地摘要，保留连续性；reset 是清空窗口、换一个新 Agent，靠结构化交接物承接状态。他们观察到某些模型会在接近上下文上限时"提前收工"（context anxiety），reset 能解决这个问题，但代价是交接物必须足够完整，且增加编排复杂度、token 开销和延迟<sup>[21]</sup>。更关键的是，当模型换代后这个补丁可能变成死重——harness 的假设会过期<sup>[16]</sup>。
+
+### 前缀稳定与 Prompt Cache 的真实影响
+
+Prompt Cache 的命中条件是**前缀逐字节一致**。几个容易踩的细节（以 Anthropic 公开文档为例）：
+
+- 缓存默认 5 分钟 TTL，可选用 1 小时；命中读取按基础输入价的约 0.1 倍计费，写入按约 1.25 倍计费<sup>[22]</sup>。
+- 最多 4 个显式断点；缓存读取会向前回看最多 20 个内容块，找不到就 miss<sup>[22]</sup>。
+- 在断点之前插入时间戳、随机 ID、动态排序的工具数组，会让整个前缀哈希变化，**每次都在写缓存却永远读不到**。
+
+```text
+正确：
+[系统提示][工具定义(固定顺序)][AGENTS.md] ──断点── [历史][本轮输入]
+                                             ↑ 变化只发生在这里
+
+错误：
+[当前时间 12:03:07][系统提示][工具定义(按相关性排序)] ──断点── ...
+   ↑ 每轮都变，缓存全失效
+```
+
+Pi 的显式上下文组装让这件事可审计：你能看见放进去的每一条内容，从而主动维护"稳定前缀"这个不变量。反过来，如果 Harness 偷偷注入当前时间、随机排序工具、每轮重写系统提示，长任务成本可能翻几倍。
+
+**什么场景会坏：** 多租户共用系统提示但拼进了租户名；工具列表按使用频率动态排序；压缩摘要每轮重写导致断点前的历史变化；把大工具结果放在历史中间而不是末尾。
+
+**怎么验证：** 在响应里采集 `cache_read_input_tokens` / `cache_creation_input_tokens`（或 Provider 等价指标），计算缓存命中率与单任务成本；做 A/B：固定前缀 vs 动态前缀，对比同一任务集的 token 账单；把"前缀哈希"作为回归测试断言。
+
+---
+
+## Q15: 工具运行时与产物：怎么让 Agent 的动作可控、可重放、可交接？
+
+工具是 Harness 的"手"。手的设计决定了三件事：模型会不会用错、出错后能不能恢复、产物能不能被下一步消费。
+
+### 工具注册与动态挂载
+
+| 机制       | 作用                                   | 失败模式                   |
+| ---------- | -------------------------------------- | -------------------------- |
+| 静态注册   | 启动时把工具 schema 放进上下文         | 工具多时上下文爆炸         |
+| 动态激活   | 注册但不暴露，按任务切换 active set    | 模型不知道自己有某个能力   |
+| 按需检索   | 用 `tool_search` 找到工具再加载 schema | 检索质量差时找不到正确工具 |
+| 作用域隔离 | 子 Agent / 租户只看到自己的工具        | 配置漂移导致权限泄漏       |
+
+Pi 的实现细节值得参考：工具注册是 eager 的，没有 `unregisterTool`，但可以通过 `pi.getAllTools()` / `getActiveTools()` / `setActiveTools(names)` 切换模型可见的子集，切换在下一轮生效<sup>[23]</sup>。这避免了"运行时删除工具"带来的状态不一致，代价是注册表只增不减，需要额外的治理。
+
+### 并发、超时与取消
+
+| 工具类型                     | 并发策略                                           | 原因               |
+| ---------------------------- | -------------------------------------------------- | ------------------ |
+| 只读检索（read/grep/search） | 可并行                                             | 无副作用，提升吞吐 |
+| 写文件 / 改同一资源          | 串行或按资源加锁                                   | 避免 lost update   |
+| 有共享游标的工具             | 显式串行（如 Pi 的 `executionMode: "sequential"`） | 并发会导致状态错乱 |
+| 外部副作用（发邮件、下单）   | 串行 + 幂等键                                      | 重试可能重复下单   |
+
+超时和取消必须端到端传递：
+
+```typescript
+async function executeTool(
+  call: ToolCall,
+  ctx: RunContext,
+): Promise<ToolResult> {
+  const deadline = Math.min(ctx.toolTimeoutMs, ctx.remainingRunBudgetMs);
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(new ToolTimeout(deadline)), deadline);
+  const onCancel = () => ac.abort(new RunCancelled());
+  ctx.signal.addEventListener("abort", onCancel, { once: true });
+
+  try {
+    const raw = await registry.get(call.name).execute(call.args, {
+      signal: ac.signal,
+      idempotencyKey: call.idempotencyKey,
+      workspace: ctx.workspace,
+    });
+    return await truncateAndSpill(raw, ctx); // 见下文
+  } catch (e) {
+    return toToolError(e); // 统一错误契约
+  } finally {
+    clearTimeout(timer);
+    ctx.signal.removeEventListener("abort", onCancel);
+  }
+}
+```
+
+只设 `Promise.race` 超时而不真正取消子进程，会留下僵尸进程继续写文件；`bash` 工具必须杀进程组，而不是只杀父进程。
+
+### 结果截断：不要丢掉"被截断"这个事实
+
+一个 `cat` 可能输出几十万字符。正确做法不是简单截断，而是**截断 + 溢出到产物 + 返回指针**：
+
+```typescript
+async function truncateAndSpill(
+  raw: ToolOutput,
+  ctx: RunContext,
+): Promise<ToolResult> {
+  const MAX = 32_000; // bytes，示例值
+  const text = raw.text ?? "";
+  if (Buffer.byteLength(text) <= MAX) return { ok: true, content: text };
+
+  const artifact = await ctx.artifacts.put({
+    kind: "tool-output",
+    bytes: Buffer.from(text),
+    mediaType: "text/plain",
+    producedBy: { runId: ctx.runId, stepId: ctx.stepId, tool: raw.toolName },
+  });
+
+  return {
+    ok: true,
+    content:
+      `${text.slice(0, 12_000)}\n\n[... 已截断，共 ${text.length} 字符 ...]\n` +
+      `完整输出见 artifact://${artifact.id}（可用 artifact_read 读取指定行范围）`,
+    artifacts: [artifact.id],
+    truncated: true,
+  };
+}
+```
+
+只返回 `head` 和 `tail` 也有用，但模型经常需要中间那段；产物指针把"看多少"的决定权交回给模型，同时保证信息不丢。Pi 的示例扩展里对 ripgrep 输出做了 50KB / 2000 行的截断<sup>[24]</sup>，可以作为量级参考。
+
+### 错误契约：错误是写给模型看的
+
+```typescript
+type ToolError = {
+  ok: false;
+  code:
+    | "INVALID_ARGUMENT"
+    | "PERMISSION_DENIED"
+    | "NOT_FOUND"
+    | "TIMEOUT"
+    | "RATE_LIMITED"
+    | "UPSTREAM_ERROR"
+    | "CANCELLED";
+  message: string; // 给模型看，包含如何修复
+  retryable: boolean; // 给运行时看，决定是否重试
+  hint?: string; // 例如 "参数 startLine 必须小于 endLine"
+  details?: unknown; // 给日志/审计看，不回灌上下文
+};
+```
+
+关键原则：**可重试性由工具声明，不由模型猜。** 参数错误、权限不足不重试；超时、429、5xx 可重试，但要指数退避 + 抖动，并遵守 `Retry-After`。错误信息要可执行，例如"路径不在允许的 workspace 内，请改用相对路径 `src/...`"，而不是"操作失败"。
+
+### 幂等：副作用工具的生命线
+
+```typescript
+function idempotencyKey(runId: string, stepId: string, call: ToolCall) {
+  return sha256(
+    `${runId}:${stepId}:${call.name}:${stableStringify(call.args)}`,
+  );
+}
+```
+
+工具侧维护 `key -> result` 账本，命中直接返回旧结果。没有幂等键，恢复重试就可能重复发邮件、重复扣款、重复创建工单。
+
+### 沙箱：三层边界，不要混为一谈
+
+| 层                  | 管什么                           | 典型实现                                                  | 不能替代什么                   |
+| ------------------- | -------------------------------- | --------------------------------------------------------- | ------------------------------ |
+| 工作区（workspace） | Agent 被允许读写的目录           | 独立目录、git worktree                                    | 不能防止命令越权               |
+| 沙箱（sandbox）     | 进程能看到的文件系统与网络       | macOS Seatbelt、Linux bubblewrap/Landlock、微虚拟机、容器 | 不能决定"该不该做"             |
+| 权限/审批（policy） | 某个动作是否被允许、是否需要人批 | allow/deny 规则、审批流、自动审核                         | 不能限制已被攻破进程的破坏半径 |
+
+Claude Code 的沙箱基于 OS 原语（Linux bubblewrap、macOS seatbelt），同时做文件系统隔离和网络隔离：网络只允许通过一个运行在沙箱外的代理，由代理做域名白名单和确认<sup>[25]</sup>。Codex CLI 则把策略映射到 Seatbelt / bubblewrap + Landlock / Windows 受限令牌，并把 `.git`、`.codex` 等元数据目录强制只读<sup>[26]</sup>。OpenAI 在生产中强调"沙箱与审批配合"：沙箱定义技术边界，审批策略决定何时必须停下来问人，凭据存放在 OS keyring 而不是沙箱内<sup>[27]</sup>。
+
+Anthropic Managed Agents 还补了一个结构性教训：**不要把凭据和模型生成的代码放在同一个容器里。** 他们的做法是仓库访问令牌只在沙箱初始化时用于 clone 并写入本地 git remote，Agent 全程不接触 token；MCP 的 OAuth token 放在 vault，由沙箱外的代理代取<sup>[16]</sup>。
+
+### 产物：从会话落到工作区，再被下一个 Agent 读取
+
+Agent 在会话里生成的文件，不能只留在沙箱磁盘上。一个可用的产物链路是：
+
+```text
+tool 执行
+   │ 写临时文件（sandbox/tmp/...）
+   ▼
+stage：计算 checksum、推断 mediaType、记录 lineage
+   │
+   ▼
+commit：原子写入对象存储（content-addressed）
+   │  写入失败则重试；成功后删除临时文件
+   ▼
+manifest：登记 artifactId / version / size / sha256 / owner / producedBy / ttl
+   │
+   ├── 同 run 的后续 step 通过 artifact:// 读取
+   ├── 另一个 Agent 通过 artifact_read 读取（鉴权 + 租户隔离）
+   └── 过期任务清理（TTL / 引用计数 / 合规保留）
+```
+
+```typescript
+type ArtifactManifest = {
+  id: string; // 内容寻址：sha256 前缀 + 逻辑名
+  version: number;
+  mediaType: string;
+  bytes: number;
+  sha256: string;
+  uri: string; // s3://bucket/tenant/run/sha256
+  visibility: "run" | "tenant" | "public";
+  owner: { tenantId: string; userId: string };
+  producedBy: { runId: string; stepId: string; tool: string; agentId?: string };
+  inputs?: string[]; // 上游产物 id，构成 lineage
+  createdAt: string;
+  expiresAt?: string;
+  labels?: Record<string, string>;
+};
+
+interface ArtifactStore {
+  stage(input: {
+    bytes: Buffer;
+    mediaType: string;
+    name: string;
+  }): Promise<{ tempPath: string }>;
+  commit(input: {
+    tempPath: string;
+    manifest: Omit<
+      ArtifactManifest,
+      "id" | "sha256" | "uri" | "version" | "createdAt"
+    >;
+  }): Promise<ArtifactManifest>;
+  read(id: string, range?: { offset: number; length: number }): Promise<Buffer>;
+  list(filter: {
+    runId?: string;
+    tenantId: string;
+    labels?: Record<string, string>;
+  }): Promise<ArtifactManifest[]>;
+  promote(
+    id: string,
+    visibility: ArtifactManifest["visibility"],
+  ): Promise<void>;
+  expire(id: string): Promise<void>;
+}
+```
+
+```python
+# Python 伪代码：产物提交与跨 Agent 交接
+def commit_artifact(store, run_id, step_id, temp_path, media_type, name, owner):
+    sha = sha256_file(temp_path)
+    manifest = store.commit(
+        temp_path=temp_path,
+        manifest=dict(
+            mediaType=media_type,
+            bytes=os.path.getsize(temp_path),
+            visibility="run",
+            owner=owner,
+            producedBy=dict(runId=run_id, stepId=step_id, tool="write"),
+            labels={"name": name},
+        ),
+    )
+    assert manifest.sha256 == sha
+    return manifest
+
+def handoff(store, manifest, to_agent):
+    # 交接的是"引用 + 契约"，不是文件内容
+    return {
+        "artifact_id": manifest.id,
+        "sha256": manifest.sha256,
+        "media_type": manifest.mediaType,
+        "read_with": "artifact_read(id, offset, length)",
+        "acceptance": {"schema": "report.v2", "must_parse": True},
+        "to": to_agent,
+    }
+```
+
+产物设计里最容易出错的六个点：
+
+| 失败模式             | 现象                            | 防护                                              |
+| -------------------- | ------------------------------- | ------------------------------------------------- |
+| 沙箱先死，产物没上传 | 会话说"已生成"但文件不存在      | 先 commit 再向模型报成功；commit 失败视为工具失败 |
+| 半写文件             | 下游读到截断的 JSON             | 临时文件 + 原子 rename + checksum 校验            |
+| 路径穿越             | `../../.ssh/id_rsa` 被写入/读取 | 规范化路径后校验必须在 workspace 根内             |
+| 跨租户泄漏           | A 租户通过 id 猜到 B 的产物     | 对象键带租户前缀，读取时强制鉴权                  |
+| 无界增长             | 沙箱磁盘被日志/缓存撑满         | TTL、配额、引用计数、定期 GC                      |
+| manifest 漂移        | 文件被改但 manifest 没变        | 读取时校验 sha256，禁止就地修改                   |
+
+**怎么验证：** 在产物提交前后注入 kill；用第二个 Agent 真实读取产物并跑 schema 校验；做路径穿越与越权读取的负向测试；对 GC 跑"引用中的产物不能被删"的断言。
+
+---
+
+## Q16: 模型路由、降级与可观测性接点怎么设计？
+
+### 路由不是一个 if-else，而是一张能力表
+
+| 维度         | 要回答的问题                  | 典型策略                           |
+| ------------ | ----------------------------- | ---------------------------------- |
+| 任务类型     | 规划、编码、总结、分类        | 强模型做规划，小模型做抽取/总结    |
+| 上下文长度   | 是否能装下                    | 超长上下文单独路由，或先压缩再路由 |
+| 工具调用能力 | 是否支持并行工具、严格 schema | 不支持则降级为单工具串行           |
+| 延迟要求     | 交互式还是后台                | 交互走低延迟档，后台走便宜档       |
+| 成本         | 每任务预算                    | 分级配额 + 超预算降级              |
+| 合规         | 数据能否出境、能否进第三方    | 区域路由、私有网关                 |
+
+一个常被忽略的点：**路由要"粘"住缓存。** 同一个 run 内频繁换模型会让前缀缓存全部失效，省下的单价可能被缓存 miss 吃掉。
+
+### 降级阶梯
+
+```text
+请求
+ ├─ 同 Provider 重试（429/5xx，指数退避 + 抖动，尊重 Retry-After）
+ ├─ 同 Provider 换模型（同家族小模型，保持消息格式）
+ ├─ 换 Provider（需要能力表：工具 schema、并行调用、停止原因）
+ ├─ 降级模式（减少工具、缩短上下文、关闭并行）
+ └─ 人工接管 / 明确失败（不要静默返回半成品）
+```
+
+```typescript
+type RouteDecision = {
+  provider: string;
+  model: string;
+  maxContext: number;
+  supportsParallelTools: boolean;
+};
+
+async function callWithFallback(req: ModelRequest, ladder: RouteDecision[]) {
+  let lastError: unknown;
+  for (const route of ladder) {
+    if (req.estimatedTokens > route.maxContext) continue;
+    const breaker = circuits.get(`${route.provider}:${route.model}`);
+    if (breaker.isOpen()) continue;
+    try {
+      return await provider(route).complete(adapt(req, route));
+    } catch (e) {
+      lastError = e;
+      if (!isRetryable(e)) throw e;
+      breaker.recordFailure();
+    }
+  }
+  throw new AllRoutesFailed(lastError);
+}
+```
+
+**什么场景会坏：** 跨 Provider 的 tool schema 不兼容导致工具调用静默丢失；把 429 当永久错误直接失败；hedged request（对冲请求）在成本敏感场景把账单翻倍；降级后模型不知道工具变少，继续请求不存在的工具。
+
+**怎么验证：** 用故障注入代理制造 429/500/超时；断言降级路径与最终错误码；统计每档的成功率、P95 延迟、单任务成本；对工具 schema 做跨 Provider 的契约测试。
+
+### 可观测性接点：Harness 应该暴露什么
+
+Harness 不需要自己实现完整观测，但必须把事件暴露得足够细。建议的最小事件集：
+
+| 域       | 事件                                                 | 关键字段                                                     |
+| -------- | ---------------------------------------------------- | ------------------------------------------------------------ |
+| run      | started / interrupted / resumed / completed / failed | runId、tenantId、status、duration、cost                      |
+| step     | started / completed                                  | stepId、model、inputTokens、outputTokens、cachedTokens、ttft |
+| tool     | requested / started / completed / failed             | toolName、duration、bytesIn/out、errorCode、retryCount       |
+| artifact | created / promoted / expired                         | artifactId、sha256、bytes、producer                          |
+| error    | tool_error / model_error / policy_denied             | code、retryable、policyId                                    |
+
+对接方式：
+
+- **OpenTelemetry**：把 run 作为 root span，step 作为 child span，tool 作为更深一层；模型调用记录 GenAI 语义约定字段（模型名、token 用量、TTFT）。DeepSeek Harness 已有社区插件把原生事件转成 OTLP Trace/Metric<sup>[28]</sup>，说明"事件流 → Span 投影"是可行路径。
+- **Langfuse**：走 OTLP 或 SDK，把 observation 映射到 generation/span，重点是保留 `runId`、`stepId`、`toolCallId` 作为关联键。
+- **日志 vs Trace**：日志回答"发生了什么"，Trace 回答"时间花在哪、调用关系是什么"。只有日志时，很难回答"这 47 秒是模型慢还是工具慢"。
+
+两个纪律：**默认不记录完整 Prompt 和工具输出**（敏感数据面），需要时按租户开关；**采样要分层**，错误与高成本 run 全采，成功短任务低采样。
+
+---
+
+## Q17: 横向对比与"自研 vs 采用"决策树
+
+| 维度         | Pi                          | DeepSeek Harness         | Claude Code                    | Codex CLI                   | LangGraph                  |
+| ------------ | --------------------------- | ------------------------ | ------------------------------ | --------------------------- | -------------------------- |
+| 定位         | 极简可扩展 harness          | 插件化 Agent 运行时      | 完整编码产品                   | 完整编码产品 + 托管 harness | 编排框架                   |
+| 谁拥有主循环 | Pi 内核                     | 可替换插件               | 产品内置                       | 产品内置                    | 你写的图                   |
+| 会话模型     | JSONL 树（id/parentId）     | 追加式事件流 + turn/step | append-oriented transcript     | 会话 + 事件                 | checkpointer 状态快照      |
+| 扩展接缝     | Extension / Skill / Package | Cordis 插件 + 能力接缝   | MCP / plugins / skills / hooks | 配置 + rules + MCP          | 节点/边/自定义代码         |
+| 沙箱         | 默认无，扩展接入            | 内置 Provider 可换       | OS 级沙箱 + 权限模式           | OS 级沙箱 + 审批策略        | 不提供                     |
+| 恢复能力     | 会话树 + resume             | replay / fork / resume   | resume + checkpoint            | resume                      | checkpointer + time travel |
+| 主要代价     | 生产化能力自建              | 抽象多、调试链路长       | 厂商绑定、可改造性有限         | 厂商绑定                    | 运行时与运维全自建         |
+
+### 决策树
+
+```text
+你要解决的是什么？
+├─ 只想尽快让 Agent 干活
+│   ├─ 编码场景、能接受 SaaS        → Claude Code / Codex
+│   └─ 非编码、需要嵌入产品          → 托管 Agents API 或现成平台
+├─ 要把 Harness 当作产品的一部分
+│   ├─ 需要极小内核、完全掌控上下文  → Pi
+│   ├─ 需要插件化、可换沙箱/模型/存储 → DeepSeek Harness
+│   └─ 需要自定义多 Agent 流程        → LangGraph + 自建运行时
+└─ 只是接模型做 Chat                 → 官方 SDK，别上 Harness
+```
+
+判断"自研"是否值得，只看四个约束：**是否需要私有化/数据不出域、是否需要深度改造循环与上下文、是否有平台团队长期维护、是否能在 6 个月内补齐权限/沙箱/审计/评测。** 四个里有两个否，就应该采用现成方案。
+
+---
+
+## Q18: 深度面试追问（Harness 运行时方向）
+
+<AccordionGroup>
+
+  <Accordion title="一次 run 跑到一半进程崩了，你怎么保证不重复执行工具？" icon="skull">
+
+**及格回答：**
+
+"从 checkpoint 恢复，继续跑没完成的步骤。"
+
+**满分回答：**
+
+"先分清状态在哪。会话事件日志是真相，进程只是无状态执行器。恢复时用租约 + fencing token 保证只有一个 worker 拥有这个 run；读日志 fold 出状态，找出已请求但没有结果的 tool call。每个副作用工具都有幂等键（runId + stepId + tool + 参数哈希），恢复前先查工具侧账本：已有结果就直接补写事件，没有才重新执行。产物先写临时文件再原子提交，校验 sha256，避免半写文件被下游读到。最后做故障注入测试，断言恢复后事件序列无重复、无丢失。"
+
+  </Accordion>
+
+  <Accordion title='事件溯源的回放和"重新跑一遍"有什么区别？' icon="skull">
+
+**及格回答：**
+
+"回放就是把历史消息再发给模型一次。"
+
+**满分回答：**
+
+"回放有两种。record-replay 是审计模式，复用日志里记录的模型输出和工具结果，不再产生真实副作用，用来回答'当时系统看到了什么'。re-execute 是评测模式，模型重新推理，但工具执行要进隔离沙箱或返回 replay 标记，否则会重复写文件、重复下单。混淆两者是事故来源。另外，回放依赖事件 schema 稳定，压缩摘要不能覆盖原始事件，否则回放会失真。"
+
+  </Accordion>
+
+  <Accordion title="上下文快满了，你选压缩、裁剪还是重置？" icon="skull">
+
+**及格回答：**
+
+"用摘要压缩历史，保留最近几轮。"
+
+**满分回答：**
+
+"看失败模式。如果只是 token 超限，压缩早期消息、裁剪旧工具结果（保留产物指针）成本最低。如果模型出现'接近上限就草率收尾'的 context anxiety，压缩不够，需要 context reset：清空窗口，换新 Agent，用结构化交接物承接目标、约束、进度、决策和未完成项。reset 的代价是交接物必须完整，且增加编排复杂度和延迟；而且模型换代后这个补丁可能变成死重。无论哪种，都要保证前缀稳定以命中缓存，并保留原始事件在会话日志里可回查。"
+
+  </Accordion>
+
+  <Accordion title="工具输出 20 万字符，直接截断有什么问题？" icon="skull">
+
+**及格回答：**
+
+"截断到固定长度，避免撑爆上下文。"
+
+**满分回答：**
+
+"直接截断会丢掉'信息存在但被隐藏'这个事实，模型可能基于残缺输出做出错误判断。正确做法是截断 + 溢出到产物 + 返回指针：保留头尾和一段摘要，把完整内容写成 artifact，返回 `artifact://id` 和读取方式，让模型按需读取行范围。同时标记 `truncated: true`，并在错误/成功契约里说明。还要注意截断发生在工具层还是上下文组装层：工具层截断会影响后续重试和审计，所以完整结果必须落盘。"
+
+  </Accordion>
+
+  <Accordion title="沙箱和权限系统，有一个是不是就够了？" icon="skull">
+
+**及格回答：**
+
+"有沙箱就够了，反正出不去。"
+
+**满分回答：**
+
+"不够，两者回答不同问题。沙箱限制破坏半径：即使 Prompt Injection 成功，也读不到宿主机文件、连不上任意域名。权限决定动作是否被允许：删生产库、部署、发邮件，沙箱可能允许执行，但策略层必须拦截或要求人工审批。生产要两层都有，再加第三层凭据隔离：模型生成的代码所在的沙箱不能触达 token，Git 用短时令牌在初始化时 clone，MCP 走沙箱外的代理取凭据。沙箱防'攻破后能做什么'，权限防'该不该做'。"
+
+  </Accordion>
+
+  <Accordion title="Prefix Cache 为什么会影响 Harness 设计？" icon="skull">
+
+**及格回答：**
+
+"把系统提示放前面就能命中缓存。"
+
+**满分回答：**
+
+"缓存要求前缀逐字节一致，所以 Harness 必须把'稳定性'当成架构约束，而不是优化技巧。系统提示、工具定义、项目上下文放最前面，工具数组顺序固定，断点前不放时间戳和随机 ID；变化内容只追加到断点之后。以 Anthropic 为例，最多 4 个断点、回看 20 个块、默认 5 分钟 TTL，写入约 1.25 倍、读取约 0.1 倍计费，所以在断点前插入动态内容会导致'每次写缓存、永远读不到'。验证要看 cachedTokens 占比和单任务成本，而不是凭感觉。"
+
+  </Accordion>
+
+  <Accordion title="Agent 生成的产物怎么交给下一个 Agent？" icon="skull">
+
+**及格回答：**
+
+"把文件路径告诉下一个 Agent。"
+
+**满分回答：**
+
+"交接的应该是产物引用 + 契约，不是裸路径。产物先 stage 再 commit 到对象存储，生成 manifest：artifactId、sha256、mediaType、bytes、owner、producedBy（run/step/tool）、inputs lineage、TTL。下一个 Agent 通过 `artifact_read` 按 id 和范围读取，鉴权按租户和 visibility 做，读取时校验 checksum。路径只在同一个 workspace 内可信，跨 Agent 用 URI 更安全。还要有生命周期：TTL、引用计数、合规保留，以及 GC 时'被引用的产物不能删'的约束。"
+
+  </Accordion>
+
+  <Accordion title="你怎么证明换 Harness 之后 Agent 真的变强了？" icon="skull">
+
+**及格回答：**
+
+"跑几个任务看看效果，感觉更好了。"
+
+**满分回答：**
+
+"控制变量：同一模型、同一温度、同一任务集、同一工具权限，只改 Harness。指标分三层：结果（任务成功率、验收通过率）、过程（平均 step 数、工具误调用率、重试率、人工接管率）、成本（单任务 token、缓存命中率、P95 延迟）。用固定 fixture 和事件回放做回归，避免任务漂移。还要做消融：分别去掉压缩、产物指针、权限拦截，看哪个改动真正贡献了提升。如果成功率不变但 step 和成本下降，也是有效提升；如果只是某几个 case 变好，要检查是否过拟合。"
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## 延伸阅读与引用参考
+
+- [Anthropic: Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)：_Anthropic 官方对 Agent 架构设计的最佳实践指南，提出五种核心构建模式（Prompt Chaining、Routing、Parallelization、Orchestrator-Workers、Evaluator-Optimizer），强调"从简单开始"的设计哲学。_ <sup>[1]</sup>
+- [Andrew Ng: Agentic Design Patterns](https://www.deeplearning.ai/the-batch/how-agents-can-improve-llm-performance/)：_Andrew Ng 对 Agentic Workflow 的系统性总结，定义 Reflection、Tool Use、Planning、Multi-Agent 四种设计模式，是多 Agent 协作的方法论基础。_ <sup>[2]</sup>
+- [LangGraph 官方文档](https://langchain-ai.github.io/langgraphjs/)：_LangGraph 的完整文档，Agent 编排、Checkpoint、Multi-Agent 的核心框架。_ <sup>[3]</sup>
+- [Lilian Weng - LLM Agents](https://lilianweng.github.io/posts/2023-06-23-agent/)：_OpenAI 应用研究主管对 Agent 架构的深度分析，涵盖 Planning（任务分解）、Memory（记忆管理）、Tool Use（工具调用）三大核心组件。_ <sup>[4]</sup>
+- [OpenAI Function Calling 文档](https://platform.openai.com/docs/guides/function-calling)：_OpenAI 官方对 Function Calling 的详细说明，Agent 工具调用的底层规范。_ <sup>[5]</sup>
+- [Chip Huyen - AI Engineering (2025)](https://huyenchip.com/ai-engineering/)：_系统性梳理 Agent 的工程化落地方法论，涵盖评估体系、成本控制、生产部署等核心主题。_ <sup>[6]</sup>
+- [OpenAI: Harness engineering: leveraging Codex in an agent-first world](https://openai.com/index/harness-engineering/)：_Ryan Lopopolo，2026-02-11。零手写代码实验的完整复盘：AGENTS.md 作为目录、机械化架构约束、可被 Agent 读取的应用与可观测性、Agent 互审、熵治理。注意：这是方法论文章，不是编排框架。_ <sup>[7]</sup>
+- [InfoQ: OpenAI Introduces Harness Engineering](https://www.infoq.com/news/2026/02/openai-harness-engineering-codex/)：_对上述实验的第三方整理，便于核对规模数字与关键做法。_ <sup>[7]</sup>
+- [Anthropic Claude Code 官方文档](https://docs.anthropic.com/en/docs/claude-code)：_Anthropic Claude Code 团队对终端 Agent 的完整文档，包括 MCP 集成、Skills 系统和 Hooks 机制。_ <sup>[8]</sup>
+- [OpenAI: Codex - Evaluating Large Language Models Trained on Code](https://arxiv.org/abs/2107.03374)：_OpenAI Engineering 团队对 Codex 代码生成底座的原始论文，定义了 HumanEval 评测基准。_ <sup>[9]</sup>
+- [n8n 官方文档](https://docs.n8n.io/)：_n8n 工作流自动化平台的完整文档，节点式 Agent 编排指南。_ <sup>[10]</sup>
+- [Dify 官方文档](https://docs.dify.ai/)：_Dify LLM 应用开发平台的完整文档，Agent 应用构建指南。_ <sup>[11]</sup>
+- [Yohei Nakajima: BabyAGI](https://github.com/yoheinakajima/babyagi)：_BabyAGI 源码，理解 Agent Loop 的最简实现。_ <sup>[12]</sup>
+- [字节跳动 Coze / 阿里百炼](https://www.coze.com/)：_国内"企业级 Agent"编排的先驱平台，深谙权限收敛、审计容错、复杂 RAG 知识检索与 Skill 调度。_ <sup>[13]</sup>
+- [Nous Research Hermes](https://nousresearch.com/)：_Nous Research 的开源 LLM 系列，专注 Agent 场景优化（工具调用、长上下文、指令遵循）。_ <sup>[14]</sup>
+- [OpenClaw](https://github.com/openclaw/openclaw)：_开源的个人 AI 助手 / 本地网关（Gateway + Agent + Skills + Memory，MIT）。_ <sup>[15]</sup>
+- [LangGraph Human-in-the-Loop 文档](https://langchain-ai.github.io/langgraph/concepts/human_in_the_loop/)：_LangGraph 官方对 Human-in-the-Loop 的概念文档，涵盖 interrupt、Command、Checkpoint 三件套的完整说明。_ <sup>[3]</sup>
+- [Anthropic: Scaling Managed Agents: Decoupling the brain from the hands](https://www.anthropic.com/engineering/managed-agents)：_2026-04-08。把 session（只追加事件日志）、harness（循环）、sandbox（执行环境）拆成可独立替换的接口；崩溃后用 `wake(sessionId)` + `getSession(id)` 恢复，`emitEvent(id, event)` 落事件；凭据不进入沙箱。_ <sup>[16]</sup>
+- [Inside DeepSeek Harness: Cordis, Session Events, Tool Pipelines, and Permission Boundaries](https://habr.com/ru/articles/1070958/)：_对 DSH 的 turn/step、session events 与 agent events、工具管线与权限边界的源码级整理。_ <sup>[17]</sup>
+- [Pi session file format（JSONL 树、id/parentId、条目类型）](https://learnblockchain.cn/badlogic/articles/show)：_Pi 官方文档的中文整理，说明会话以 JSONL 存储、树形结构与上下文构建算法。_ <sup>[18]</sup>
+- [LangGraph Persistence 文档](https://docs.langchain.com/oss/python/langgraph/persistence)：_checkpointer 按 thread_id 持久化图状态，用于对话连续性、Human-in-the-Loop、time travel 与容错；生产需持久化 checkpointer 并设保留策略。_ <sup>[19]</sup>
+- [Anthropic: Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)：_把上下文操作归纳为 write / select / compress / isolate，并讨论上下文退化（context rot）与长任务策略。_ <sup>[20]</sup>
+- [Anthropic: Harness design for long-running application development](https://www.anthropic.com/engineering/harness-design-long-running-apps)：_2026-03-24。planner / generator / evaluator 三角色；compaction 与 context reset 的区别；自我评估偏差与"把主观质量变成可评分标准"。_ <sup>[21]</sup>
+- [Anthropic Prompt Caching 文档](https://docs.claude.com/en/docs/build-with-claude/prompt-caching)：_最多 4 个断点、20 块回看窗口、默认 5 分钟 TTL（可选 1 小时）、写入约 1.25 倍与读取约 0.1 倍计费。_ <sup>[22]</sup>
+- [pi-capability-index 开发文档（Pi 工具/事件 API 摘要）](https://www.npmjs.com/package/@jc4649/pi-capability-index)：_记录 `pi.registerTool`、`getAllTools` / `getActiveTools` / `setActiveTools`、无 `unregisterTool`、`tool_result` 事件字段等实现细节。_ <sup>[23]</sup>
+- [Pi extension examples](https://app.unpkg.com/@earendil-works/pi-coding-agent@0.83.0/files/examples/extensions/README.md)：_官方示例清单，含 permission-gate、protected-paths、sandbox、gondolin、subagent、truncated-tool（ripgrep 输出 50KB / 2000 行截断）等。_ <sup>[24]</sup>
+- [Anthropic: Beyond permission prompts: making Claude Code more secure and autonomous](https://www.anthropic.com/engineering/claude-code-sandboxing)：_2025-10-20。基于 OS 原语（Linux bubblewrap、macOS seatbelt）的文件系统隔离与网络隔离；网络经沙箱外代理做域名白名单。_ <sup>[25]</sup>
+- [Codex sandboxing implementation（DeepWiki）](https://deepwiki.com/openai/codex/5.6-sandboxing-implementation)：_策略映射到 Seatbelt、bubblewrap + Landlock/seccomp、Windows 受限令牌；`.git`、`.codex` 等元数据目录强制只读。_ <sup>[26]</sup>
+- [OpenAI: Running Codex safely at OpenAI](https://openai.com/index/running-codex-safely/)：_2026-05-08。沙箱与审批配合、网络策略、凭据存 OS keyring、规则化命令白名单、Agent 原生遥测。_ <sup>[27]</sup>
+- [DeepSeek Harness: A Practical Guide to Comprehensive Observability](https://www.alibabacloud.com/blog/deepseek-harness-a-practical-guide-to-comprehensive-observability_603771)：_把 append-only session 事件流转成 OTLP Trace/Metric 的社区实践，说明日志与 Trace 的分工。_ <sup>[28]</sup>

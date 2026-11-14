@@ -1,9 +1,9 @@
 ---
 title: "状态管理"
+description: "对比 Redux/RTK、Zustand、MobX、Redux-Saga 的数据流与订阅粒度，讲清选型与渲染优化。"
 ---
 
-> **面试官为什么问这个？**
-> 状态管理是大型前端应用的核心。面试官问这个，是想看你是否理解不同状态管理方案的设计理念，以及能不能根据项目需求做出正确的技术选型。
+> 线上遇到状态混乱时，我一般先看数据流是显式还是隐式，再看订阅粒度。选型问题多半能在这里定位。
 
 ---
 
@@ -21,11 +21,11 @@ title: "状态管理"
 // 纯函数：相同输入 → 相同输出，无副作用
 function todoReducer(state, action) {
   switch (action.type) {
-    case 'ADD':
+    case "ADD":
       return [...state, action.todo]; // 返回新数组，不修改原 state
-    case 'TOGGLE':
-      return state.map(todo =>
-        todo.id === action.id ? { ...todo, done: !todo.done } : todo
+    case "TOGGLE":
+      return state.map((todo) =>
+        todo.id === action.id ? { ...todo, done: !todo.done } : todo,
       );
     default:
       return state;
@@ -34,6 +34,7 @@ function todoReducer(state, action) {
 ```
 
 纯函数的好处：
+
 - **可预测**：相同 action + 相同 state = 相同结果，方便调试
 - **时间旅行调试**：记录每个 action，可以回放和撤销
 - **性能优化**：state 不变的组件可以直接跳过 re-render
@@ -50,7 +51,7 @@ function todoReducer(state, action) {
 
 ```javascript
 // 传统 Redux（繁琐）
-const ADD_TODO = 'ADD_TODO';
+const ADD_TODO = "ADD_TODO";
 const addTodo = (todo) => ({ type: ADD_TODO, payload: todo });
 const todosReducer = (state = [], action) => {
   switch (action.type) {
@@ -62,17 +63,17 @@ const todosReducer = (state = [], action) => {
 };
 
 // Redux Toolkit（简洁）
-import { createSlice, configureStore } from '@reduxjs/toolkit';
+import { createSlice, configureStore } from "@reduxjs/toolkit";
 
 const todosSlice = createSlice({
-  name: 'todos',
+  name: "todos",
   initialState: [],
   reducers: {
     addTodo: (state, action) => {
       state.push(action.payload); // 可以直接修改！（Immer）
     },
     toggleTodo: (state, action) => {
-      const todo = state.find(t => t.id === action.payload);
+      const todo = state.find((t) => t.id === action.payload);
       if (todo) todo.done = !todo.done;
     },
   },
@@ -83,6 +84,7 @@ export default todosSlice.reducer;
 ```
 
 **Redux Toolkit 用了 Immer：**
+
 - 看起来是直接修改 state，实际上 Immer 在背后创建了新的不可变对象
 - 写法更简洁，但还是保持了不可变性
 
@@ -92,7 +94,7 @@ export default todosSlice.reducer;
 
 ```javascript
 // MobX：响应式状态管理
-import { makeAutoObservable } from 'mobx';
+import { makeAutoObservable } from "mobx";
 
 class TodoStore {
   todos = [];
@@ -106,18 +108,20 @@ class TodoStore {
   }
 
   get unfinishedCount() {
-    return this.todos.filter(t => !t.done).length;
+    return this.todos.filter((t) => !t.done).length;
   }
 }
 
 // React 组件中使用
-import { observer } from 'mobx-react-lite';
+import { observer } from "mobx-react-lite";
 
 const TodoList = observer(function TodoList({ store }) {
   return (
     <div>
       <p>未完成: {store.unfinishedCount}</p>
-      {store.todos.map(todo => <Todo key={todo.id} todo={todo} />)}
+      {store.todos.map((todo) => (
+        <Todo key={todo.id} todo={todo} />
+      ))}
     </div>
   );
 });
@@ -126,14 +130,14 @@ const TodoList = observer(function TodoList({ store }) {
 
 **MobX vs Redux：**
 
-| | Redux | MobX |
-|---|---|---|
-| 理念 | 单向数据流、严格 | 响应式、自动追踪 |
-| 数据流 | dispatch → reducer → state → view | state 变化 → 自动更新 view |
-| 不可变性 | 要求不可变（新对象） | 直接修改（可变） |
-| 可追踪性 | 高（每个 action 都有记录） | 中（隐式依赖） |
-| 学习曲线 | 高 | 中 |
-| 适用场景 | 大团队、大项目 | 中等项目、快速开发 |
+|          | Redux                             | MobX                       |
+| -------- | --------------------------------- | -------------------------- |
+| 理念     | 单向数据流、严格                  | 响应式、自动追踪           |
+| 数据流   | dispatch → reducer → state → view | state 变化 → 自动更新 view |
+| 不可变性 | 要求不可变（新对象）              | 直接修改（可变）           |
+| 可追踪性 | 高（每个 action 都有记录）        | 中（隐式依赖）             |
+| 学习曲线 | 高                                | 中                         |
+| 适用场景 | 大团队、大项目                    | 中等项目、快速开发         |
 
 <Info title="追问">
 
@@ -183,14 +187,24 @@ function TodoList() {
 
 **Zustand vs Redux：**
 
-| | Redux Toolkit | Zustand |
-|---|---|---|
-| 文件数 | 3-4 个（slice + store + Provider + hooks） | 1 个 |
-| 要不要 Provider | 要 | 不要 |
-| 样板代码 | 多 | 极少 |
-| DevTools | Redux DevTools（最强） | 支持 Redux DevTools |
-| 中间件 | 丰富（thunk、saga） | 简单（persist、devtools） |
-| 适用场景 | 大团队、大项目 | 中小项目、个人项目 |
+|                 | Redux Toolkit                    | Zustand                                     |
+| --------------- | -------------------------------- | ------------------------------------------- |
+| 组织方式        | slice + store + Provider + hooks | 一个 `create` 即可                          |
+| 要不要 Provider | 要（把 store 注入 React 树）     | 不要（模块级单例）                          |
+| 样板代码        | 中等（RTK 已大幅减少）           | 极少                                        |
+| DevTools        | Redux DevTools（原生集成）       | 需 devtools 中间件接入                      |
+| 中间件          | 丰富（thunk、saga、logger）      | 有（persist、devtools、immer 等，生态较小） |
+| 适用场景        | 多人协作、大型项目               | 中小项目、个人项目                          |
+
+<Note title="渲染粒度不是两者的主要区别">
+
+容易写反的一点：RTK 的 `useSelector` 同样是**按选择器订阅**——selector 返回值没变（默认用 `===` 比较）时组件不会重渲染，所以它的粒度并不比 Zustand 粗。
+
+真正的差异在“订阅是怎么接进来的”：RTK 通过 `<Provider store={store}>` 用 Context 把 **store 实例**传下去，实例引用稳定，Context 本身不会让消费组件集体重渲染；但如果你直接用 Context 存**状态值**（`value={{ count, todos }}` 每次新建对象），那所有消费组件都会重渲染，这才是 Context 的坑。
+
+Zustand 直接把 store 放在模块作用域，用 `useSyncExternalStore` 订阅，天然没有这层 Context。代价是 SSR 时要为每个请求创建独立 store，不能直接用模块单例。
+
+</Note>
 
 <Tip title="答题要点">
 
@@ -214,7 +228,7 @@ Redux 是前端状态管理的"教科书"。理解 Redux，就是理解**单向�
       └──────────────────────────────────────────────────────────────┘
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 Redux = 单一数据源 + 纯函数 Reducer + 单向数据流，让状态变化可预测、可追踪、可回放。
 
@@ -236,7 +250,7 @@ Redux = 单一数据源 + 纯函数 Reducer + 单向数据流，让状态变化�
   </Step>
   <Step title="2019-至今: Redux Toolkit 成为官方推荐">
 
-    Redux 官方推出 Redux Toolkit（RTK），用 `createSlice` 自动生成 Action Types 和 Action Creators，用 Immer 让 Reducer 可以"直接修改"state，用 `configureStore` 替代手写 `createStore + applyMiddleware`。RTK 让 Redux 的代码量减少了 60% 以上。
+    Redux 官方推出 Redux Toolkit（RTK），用 `createSlice` 自动生成 Action Types 和 Action Creators，用 Immer 让 Reducer 可以"直接修改"state，用 `configureStore` 替代手写 `createStore + applyMiddleware`。RTK 大幅减少了 Redux 的样板代码，但核心理念和单向数据流没有变。
 
   </Step>
 
@@ -244,11 +258,11 @@ Redux = 单一数据源 + 纯函数 Reducer + 单向数据流，让状态变化�
 
 ### Redux 三大原则
 
-| 原则 | 含义 | 违反后果 |
-|------|------|---------|
-| **单一数据源** | 整个应用的 state 存在一个 store 里 | 多个 store 之间状态同步困难 |
-| **State 只读** | 只能通过 dispatch action 来修改 | 无法追踪状态变化来源 |
-| **纯函数修改** | Reducer 必须是纯函数 | 无法时间旅行调试、无法预测结果 |
+| 原则           | 含义                               | 违反后果                       |
+| -------------- | ---------------------------------- | ------------------------------ |
+| **单一数据源** | 整个应用的 state 存在一个 store 里 | 多个 store 之间状态同步困难    |
+| **State 只读** | 只能通过 dispatch action 来修改    | 无法追踪状态变化来源           |
+| **纯函数修改** | Reducer 必须是纯函数               | 无法时间旅行调试、无法预测结果 |
 
 ### Redux 数据流（严格单向）
 
@@ -272,23 +286,26 @@ Redux = 单一数据源 + 纯函数 Reducer + 单向数据流，让状态变化�
 
 ```javascript
 // 1. Action：描述"发生了什么"的普通对象
-const incrementAction = { type: 'INCREMENT', payload: 1 };
+const incrementAction = { type: "INCREMENT", payload: 1 };
 
 // 2. Reducer：(state, action) => newState 的纯函数
 function counterReducer(state = 0, action) {
   switch (action.type) {
-    case 'INCREMENT': return state + action.payload;
-    case 'DECREMENT': return state - action.payload;
-    default: return state;
+    case "INCREMENT":
+      return state + action.payload;
+    case "DECREMENT":
+      return state - action.payload;
+    default:
+      return state;
   }
 }
 
 // 3. Store：持有 state tree 的对象
-import { createStore } from 'redux';
+import { createStore } from "redux";
 const store = createStore(counterReducer);
 
 // 4. Dispatch：发送 action 的唯一方式
-store.dispatch({ type: 'INCREMENT', payload: 1 });
+store.dispatch({ type: "INCREMENT", payload: 1 });
 
 // 5. Subscribe：监听 state 变化
 store.subscribe(() => console.log(store.getState()));
@@ -297,35 +314,41 @@ store.subscribe(() => console.log(store.getState()));
 ### Redux Toolkit (RTK) 详解
 
 ```javascript
-import { createSlice, configureStore, createAsyncThunk } from '@reduxjs/toolkit';
+import {
+  createSlice,
+  configureStore,
+  createAsyncThunk,
+} from "@reduxjs/toolkit";
+
+// createAsyncThunk = 异步 action 的标准写法（要放在 createSlice 之前，extraReducers 里才能引用）
+const fetchTodos = createAsyncThunk("todos/fetch", async () => {
+  const res = await fetch("/api/todos");
+  return res.json();
+});
 
 // createSlice = Action Types + Action Creators + Reducer
 const todosSlice = createSlice({
-  name: 'todos',
+  name: "todos",
   initialState: { items: [], loading: false },
   reducers: {
     addTodo: (state, action) => {
       state.items.push(action.payload); // Immer 允许"直接修改"
     },
     toggleTodo: (state, action) => {
-      const todo = state.items.find(t => t.id === action.payload);
+      const todo = state.items.find((t) => t.id === action.payload);
       if (todo) todo.done = !todo.done;
     },
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchTodos.pending, (state) => { state.loading = true; })
+      .addCase(fetchTodos.pending, (state) => {
+        state.loading = true;
+      })
       .addCase(fetchTodos.fulfilled, (state, action) => {
         state.items = action.payload;
         state.loading = false;
       });
   },
-});
-
-// createAsyncThunk = 异步 action 的标准写法
-const fetchTodos = createAsyncThunk('todos/fetch', async () => {
-  const res = await fetch('/api/todos');
-  return res.json();
 });
 
 export const { addTodo, toggleTodo } = todosSlice.actions;
@@ -354,17 +377,17 @@ function createStore(reducer, enhancer) {
   function subscribe(listener) {
     listeners.push(listener);
     return function unsubscribe() {
-      listeners = listeners.filter(l => l !== listener);
+      listeners = listeners.filter((l) => l !== listener);
     };
   }
 
   function dispatch(action) {
-    state = reducer(state, action);       // 纯函数产生新 state
-    listeners.forEach(listener => listener()); // 通知所有订阅者
+    state = reducer(state, action); // 纯函数产生新 state
+    listeners.forEach((listener) => listener()); // 通知所有订阅者
     return action;
   }
 
-  dispatch({ type: '@@INIT' }); // 初始化 state
+  dispatch({ type: "@@INIT" }); // 初始化 state
   return { getState, subscribe, dispatch };
 }
 
@@ -372,14 +395,18 @@ function createStore(reducer, enhancer) {
 function applyMiddleware(...middlewares) {
   return (createStore) => (reducer) => {
     const store = createStore(reducer);
-    const chain = middlewares.map(mw => mw(store)); // 每个中间件拿到 store
+    const chain = middlewares.map((mw) => mw(store)); // 每个中间件拿到 store
     const dispatch = compose(...chain)(store.dispatch); // 组合成增强的 dispatch
     return { ...store, dispatch };
   };
 }
 
 function compose(...funcs) {
-  return funcs.reduce((a, b) => (...args) => a(b(...args)));
+  return funcs.reduce(
+    (a, b) =>
+      (...args) =>
+        a(b(...args)),
+  );
 }
 ```
 
@@ -409,7 +436,7 @@ Zustand 是 React 生态中最轻量的状态管理库之一。它的核心理�
 └───────────────────────────────────────────┘
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 Zustand = vanilla store + useSyncExternalStore + selector 精准订阅，零样板、零 Provider。
 
@@ -442,30 +469,36 @@ Zustand = vanilla store + useSyncExternalStore + selector 精准订阅，零样�
 **原子化状态 + 精准订阅**：每个组件只订阅自己需要的状态片段，其他片段变化不影响该组件。
 
 ```javascript
-import { create } from 'zustand';
+import { create } from "zustand";
 
 const useStore = create((set, get) => ({
   count: 0,
   todos: [],
   // actions 直接定义在 store 里
-  increment: () => set(state => ({ count: state.count + 1 })),
-  addTodo: (todo) => set(state => ({ todos: [...state.todos, todo] })),
+  increment: () => set((state) => ({ count: state.count + 1 })),
+  addTodo: (todo) => set((state) => ({ todos: [...state.todos, todo] })),
   // 异步 action 不需要中间件
   fetchTodos: async () => {
-    const res = await fetch('/api/todos');
+    const res = await fetch("/api/todos");
     set({ todos: await res.json() });
   },
 }));
 
 // 精准订阅：count 变化时，只有读取 count 的组件 re-render
 function Counter() {
-  const count = useStore(state => state.count);
+  const count = useStore((state) => state.count);
   return <span>{count}</span>;
 }
 
 function TodoList() {
-  const todos = useStore(state => state.todos); // 不关心 count 变化
-  return <ul>{todos.map(t => <li key={t.id}>{t.text}</li>)}</ul>;
+  const todos = useStore((state) => state.todos); // 不关心 count 变化
+  return (
+    <ul>
+      {todos.map((t) => (
+        <li key={t.id}>{t.text}</li>
+      ))}
+    </ul>
+  );
 }
 ```
 
@@ -483,10 +516,10 @@ function createStore(createState) {
   const listeners = new Set();
 
   const setState = (partial) => {
-    const nextState = typeof partial === 'function' ? partial(state) : partial;
+    const nextState = typeof partial === "function" ? partial(state) : partial;
     if (!Object.is(nextState, state)) {
       state = Object.assign({}, state, nextState);
-      listeners.forEach(listener => listener(state));
+      listeners.forEach((listener) => listener(state));
     }
   };
 
@@ -500,46 +533,51 @@ function createStore(createState) {
   return { getState, setState, subscribe };
 }
 
-// React bindings 层
+// React bindings 层（简化版：只适合 selector 返回原始值）
 function useStore(selector) {
-  return useSyncExternalStore(
-    store.subscribe,
-    () => selector(store.getState())
+  return useSyncExternalStore(store.subscribe, () =>
+    selector(store.getState()),
   );
 }
 ```
+
+<Note title="真实实现用的是 useSyncExternalStoreWithSelector">
+
+上面的写法只对返回原始值的 selector 安全。selector 返回新对象（比如 `state => ({ a: state.a, b: state.b })`）时，每次 `getSnapshot()` 都会得到新引用，React 无法判断“值没变”。Zustand 实际用的是 `use-sync-external-store/shim/with-selector` 提供的 `useSyncExternalStoreWithSelector`，它把 selector 和 `equalityFn` 一起传进去，默认 `Object.is`，也可以换成 `shallow`。
+
+</Note>
 
 **关键点**：`useSyncExternalStore` 保证并发模式下不会出现撕裂——渲染过程中状态不会变化。
 
 ### Zustand vs Redux 对比
 
-| 维度 | Redux Toolkit | Zustand |
-|------|--------------|---------|
-| 核心理念 | 严格单向数据流 | 极简发布-订阅 |
-| 文件数 | 3-4 个（slice + store + Provider + hooks） | 1 个 |
-| 需要 Provider | 需要 | 不需要 |
-| 样板代码 | 中等（RTK 已大幅减少） | 极少 |
-| 异步处理 | 需要 thunk/saga 中间件 | 直接 async/await |
-| DevTools | Redux DevTools（最强） | 支持 Redux DevTools |
-| 中间件 | 丰富（thunk、saga、logger） | 简单（persist、devtools、immer） |
-| SSR | 成熟方案 | 需要 createStore 规避单例 |
-| TypeScript | 泛型推导复杂 | 泛型推导简洁 |
-| 适用场景 | 大团队、大项目、严格规范 | 中小项目、个人项目、快速开发 |
+| 维度          | Redux Toolkit                              | Zustand                          |
+| ------------- | ------------------------------------------ | -------------------------------- |
+| 核心理念      | 严格单向数据流                             | 极简发布-订阅                    |
+| 文件数        | 3-4 个（slice + store + Provider + hooks） | 1 个                             |
+| 需要 Provider | 需要                                       | 不需要                           |
+| 样板代码      | 中等（RTK 已大幅减少）                     | 极少                             |
+| 异步处理      | 需要 thunk/saga 中间件                     | 直接 async/await                 |
+| DevTools      | Redux DevTools（最强）                     | 支持 Redux DevTools              |
+| 中间件        | 丰富（thunk、saga、logger）                | 简单（persist、devtools、immer） |
+| SSR           | 成熟方案                                   | 需要 createStore 规避单例        |
+| TypeScript    | 泛型推导复杂                               | 泛型推导简洁                     |
+| 适用场景      | 大团队、大项目、严格规范                   | 中小项目、个人项目、快速开发     |
 
 ### 简易实现 Zustand（~30 行）
 
 ```javascript
-import { useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from "react";
 
 function create(createState) {
   let state;
   const listeners = new Set();
 
   const setState = (partial) => {
-    const nextState = typeof partial === 'function' ? partial(state) : partial;
+    const nextState = typeof partial === "function" ? partial(state) : partial;
     if (!Object.is(nextState, state)) {
       state = Object.assign({}, state, nextState);
-      listeners.forEach(l => l());
+      listeners.forEach((l) => l());
     }
   };
 
@@ -588,7 +626,7 @@ MobX 是响应式状态管理的代表。它的核心理念是：**你只管改�
 └─────────────────────────────────────────────────────┘
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 MobX = Proxy 响应式 + 依赖自动追踪 + 细粒度更新，让状态管理"隐形"。
 
@@ -621,11 +659,11 @@ MobX = Proxy 响应式 + 依赖自动追踪 + 细粒度更新，让状态管理"
 MobX 的核心机制是**自动依赖追踪**：当组件渲染时访问了 observable 数据，MobX 自动记录"这个组件依赖了这个数据"；当数据变化时，只通知依赖它的组件 re-render。
 
 ```javascript
-import { makeAutoObservable, autorun, computed } from 'mobx';
+import { makeAutoObservable, autorun, computed } from "mobx";
 
 class TodoStore {
   todos = [];
-  filter = 'all';
+  filter = "all";
 
   constructor() {
     makeAutoObservable(this, {
@@ -637,9 +675,10 @@ class TodoStore {
     this.todos.push(todo); // 直接修改！Proxy 拦截
   }
 
-  get filteredTodos() { // computed：自动缓存，依赖不变不重算
-    if (this.filter === 'all') return this.todos;
-    return this.todos.filter(t => t.done === (this.filter === 'done'));
+  get filteredTodos() {
+    // computed：自动缓存，依赖不变不重算
+    if (this.filter === "all") return this.todos;
+    return this.todos.filter((t) => t.done === (this.filter === "done"));
   }
 }
 
@@ -647,32 +686,32 @@ const store = new TodoStore();
 
 // autorun：自动追踪依赖，依赖变化时自动执行
 autorun(() => {
-  console.log(`未完成: ${store.filteredTodos.filter(t => !t.done).length}`);
+  console.log(`未完成: ${store.filteredTodos.filter((t) => !t.done).length}`);
 });
 // 当 store.todos 或 store.filter 变化时，自动重新执行
 ```
 
 ### MobX 核心概念
 
-| 概念 | 作用 | 类比 |
-|------|------|------|
-| **Observable** | 可观察的状态 | Vue 的 `reactive()` |
-| **Computed** | 派生状态（自动缓存） | Vue 的 `computed()` |
-| **Action** | 修改状态的方法 | Redux 的 `dispatch(action)` |
-| **Reaction** | 状态变化时自动执行的副作用 | Vue 的 `watchEffect()` |
-| **Observer** | React 组件的响应式包装 | Vue 的模板自动更新 |
+| 概念           | 作用                       | 类比                        |
+| -------------- | -------------------------- | --------------------------- |
+| **Observable** | 可观察的状态               | Vue 的 `reactive()`         |
+| **Computed**   | 派生状态（自动缓存）       | Vue 的 `computed()`         |
+| **Action**     | 修改状态的方法             | Redux 的 `dispatch(action)` |
+| **Reaction**   | 状态变化时自动执行的副作用 | Vue 的 `watchEffect()`      |
+| **Observer**   | React 组件的响应式包装     | Vue 的模板自动更新          |
 
 ```javascript
 // MobX 的 React 集成
-import { observer } from 'mobx-react-lite';
+import { observer } from "mobx-react-lite";
 
 const TodoList = observer(function TodoList({ store }) {
   // observer 自动追踪组件内访问的所有 observable
   // 只有被访问的 observable 变化时才 re-render
   return (
     <div>
-      <p>未完成: {store.filteredTodos.filter(t => !t.done).length}</p>
-      {store.filteredTodos.map(todo => (
+      <p>未完成: {store.filteredTodos.filter((t) => !t.done).length}</p>
+      {store.filteredTodos.map((todo) => (
         <Todo key={todo.id} todo={todo} />
       ))}
     </div>
@@ -682,17 +721,17 @@ const TodoList = observer(function TodoList({ store }) {
 
 ### MobX vs Redux vs Zustand 对比
 
-| 维度 | Redux | MobX | Zustand |
-|------|-------|------|---------|
-| 核心理念 | 单向数据流、严格 | 响应式、自动追踪 | 极简发布-订阅 |
-| 状态修改 | dispatch(action) → reducer | 直接修改 observable | set(partial) |
-| 不可变性 | 要求不可变（新对象） | 可变（直接修改） | 不可变（新对象） |
-| 依赖追踪 | 手动（selector/mapState） | 自动（Proxy） | 手动（selector） |
-| 学习曲线 | 高 | 中 | 低 |
-| 可追踪性 | 高（每个 action 有记录） | 中（隐式依赖） | 中（手动追踪） |
-| 代码量 | 多（RTK 已减少） | 少 | 极少 |
-| DevTools | 最强 | MobX DevTools | 支持 Redux DevTools |
-| 适用场景 | 大团队、大项目 | 中等项目、复杂表单 | 中小项目、快速开发 |
+| 维度     | Redux                      | MobX                | Zustand             |
+| -------- | -------------------------- | ------------------- | ------------------- |
+| 核心理念 | 单向数据流、严格           | 响应式、自动追踪    | 极简发布-订阅       |
+| 状态修改 | dispatch(action) → reducer | 直接修改 observable | set(partial)        |
+| 不可变性 | 要求不可变（新对象）       | 可变（直接修改）    | 不可变（新对象）    |
+| 依赖追踪 | 手动（selector/mapState）  | 自动（Proxy）       | 手动（selector）    |
+| 学习曲线 | 高                         | 中                  | 低                  |
+| 可追踪性 | 高（每个 action 有记录）   | 中（隐式依赖）      | 中（手动追踪）      |
+| 代码量   | 多（RTK 已减少）           | 少                  | 极少                |
+| DevTools | 最强                       | MobX DevTools       | 支持 Redux DevTools |
+| 适用场景 | 大团队、大项目             | 中等项目、复杂表单  | 中小项目、快速开发  |
 
 ### 简易实现 MobX 响应式（~40 行）
 
@@ -716,7 +755,7 @@ function observable(obj) {
       target[key] = value;
       // 触发依赖：通知所有订阅了这个 key 的 reaction
       if (handlers.has(key)) {
-        handlers.get(key).forEach(reaction => reaction());
+        handlers.get(key).forEach((reaction) => reaction());
       }
       return true;
     },
@@ -726,10 +765,10 @@ function observable(obj) {
 function autorun(fn) {
   const reaction = () => {
     currentReaction = reaction;
-    fn();                   // 执行时访问 observable 属性，触发依赖收集
+    fn(); // 执行时访问 observable 属性，触发依赖收集
     currentReaction = null;
   };
-  reaction();               // 首次执行，收集依赖
+  reaction(); // 首次执行，收集依赖
 }
 
 function computed(getter) {
@@ -738,7 +777,7 @@ function computed(getter) {
 
   autorun(() => {
     dirty = true;
-    getter();               // 监听依赖变化
+    getter(); // 监听依赖变化
   });
 
   return {
@@ -747,13 +786,13 @@ function computed(getter) {
         cachedValue = getter();
         dirty = false;
       }
-      return cachedValue;   // 依赖不变时返回缓存值
+      return cachedValue; // 依赖不变时返回缓存值
     },
   };
 }
 
 // 使用示例
-const state = observable({ count: 0, name: 'test' });
+const state = observable({ count: 0, name: "test" });
 
 autorun(() => {
   console.log(`count = ${state.count}`); // 自动追踪 count
@@ -792,7 +831,7 @@ Redux-Saga 是 Redux 中间件，用于管理复杂的异步流程。它的核�
 └──────────────────────────────────────────────────────┘
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 Redux-Saga = Generator + Effect 声明式副作用，让异步流程像同步代码一样可读、可测试。
 
@@ -823,7 +862,14 @@ Redux-Saga = Generator + Effect 声明式副作用，让异步流程像同步代
 ### Redux-Saga 核心概念
 
 ```javascript
-import { call, put, takeLatest, takeEvery, select, delay } from 'redux-saga/effects';
+import {
+  call,
+  put,
+  takeLatest,
+  takeEvery,
+  select,
+  delay,
+} from "redux-saga/effects";
 
 // Effect：声明式副作用描述
 // call(fn, ...args)    → 调用函数（可以是异步的）
@@ -839,19 +885,19 @@ import { call, put, takeLatest, takeEvery, select, delay } from 'redux-saga/effe
 // 一个典型的 saga
 function* fetchUserSaga(action) {
   try {
-    yield put({ type: 'FETCH_USER_LOADING' });
+    yield put({ type: "FETCH_USER_LOADING" });
     const user = yield call(fetch, `/api/users/${action.payload}`);
-    const data = yield call([user, 'json']);
-    yield put({ type: 'FETCH_USER_SUCCESS', payload: data });
+    const data = yield call([user, "json"]);
+    yield put({ type: "FETCH_USER_SUCCESS", payload: data });
   } catch (error) {
-    yield put({ type: 'FETCH_USER_FAILURE', payload: error.message });
+    yield put({ type: "FETCH_USER_FAILURE", payload: error.message });
   }
 }
 
 // rootSaga：注册所有 saga
 function* rootSaga() {
-  yield takeLatest('FETCH_USER', fetchUserSaga); // 只保留最新请求
-  yield takeEvery('ADD_TODO', addTodoSaga);       // 每次都执行
+  yield takeLatest("FETCH_USER", fetchUserSaga); // 只保留最新请求
+  yield takeEvery("ADD_TODO", addTodoSaga); // 每次都执行
 }
 ```
 
@@ -862,47 +908,47 @@ Saga 的核心是 ES6 Generator 函数。Generator 可以暂停和恢复执行�
 ```javascript
 // Generator 函数
 function* gen() {
-  const a = yield 1;        // 暂停，返回 1
-  const b = yield 2;        // 暂停，返回 2
-  return a + b;             // 恢复时，a = 外部传入的值
+  const a = yield 1; // 暂停，返回 1
+  const b = yield 2; // 暂停，返回 2
+  return a + b; // 恢复时，a = 外部传入的值
 }
 
 const iter = gen();
-iter.next();        // { value: 1, done: false }
-iter.next(10);      // { value: 2, done: false }，a = 10
-iter.next(20);      // { value: 30, done: true }，b = 20
+iter.next(); // { value: 1, done: false }
+iter.next(10); // { value: 2, done: false }，a = 10
+iter.next(20); // { value: 30, done: true }，b = 20
 
 // 在 Saga 中，yield 的是 Effect 对象
 function* saga() {
-  const user = yield call(fetch, '/api/user'); // yield 一个 Effect 描述
+  const user = yield call(fetch, "/api/user"); // yield 一个 Effect 描述
   // Saga 中间件看到这个 Effect，执行 fetch，把结果传回 Generator
-  yield put({ type: 'SET_USER', payload: user }); // yield 另一个 Effect
+  yield put({ type: "SET_USER", payload: user }); // yield 另一个 Effect
 }
 ```
 
 ### Redux-Saga vs Redux-Thunk 对比
 
-| 维度 | Redux-Thunk | Redux-Saga |
-|------|------------|------------|
-| 核心思想 | dispatch 函数 | Generator + Effect |
-| 异步处理 | 直接在 thunk 中执行 | 声明式 Effect，中间件执行 |
-| 可测试性 | 需要 mock dispatch/getState | 只检查 Effect 描述，无需 mock |
-| 竞态处理 | 手动实现 | `takeLatest`/`race` 内置 |
-| 取消请求 | 手动 AbortController | `cancel` Effect 自动取消 |
-| 并行请求 | Promise.all | `all` Effect |
-| 代码风格 | Promise/async-await | Generator（同步风格） |
-| 学习曲线 | 低 | 高（需要理解 Generator + Effect） |
-| 适用场景 | 简单异步 | 复杂业务流程、竞态、取消 |
+| 维度     | Redux-Thunk                 | Redux-Saga                        |
+| -------- | --------------------------- | --------------------------------- |
+| 核心思想 | dispatch 函数               | Generator + Effect                |
+| 异步处理 | 直接在 thunk 中执行         | 声明式 Effect，中间件执行         |
+| 可测试性 | 需要 mock dispatch/getState | 只检查 Effect 描述，无需 mock     |
+| 竞态处理 | 手动实现                    | `takeLatest`/`race` 内置          |
+| 取消请求 | 手动 AbortController        | `cancel` Effect 自动取消          |
+| 并行请求 | Promise.all                 | `all` Effect                      |
+| 代码风格 | Promise/async-await         | Generator（同步风格）             |
+| 学习曲线 | 低                          | 高（需要理解 Generator + Effect） |
+| 适用场景 | 简单异步                    | 复杂业务流程、竞态、取消          |
 
 ### Redux-Saga 使用场景
 
 ```javascript
 // 场景 1：搜索防抖（takeLatest 自动取消旧请求）
 function* searchSaga() {
-  yield takeLatest('SEARCH', function* (action) {
+  yield takeLatest("SEARCH", function* (action) {
     yield delay(300); // 防抖 300ms
     const results = yield call(fetch, `/api/search?q=${action.payload}`);
-    yield put({ type: 'SET_RESULTS', payload: yield call([results, 'json']) });
+    yield put({ type: "SET_RESULTS", payload: yield call([results, "json"]) });
   });
 }
 
@@ -913,9 +959,9 @@ function* fetchWithTimeout() {
     timeout: delay(5000),
   });
   if (user) {
-    yield put({ type: 'SET_USER', payload: user });
+    yield put({ type: "SET_USER", payload: user });
   } else {
-    yield put({ type: 'FETCH_TIMEOUT' });
+    yield put({ type: "FETCH_TIMEOUT" });
   }
 }
 
@@ -924,21 +970,23 @@ function* websocketSaga() {
   const channel = yield call(createWebSocketChannel);
   while (true) {
     const message = yield take(channel); // 从 channel 中取消息
-    yield put({ type: 'WS_MESSAGE', payload: message });
+    yield put({ type: "WS_MESSAGE", payload: message });
   }
 }
 ```
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 及格回答 vs 满分回答
 
 ### 问题："说说 Redux 和 Zustand 的区别"
 
 **及格回答：**
+
 > "Redux 要求纯函数，有严格的数据流。Zustand 更简单，不需要 Provider，样板代码少。"
 
 **满分回答：**
+
 > "两者的本质区别是**状态管理的哲学**。
 >
 > Redux 是**显式数据流**——dispatch action → reducer → new state → re-render。每个状态变化都有记录，支持时间旅行调试。代价是样板代码多、学习曲线高。Redux Toolkit 用 Immer 简化了写法，但核心理念不变。
@@ -949,20 +997,23 @@ function* websocketSaga() {
 >
 > 选择标准：大团队需要 Redux 的严格性和 DevTools（代码审查、问题排查）。小团队/个人项目用 Zustand 的简洁性。MobX 适合需要响应式的场景（如复杂表单、实时数据）。"
 
-### 面试官追问链
+### 追问链
 
 **第一层**："Zustand 的 `useSyncExternalStore` 是什么？"
+
 > 期望回答：React 18 提供的 Hook，用于订阅外部 store。它保证了并发模式下的撕裂（tearing）问题——在渲染过程中状态不会变化。Zustand 用它来保证组件读取的状态是一致的。
 
 **第二层**："Redux 的中间件是怎么工作的？"
+
 > 期望回答：中间件是 `store.dispatch` 的增强。thunk 中间件让 dispatch 可以接受函数（异步操作），saga 中间件用 Generator 管理复杂的异步流程。中间件链的实现是函数组合——`applyMiddleware(thunk, logger)` 把多个中间件串联起来，每个中间件可以拦截、修改、延迟 dispatch。
 
 **第三层**："为什么 React 推荐用 `useSyncExternalStore` 而不是 `useEffect` 订阅外部状态？"
+
 > 期望回答：`useEffect` 订阅外部状态在并发模式下有撕裂问题——组件在渲染过程中读取的状态可能和渲染开始时不同。`useSyncExternalStore` 保证了渲染过程中状态一致，如果外部状态在渲染过程中变化，React 会同步重新渲染。
 
 ---
 
-## 面试官视角：Zustand 原理深度分析
+## Zustand 原理深度分析
 
 ### 底层实现：vanilla store + React bindings
 
@@ -972,14 +1023,13 @@ Zustand 底层是 **vanilla store + React bindings**：
 // vanilla store（不依赖 React）
 const store = createStore((set, get) => ({
   count: 0,
-  increment: () => set(state => ({ count: state.count + 1 }))
+  increment: () => set((state) => ({ count: state.count + 1 })),
 }));
 
-// React 绑定
+// React 绑定（简化版，selector 返回原始值时可用；真实实现见上文 useSyncExternalStoreWithSelector 的说明）
 function useStore(selector) {
-  return useSyncExternalStore(
-    store.subscribe,
-    () => selector(store.getState())
+  return useSyncExternalStore(store.subscribe, () =>
+    selector(store.getState()),
   );
 }
 ```
@@ -995,29 +1045,36 @@ Zustand 的 store 是**模块级单例**，不依赖 React Context：
 export const useStore = create((set) => ({ count: 0 }));
 
 // 任何组件直接导入使用
-import { useStore } from './store';
+import { useStore } from "./store";
 function Counter() {
-  const count = useStore(state => state.count);
+  const count = useStore((state) => state.count);
 }
 ```
 
-**vs Redux**：Redux 需要 `<Provider store={store}>` 包裹整个应用，用 Context 传递 store。Zustand 跳过了这层。
+**vs Redux**：Redux 需要 `<Provider store={store}>` 包裹整个应用，用 Context 把 store 实例传下去。注意两点容易说反：
+
+- React-Redux 的 `useSelector` 也是**按选择器订阅**的，selector 结果没变就不重渲染，粒度并不比 Zustand 粗。
+- Provider 传的是稳定的 store 引用，Context 变化本身不会让所有消费组件重渲染；会出问题的是直接用 Context 存状态值、每次都新建 `value` 对象的写法。
+
+Zustand 省掉的是“把 store 挂到 React 树上”这一层，而不是省掉了订阅粒度。
 
 **坑点**：模块级单例在 SSR 中有问题——所有请求共享同一个 store。解决：用 `createStore` 在每次请求时创建新 store。
 
 ### zombie child 问题
 
-Zombie child 是 React 并发模式下的经典问题：父组件先渲染（状态已更新），子组件还没渲染（状态还是旧的），子组件访问了不存在的属性。
+Zombie child 是并发渲染下的经典问题：某个组件在渲染过程中挂起（Suspense），期间外部 store 更新了；组件恢复渲染时如果还用挂起前的快照，就会读到“已经过期”的状态，像是活在僵尸状态里。
 
-Zustand 的解决：用**严格相等检查** selector 输出。如果 selector 返回的值和上次相同（===），不触发 re-render。
+解决它的是 `useSyncExternalStore`：React 在组件恢复渲染时会重新读取 `getSnapshot()`，如果快照和挂起时不一致，就丢弃这次渲染并重来，保证组件读到的是当前状态。
+
+而 selector 的**相等比较**（`Object.is` 或 `useShallow`）解决的是另一个问题——避免 selector 返回新对象导致的**不必要重渲染**。两者不要混为一谈。
 
 ```js
 // selector 返回新对象，每次都不相等 → 频繁 re-render
-const { a, b } = useStore(state => ({ a: state.a, b: state.b }));
+const { a, b } = useStore((state) => ({ a: state.a, b: state.b }));
 
 // 解决：用 shallow 比较
-import { useShallow } from 'zustand/react/shallow';
-const { a, b } = useStore(useShallow(state => ({ a: state.a, b: state.b })));
+import { useShallow } from "zustand/react/shallow";
+const { a, b } = useStore(useShallow((state) => ({ a: state.a, b: state.b })));
 ```
 
 ### 中间件实现原理
@@ -1029,20 +1086,26 @@ const { a, b } = useStore(useShallow(state => ({ a: state.a, b: state.b })));
 const immer = (config) => (set, get, api) =>
   config(
     (partial, replace) => {
-      const nextState = typeof partial === 'function'
-        ? produce(get(), partial)  // Immer 的 produce
-        : partial;
+      const nextState =
+        typeof partial === "function"
+          ? produce(get(), partial) // Immer 的 produce
+          : partial;
       return set(nextState, replace);
     },
     get,
-    api
+    api,
   );
 
 // 使用
-const useStore = create(immer((set) => ({
-  todos: [],
-  addTodo: (todo) => set(state => { state.todos.push(todo); })  // 直接修改
-})));
+const useStore = create(
+  immer((set) => ({
+    todos: [],
+    addTodo: (todo) =>
+      set((state) => {
+        state.todos.push(todo);
+      }), // 直接修改
+  })),
+);
 ```
 
 **坑点**：中间件只包装 create 的 set/get，不包装 vanilla store 的 getState/setState。
@@ -1058,9 +1121,9 @@ function MouseTracker() {
   const ref = useRef();
 
   useEffect(() => {
-    const unsub = useStore.subscribe(
-      state => { ref.current.style.transform = `translate(${state.x}px, ${state.y}px)`; }
-    );
+    const unsub = useStore.subscribe((state) => {
+      ref.current.style.transform = `translate(${state.x}px, ${state.y}px)`;
+    });
     return unsub;
   }, []);
 
@@ -1070,7 +1133,7 @@ function MouseTracker() {
 
 ---
 
-## 🔍 底层源码：Redux Middleware 是如何实现的？
+## Redux Middleware 底层源码
 
 Redux 的中间件机制是函数组合（Function Composition）的经典应用。`applyMiddleware` 的核心只有 3 行代码：
 
@@ -1081,24 +1144,29 @@ function applyMiddleware(...middlewares) {
     const store = createStore(reducer, preloadedState);
     const middlewareAPI = {
       getState: store.getState,
-      dispatch: (action, ...args) => dispatch(action, ...args) // 闭包引用
+      dispatch: (action, ...args) => dispatch(action, ...args), // 闭包引用
     };
-    const chain = middlewares.map(middleware => middleware(middlewareAPI));
+    const chain = middlewares.map((middleware) => middleware(middlewareAPI));
     dispatch = compose(...chain)(store.dispatch); // 核心：函数组合
     return { ...store, dispatch };
   };
 }
 
 function compose(...funcs) {
-  if (funcs.length === 0) return arg => arg;
+  if (funcs.length === 0) return (arg) => arg;
   if (funcs.length === 1) return funcs[0];
-  return funcs.reduce((a, b) => (...args) => a(b(...args)));
+  return funcs.reduce(
+    (a, b) =>
+      (...args) =>
+        a(b(...args)),
+  );
 }
 ```
 
 **执行流程**：`dispatch(action) → middleware1 → middleware2 → ... → store.dispatch → reducer`
 
 每个中间件的签名是 `store => next => action => { /* 处理 */ return next(action); }`。`next` 是链中的下一个中间件，`action` 是当前 dispatch 的 action。中间件可以：
+
 - 拦截 action（不调用 `next`，阻止传递）
 - 修改 action（传新的 action 给 `next`）
 - 异步调用 `next`（thunk 中间件：如果 action 是函数，执行它）
@@ -1106,7 +1174,7 @@ function compose(...funcs) {
 
 ---
 
-## 大厂高频连环拷问
+## 常见追问
 
 > 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。每个模块 **8 个 Accordion**，覆盖 4 个难度层级。
 
@@ -1146,11 +1214,11 @@ function compose(...funcs) {
 
     **1. API 层面**：Redux 需要 Action Types + Action Creators + Reducer + Store + Provider + connect/useSelector 六件套。Zustand 只需要一个 `create` 函数，返回一个 Hook。
 
-    **2. 数据流层面**：Redux 是严格的单向数据流（dispatch → middleware → reducer → state → view）。Zustand 是直接的发布-订阅（set → state → selector → view），没有 middleware 概念，异步操作直接 `async/await`。
+    **2. 数据流层面**：Redux 是严格的单向数据流（dispatch → middleware → reducer → state → view）。Zustand 是直接的发布-订阅（set → state → selector → view），异步操作直接 `async/await`，不需要为异步专门引入 thunk/saga。
 
     **3. Provider 层面**：Redux 需要 `<Provider store={store}>` 包裹整个应用。Zustand 的 store 是模块级单例，直接 `import` 使用，不需要 Provider。
 
-    但简单也有代价：Zustand 没有 Redux DevTools 那样的完整调试链路，没有 middleware 生态，没有时间旅行调试。所以大团队还是倾向 Redux Toolkit。"
+    但简单也有代价：Zustand 也有中间件（persist、devtools、immer 等），只是生态比 Redux 小；DevTools 需要通过 devtools 中间件接入 Redux DevTools，调试链路和 action 级别的可追踪性不如 Redux 完整。所以大型团队仍倾向 Redux Toolkit。"
 
   </Accordion>
 
@@ -1191,7 +1259,7 @@ function compose(...funcs) {
     "选择标准不是'哪个更好'，而是'哪个更适合当前场景'：
 
     **用 Redux Toolkit 的场景**：
-    - 大团队（5人以上）协作，需要严格的代码规范和可追踪性
+    - 多人协作的大团队，需要严格的代码规范和可追踪性
     - 需要时间旅行调试、action 日志、完整的 DevTools
     - 有复杂的异步流程（用 Redux-Saga）
     - 需要中间件生态（thunk、saga、logger、persist）
@@ -1287,7 +1355,7 @@ function compose(...funcs) {
 
   </Accordion>
 
-  <Accordion title='🔥 Redux 的 combineReducers 是怎么实现的？' icon="skull">
+  <Accordion title='Redux 的 combineReducers 是怎么实现的？' icon="skull">
 
     **答题要点：**
     combineReducers 的本质是把多个 reducer 合并成一个，按 key 分发 state。
@@ -1323,7 +1391,7 @@ function compose(...funcs) {
 
   </Accordion>
 
-  <Accordion title='🔥 如何实现 Zustand 的 persist 中间件？' icon="skull">
+  <Accordion title='如何实现 Zustand 的 persist 中间件？' icon="skull">
 
     **答题要点：**
     persist 的核心是在 set 时写入 localStorage，在 init 时从 localStorage 读取。
@@ -1374,12 +1442,11 @@ function compose(...funcs) {
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 🔗 [Redux 官方文档](https://redux.js.org/)：Redux 的设计原则、API 参考和最佳实践。<sup>[1]</sup>
-- 🔗 [Redux Toolkit 官方文档](https://redux-toolkit.js.org/)：Redux 官方推荐的现代写法，大幅减少样板代码。<sup>[2]</sup>
-- 🔗 [Zustand GitHub](https://github.com/pmndrs/zustand)：Zustand 源码和文档，理解 vanilla store + React bindings 的设计。<sup>[3]</sup>
-- 🔗 [MobX 官方文档](https://mobx.js.org/)：MobX 的响应式原理和 API 参考。<sup>[4]</sup>
-- 📖 [Redux-Saga 官方文档](https://redux-saga.js.org/)：Generator + Effect 的异步管理方案。<sup>[5]</sup>
-- 🟢 [useSyncExternalStore 文档](https://react.dev/reference/react/useSyncExternalStore)：React 18 的外部 store 订阅 Hook，理解 Zustand 的底层机制。<sup>[6]</sup>
-```
+- [Redux 官方文档](https://redux.js.org/)：Redux 的设计原则、API 参考和最佳实践。<sup>[1]</sup>
+- [Redux Toolkit 官方文档](https://redux-toolkit.js.org/)：Redux 官方推荐的现代写法，大幅减少样板代码。<sup>[2]</sup>
+- [Zustand GitHub](https://github.com/pmndrs/zustand)：Zustand 源码和文档，理解 vanilla store + React bindings 的设计。<sup>[3]</sup>
+- [MobX 官方文档](https://mobx.js.org/)：MobX 的响应式原理和 API 参考。<sup>[4]</sup>
+- [Redux-Saga 官方文档](https://redux-saga.js.org/)：Generator + Effect 的异步管理方案。<sup>[5]</sup>
+- [useSyncExternalStore 文档](https://react.dev/reference/react/useSyncExternalStore)：React 18 的外部 store 订阅 Hook，理解 Zustand 的底层机制。<sup>[6]</sup>

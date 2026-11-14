@@ -1,10 +1,9 @@
 ---
 title: "LangChain"
+description: "LangChain 的 Runnable/LCEL 与 LangGraph 状态图编排，覆盖框架选型与迁移考点。"
 ---
 
-> **面试官为什么问这个？**
->
-> LangChain 和 LangGraph 是 AI 应用开发的核心框架。面试官问这个，本质上是在考察你：**是否理解 AI 工作流的编排模式，以及能不能在实际项目中设计和实现多步骤的 AI 流程。** 如果你答不清楚，说明你对 AI 应用开发的理解停留在"调 API"而不是"设计架构"。
+> 我最早用 LangChain 只记住了链式调用，碰到分支和暂停恢复，才转向 LangGraph 的图结构。线性链和有状态图的分界，比背 API 重要。
 
 ---
 
@@ -75,7 +74,7 @@ LangChain 是线性的管道（A → B → C），LangGraph 是非线性的图�
 
 <Tip title="💡 面试技巧">
 
-回答时先说"为什么"（多步骤工作流难以编排），再说"怎么解决"（LangChain 链式抽象 + LangGraph 图结构编排）。面试官想听的是你理解框架的设计动机，而不是背 API。
+回答时先说"为什么"（多步骤工作流难以编排），再说"怎么解决"（LangChain 链式抽象 + LangGraph 图结构编排）。想听的是你对框架设计动机的理解，而不是背 API。
 
 </Tip>
 
@@ -98,13 +97,13 @@ LangGraph 的本质是**有状态的有向图**，核心逻辑只有 4 个组件
 
 ```javascript
 // 1. StateGraph：定义有向图
-import { Annotation, StateGraph, START, END } from '@langchain/langgraph';
+import { Annotation, StateGraph, START, END } from "@langchain/langgraph";
 
 // 2. Annotation + Reducer：定义状态结构和合并规则
 const GraphState = Annotation.Root({
-  input: Annotation,                                    // 普通字段：覆盖写
+  input: Annotation, // 普通字段：覆盖写
   results: Annotation({
-    reducer: (a, b) => a.concat(b),                     // 数组合并
+    reducer: (a, b) => a.concat(b), // 数组合并
     default: () => [],
   }),
 });
@@ -112,7 +111,7 @@ const GraphState = Annotation.Root({
 // 3. 节点：函数，接收 state，返回部分 state
 async function analyzeNode(state) {
   const response = await llm.invoke(buildPrompt(state.input));
-  return { results: [parseResponse(response)] };        // reducer 会自动合并
+  return { results: [parseResponse(response)] }; // reducer 会自动合并
 }
 
 // 4. 组装图
@@ -151,11 +150,11 @@ LangChain 由 Harrison Chase 于 2022 年 10 月开源，最初是一个 Python 
 ```text
 LangChain 的演进时间线：
 2022.10：LangChain Python 开源（链式调用）
-2023.02：LangChain.js 发布（TypeScript 版本）
-2023.10：LangChain v0.2（组件化重构，Runnable 抽象）
+2023 年初：LangChain.js 发布（TypeScript 版本）
 2024.01：LangGraph 发布（图结构编排）
-2024.06：LangGraph v0.2（interrupt + Command + Checkpoint）
-2024.11：LangChain v0.3（稳定版，与 LangGraph 深度集成）
+2024.05：LangChain v0.2（组件化重构，Runnable 抽象）
+2024 年内：LangGraph 0.2 系列陆续补齐 interrupt、Command、Checkpoint
+2024.09：LangChain v0.3（稳定版，与 LangGraph 集成）
 ```
 
 ### Annotation 和 Reducer 的类型系统
@@ -200,16 +199,16 @@ const GraphState = Annotation.Root({
 
 ### 基础梳理
 
-| 维度 | addEdge（静态路由） | Conditional Edges（条件路由） | Send（动态路由） |
-|------|-------------------|---------------------------|----------------|
-| **确定时机** | 编译时 | 运行时 | 运行时 |
-| **目标数量** | 固定 1 个 | 固定 1 个（根据条件选择） | 动态 N 个 |
-| **并行能力** | 无 | 无 | 有（并行执行） |
-| **适用场景** | 简单线性流程 | 条件分支 | Map-reduce 模式 |
+| 维度         | addEdge（静态路由） | Conditional Edges（条件路由） | Send（动态路由） |
+| ------------ | ------------------- | ----------------------------- | ---------------- |
+| **确定时机** | 编译时              | 运行时                        | 运行时           |
+| **目标数量** | 固定 1 个           | 固定 1 个（根据条件选择）     | 动态 N 个        |
+| **并行能力** | 无                  | 无                            | 有（并行执行）   |
+| **适用场景** | 简单线性流程        | 条件分支                      | Map-reduce 模式  |
 
 ### 专家视角深度剖析
 
-很多候选人能说出"Send 用于并行"，但大厂面试官真正在意的是：**为什么不用 `Promise.all` 手动并行？LangGraph 的 Send 比手动并行好在哪里？**
+很多人能说出"Send 用于并行"，但实际更在意的是：**为什么不用 `Promise.all` 手动并行？LangGraph 的 Send 比手动并行好在哪里？**
 
 ```javascript
 // 手动并行（Promise.all）：
@@ -224,9 +223,7 @@ async function fanOut(state) {
 
 // LangGraph Send：
 function fanOut(state) {
-  return state.items.map(item =>
-    new Send("analyzeNode", { item })
-  );
+  return state.items.map((item) => new Send("analyzeNode", { item }));
 }
 // LangGraph 自动并行执行 N 个 analyzeNode，结果通过 Reducer 自动合并
 ```
@@ -242,9 +239,9 @@ LangGraph 的优势不是并行本身，而是：
 ```javascript
 // LangGraph 的错误处理
 graph.addConditionalEdges("analyze", (state) => {
-  if (state.error) return "errorHandler";   // 错误走降级路径
+  if (state.error) return "errorHandler"; // 错误走降级路径
   if (state.fallback) return "fallbackNode"; // 备选方案
-  return "nextNode";                         // 正常路径
+  return "nextNode"; // 正常路径
 });
 ```
 
@@ -259,10 +256,13 @@ graph.addConditionalEdges("analyze", (state) => {
 // 1. 文档切片 → 2. 向量化 → 3. 存入向量数据库
 // 4. 用户提问 → 5. 向量检索 → 6. LLM 根据文档回答
 
-import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
-import { OpenAIEmbeddings } from '@langchain/openai';
-import { MemoryVectorStore } from 'langchain/vectorstores/memory';
-import { RunnableSequence, RunnablePassthrough } from '@langchain/core/runnables';
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
+import { OpenAIEmbeddings } from "@langchain/openai";
+import { MemoryVectorStore } from "langchain/vectorstores/memory";
+import {
+  RunnableSequence,
+  RunnablePassthrough,
+} from "@langchain/core/runnables";
 
 // 1. 文档切片（chunkSize 推荐 500-1500 字符，overlap 10-20%）
 const splitter = new RecursiveCharacterTextSplitter({
@@ -281,24 +281,24 @@ const retriever = vectorStore.asRetriever({ k: 3 });
 // 4. 组装 RAG 链
 const chain = RunnableSequence.from([
   {
-    context: retriever,                    // 检索相关文档
-    question: new RunnablePassthrough(),   // 原样传递用户问题
+    context: retriever, // 检索相关文档
+    question: new RunnablePassthrough(), // 原样传递用户问题
   },
-  prompt,                                  // 拼接 prompt
-  llm,                                     // 调用 LLM
-  new StringOutputParser(),                // 解析输出
+  prompt, // 拼接 prompt
+  llm, // 调用 LLM
+  new StringOutputParser(), // 解析输出
 ]);
 
-const answer = await chain.invoke('什么是 Fiber？');
+const answer = await chain.invoke("什么是 Fiber？");
 ```
 
 **chunkSize 怎么选？**
 
-| chunkSize | 效果 |
-|-----------|------|
-| 太小（100 字符） | 语义不完整，检索到的片段没用 |
-| 太大（5000 字符） | 包含太多无关信息，LLM 注意力分散 |
-| 推荐（500-1500 字符） | 平衡语义完整性和精确性 |
+| chunkSize             | 效果                             |
+| --------------------- | -------------------------------- |
+| 太小（100 字符）      | 语义不完整，检索到的片段没用     |
+| 太大（5000 字符）     | 包含太多无关信息，LLM 注意力分散 |
+| 推荐（500-1500 字符） | 平衡语义完整性和精确性           |
 
 <Tip title="最佳实践: ">
 
@@ -310,13 +310,13 @@ RAG 的质量取决于三个环节：切片策略（按语义切 > 按段落切 
 
 向量数据库是 RAG 的基础设施。主流选择包括：
 
-| 向量数据库 | 特点 | 适用场景 |
-|-----------|------|---------|
-| **Pinecone** | 全托管，开箱即用 | 快速原型、小团队 |
-| **Weaviate** | 支持混合检索（向量 + BM25） | 需要精确检索的场景 |
-| **Chroma** | 轻量级，嵌入式 | 本地开发、小型项目 |
-| **Qdrant** | 高性能，Rust 实现 | 大规模生产环境 |
-| **pgvector** | PostgreSQL 扩展 | 已有 PostgreSQL 的团队 |
+| 向量数据库   | 特点                        | 适用场景               |
+| ------------ | --------------------------- | ---------------------- |
+| **Pinecone** | 全托管，开箱即用            | 快速原型、小团队       |
+| **Weaviate** | 支持混合检索（向量 + BM25） | 需要精确检索的场景     |
+| **Chroma**   | 轻量级，嵌入式              | 本地开发、小型项目     |
+| **Qdrant**   | 高性能，Rust 实现           | 大规模生产环境         |
+| **pgvector** | PostgreSQL 扩展             | 已有 PostgreSQL 的团队 |
 
 ### RAG 的高级优化策略
 
@@ -379,39 +379,36 @@ Memory：Agent 的上下文记忆（对话历史、长期记忆）
 
 ```javascript
 // Chain：固定流程
-import { RunnableSequence } from '@langchain/core/runnables';
+import { RunnableSequence } from "@langchain/core/runnables";
 
 const chain = RunnableSequence.from([
-  promptTemplate,    // 1. 拼接 prompt
-  llm,               // 2. 调用 LLM
-  outputParser,      // 3. 解析输出
+  promptTemplate, // 1. 拼接 prompt
+  llm, // 2. 调用 LLM
+  outputParser, // 3. 解析输出
 ]);
 const result = await chain.invoke({ input: "什么是 Fiber？" });
 
 // Agent：动态决策
-import { createReactAgent } from '@langchain/langgraph/prebuilt';
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
 
 const agent = createReactAgent({
-  llm: new ChatOpenAI({ model: 'gpt-4o' }),
+  llm: new ChatOpenAI({ model: "gpt-4o" }),
   tools: [searchTool, calculatorTool, fileReaderTool],
   // Agent 自主决定调用哪个 Tool，调用几次
 });
 
 // Tool：Agent 可调用的函数
-import { tool } from '@langchain/core/tools';
-import { z } from 'zod';
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
 
-const searchTool = tool(
-  async ({ query }) => await searchWeb(query),
-  {
-    name: "search",
-    description: "搜索互联网获取信息",
-    schema: z.object({ query: z.string() }),
-  }
-);
+const searchTool = tool(async ({ query }) => await searchWeb(query), {
+  name: "search",
+  description: "搜索互联网获取信息",
+  schema: z.object({ query: z.string() }),
+});
 
 // Memory：上下文记忆
-import { ChatMessageHistory } from 'langchain/stores/message/in_memory';
+import { ChatMessageHistory } from "langchain/stores/message/in_memory";
 
 const memory = new ChatMessageHistory();
 await memory.addUserMessage("我叫张三");
@@ -442,12 +439,12 @@ LangChain 的核心抽象是 `Runnable`——所有组件（Prompt、LLM、Parse
 
 ```javascript
 // LCEL：用 | 管道操作符串联 Runnable
-import { ChatOpenAI } from '@langchain/openai';
-import { ChatPromptTemplate } from '@langchain/core/prompts';
-import { StringOutputParser } from '@langchain/core/output_parsers';
+import { ChatOpenAI } from "@langchain/openai";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { StringOutputParser } from "@langchain/core/output_parsers";
 
 const prompt = ChatPromptTemplate.fromTemplate("用一句话解释：{concept}");
-const llm = new ChatOpenAI({ model: 'gpt-4o' });
+const llm = new ChatOpenAI({ model: "gpt-4o" });
 const parser = new StringOutputParser();
 
 // 用 | 串联：prompt → llm → parser
@@ -477,41 +474,41 @@ ReAct 循环：
 
 ### 基础梳理
 
-| 概念 | 说明 | 类比 |
-|------|------|------|
-| **StateGraph** | 定义有向图的容器 | 画板 |
-| **Node** | 节点，执行具体逻辑的函数 | 积木块 |
-| **Edge** | 边，定义节点之间的流转关系 | 连接线 |
-| **State** | 节点之间传递的数据 | 管道里的水 |
-| **Annotation** | 定义 State 的结构和合并规则 | 管道的规格说明 |
-| **Reducer** | 多个节点并行写入同一字段时的合并策略 | 三通管的混合规则 |
+| 概念           | 说明                                 | 类比             |
+| -------------- | ------------------------------------ | ---------------- |
+| **StateGraph** | 定义有向图的容器                     | 画板             |
+| **Node**       | 节点，执行具体逻辑的函数             | 积木块           |
+| **Edge**       | 边，定义节点之间的流转关系           | 连接线           |
+| **State**      | 节点之间传递的数据                   | 管道里的水       |
+| **Annotation** | 定义 State 的结构和合并规则          | 管道的规格说明   |
+| **Reducer**    | 多个节点并行写入同一字段时的合并策略 | 三通管的混合规则 |
 
 ### 专家视角深度剖析
 
-很多候选人能说出"StateGraph 是图结构"，但大厂面试官真正在意的是：**StateGraph 和普通的 DAG（有向无环图）有什么区别？为什么不用 Airflow 之类的 DAG 引擎？**
+很多人能说出"StateGraph 是图结构"，但实际更在意的是：**StateGraph 和普通的 DAG（有向无环图）有什么区别？为什么不用 Airflow 之类的 DAG 引擎？**
 
 ```javascript
 // StateGraph 的核心设计：State + Annotation + Reducer
-import { Annotation, StateGraph, START, END } from '@langchain/langgraph';
+import { Annotation, StateGraph, START, END } from "@langchain/langgraph";
 
 // 1. 定义 State 结构（Annotation）
 const GraphState = Annotation.Root({
   messages: Annotation({
-    reducer: (a, b) => a.concat(b),    // 消息追加
+    reducer: (a, b) => a.concat(b), // 消息追加
     default: () => [],
   }),
   context: Annotation({
     reducer: (a, b) => ({ ...a, ...b }), // 上下文合并
     default: () => ({}),
   }),
-  step: Annotation,                      // 普通字段：覆盖写
+  step: Annotation, // 普通字段：覆盖写
 });
 
 // 2. 定义 Node（函数）
 async function retrieveNode(state) {
   const docs = await retriever.invoke(state.messages.at(-1).content);
   return {
-    context: { docs: docs.map(d => d.pageContent) },
+    context: { docs: docs.map((d) => d.pageContent) },
     step: "retrieve",
   };
 }
@@ -541,13 +538,13 @@ StateGraph 和 DAG 引擎的核心区别：StateGraph 以 **State 为中心**—
 
 ### StateGraph 与 Airflow DAG 的对比
 
-| 维度 | LangGraph StateGraph | Airflow DAG |
-|------|---------------------|-------------|
-| **核心抽象** | State（共享状态） | Task（独立任务） |
-| **循环支持** | 天然支持（根据 State 决定） | 不支持（必须是无环的） |
-| **暂停/恢复** | interrupt + Command | 不支持（任务跑完就结束） |
-| **状态管理** | Annotation + Reducer | XCom（有限的状态传递） |
-| **适用场景** | AI Agent（需要推理和决策） | 数据管道（ETL、定时任务） |
+| 维度          | LangGraph StateGraph        | Airflow DAG               |
+| ------------- | --------------------------- | ------------------------- |
+| **核心抽象**  | State（共享状态）           | Task（独立任务）          |
+| **循环支持**  | 天然支持（根据 State 决定） | 不支持（必须是无环的）    |
+| **暂停/恢复** | interrupt + Command         | 不支持（任务跑完就结束）  |
+| **状态管理**  | Annotation + Reducer        | XCom（有限的状态传递）    |
+| **适用场景**  | AI Agent（需要推理和决策）  | 数据管道（ETL、定时任务） |
 
 ---
 
@@ -595,8 +592,8 @@ StateGraph 和 DAG 引擎的核心区别：StateGraph 以 **State 为中心**—
 
 // 第 1 步：文档切片
 const splitter = new RecursiveCharacterTextSplitter({
-  chunkSize: 1000,      // 每个切片 1000 字符
-  chunkOverlap: 200,    // 相邻切片重叠 200 字符（保证语义连贯）
+  chunkSize: 1000, // 每个切片 1000 字符
+  chunkOverlap: 200, // 相邻切片重叠 200 字符（保证语义连贯）
 });
 const chunks = await splitter.splitDocuments(documents);
 
@@ -604,7 +601,7 @@ const chunks = await splitter.splitDocuments(documents);
 const embeddings = new OpenAIEmbeddings();
 // 把文本转为 1536 维的向量
 const vectors = await embeddings.embedDocuments(
-  chunks.map(c => c.pageContent)
+  chunks.map((c) => c.pageContent),
 );
 
 // 第 3 步：存入向量数据库
@@ -618,7 +615,7 @@ const relevantDocs = await retriever.invoke("什么是 Fiber 架构？");
 const prompt = `根据以下文档回答问题。如果文档中没有相关信息，说"我不确定"。
 
 文档：
-${relevantDocs.map(d => d.pageContent).join('\n---\n')}
+${relevantDocs.map((d) => d.pageContent).join("\n---\n")}
 
 问题：什么是 Fiber 架构？`;
 
@@ -648,25 +645,25 @@ RAG 就像开卷考试。闭卷考试（没有 RAG）要求你记住所有知识
 
 Embedding 模型把文本转为向量，决定了检索的语义理解能力。选择时需要在效果、成本、延迟之间做权衡：
 
-| Embedding 模型 | 维度 | 效果 | 成本 | 适用场景 |
-|---------------|------|------|------|---------|
-| **text-embedding-3-large**（OpenAI） | 3072 | 最好 | 高 | 高质量检索 |
-| **text-embedding-3-small**（OpenAI） | 1536 | 好 | 低 | 性价比之选 |
-| **BGE-large**（BAAI） | 1024 | 好 | 免费 | 开源方案 |
-| **E5-large**（Microsoft） | 1024 | 好 | 免费 | 开源方案 |
-| **Cohere embed v3** | 1024 | 好 | 中 | 多语言场景 |
+| Embedding 模型                       | 维度 | 效果 | 成本 | 适用场景   |
+| ------------------------------------ | ---- | ---- | ---- | ---------- |
+| **text-embedding-3-large**（OpenAI） | 3072 | 最好 | 高   | 高质量检索 |
+| **text-embedding-3-small**（OpenAI） | 1536 | 好   | 低   | 性价比之选 |
+| **BGE-large**（BAAI）                | 1024 | 好   | 免费 | 开源方案   |
+| **E5-large**（Microsoft）            | 1024 | 好   | 免费 | 开源方案   |
+| **Cohere embed v3**                  | 1024 | 好   | 中   | 多语言场景 |
 
 ### RAG 与 Fine-tuning 的选择
 
 RAG 和微调（Fine-tuning）都是让 LLM 适应特定领域的手段，但适用场景不同：
 
-| 维度 | RAG | Fine-tuning |
-|------|-----|-------------|
-| **知识更新** | 实时（换文档就行） | 需要重新训练 |
-| **成本** | 低（只需向量数据库） | 高（需要 GPU 和训练数据） |
-| **私有数据** | 天然支持 | 需要脱敏处理 |
-| **幻觉控制** | 好（基于真实文档） | 一般（仍可能幻觉） |
-| **适用场景** | 知识问答、文档检索 | 风格迁移、特定格式输出 |
+| 维度         | RAG                  | Fine-tuning               |
+| ------------ | -------------------- | ------------------------- |
+| **知识更新** | 实时（换文档就行）   | 需要重新训练              |
+| **成本**     | 低（只需向量数据库） | 高（需要 GPU 和训练数据） |
+| **私有数据** | 天然支持             | 需要脱敏处理              |
+| **幻觉控制** | 好（基于真实文档）   | 一般（仍可能幻觉）        |
+| **适用场景** | 知识问答、文档检索   | 风格迁移、特定格式输出    |
 
 ---
 
@@ -704,13 +701,13 @@ RAG 的完整流程分为三个阶段：**索引（Indexing）→ 检索（Retri
 
 **Embedding 模型选型对比：**
 
-| 模型 | 维度 | MTEB 排名 | 成本 | 延迟 | 适用场景 |
-|------|------|----------|------|------|---------|
-| **text-embedding-3-large**（OpenAI） | 3072 | Top 5 | $0.13/1M tokens | 中 | 高质量英文检索 |
-| **text-embedding-3-small**（OpenAI） | 1536 | Top 20 | $0.02/1M tokens | 低 | 性价比之选 |
-| **BGE-large-zh**（BAAI） | 1024 | 中文 Top 1 | 免费（自部署） | 高 | 中文场景首选 |
-| **Jina-embeddings-v3** | 1024 | Top 10 | $0.02/1M tokens | 低 | 多语言场景 |
-| **Cohere embed-v3** | 1024 | Top 5 | $0.1/1M tokens | 中 | 多语言 + 混合检索 |
+| 模型                                 | 维度 | MTEB 排名  | 成本            | 延迟 | 适用场景          |
+| ------------------------------------ | ---- | ---------- | --------------- | ---- | ----------------- |
+| **text-embedding-3-large**（OpenAI） | 3072 | Top 5      | $0.13/1M tokens | 中   | 高质量英文检索    |
+| **text-embedding-3-small**（OpenAI） | 1536 | Top 20     | $0.02/1M tokens | 低   | 性价比之选        |
+| **BGE-large-zh**（BAAI）             | 1024 | 中文 Top 1 | 免费（自部署）  | 高   | 中文场景首选      |
+| **Jina-embeddings-v3**               | 1024 | Top 10     | $0.02/1M tokens | 低   | 多语言场景        |
+| **Cohere embed-v3**                  | 1024 | Top 5      | $0.1/1M tokens  | 中   | 多语言 + 混合检索 |
 
 <Note title="💡 一句话总结">
 
@@ -720,17 +717,17 @@ Embedding 模型的选择决定了检索的"语义理解能力"。中文场景�
 
 ### 检索策略：向量检索 vs BM25 vs 混合检索
 
-| 检索策略 | 原理 | 优势 | 劣势 |
-|---------|------|------|------|
-| **向量检索** | 计算问题向量与文档向量的余弦相似度 | 理解语义（"汽车"能匹配"轿车"） | 对精确关键词不敏感 |
-| **BM25** | 基于词频（TF）和逆文档频率（IDF）的关键词匹配 | 精确匹配能力强 | 无法理解同义词 |
-| **混合检索** | 向量检索 + BM25 加权融合 | 兼顾语义和关键词 | 实现复杂度更高 |
+| 检索策略     | 原理                                          | 优势                           | 劣势               |
+| ------------ | --------------------------------------------- | ------------------------------ | ------------------ |
+| **向量检索** | 计算问题向量与文档向量的余弦相似度            | 理解语义（"汽车"能匹配"轿车"） | 对精确关键词不敏感 |
+| **BM25**     | 基于词频（TF）和逆文档频率（IDF）的关键词匹配 | 精确匹配能力强                 | 无法理解同义词     |
+| **混合检索** | 向量检索 + BM25 加权融合                      | 兼顾语义和关键词               | 实现复杂度更高     |
 
 ```javascript
 // LangChain 混合检索实现
-import { EnsembleRetriever } from 'langchain/retrievers/ensemble';
-import { BM25Retriever } from 'langchain/retrievers/bm25';
-import { MemoryVectorStore } from 'langchain/vectorstores/memory';
+import { EnsembleRetriever } from "langchain/retrievers/ensemble";
+import { BM25Retriever } from "langchain/retrievers/bm25";
+import { MemoryVectorStore } from "langchain/vectorstores/memory";
 
 // 向量检索器
 const vectorRetriever = vectorStore.asRetriever({ k: 10 });
@@ -761,36 +758,33 @@ BM25 的缺陷：当用户搜索"怎么优化首屏加载"时，BM25 无法匹�
 
 切片是把长文档拆成小块的过程。切片质量直接决定检索质量——切片太大，包含太多无关信息；切片太小，语义不完整。
 
-| 切片策略 | 原理 | 适用场景 | LangChain 实现 |
-|---------|------|---------|---------------|
-| **递归切片** | 先按段落切，再按句子切，最后按字符切 | 通用场景 | `RecursiveCharacterTextSplitter` |
-| **语义切片** | 用 Embedding 计算相邻句子的相似度，在相似度低的地方切分 | 高质量检索 | `SemanticChunker` |
-| **按段落切** | 按 Markdown 标题或 HTML 标签切分 | 结构化文档 | `MarkdownHeaderTextSplitter` |
-| **按 Token 切** | 按 LLM 的 Token 数切分 | 控制 Token 预算 | `TokenTextSplitter` |
+| 切片策略        | 原理                                                    | 适用场景        | LangChain 实现                   |
+| --------------- | ------------------------------------------------------- | --------------- | -------------------------------- |
+| **递归切片**    | 先按段落切，再按句子切，最后按字符切                    | 通用场景        | `RecursiveCharacterTextSplitter` |
+| **语义切片**    | 用 Embedding 计算相邻句子的相似度，在相似度低的地方切分 | 高质量检索      | `SemanticChunker`                |
+| **按段落切**    | 按 Markdown 标题或 HTML 标签切分                        | 结构化文档      | `MarkdownHeaderTextSplitter`     |
+| **按 Token 切** | 按 LLM 的 Token 数切分                                  | 控制 Token 预算 | `TokenTextSplitter`              |
 
 ```javascript
 // 1. 递归切片（最通用）
-import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 
 const splitter = new RecursiveCharacterTextSplitter({
-  chunkSize: 1000,        // 每个切片最大 1000 字符
-  chunkOverlap: 200,      // 相邻切片重叠 200 字符
-  separators: ["\n\n", "\n", "。", "！", "？", "，", " "],  // 切分优先级
+  chunkSize: 1000, // 每个切片最大 1000 字符
+  chunkOverlap: 200, // 相邻切片重叠 200 字符
+  separators: ["\n\n", "\n", "。", "！", "？", "，", " "], // 切分优先级
 });
 
 // 2. 语义切片（效果最好但最慢）
-import { SemanticChunker } from 'langchain/text_splitter';
+import { SemanticChunker } from "langchain/text_splitter";
 
-const semanticSplitter = new SemanticChunker(
-  new OpenAIEmbeddings(),
-  {
-    breakpointThresholdType: "percentile",  // 在相似度低于百分位数的地方切分
-    breakpointThresholdAmount: 75,          // 低于 75 分位数就切
-  }
-);
+const semanticSplitter = new SemanticChunker(new OpenAIEmbeddings(), {
+  breakpointThresholdType: "percentile", // 在相似度低于百分位数的地方切分
+  breakpointThresholdAmount: 75, // 低于 75 分位数就切
+});
 
 // 3. 按 Markdown 标题切分
-import { MarkdownHeaderTextSplitter } from 'langchain/text_splitter';
+import { MarkdownHeaderTextSplitter } from "langchain/text_splitter";
 
 const mdSplitter = new MarkdownHeaderTextSplitter({
   headersToSplitOn: [
@@ -825,7 +819,7 @@ Reranker 精排（Cross-Encoder 逐对计算相关性分数）
 
 ```javascript
 // LangChain Reranker 实现
-import { CohereRerank } from '@langchain/cohere';
+import { CohereRerank } from "@langchain/cohere";
 
 const reranker = new CohereRerank({
   model: "rerank-v3.5",
@@ -836,10 +830,7 @@ const reranker = new CohereRerank({
 const retriever = vectorStore.asRetriever({ k: 20 });
 
 // 组装带 Reranker 的检索链
-const retrievalChain = RunnableSequence.from([
-  retriever,
-  reranker,
-]);
+const retrievalChain = RunnableSequence.from([retriever, reranker]);
 ```
 
 <Warning title="⚠️ 核心机制: 为什么需要 Reranking">
@@ -884,14 +875,14 @@ Reranker 用的是 Cross-Encoder（交叉编码器）——把问题和文档拼
 
 ### 向量数据库选型
 
-| 向量数据库 | 部署方式 | 混合检索 | 特点 | 适用场景 |
-|-----------|---------|---------|------|---------|
-| **Milvus** | 自部署 / Zilliz Cloud | 支持 | 高性能，支持亿级向量 | 大规模生产环境 |
-| **Pinecone** | 全托管 | 支持 | 开箱即用，无需运维 | 快速原型、小团队 |
-| **Weaviate** | 自部署 / Cloud | 原生支持 | 内置 BM25 + 向量混合检索 | 需要精确检索的场景 |
-| **Chroma** | 嵌入式 | 不支持 | 轻量级，零配置 | 本地开发、小型项目 |
-| **Qdrant** | 自部署 / Cloud | 支持 | Rust 实现，高性能 | 高性能生产环境 |
-| **pgvector** | PostgreSQL 扩展 | 需配合 | 已有 PG 的团队零成本引入 | 已有 PostgreSQL 的团队 |
+| 向量数据库   | 部署方式              | 混合检索 | 特点                     | 适用场景               |
+| ------------ | --------------------- | -------- | ------------------------ | ---------------------- |
+| **Milvus**   | 自部署 / Zilliz Cloud | 支持     | 高性能，支持亿级向量     | 大规模生产环境         |
+| **Pinecone** | 全托管                | 支持     | 开箱即用，无需运维       | 快速原型、小团队       |
+| **Weaviate** | 自部署 / Cloud        | 原生支持 | 内置 BM25 + 向量混合检索 | 需要精确检索的场景     |
+| **Chroma**   | 嵌入式                | 不支持   | 轻量级，零配置           | 本地开发、小型项目     |
+| **Qdrant**   | 自部署 / Cloud        | 支持     | Rust 实现，高性能        | 高性能生产环境         |
+| **pgvector** | PostgreSQL 扩展       | 需配合   | 已有 PG 的团队零成本引入 | 已有 PostgreSQL 的团队 |
 
 <Note title="💡 一句话总结">
 
@@ -901,13 +892,13 @@ Reranker 用的是 Cross-Encoder（交叉编码器）——把问题和文档拼
 
 ### Embedding 模型选型
 
-| 场景 | 推荐模型 | 理由 |
-|------|---------|------|
-| **中文场景** | BGE-large-zh（BAAI） | MTEB 中文排名第一，开源免费 |
-| **英文场景** | text-embedding-3-small（OpenAI） | 性价比最高，MTEB 英文 Top 20 |
-| **多语言场景** | Jina-embeddings-v3 | 支持 89 种语言，成本低 |
-| **高质量检索** | text-embedding-3-large（OpenAI） | MTEB 英文 Top 5，效果最好 |
-| **本地部署** | BGE-large / E5-large | 开源免费，无需调用外部 API |
+| 场景           | 推荐模型                         | 理由                         |
+| -------------- | -------------------------------- | ---------------------------- |
+| **中文场景**   | BGE-large-zh（BAAI）             | MTEB 中文排名第一，开源免费  |
+| **英文场景**   | text-embedding-3-small（OpenAI） | 性价比最高，MTEB 英文 Top 20 |
+| **多语言场景** | Jina-embeddings-v3               | 支持 89 种语言，成本低       |
+| **高质量检索** | text-embedding-3-large（OpenAI） | MTEB 英文 Top 5，效果最好    |
+| **本地部署**   | BGE-large / E5-large             | 开源免费，无需调用外部 API   |
 
 ### 质量优化：查询改写、HyDE、多路召回
 
@@ -916,17 +907,20 @@ Reranker 用的是 Cross-Encoder（交叉编码器）——把问题和文档拼
 用 LLM 改写用户问题，提高检索命中率。例如用户问"怎么让页面快一点"，改写为"前端性能优化策略：减少 FCP、LCP、CLS"。
 
 ```javascript
-import { ChatOpenAI } from '@langchain/openai';
-import { ChatPromptTemplate } from '@langchain/core/prompts';
+import { ChatOpenAI } from "@langchain/openai";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
 
 const rewritePrompt = ChatPromptTemplate.fromTemplate(
   `你是一个搜索查询改写专家。请把以下用户问题改写为更适合向量检索的形式，保持原意但增加关键词。
   
   用户问题：{question}
-  改写后的查询：`
+  改写后的查询：`,
 );
 
-const rewriter = rewritePrompt | new ChatOpenAI({ model: 'gpt-4o-mini' }) | new StringOutputParser();
+const rewriter =
+  rewritePrompt |
+  new ChatOpenAI({ model: "gpt-4o-mini" }) |
+  new StringOutputParser();
 const rewrittenQuery = await rewriter.invoke({ question: "怎么让页面快一点" });
 // 输出："前端页面加载性能优化策略，减少首屏渲染时间（FCP），提升最大内容绘制（LCP），降低累积布局偏移（CLS）"
 ```
@@ -945,10 +939,10 @@ HyDE：    用户问题 → LLM 生成假设性答案 → 用假设性答案向�
 用 LLM 把一个问题拆成多个子问题，分别检索，合并去重。覆盖更多角度，提高召回率。
 
 ```javascript
-import { MultiQueryRetriever } from 'langchain/retrievers/multi_query';
+import { MultiQueryRetriever } from "langchain/retrievers/multi_query";
 
 const multiQueryRetriever = MultiQueryRetriever.fromLLM({
-  llm: new ChatOpenAI({ model: 'gpt-4o-mini' }),
+  llm: new ChatOpenAI({ model: "gpt-4o-mini" }),
   retriever: vectorStore.asRetriever({ k: 5 }),
   // LLM 会自动生成 3-5 个不同角度的查询
 });
@@ -975,10 +969,13 @@ RAG 质量优化的投入产出比排序：
 LangChain 的 RAG Chain 本质是一个 `RunnableSequence`：检索器（Retriever）+ 提示词模板（Prompt）+ LLM + 输出解析器（Parser）。
 
 ```javascript
-import { RunnableSequence, RunnablePassthrough } from '@langchain/core/runnables';
-import { ChatOpenAI } from '@langchain/openai';
-import { ChatPromptTemplate } from '@langchain/core/prompts';
-import { StringOutputParser } from '@langchain/core/output_parsers';
+import {
+  RunnableSequence,
+  RunnablePassthrough,
+} from "@langchain/core/runnables";
+import { ChatOpenAI } from "@langchain/openai";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { StringOutputParser } from "@langchain/core/output_parsers";
 
 // 1. 定义 Prompt 模板
 const prompt = ChatPromptTemplate.fromTemplate(
@@ -989,21 +986,21 @@ const prompt = ChatPromptTemplate.fromTemplate(
 
 问题：{question}
 
-回答：`
+回答：`,
 );
 
 // 2. 定义格式化函数（把 Document[] 转为字符串）
-const formatDocs = (docs) => docs.map(d => d.pageContent).join('\n---\n');
+const formatDocs = (docs) => docs.map((d) => d.pageContent).join("\n---\n");
 
 // 3. 组装 RAG Chain
 const ragChain = RunnableSequence.from([
   {
-    context: retriever.pipe(formatDocs),     // 检索 + 格式化
-    question: new RunnablePassthrough(),     // 原样传递问题
+    context: retriever.pipe(formatDocs), // 检索 + 格式化
+    question: new RunnablePassthrough(), // 原样传递问题
   },
-  prompt,                                    // 拼接 Prompt
-  new ChatOpenAI({ model: 'gpt-4o' }),      // 调用 LLM
-  new StringOutputParser(),                  // 解析输出
+  prompt, // 拼接 Prompt
+  new ChatOpenAI({ model: "gpt-4o" }), // 调用 LLM
+  new StringOutputParser(), // 解析输出
 ]);
 
 const answer = await ragChain.invoke("什么是 Fiber 架构？");
@@ -1031,27 +1028,27 @@ Retriever 接口：
 
 当检索到的文档太多，超出 LLM 上下文窗口时，需要用不同的 Chain 策略处理：
 
-| Chain 类型 | 原理 | 优势 | 劣势 | 适用场景 |
-|-----------|------|------|------|---------|
-| **Stuff** | 把所有文档拼接成一个 Prompt | 最简单，一次调用 | 文档太多会超出上下文窗口 | 文档少（&lt; 5 个） |
-| **MapReduce** | 每个文档单独摘要，再合并摘要 | 支持大量文档 | 多次调用 LLM，成本高 | 文档多且需要全局视角 |
-| **Refine** | 先用第一个文档生成答案，再用后续文档逐个修正 | 答案逐步精炼 | 后续文档的影响递减 | 需要逐步深入的场景 |
-| **Map-Rerank** | 每个文档单独评分，选最高分的答案 | 忽略无关文档 | 可能丢失跨文档信息 | 有明确答案的场景 |
+| Chain 类型     | 原理                                         | 优势             | 劣势                     | 适用场景             |
+| -------------- | -------------------------------------------- | ---------------- | ------------------------ | -------------------- |
+| **Stuff**      | 把所有文档拼接成一个 Prompt                  | 最简单，一次调用 | 文档太多会超出上下文窗口 | 文档少（&lt; 5 个）  |
+| **MapReduce**  | 每个文档单独摘要，再合并摘要                 | 支持大量文档     | 多次调用 LLM，成本高     | 文档多且需要全局视角 |
+| **Refine**     | 先用第一个文档生成答案，再用后续文档逐个修正 | 答案逐步精炼     | 后续文档的影响递减       | 需要逐步深入的场景   |
+| **Map-Rerank** | 每个文档单独评分，选最高分的答案             | 忽略无关文档     | 可能丢失跨文档信息       | 有明确答案的场景     |
 
 ```javascript
-import { loadQAStuffChain, loadQAMapReduceChain } from 'langchain/chains';
+import { loadQAStuffChain, loadQAMapReduceChain } from "langchain/chains";
 
 // Stuff Chain：所有文档拼接成一个 Prompt
 const stuffChain = loadQAStuffChain(llm);
 const result = await stuffChain.call({
-  input_documents: docs.slice(0, 3),  // 最多 3 个文档
+  input_documents: docs.slice(0, 3), // 最多 3 个文档
   question: "什么是 Fiber？",
 });
 
 // MapReduce Chain：每个文档单独摘要，再合并
 const mapReduceChain = loadQAMapReduceChain(llm);
 const result = await mapReduceChain.call({
-  input_documents: docs,  // 可以处理大量文档
+  input_documents: docs, // 可以处理大量文档
   question: "总结所有文档的核心观点",
 });
 ```
@@ -1061,7 +1058,7 @@ const result = await mapReduceChain.call({
 实际项目中，基础的 RAG Chain 往往不够用。你需要自定义 Pipeline，加入查询改写、混合检索、Reranker、答案验证等环节。
 
 ```javascript
-import { RunnableSequence, RunnableBranch } from '@langchain/core/runnables';
+import { RunnableSequence, RunnableBranch } from "@langchain/core/runnables";
 
 // 自定义 RAG Pipeline：查询改写 → 混合检索 → Reranker → 生成 → 验证
 const customRAGPipeline = RunnableSequence.from([
@@ -1079,7 +1076,10 @@ const customRAGPipeline = RunnableSequence.from([
 
   // Step 3: Reranker 精排
   async ({ question, docs }) => {
-    const rerankedDocs = await reranker.invoke({ query: question, documents: docs });
+    const rerankedDocs = await reranker.invoke({
+      query: question,
+      documents: docs,
+    });
     return { question, docs: rerankedDocs.slice(0, 3) };
   },
 
@@ -1126,7 +1126,7 @@ Annotation + Reducer ← 定义 State 的结构和合并规则
 ### 节点（Node）与边（Edge）
 
 ```javascript
-import { Annotation, StateGraph, START, END } from '@langchain/langgraph';
+import { Annotation, StateGraph, START, END } from "@langchain/langgraph";
 
 // 1. 定义 State 结构
 const RAGState = Annotation.Root({
@@ -1170,8 +1170,8 @@ const graph = new StateGraph(RAGState)
 
   // 条件边：根据状态决定下一步
   .addConditionalEdges("generate", (state) => {
-    if (state.needsMoreInfo) return "retrieve";  // 信息不够，重新检索
-    return END;                                    // 信息足够，结束
+    if (state.needsMoreInfo) return "retrieve"; // 信息不够，重新检索
+    return END; // 信息足够，结束
   })
   .compile();
 ```
@@ -1197,12 +1197,10 @@ graph.addConditionalEdges("router", (state) => {
 });
 
 // 3. 动态路由：Send API（并行多路）
-import { Send } from '@langchain/langgraph';
+import { Send } from "@langchain/langgraph";
 
 function fanOut(state) {
-  return state.items.map(item =>
-    new Send("processNode", { item })
-  );
+  return state.items.map((item) => new Send("processNode", { item }));
 }
 graph.addConditionalEdges("dispatcher", fanOut);
 ```
@@ -1212,7 +1210,7 @@ graph.addConditionalEdges("dispatcher", fanOut);
 人机协作是 LangGraph 的杀手级特性。通过 `interrupt` 机制，图可以在关键节点暂停，等待人类审批后再继续。
 
 ```javascript
-import { interrupt, Command } from '@langchain/langgraph';
+import { interrupt, Command } from "@langchain/langgraph";
 
 // 节点中使用 interrupt 暂停
 async function humanApprovalNode(state) {
@@ -1238,7 +1236,7 @@ const graph = new StateGraph(State)
   .addEdge(START, "analyze")
   .addEdge("analyze", "humanApproval")
   .addConditionalEdges("humanApproval", (state) => {
-    return state.approved ? "execute" : "analyze";  // 不批准则重新分析
+    return state.approved ? "execute" : "analyze"; // 不批准则重新分析
   })
   .addEdge("execute", END)
   .compile();
@@ -1250,7 +1248,7 @@ const result = await graph.invoke({ input: "执行部署" });
 // 人类审批后，用 Command 恢复执行
 const finalResult = await graph.invoke(
   new Command({ resume: "approve" }),
-  config
+  config,
 );
 ```
 
@@ -1273,7 +1271,7 @@ const finalResult = await graph.invoke(
 Checkpoint 是 LangGraph 的状态持久化机制。每个节点执行后，自动保存状态快照，支持暂停/恢复、错误重试、时间旅行。
 
 ```javascript
-import { MemorySaver, PostgresSaver } from '@langchain/langgraph-checkpoint';
+import { MemorySaver, PostgresSaver } from "@langchain/langgraph-checkpoint";
 
 // 开发环境：内存存储
 const memoryCheckpointer = new MemorySaver();
@@ -1299,7 +1297,7 @@ const result = await graph.invoke({ input: "开始" }, config);
 // 时间旅行：回到任意 checkpoint 查看历史状态
 const history = await graph.getStateHistory(config);
 for (const state of history) {
-  console.log(state.values);  // 每个 checkpoint 的状态
+  console.log(state.values); // 每个 checkpoint 的状态
 }
 ```
 
@@ -1317,14 +1315,14 @@ LangGraph 的核心价值不是"图结构"本身，而是把 LLM 调用从"一�
 
 RAG 和 Skills 是 Agent 的两种核心能力，解决的是完全不同的问题：
 
-| 维度 | RAG（检索增强生成） | Skills（工具调用） |
-|------|-------------------|-------------------|
-| **本质** | 知识注入——让 Agent "知道"更多 | 能力扩展——让 Agent "做到"更多 |
-| **数据流** | 知识库 → 检索 → LLM 上下文 | LLM → 决策 → 调用外部工具 |
-| **核心组件** | 向量数据库 + Embedding + Retriever | Tool 定义 + Function Calling |
-| **典型场景** | "公司的请假政策是什么？" | "帮我查一下今天的天气" |
-| **知识来源** | 静态文档（PDF、网页、数据库） | 动态数据（API、数据库、搜索引擎） |
-| **更新方式** | 更新文档 → 重新索引 | 更新 Tool 定义 → 重新部署 |
+| 维度         | RAG（检索增强生成）                | Skills（工具调用）                |
+| ------------ | ---------------------------------- | --------------------------------- |
+| **本质**     | 知识注入——让 Agent "知道"更多      | 能力扩展——让 Agent "做到"更多     |
+| **数据流**   | 知识库 → 检索 → LLM 上下文         | LLM → 决策 → 调用外部工具         |
+| **核心组件** | 向量数据库 + Embedding + Retriever | Tool 定义 + Function Calling      |
+| **典型场景** | "公司的请假政策是什么？"           | "帮我查一下今天的天气"            |
+| **知识来源** | 静态文档（PDF、网页、数据库）      | 动态数据（API、数据库、搜索引擎） |
+| **更新方式** | 更新文档 → 重新索引                | 更新 Tool 定义 → 重新部署         |
 
 ```text
 RAG 的数据流：
@@ -1346,7 +1344,7 @@ const ragAnswer = await ragChain.invoke("公司的年假政策是什么？");
 // 用户问："今天北京天气怎么样？"
 // 流程：LLM 决定调用天气 API → 执行 API → LLM 基于结果回答
 const agent = createReactAgent({
-  llm: new ChatOpenAI({ model: 'gpt-4o' }),
+  llm: new ChatOpenAI({ model: "gpt-4o" }),
   tools: [weatherTool, searchTool, calculatorTool],
 });
 const skillAnswer = await agent.invoke({ messages: [userMessage] });
@@ -1368,19 +1366,19 @@ RAG 解决的是"Agent 不知道"的问题（知识注入），Skills 解决的�
 
 ### 基础梳理
 
-| 维度 | Vercel AI SDK | LangChain |
-|------|--------------|-----------|
-| **定位** | 前端优先的 AI SDK | 全功能 LLM 应用框架 |
-| **核心能力** | 流式响应、工具调用、多模态支持 | 链式编排、Agent、RAG、Memory |
-| **核心 API** | `useChat`、`useCompletion`、`useObject` | `RunnableSequence`、`StateGraph` |
-| **包体积** | 轻量（~50KB） | 重量级（数 MB，含大量依赖） |
-| **适用场景** | 前端快速集成 AI 对话和流式 UI | 复杂多步骤 AI 工作流 |
-| **流式支持** | 原生支持，内置 React/Vue/Svelte hooks | 需手动处理流式响应 |
-| **TypeScript** | 端到端类型安全 | 类型支持较弱 |
+| 维度           | Vercel AI SDK                           | LangChain                        |
+| -------------- | --------------------------------------- | -------------------------------- |
+| **定位**       | 前端优先的 AI SDK                       | 全功能 LLM 应用框架              |
+| **核心能力**   | 流式响应、工具调用、多模态支持          | 链式编排、Agent、RAG、Memory     |
+| **核心 API**   | `useChat`、`useCompletion`、`useObject` | `RunnableSequence`、`StateGraph` |
+| **包体积**     | 轻量（~50KB）                           | 重量级（数 MB，含大量依赖）      |
+| **适用场景**   | 前端快速集成 AI 对话和流式 UI           | 复杂多步骤 AI 工作流             |
+| **流式支持**   | 原生支持，内置 React/Vue/Svelte hooks   | 需手动处理流式响应               |
+| **TypeScript** | 端到端类型安全                          | 类型支持较弱                     |
 
 ### 专家视角深度剖析
 
-很多候选人只知道 LangChain，但大厂面试官真正在意的是：**为什么 Vercel AI SDK 在前端场景下比 LangChain 更合适？**
+很多人只知道 LangChain，但实际更在意的是：**为什么 Vercel AI SDK 在前端场景下比 LangChain 更合适？**
 
 Vercel AI SDK 由 Vercel 团队（Guillermo Rauch、Jared Palmer 等）开发，设计哲学是**前端优先**——把 AI 能力以 React hooks 的形式暴露给前端开发者，不需要理解后端的链式编排和 Agent 概念。
 
@@ -1400,34 +1398,37 @@ Vercel AI SDK 的抽象层级（前端视角）：
 // Vercel AI SDK 的核心 API
 
 // 1. useChat：对话式 AI（最常用）
-import { useChat } from 'ai/react';
+import { useChat } from "ai/react";
 
 function Chat() {
-  const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
-    api: '/api/chat',  // 后端 API 路由
-  });
+  const { messages, input, handleInputChange, handleSubmit, isLoading } =
+    useChat({
+      api: "/api/chat", // 后端 API 路由
+    });
 
   return (
     <div>
-      {messages.map(m => (
+      {messages.map((m) => (
         <div key={m.id}>
           {m.role}: {m.content}
         </div>
       ))}
       <form onSubmit={handleSubmit}>
         <input value={input} onChange={handleInputChange} />
-        <button type="submit" disabled={isLoading}>发送</button>
+        <button type="submit" disabled={isLoading}>
+          发送
+        </button>
       </form>
     </div>
   );
 }
 
 // 2. useCompletion：文本补全
-import { useCompletion } from 'ai/react';
+import { useCompletion } from "ai/react";
 
 function Completion() {
   const { completion, input, handleInputChange, handleSubmit } = useCompletion({
-    api: '/api/completion',
+    api: "/api/completion",
   });
 
   return (
@@ -1442,8 +1443,8 @@ function Completion() {
 }
 
 // 3. useObject：结构化输出（JSON Schema 约束）
-import { useObject } from 'ai/react';
-import { z } from 'zod';
+import { useObject } from "ai/react";
+import { z } from "zod";
 
 const recipeSchema = z.object({
   name: z.string(),
@@ -1453,17 +1454,21 @@ const recipeSchema = z.object({
 
 function RecipeGenerator() {
   const { object, submit } = useObject({
-    api: '/api/recipe',
+    api: "/api/recipe",
     schema: recipeSchema,
   });
 
   return (
     <div>
-      <button onClick={() => submit('宫保鸡丁')}>生成菜谱</button>
+      <button onClick={() => submit("宫保鸡丁")}>生成菜谱</button>
       {object && (
         <div>
           <h2>{object.name}</h2>
-          <ul>{object.ingredients?.map(i => <li key={i}>{i}</li>)}</ul>
+          <ul>
+            {object.ingredients?.map((i) => (
+              <li key={i}>{i}</li>
+            ))}
+          </ul>
         </div>
       )}
     </div>
@@ -1560,18 +1565,18 @@ Vercel AI SDK 是前端优先的 AI 集成方案——用 React hooks（`useChat
 
 ### Vercel AI SDK 的适用场景
 
-| 场景 | 推荐方案 | 理由 |
-|------|---------|------|
+| 场景                 | 推荐方案      | 理由                                           |
+| -------------------- | ------------- | ---------------------------------------------- |
 | **前端 AI 对话界面** | Vercel AI SDK | `useChat` 内置流式渲染、消息管理、loading 状态 |
-| **AI 文本补全** | Vercel AI SDK | `useCompletion` 一行代码实现流式补全 |
-| **结构化数据生成** | Vercel AI SDK | `useObject` + Zod schema，端到端类型安全 |
-| **RAG 知识问答** | LangChain | 需要向量数据库、检索器、文档切片等复杂组件 |
-| **多 Agent 协作** | LangGraph | 需要图结构编排、状态管理、人机协作 |
-| **复杂工具编排** | LangChain | 多工具串联、条件分支、错误重试 |
+| **AI 文本补全**      | Vercel AI SDK | `useCompletion` 一行代码实现流式补全           |
+| **结构化数据生成**   | Vercel AI SDK | `useObject` + Zod schema，端到端类型安全       |
+| **RAG 知识问答**     | LangChain     | 需要向量数据库、检索器、文档切片等复杂组件     |
+| **多 Agent 协作**    | LangGraph     | 需要图结构编排、状态管理、人机协作             |
+| **复杂工具编排**     | LangChain     | 多工具串联、条件分支、错误重试                 |
 
 <Tip title="💡 面试技巧">
 
-回答时先说"两者定位不同"（Vercel AI SDK 是前端集成层，LangChain 是后端编排层），再说"选择标准"（前端 UI 用 Vercel AI SDK，复杂工作流用 LangChain）。面试官想听的是你理解两者的抽象层级差异，而不是比较 API 数量。
+回答时先说"两者定位不同"（Vercel AI SDK 是前端集成层，LangChain 是后端编排层），再说"选择标准"（前端 UI 用 Vercel AI SDK，复杂工作流用 LangChain）。想听的是你对两者抽象层级差异的理解，而不是比较 API 数量。
 
 </Tip>
 
@@ -1601,9 +1606,7 @@ streamText({ model: google('gemini-1.5-pro'), ... });
 
 ## 🔍 底层源码：LangGraph 的 interrupt 机制
 
-<div class="follow-up">
-LangGraph 的 interrupt 是怎么实现暂停和恢复的？
-</div>
+<div class="follow-up">LangGraph 的 interrupt 是怎么实现暂停和恢复的？</div>
 
 `interrupt(value)` 在节点内部暂停图执行，把 `value` 返回给人类，等待 `Command(resume=...)` 恢复（详见 [LangGraph 源码：libs/langgraph/langgraph/types.py](https://github.com/langchain-ai/langgraph/blob/main/libs/langgraph/langgraph/types.py)）：
 
@@ -1632,14 +1635,15 @@ Checkpoint 是 interrupt 的基础——每个节点执行后保存状态快照�
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## Q14: 及格回答 vs 满分回答
 
 ### 问题："说说 LangChain 和 LangGraph 的区别"
 
 **及格回答（60-70分）：**
+
 > "LangChain 是 LLM 应用框架，LangGraph 是多 Agent 编排框架。LangGraph 用图结构定义 Agent 之间的流转。"
 
-面试官评价：**知道名字但不理解设计**。
+问题出在：**知道名字但不理解设计**。
 
 **满分回答（90-100分）：**
 
@@ -1649,7 +1653,7 @@ Checkpoint 是 interrupt 的基础——每个节点执行后保存状态快照�
 
 > "选择标准：简单的 RAG/Chain 用 LangChain，复杂的多 Agent 用 LangGraph。LangGraph 的核心价值不是'图结构'本身，而是把 LLM 调用从'一次性请求'变成'有状态的工作流'——支持暂停/恢复（人机协作）、错误重试（从 checkpoint 恢复）、状态持久化（时间旅行）。<sup>[3]</sup>"
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
@@ -1672,11 +1676,11 @@ Checkpoint 是 interrupt 的基础——每个节点执行后保存状态快照�
 
 **高分回答：**
 "切片策略的选择取决于文档类型和检索需求：
-    
+
 1. **按字符切**（RecursiveCharacterTextSplitter）：最通用，先按段落切，再按句子切，最后按字符切。chunkSize 推荐 500-1500 字符，overlap 10-20%。
 2. **按语义切**（SemanticChunker）：用 Embedding 计算相邻句子的相似度，在相似度低的地方切分。效果最好，但最慢（需要调用 Embedding API）。
 3. **按段落切**：适合 Markdown 文档，保留文档结构。
-    
+
 chunkSize 的选择：太小（100 字符）语义不完整，太大（5000 字符）包含太多无关信息。推荐 500-1500 字符。关键原则：每个切片应该是一个完整的语义单元，能独立回答一个问题。"
 
   </Accordion>
@@ -1702,6 +1706,7 @@ chunkSize 的选择：太小（100 字符）语义不完整，太大（5000 字�
 "Chain 和 Agent 的核心区别是决策权——Chain 由开发者决定流程，Agent 由 LLM 决定流程。
 
 选择标准：
+
 1. **用 Chain**：流程固定、步骤明确、不需要动态决策。例如 RAG（检索 → 增强 → 生成）、数据提取（输入 → 解析 → 格式化）。Chain 的行为可预测，容易调试。
 2. **用 Agent**：流程不确定、需要根据中间结果动态决策。例如多工具协作（搜索 → 分析 → 决定是否再搜索）、复杂推理（需要多步思考）。Agent 更灵活但也更不可控。
 
@@ -1888,15 +1893,15 @@ Skills 解决的是'Agent 做不到'的问题——能力扩展。典型场景�
 
 ## 📚 延伸阅读与引用参考
 
-- 🔗 [LangChain 官方文档](https://js.langchain.com/docs/)：*LangChain 的完整文档，包含 Runnable、Chain、Tool 的 API 说明。* <sup>[1]</sup>
-- 📖 [LangGraph 官方文档](https://langchain-ai.github.io/langgraphjs/)：*LangGraph 的完整文档，包含 StateGraph、Send、interrupt 的详细说明。* <sup>[2]</sup>
-- 🟢 [LangGraph 源码](https://github.com/langchain-ai/langgraph)：*LangGraph 的完整源码，理解 Checkpoint、interrupt、Reducer 的底层实现。* <sup>[3]</sup>
-- 📖 [RAG 论文原文](https://arxiv.org/abs/2005.11401)：*Meta AI 的 RAG 原始论文，理解检索增强生成的理论基础。* <sup>[4]</sup>
-- 📖 [Lilian Weng - Retrieval Augmented Generation](https://lilianweng.github.io/posts/2023-06-23-agent/)：*OpenAI 应用研究主管 Lilian Weng 对 RAG 和 Agent 的深度解析，包含 HyDE、Reranking 等高级策略的理论分析。* <sup>[5]</sup>
-- 🔗 [MTEB Leaderboard](https://huggingface.co/spaces/mteb/leaderboard)：*Embedding 模型的权威评测排行榜，选型时的参考标准。* <sup>[6]</sup>
-- 🔗 [LangChain RAG 教程](https://js.langchain.com/docs/tutorials/rag/)：*LangChain 官方的 RAG 实战教程，包含从文档加载到检索生成的完整流程。* <sup>[7]</sup>
-- 🔗 [LangGraph Human-in-the-Loop](https://langchain-ai.github.io/langgraphjs/concepts/human_in_the_loop/)：*LangGraph 人机协作的官方文档，理解 interrupt + Command + Checkpoint 的协作机制。* <sup>[8]</sup>
-- 📖 [Harrison Chase Blog](https://blog.langchain.dev/)：*LangChain 创始人 Harrison Chase 的博客，包含 RAG 架构设计、Agent 编排等前沿实践。* <sup>[9]</sup>
-- 🔗 [Vercel AI SDK 官方文档](https://sdk.vercel.ai/docs)：*Vercel AI SDK 的完整文档，包含 useChat、useCompletion、useObject 的 API 说明和示例。* <sup>[10]</sup>
-- 🔗 [Vercel AI SDK GitHub](https://github.com/vercel/ai)：*Vercel AI SDK 的源码仓库，理解流式响应、Provider 抽象、工具调用的底层实现。* <sup>[11]</sup>
-- 📖 [Guillermo Rauch Blog](https://rauchg.com/)：*Vercel CEO Guillermo Rauch 的博客，包含 AI 前端架构、流式 UI 设计等前沿思考。* <sup>[12]</sup>
+- 🔗 [LangChain 官方文档](https://js.langchain.com/docs/)：_LangChain 的完整文档，包含 Runnable、Chain、Tool 的 API 说明。_ <sup>[1]</sup>
+- 📖 [LangGraph 官方文档](https://langchain-ai.github.io/langgraphjs/)：_LangGraph 的完整文档，包含 StateGraph、Send、interrupt 的详细说明。_ <sup>[2]</sup>
+- 🟢 [LangGraph 源码](https://github.com/langchain-ai/langgraph)：_LangGraph 的完整源码，理解 Checkpoint、interrupt、Reducer 的底层实现。_ <sup>[3]</sup>
+- 📖 [RAG 论文原文](https://arxiv.org/abs/2005.11401)：_Meta AI 的 RAG 原始论文，理解检索增强生成的理论基础。_ <sup>[4]</sup>
+- 📖 [Lilian Weng - LLM Powered Autonomous Agents](https://lilianweng.github.io/posts/2023-06-23-agent/)：_Lilian Weng 对 LLM 驱动的 Agent 体系的系统梳理，包含规划、记忆、工具使用等环节的理论分析。_ <sup>[5]</sup>
+- 🔗 [MTEB Leaderboard](https://huggingface.co/spaces/mteb/leaderboard)：_Embedding 模型的权威评测排行榜，选型时的参考标准。_ <sup>[6]</sup>
+- 🔗 [LangChain RAG 教程](https://js.langchain.com/docs/tutorials/rag/)：_LangChain 官方的 RAG 实战教程，包含从文档加载到检索生成的完整流程。_ <sup>[7]</sup>
+- 🔗 [LangGraph Human-in-the-Loop](https://langchain-ai.github.io/langgraphjs/concepts/human_in_the_loop/)：_LangGraph 人机协作的官方文档，理解 interrupt + Command + Checkpoint 的协作机制。_ <sup>[8]</sup>
+- 📖 [Harrison Chase Blog](https://blog.langchain.dev/)：_LangChain 创始人 Harrison Chase 的博客，包含 RAG 架构设计、Agent 编排等前沿实践。_ <sup>[9]</sup>
+- 🔗 [Vercel AI SDK 官方文档](https://sdk.vercel.ai/docs)：_Vercel AI SDK 的完整文档，包含 useChat、useCompletion、useObject 的 API 说明和示例。_ <sup>[10]</sup>
+- 🔗 [Vercel AI SDK GitHub](https://github.com/vercel/ai)：_Vercel AI SDK 的源码仓库，理解流式响应、Provider 抽象、工具调用的底层实现。_ <sup>[11]</sup>
+- 📖 [Guillermo Rauch Blog](https://rauchg.com/)：_Vercel CEO Guillermo Rauch 的博客，包含 AI 前端架构、流式 UI 设计等前沿思考。_ <sup>[12]</sup>

@@ -1,10 +1,9 @@
 ---
 title: "LLM 原理"
+description: "从 Transformer、Token 化到上下文窗口与推理机制，覆盖 LLM 原理的高频面试考点。"
 ---
 
-> **面试官为什么问这个？**
->
-> LLM 是一切 AI 应用的底座。面试官问 LLM 原理，本质上是在考察你：**是否理解 AI 的能力边界和工作方式，而不是把 LLM 当成一个黑盒 API 调用。** 如果你答不清楚 Token 化、上下文窗口、推理过程这些底层概念，说明你无法预判 AI 的行为，无法优化成本，也无法诊断 AI 输出异常的根因。
+> 线上遇到 LLM 输出不稳时，我一般先看 Token 和上下文窗口，再判断是采样参数还是提示的问题。效果不好要能拆到具体环节，不能停在"模型不行"。
 
 ---
 
@@ -110,7 +109,7 @@ Transformer 是 LLM 的底层架构，由 Google 在 2017 年的论文《Attenti
 │  └──────────────┬──────────────────────┘                    │
 │                 │                                           │
 │                 ▼                                           │
-│          重复 N 层（GPT-4 约 120 层）                         │
+│          重复 N 层（N 随模型规模而定）                        │
 │                 │                                           │
 │                 ▼                                           │
 │           输出概率分布 → 预测下一个 Token                      │
@@ -191,21 +190,21 @@ print(f"输出形状: {output.shape}")          # [4, 64] —— 融合上下文
 // Self-Attention 的计算过程（简化版伪代码）
 function selfAttention(input) {
   // 1. 对每个 Token 生成 Q(Query)、K(Key)、V(Value) 三个向量
-  const Q = input.map(token => linearProjection(token, 'Q')); // 我想查什么？
-  const K = input.map(token => linearProjection(token, 'K')); // 我能提供什么？
-  const V = input.map(token => linearProjection(token, 'V')); // 我的实际内容
+  const Q = input.map((token) => linearProjection(token, "Q")); // 我想查什么？
+  const K = input.map((token) => linearProjection(token, "K")); // 我能提供什么？
+  const V = input.map((token) => linearProjection(token, "V")); // 我的实际内容
 
   // 2. 计算注意力分数：Q 和 K 的点积
-  const scores = Q.map(q =>
-    K.map(k => dotProduct(q, k) / Math.sqrt(d_k)) // 除以 sqrt(d_k) 防止分数过大
+  const scores = Q.map(
+    (q) => K.map((k) => dotProduct(q, k) / Math.sqrt(d_k)), // 除以 sqrt(d_k) 防止分数过大
   );
 
   // 3. Softmax 归一化：把分数转成概率分布
-  const attentionWeights = scores.map(row => softmax(row));
+  const attentionWeights = scores.map((row) => softmax(row));
 
   // 4. 加权求和：用注意力权重对 V 加权
-  const output = attentionWeights.map(weights =>
-    weights.reduce((sum, w, i) => add(sum, scale(V[i], w)), zeroVector)
+  const output = attentionWeights.map((weights) =>
+    weights.reduce((sum, w, i) => add(sum, scale(V[i], w)), zeroVector),
   );
 
   return output; // 每个 Token 的新表示 = 所有 Token 的加权组合
@@ -254,7 +253,7 @@ function positionalEncoding(position, d_model) {
 
 // 最终输入 = 词嵌入 + 位置编码
 const input = tokenEmbedding.map((emb, pos) =>
-  add(emb, positionalEncoding(pos, d_model))
+  add(emb, positionalEncoding(pos, d_model)),
 );
 
 // 现代 LLM（如 LLaMA）使用 RoPE（旋转位置编码）
@@ -266,11 +265,11 @@ const input = tokenEmbedding.map((emb, pos) =>
 
 Transformer 原始架构有编码器（Encoder）和解码器（Decoder）两个部分，但现代 LLM 通常只用其中一种：
 
-| 架构 | 代表模型 | 特点 | 适用场景 |
-|------|---------|------|---------|
-| **仅编码器** | BERT、RoBERTa | 双向注意力，能看到上下文所有 Token | 文本分类、语义理解、信息提取 |
-| **仅解码器** | GPT 系列、Claude、LLaMA | 单向注意力，只能看到前面的 Token | 文本生成、对话、代码补全 |
-| **编码器-解码器** | T5、BART | 编码器理解输入，解码器生成输出 | 翻译、摘要、问答 |
+| 架构              | 代表模型                | 特点                               | 适用场景                     |
+| ----------------- | ----------------------- | ---------------------------------- | ---------------------------- |
+| **仅编码器**      | BERT、RoBERTa           | 双向注意力，能看到上下文所有 Token | 文本分类、语义理解、信息提取 |
+| **仅解码器**      | GPT 系列、Claude、LLaMA | 单向注意力，只能看到前面的 Token   | 文本生成、对话、代码补全     |
+| **编码器-解码器** | T5、BART                | 编码器理解输入，解码器生成输出     | 翻译、摘要、问答             |
 
 ```text
 为什么 GPT 选择仅解码器架构？
@@ -492,9 +491,9 @@ function estimateTokens(text) {
 }
 
 // 精确计算：使用 tiktoken（需要 WebAssembly）
-import { encoding_for_model } from 'tiktoken';
-const enc = encoding_for_model('gpt-4');
-const tokens = enc.encode('你好世界');
+import { encoding_for_model } from "tiktoken";
+const enc = encoding_for_model("gpt-4");
+const tokens = enc.encode("你好世界");
 console.log(tokens.length); // 精确的 Token 数
 ```
 
@@ -527,11 +526,11 @@ Token 数的经验估算规则：
 
 **常用计算工具：**
 
-| 工具 | 说明 | 适用场景 |
-|------|------|---------|
-| [OpenAI Tokenizer](https://platform.openai.com/tokenizer/) | 在线可视化 Token 化过程 | 快速验证 GPT 系列模型的 Token 数 |
-| `tiktoken` 库 | OpenAI 官方 Python/JS Token 计算库 | 后端精确计算、成本预估 |
-| `gpt-tokenizer` | 纯 JavaScript 实现，支持浏览器 | 前端实时 Token 预估 |
+| 工具                                                       | 说明                               | 适用场景                         |
+| ---------------------------------------------------------- | ---------------------------------- | -------------------------------- |
+| [OpenAI Tokenizer](https://platform.openai.com/tokenizer/) | 在线可视化 Token 化过程            | 快速验证 GPT 系列模型的 Token 数 |
+| `tiktoken` 库                                              | OpenAI 官方 Python/JS Token 计算库 | 后端精确计算、成本预估           |
+| `gpt-tokenizer`                                            | 纯 JavaScript 实现，支持浏览器     | 前端实时 Token 预估              |
 
 ```javascript
 // 方式 1：前端快速估算（不需要依赖库，精度约 ±20%）
@@ -539,23 +538,26 @@ function estimateTokens(text) {
   const chineseChars = (text.match(/[一-鿿]/g) || []).length;
   const englishWords = (text.match(/[a-zA-Z]+/g) || []).length;
   const numbers = (text.match(/\d+/g) || []).length;
-  const punctuation = text.length - chineseChars - text.replace(/[^a-zA-Z0-9一-鿿]/g, '').length;
+  const punctuation =
+    text.length - chineseChars - text.replace(/[^a-zA-Z0-9一-鿿]/g, "").length;
 
   // 中文：1.5 Token / 字，英文：1.2 Token / 词，数字：1 Token / 个，标点：1 Token / 个
-  return Math.ceil(chineseChars * 1.5 + englishWords * 1.2 + numbers + punctuation * 0.5);
+  return Math.ceil(
+    chineseChars * 1.5 + englishWords * 1.2 + numbers + punctuation * 0.5,
+  );
 }
 
 // 方式 2：使用 gpt-tokenizer 库精确计算（浏览器 + Node.js 均可）
-import { encode } from 'gpt-tokenizer';
+import { encode } from "gpt-tokenizer";
 
 function countTokens(text) {
   const tokens = encode(text);
   return tokens.length;
 }
 
-console.log(countTokens('Hello world'));    // 2
-console.log(countTokens('你好世界'));       // 4-6
-console.log(estimateTokens('前端开发是一门艺术')); // 约 12
+console.log(countTokens("Hello world")); // 2
+console.log(countTokens("你好世界")); // 4-6
+console.log(estimateTokens("前端开发是一门艺术")); // 约 14（9 个汉字）
 ```
 
 ### 不同模型的 Token 价格对比
@@ -571,28 +573,33 @@ LLM API 按 Token 计费，输入 Token 和输出 Token 的价格通常不同（
 输出价格通常是输入价格的 3-5 倍
 ```
 
-**主流模型价格对比（2025 年参考价，单位：美元 / 百万 Token）：**
+**主流模型价格对比（2025 年公开报价，单位：美元 / 百万 Token；仅用于理解量级，实际以服务商最新定价为准）：**
 
-| 模型 | 输入价格 | 输出价格 | 上下文窗口 | 适用场景 |
-|------|---------|---------|-----------|---------|
-| GPT-4o | $2.50 | $10.00 | 128K | 复杂推理、代码分析、架构设计 |
-| GPT-4o-mini | $0.15 | $0.60 | 128K | 简单对话、分类、格式转换、日常问答 |
-| Claude 3.5 Sonnet | $3.00 | $15.00 | 200K | 长文档分析、复杂代码生成、多轮对话 |
-| Claude 3 Haiku | $0.25 | $1.25 | 200K | 高并发简单任务、实时聊天、内容审核 |
+| 模型              | 输入价格 | 输出价格 | 上下文窗口 | 适用场景                           |
+| ----------------- | -------- | -------- | ---------- | ---------------------------------- |
+| GPT-4o            | $2.50    | $10.00   | 128K       | 复杂推理、代码分析、架构设计       |
+| GPT-4o-mini       | $0.15    | $0.60    | 128K       | 简单对话、分类、格式转换、日常问答 |
+| Claude 3.5 Sonnet | $3.00    | $15.00   | 200K       | 长文档分析、复杂代码生成、多轮对话 |
+| Claude 3 Haiku    | $0.25    | $1.25    | 200K       | 高并发简单任务、实时聊天、内容审核 |
 
 ```javascript
 // 成本对比计算器
 function compareCost(inputTokens, outputTokens) {
   const models = {
-    'GPT-4o':           { input: 2.50,  output: 10.00 },
-    'GPT-4o-mini':      { input: 0.15,  output: 0.60  },
-    'Claude 3.5 Sonnet': { input: 3.00,  output: 15.00 },
-    'Claude 3 Haiku':   { input: 0.25,  output: 1.25  },
+    "GPT-4o": { input: 2.5, output: 10.0 },
+    "GPT-4o-mini": { input: 0.15, output: 0.6 },
+    "Claude 3.5 Sonnet": { input: 3.0, output: 15.0 },
+    "Claude 3 Haiku": { input: 0.25, output: 1.25 },
   };
 
   return Object.entries(models).map(([name, price]) => {
-    const cost = (inputTokens * price.input + outputTokens * price.output) / 1_000_000;
-    return { model: name, costPerCall: `$${cost.toFixed(6)}`, costPer10K: `$${(cost * 10000).toFixed(2)}` };
+    const cost =
+      (inputTokens * price.input + outputTokens * price.output) / 1_000_000;
+    return {
+      model: name,
+      costPerCall: `$${cost.toFixed(6)}`,
+      costPer10K: `$${(cost * 10000).toFixed(2)}`,
+    };
   });
 }
 
@@ -649,20 +656,20 @@ const concisePrompt = `
 async function compressHistory(messages) {
   if (countTokens(messages) < 5000) return messages; // 不需要压缩
 
-  const oldMessages = messages.slice(0, -3);  // 保留最近 3 条
+  const oldMessages = messages.slice(0, -3); // 保留最近 3 条
   const recentMessages = messages.slice(-3);
 
   // 用小模型压缩历史
   const summary = await llm.invoke({
-    model: 'gpt-4o-mini',  // 用便宜的小模型做压缩
+    model: "gpt-4o-mini", // 用便宜的小模型做压缩
     messages: [
-      { role: 'system', content: '用 100 字总结以下对话的核心要点。' },
-      { role: 'user', content: JSON.stringify(oldMessages) },
+      { role: "system", content: "用 100 字总结以下对话的核心要点。" },
+      { role: "user", content: JSON.stringify(oldMessages) },
     ],
   });
 
   return [
-    { role: 'system', content: `对话摘要：${summary}` },
+    { role: "system", content: `对话摘要：${summary}` },
     ...recentMessages,
   ];
 }
@@ -670,7 +677,7 @@ async function compressHistory(messages) {
 
 **策略 2：Prompt Cache（提示词缓存）**
 
-Anthropic 和 OpenAI 都支持 Prompt Cache——如果多个请求的前缀相同，KV Cache 可以复用，缓存部分的输入价格降低 90%。
+Anthropic 和 OpenAI 都支持 Prompt Cache——如果多个请求的前缀相同，KV Cache 可以复用。缓存命中部分的输入价格，Anthropic 约为原价的 10%，OpenAI 约为原价的 50%，具体以各家当前定价为准。
 
 ```text
 Prompt Cache 的工作原理：
@@ -692,10 +699,10 @@ Prompt Cache 的工作原理：
 // 利用 Prompt Cache 的最佳实践：把不变的内容放在前面
 const messages = [
   // ↓ 这部分会被缓存（System Prompt + 工具定义 + 知识库）
-  { role: 'system', content: SYSTEM_PROMPT },
-  { role: 'system', content: KNOWLEDGE_BASE },
+  { role: "system", content: SYSTEM_PROMPT },
+  { role: "system", content: KNOWLEDGE_BASE },
   // ↓ 这部分每个请求不同
-  { role: 'user', content: userQuestion },
+  { role: "user", content: userQuestion },
 ];
 ```
 
@@ -789,13 +796,13 @@ Token 计算是成本控制的基础：英文 1 词约 1-1.5 Token，中文 1 �
 ```
 
 ```javascript
-import { encode } from 'gpt-tokenizer';
+import { encode } from "gpt-tokenizer";
 
 // 策略 1：前截断——丢弃最早的消息，保留最近的上下文
 // 适用：多轮对话（用户最后说的话最重要）
 function truncateFront(messages, maxTokens) {
-  const system = messages.filter(m => m.role === 'system');
-  const others = messages.filter(m => m.role !== 'system');
+  const system = messages.filter((m) => m.role === "system");
+  const others = messages.filter((m) => m.role !== "system");
 
   let totalTokens = countMessageTokens(system);
   const kept = [];
@@ -830,8 +837,8 @@ function truncateBack(messages, maxTokens) {
 // 策略 3：智能截断——按消息重要性和时间衰减加权排序
 // 适用：复杂场景（需要保留系统指令 + 关键历史 + 最近对话）
 function smartTruncate(messages, maxTokens) {
-  const system = messages.filter(m => m.role === 'system');
-  const others = messages.filter(m => m.role !== 'system');
+  const system = messages.filter((m) => m.role === "system");
+  const others = messages.filter((m) => m.role !== "system");
 
   // 计算每条消息的重要性分数
   const scored = others.map((msg, index) => {
@@ -841,8 +848,8 @@ function smartTruncate(messages, maxTokens) {
     score += index / others.length;
 
     // 类型权重：用户提问 > 助手回答 > 工具调用结果
-    if (msg.role === 'user') score += 0.3;
-    if (msg.role === 'assistant') score += 0.1;
+    if (msg.role === "user") score += 0.3;
+    if (msg.role === "assistant") score += 0.1;
 
     // 长度惩罚：超长的消息可能是低信息密度的
     const msgTokens = countMessageTokens([msg]);
@@ -864,14 +871,14 @@ function smartTruncate(messages, maxTokens) {
   }
 
   // 恢复原始顺序
-  const kept = others.filter(msg => keptSet.has(msg));
+  const kept = others.filter((msg) => keptSet.has(msg));
   return [...system, ...kept];
 }
 
 // 辅助函数：计算消息数组的 Token 数
 function countMessageTokens(messages) {
   return messages.reduce((total, msg) => {
-    return total + encode(msg.content || '').length + 4; // +4 for role/格式开销
+    return total + encode(msg.content || "").length + 4; // +4 for role/格式开销
   }, 0);
 }
 
@@ -908,15 +915,15 @@ LLM 输出有 `max_tokens` 限制。当模型输出被截断时，API 返回 `fi
 ```javascript
 // 检测输出截断并优雅处理
 async function streamChatWithTruncation(messages, onToken, onDone) {
-  const response = await fetch('/api/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  const response = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ messages, stream: true, max_tokens: 4096 }),
   });
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  let fullText = '';
+  let fullText = "";
   let finishReason = null;
 
   while (true) {
@@ -924,11 +931,11 @@ async function streamChatWithTruncation(messages, onToken, onDone) {
     if (done) break;
 
     const chunk = decoder.decode(value, { stream: true });
-    const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
+    const lines = chunk.split("\n").filter((line) => line.startsWith("data: "));
 
     for (const line of lines) {
       const data = line.slice(6);
-      if (data === '[DONE]') break;
+      if (data === "[DONE]") break;
 
       const parsed = JSON.parse(data);
       const choice = parsed.choices[0];
@@ -938,7 +945,7 @@ async function streamChatWithTruncation(messages, onToken, onDone) {
         finishReason = choice.finish_reason;
       }
 
-      const token = choice?.delta?.content || '';
+      const token = choice?.delta?.content || "";
       if (token) {
         fullText += token;
         onToken(fullText);
@@ -947,7 +954,7 @@ async function streamChatWithTruncation(messages, onToken, onDone) {
   }
 
   // 检测截断并触发续写提示
-  if (finishReason === 'length') {
+  if (finishReason === "length") {
     showTruncationWarning();
     offerContinuation(messages, fullText, onToken);
   }
@@ -957,21 +964,24 @@ async function streamChatWithTruncation(messages, onToken, onDone) {
 
 // 截断提示条 UI
 function showTruncationWarning() {
-  const banner = document.createElement('div');
-  banner.className = 'truncation-banner';
+  const banner = document.createElement("div");
+  banner.className = "truncation-banner";
   banner.innerHTML = `
     <span>回答因达到长度限制被截断</span>
     <button onclick="this.parentElement.remove()">知道了</button>
   `;
-  document.getElementById('chat-container').appendChild(banner);
+  document.getElementById("chat-container").appendChild(banner);
 }
 
 // 自动续写：把已生成的内容作为上下文，请求继续
 async function offerContinuation(messages, partialText, onToken) {
   const continuationMessages = [
     ...messages,
-    { role: 'assistant', content: partialText },
-    { role: 'user', content: '请继续上面的回答，从断点处接着说，不要重复已有的内容。' },
+    { role: "assistant", content: partialText },
+    {
+      role: "user",
+      content: "请继续上面的回答，从断点处接着说，不要重复已有的内容。",
+    },
   ];
 
   // 用户点击"继续"后触发
@@ -988,7 +998,7 @@ async function offerContinuation(messages, partialText, onToken) {
 }
 
 .message-content.truncated::after {
-  content: '';
+  content: "";
   position: absolute;
   bottom: 0;
   left: 0;
@@ -1068,14 +1078,14 @@ class TokenMonitor {
     if (usage >= this.warningThreshold) {
       this.showWarning(
         `Token 使用量已达 ${Math.round(usage * 100)}%，` +
-        `剩余空间可能不足以生成完整回答。建议精简输入。`
+          `剩余空间可能不足以生成完整回答。建议精简输入。`,
       );
     }
   }
 
   // 渲染进度条
   renderProgress() {
-    const container = document.getElementById('token-progress');
+    const container = document.getElementById("token-progress");
     if (!container) return;
 
     const inputPercent = (this.inputTokens / this.maxTokens) * 100;
@@ -1096,13 +1106,14 @@ class TokenMonitor {
 
   // 渲染结束状态（区分 stop 和 length）
   renderFinishStatus() {
-    const status = document.getElementById('finish-status');
+    const status = document.getElementById("finish-status");
     if (!status) return;
 
-    if (this.finishReason === 'stop') {
+    if (this.finishReason === "stop") {
       status.innerHTML = '<span class="status-ok">回答完整</span>';
-    } else if (this.finishReason === 'length') {
-      status.innerHTML = '<span class="status-warn">回答被截断（达到长度限制）</span>';
+    } else if (this.finishReason === "length") {
+      status.innerHTML =
+        '<span class="status-warn">回答被截断（达到长度限制）</span>';
     } else {
       status.innerHTML = `<span class="status-info">结束原因: ${this.finishReason}</span>`;
     }
@@ -1111,7 +1122,7 @@ class TokenMonitor {
   showWarning(message) {
     console.warn(`[Token Monitor] ${message}`);
     // 可选：在 UI 上显示警告
-    const event = new CustomEvent('token-warning', { detail: { message } });
+    const event = new CustomEvent("token-warning", { detail: { message } });
     window.dispatchEvent(event);
   }
 }
@@ -1161,9 +1172,16 @@ monitor.setFinishReason(response.finishReason);
   color: var(--text-secondary);
 }
 
-.status-ok { color: var(--success-color); }
-.status-warn { color: var(--warning-color); font-weight: 600; }
-.status-info { color: var(--text-secondary); }
+.status-ok {
+  color: var(--success-color);
+}
+.status-warn {
+  color: var(--warning-color);
+  font-weight: 600;
+}
+.status-info {
+  color: var(--text-secondary);
+}
 ```
 
 <Note title="一句话总结">
@@ -1199,12 +1217,12 @@ Token 优化的工程实践：输入超限时用前截断（保留最近对话�
 
 不同模型的上下文窗口大小差异很大。窗口越大，模型能"记住"的信息越多，但计算成本也越高（注意力计算复杂度是 O(n^2)）。
 
-| 模型 | 上下文窗口 | 约等于 | 适合场景 |
-|------|-----------|--------|---------|
-| GPT-3.5 | 4K / 16K | 3000 / 12000 字 | 简单对话、短文本 |
-| GPT-4 | 8K / 128K | 6000 / 100000 字 | 复杂分析、长文档 |
-| Claude 3.5 | 200K | 约 150000 字 | 超长代码库、整本书 |
-| Gemini 1.5 | 1M / 2M | 约 750000 字 | 视频、超大文档 |
+| 模型       | 上下文窗口 | 约等于           | 适合场景           |
+| ---------- | ---------- | ---------------- | ------------------ |
+| GPT-3.5    | 4K / 16K   | 3000 / 12000 字  | 简单对话、短文本   |
+| GPT-4      | 8K / 128K  | 6000 / 100000 字 | 复杂分析、长文档   |
+| Claude 3.5 | 200K       | 约 150000 字     | 超长代码库、整本书 |
+| Gemini 1.5 | 1M / 2M    | 约 750000 字     | 视频、超大文档     |
 
 ```text
 200K tokens 能装多少内容？
@@ -1253,7 +1271,7 @@ async function buildContext(userQuestion, allFiles) {
   // 不要把所有文件都塞进去
   // 用语义搜索找出最相关的文件
   const relevantFiles = await vectorSearch(allFiles, userQuestion, { topK: 5 });
-  return relevantFiles.map(f => `// ${f.path}\n${f.content}`).join('\n\n');
+  return relevantFiles.map((f) => `// ${f.path}\n${f.content}`).join("\n\n");
 }
 
 // 策略 2：把重要信息放在开头或结尾
@@ -1261,10 +1279,10 @@ function orderContext(sections) {
   // 按重要性排序，最重要的放前面
   // 因为模型对开头和结尾的注意力最强
   return [
-    sections.important,     // 最重要的放最前面
-    sections.background,    // 背景信息放中间
-    sections.reference,     // 参考资料放最后
-  ].join('\n\n');
+    sections.important, // 最重要的放最前面
+    sections.background, // 背景信息放中间
+    sections.reference, // 参考资料放最后
+  ].join("\n\n");
 }
 
 // 策略 3：压缩上下文（摘要链）
@@ -1272,8 +1290,8 @@ async function compressContext(longDocument) {
   // 先用 LLM 摘要，再把摘要作为上下文
   const summary = await llm.invoke({
     messages: [
-      { role: 'system', content: '用 200 字总结以下文档的核心要点。' },
-      { role: 'user', content: longDocument },
+      { role: "system", content: "用 200 字总结以下文档的核心要点。" },
+      { role: "user", content: longDocument },
     ],
   });
   return summary;
@@ -1281,8 +1299,8 @@ async function compressContext(longDocument) {
 
 // 策略 4：滑动窗口（多轮对话）
 function slidingWindow(messages, maxTokens = 100000) {
-  const system = messages.filter(m => m.role === 'system');
-  const history = messages.filter(m => m.role !== 'system');
+  const system = messages.filter((m) => m.role === "system");
+  const history = messages.filter((m) => m.role !== "system");
 
   // 从最新的消息往前取，直到达到 Token 限制
   let totalTokens = countTokens(system);
@@ -1463,7 +1481,7 @@ function applyTemperature(logits, temperature) {
   // temperature → 0：概率分布极度尖锐，几乎总是选最高概率的 Token
   // temperature = 1：原始概率分布
   // temperature > 1：概率分布变平坦，增加随机性
-  return logits.map(logit => logit / temperature);
+  return logits.map((logit) => logit / temperature);
 }
 
 // Top-p（核采样）：只从累积概率达到 p 的 Token 中采样
@@ -1491,13 +1509,13 @@ function topKSampling(probabilities, k = 50) {
 }
 ```
 
-| 参数 | 推荐值 | 适用场景 |
-|------|--------|---------|
-| `temperature=0` | 确定性 | 代码生成、数据提取、分类 |
-| `temperature=0.3-0.7` | 低随机 | 技术问答、摘要、分析 |
+| 参数                  | 推荐值 | 适用场景                 |
+| --------------------- | ------ | ------------------------ |
+| `temperature=0`       | 确定性 | 代码生成、数据提取、分类 |
+| `temperature=0.3-0.7` | 低随机 | 技术问答、摘要、分析     |
 | `temperature=0.7-1.0` | 中随机 | 创意写作、对话、头脑风暴 |
-| `top_p=0.9` | 通用 | 大多数场景的默认值 |
-| `top_p=0.1` | 高确定 | 需要高度一致的输出 |
+| `top_p=0.9`           | 通用   | 大多数场景的默认值       |
+| `top_p=0.1`           | 高确定 | 需要高度一致的输出       |
 
 <Tip title="🎢 通俗比喻: 现做现端 vs 全部做好再上菜">
 
@@ -1524,15 +1542,15 @@ LLM 推理的两个阶段就像餐厅出菜。预填充（Prefill）是后厨接
 ```javascript
 // 前端流式输出的实现
 async function streamChat(messages) {
-  const response = await fetch('/api/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  const response = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ messages, stream: true }),
   });
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  let fullText = '';
+  let fullText = "";
 
   while (true) {
     const { done, value } = await reader.read();
@@ -1540,14 +1558,14 @@ async function streamChat(messages) {
 
     const chunk = decoder.decode(value, { stream: true });
     // 解析 SSE 格式的数据
-    const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
+    const lines = chunk.split("\n").filter((line) => line.startsWith("data: "));
 
     for (const line of lines) {
       const data = line.slice(6); // 去掉 "data: " 前缀
-      if (data === '[DONE]') break;
+      if (data === "[DONE]") break;
 
       const parsed = JSON.parse(data);
-      const token = parsed.choices[0]?.delta?.content || '';
+      const token = parsed.choices[0]?.delta?.content || "";
       fullText += token;
 
       // 实时更新 UI
@@ -1569,7 +1587,7 @@ LLM 推理分两阶段：预填充（并行处理所有输入，生成 KV Cache�
 
 ## Q6: LLM 的局限性
 
-理解 LLM 的局限性和理解它的能力同样重要。面试官问这个问题，是想看你是否能预判 AI 的行为边界，在实际项目中规避风险。Chip Huyen 在《AI Engineering》一书中指出，LLM 的局限性不是"缺陷"，而是其概率生成机制的固有特性——理解这些局限性是工程化落地的前提。<sup>[4]</sup>
+理解 LLM 的局限性和理解它的能力同样重要。问到这个问题，是想看你是否能预判 AI 的行为边界，在实际项目中规避风险。Chip Huyen 在《AI Engineering》一书中指出，LLM 的局限性不是"缺陷"，而是其概率生成机制的固有特性——理解这些局限性是工程化落地的前提。<sup>[4]</sup>
 
 <Tip title="🎢 通俗比喻: 考试编答案">
 
@@ -1606,7 +1624,7 @@ const prompt = `
 `;
 
 // 策略 2：强制引用（方便验证）
-const prompt = `
+const citationPrompt = `
 分析代码质量。每个结论必须引用具体的文件路径和行号。
 格式：
 - 结论：[你的分析]
@@ -1616,9 +1634,9 @@ const prompt = `
 // 策略 3：RAG（从根源解决）
 // 先检索相关文档，再让 LLM 基于文档回答
 const context = await retriever.invoke(userQuestion);
-const prompt = `
+const ragPrompt = `
 根据以下文档回答问题，不要编造文档中没有的信息：
-${context.map(doc => doc.pageContent).join('\n---\n')}
+${context.map((doc) => doc.pageContent).join("\n---\n")}
 问题：${userQuestion}
 `;
 
@@ -1677,25 +1695,26 @@ LLM API 的成本是一个实际工程问题。在生产环境中，AI 功能的
 // LLM API 成本分析（以 GPT-4o 为例）
 
 const pricing = {
-  'gpt-4o': {
-    input: 2.50,   // $2.50 / 1M tokens
-    output: 10.00, // $10.00 / 1M tokens
+  "gpt-4o": {
+    input: 2.5, // $2.50 / 1M tokens
+    output: 10.0, // $10.00 / 1M tokens
   },
-  'gpt-4o-mini': {
-    input: 0.15,   // $0.15 / 1M tokens
-    output: 0.60,  // $0.60 / 1M tokens
+  "gpt-4o-mini": {
+    input: 0.15, // $0.15 / 1M tokens
+    output: 0.6, // $0.60 / 1M tokens
   },
-  'claude-3.5-sonnet': {
-    input: 3.00,   // $3.00 / 1M tokens
-    output: 15.00, // $15.00 / 1M tokens
+  "claude-3.5-sonnet": {
+    input: 3.0, // $3.00 / 1M tokens
+    output: 15.0, // $15.00 / 1M tokens
   },
 };
 
 // 日均 10 万次 API 调用的成本估算
 function estimateDailyCost(model, avgInputTokens, avgOutputTokens, dailyCalls) {
   const price = pricing[model];
-  const inputCost = (dailyCalls * avgInputTokens / 1_000_000) * price.input;
-  const outputCost = (dailyCalls * avgOutputTokens / 1_000_000) * price.output;
+  const inputCost = ((dailyCalls * avgInputTokens) / 1_000_000) * price.input;
+  const outputCost =
+    ((dailyCalls * avgOutputTokens) / 1_000_000) * price.output;
   return {
     inputCost: `$${inputCost.toFixed(2)}`,
     outputCost: `$${outputCost.toFixed(2)}`,
@@ -1705,11 +1724,11 @@ function estimateDailyCost(model, avgInputTokens, avgOutputTokens, dailyCalls) {
 }
 
 // 示例：日均 10 万次调用，每次输入 2000 tokens，输出 500 tokens
-estimateDailyCost('gpt-4o', 2000, 500, 100000);
+estimateDailyCost("gpt-4o", 2000, 500, 100000);
 // 输出：inputCost=$500, outputCost=$500, totalPerDay=$1000, totalPerMonth=$30,000
 
 // 优化后：用 gpt-4o-mini + Prompt Cache
-estimateDailyCost('gpt-4o-mini', 2000, 500, 100000);
+estimateDailyCost("gpt-4o-mini", 2000, 500, 100000);
 // 输出：inputCost=$30, outputCost=$30, totalPerDay=$60, totalPerMonth=$1,800
 ```
 
@@ -1726,9 +1745,10 @@ LLM 的四大局限性：幻觉（编造信息，需要用 RAG + 强制引用缓
 ### 问题："解释一下 LLM 的推理过程，以及温度参数是怎么影响输出的？"
 
 **及格回答（60-70分）：**
+
 > "LLM 先把输入切成 Token，然后通过 Transformer 的注意力机制处理，最后逐个生成输出 Token。温度参数控制输出的随机性，温度越高越随机。"
 
-面试官评价：**知道流程但不理解机制**。
+问题出在：**知道流程但不理解机制**。
 
 **满分回答（90-100分）：**
 
@@ -1744,7 +1764,7 @@ LLM 的四大局限性：幻觉（编造信息，需要用 RAG + 强制引用缓
 
 </Tip>
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
@@ -1913,14 +1933,14 @@ Ollama 的核心功能有三个：
 
 ```javascript
 // 前端集成 Ollama：方式 1 —— 使用 ollama-js SDK
-import { Ollama } from 'ollama';
+import { Ollama } from "ollama";
 
-const ollama = new Ollama({ host: 'http://localhost:11434' });
+const ollama = new Ollama({ host: "http://localhost:11434" });
 
 // 聊天接口（流式输出）
 const response = await ollama.chat({
-  model: 'llama3',
-  messages: [{ role: 'user', content: '解释一下 JavaScript 的闭包' }],
+  model: "llama3",
+  messages: [{ role: "user", content: "解释一下 JavaScript 的闭包" }],
   stream: true,
 });
 
@@ -1929,12 +1949,12 @@ for await (const part of response) {
 }
 
 // 前端集成 Ollama：方式 2 —— 使用 fetch（兼容 OpenAI 格式）
-const response = await fetch('http://localhost:11434/v1/chat/completions', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+const response = await fetch("http://localhost:11434/v1/chat/completions", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
-    model: 'llama3',
-    messages: [{ role: 'user', content: '解释一下 JavaScript 的闭包' }],
+    model: "llama3",
+    messages: [{ role: "user", content: "解释一下 JavaScript 的闭包" }],
     stream: true,
   }),
 });
@@ -1942,12 +1962,12 @@ const response = await fetch('http://localhost:11434/v1/chat/completions', {
 
 ```javascript
 // 前端集成 Ollama：方式 3 —— 使用原生 API
-const response = await fetch('http://localhost:11434/api/chat', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+const response = await fetch("http://localhost:11434/api/chat", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
-    model: 'llama3',
-    messages: [{ role: 'user', content: '什么是闭包？' }],
+    model: "llama3",
+    messages: [{ role: "user", content: "什么是闭包？" }],
     stream: true,
   }),
 });
@@ -1960,7 +1980,7 @@ while (true) {
   if (done) break;
 
   const chunk = JSON.parse(decoder.decode(value));
-  document.getElementById('output').textContent += chunk.message.content;
+  document.getElementById("output").textContent += chunk.message.content;
 }
 ```
 
@@ -1998,30 +2018,30 @@ Transformers.js 是 Python `transformers` 库的 JavaScript 移植版。它的�
 
 ```javascript
 // Transformers.js v3：浏览器端文本分类
-import { pipeline, env } from '@huggingface/transformers';
+import { pipeline, env } from "@huggingface/transformers";
 
 // 配置 WebGPU 加速（不支持时自动回退到 WASM）
 env.backends.onnx.wasm.proxy = false;
 
 // 创建文本分类管道（首次运行会自动下载模型并缓存）
 const classifier = await pipeline(
-  'text-classification',
-  'Xenova/distilbert-base-uncased-finetuned-sst-2-english',
-  { device: 'webgpu' }
+  "text-classification",
+  "Xenova/distilbert-base-uncased-finetuned-sst-2-english",
+  { device: "webgpu" },
 );
 
-const result = await classifier('I love this product! It is amazing.');
+const result = await classifier("I love this product! It is amazing.");
 // [{ label: 'POSITIVE', score: 0.9998 }]
 
 // 创建特征提取管道（用于语义搜索）
 const extractor = await pipeline(
-  'feature-extraction',
-  'Xenova/all-MiniLM-L6-v2',
-  { device: 'webgpu' }
+  "feature-extraction",
+  "Xenova/all-MiniLM-L6-v2",
+  { device: "webgpu" },
 );
 
-const embedding = await extractor('前端开发是一门艺术', {
-  pooling: 'mean',
+const embedding = await extractor("前端开发是一门艺术", {
+  pooling: "mean",
   normalize: true,
 });
 // 输出 384 维的向量，可用于语义相似度计算
@@ -2029,11 +2049,11 @@ const embedding = await extractor('前端开发是一门艺术', {
 
 ```javascript
 // Transformers.js：浏览器端语音识别（Whisper 模型）
-import { pipeline } from '@huggingface/transformers';
+import { pipeline } from "@huggingface/transformers";
 
 const transcriber = await pipeline(
-  'automatic-speech-recognition',
-  'Xenova/whisper-tiny'
+  "automatic-speech-recognition",
+  "Xenova/whisper-tiny",
 );
 
 // 从麦克风录音
@@ -2043,9 +2063,9 @@ const audioChunks = [];
 
 mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
 mediaRecorder.onstop = async () => {
-  const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+  const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
   const result = await transcriber(audioBlob);
-  console.log('识别结果:', result.text);
+  console.log("识别结果:", result.text);
 };
 
 mediaRecorder.start();
@@ -2054,7 +2074,7 @@ setTimeout(() => mediaRecorder.stop(), 5000); // 录 5 秒
 
 <Tip title="🎢 通俗比喻: Transformers.js 就像浏览器里的瑞士军刀">
 
-Hugging Face Hub 像一个巨大的模型超市，里面有各种用途的预训练模型（分类、翻译、语音识别等）。Transformers.js 就像一把瑞士军刀——它把这些 Python 世界的模型"翻译"成 JavaScript 能理解的格式（ONNX），然后通过 WASM 或 WebGPU 这两个"引擎"在浏览器里运行。WASM 引擎像电动车——安静、省电、哪里都能跑，但速度一般；WebGPU 引擎像跑车——需要好路（支持 WebGPU 的浏览器），但速度是电动车的 3-5 倍。
+Hugging Face Hub 像一个巨大的模型超市，里面有各种用途的预训练模型（分类、翻译、语音识别等）。Transformers.js 就像一把瑞士军刀——它把这些 Python 世界的模型"翻译"成 JavaScript 能理解的格式（ONNX），然后通过 WASM 或 WebGPU 这两个"引擎"在浏览器里运行。WASM 引擎像电动车——安静、省电、哪里都能跑，但速度一般；WebGPU 引擎像跑车——需要好路（支持 WebGPU 的浏览器），但速度明显更快。
 
 </Tip>
 
@@ -2098,12 +2118,12 @@ ComfyUI 工作流的数据流：
 // 前端调用 ComfyUI API 生成图片
 async function generateImage(workflow, prompt) {
   // 1. 修改工作流中的提示词
-  workflow['6'].inputs.text = prompt; // '6' 是 CLIPTextEncode 节点的 ID
+  workflow["6"].inputs.text = prompt; // '6' 是 CLIPTextEncode 节点的 ID
 
   // 2. 提交工作流
-  const response = await fetch('http://localhost:8188/prompt', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  const response = await fetch("http://localhost:8188/prompt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       prompt: workflow,
       client_id: crypto.randomUUID(),
@@ -2113,13 +2133,13 @@ async function generateImage(workflow, prompt) {
   const { prompt_id } = await response.json();
 
   // 3. 通过 WebSocket 监听进度
-  const ws = new WebSocket('ws://localhost:8188/ws');
+  const ws = new WebSocket("ws://localhost:8188/ws");
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
-    if (data.type === 'progress') {
+    if (data.type === "progress") {
       console.log(`进度: ${data.data.value}/${data.data.max}`);
     }
-    if (data.type === 'executed' && data.data.prompt_id === prompt_id) {
+    if (data.type === "executed" && data.data.prompt_id === prompt_id) {
       // 4. 下载生成的图片
       downloadImage(data.data.output.images[0]);
       ws.close();
@@ -2130,10 +2150,10 @@ async function generateImage(workflow, prompt) {
 // 下载生成的图片
 async function downloadImage(imageInfo) {
   const response = await fetch(
-    `http://localhost:8188/view?filename=${imageInfo.filename}&subfolder=${imageInfo.subfolder}&type=${imageInfo.type}`
+    `http://localhost:8188/view?filename=${imageInfo.filename}&subfolder=${imageInfo.subfolder}&type=${imageInfo.type}`,
   );
   const blob = await response.blob();
-  document.getElementById('result').src = URL.createObjectURL(blob);
+  document.getElementById("result").src = URL.createObjectURL(blob);
 }
 ```
 
@@ -2141,16 +2161,16 @@ async function downloadImage(imageInfo) {
 
 在实际项目中，选择哪个工具取决于你的需求：是需要文本生成还是图像生成？是需要隐私保护还是最大模型能力？是需要离线运行还是可以依赖云端？
 
-| 维度 | Ollama | Hugging Face Transformers.js | ComfyUI |
-|------|--------|------------------------------|---------|
-| **核心能力** | 本地运行 LLM（文本生成、对话） | 浏览器端 AI 推理（分类、嵌入、语音） | 节点式图像生成工作流 |
-| **运行环境** | 本地服务器（localhost:11434） | 用户浏览器（WASM / WebGPU） | 本地服务器（localhost:8188） |
-| **模型规模** | 7B-70B 参数（需 4-64GB 内存） | 轻量模型（&lt;1GB，量化后更小） | Stable Diffusion 系列（2-8GB） |
-| **延迟** | 秒级（取决于模型大小和硬件） | 毫秒到秒级（首次加载需下载模型） | 十秒到分钟级（图像生成本身慢） |
-| **隐私** | 数据不出本地 | 数据不出浏览器 | 数据不出本地 |
-| **前端集成** | REST API / ollama-js SDK | npm 包 `@huggingface/transformers` | REST API + WebSocket |
-| **适用场景** | 本地开发测试、私有化部署、RAG | 浏览器端分类、语义搜索、语音识别 | AI 图像生成、设计工具集成 |
-| **学习成本** | 低（安装即用） | 中（需了解模型选择和量化） | 中高（需理解节点工作流） |
+| 维度         | Ollama                         | Hugging Face Transformers.js         | ComfyUI                        |
+| ------------ | ------------------------------ | ------------------------------------ | ------------------------------ |
+| **核心能力** | 本地运行 LLM（文本生成、对话） | 浏览器端 AI 推理（分类、嵌入、语音） | 节点式图像生成工作流           |
+| **运行环境** | 本地服务器（localhost:11434）  | 用户浏览器（WASM / WebGPU）          | 本地服务器（localhost:8188）   |
+| **模型规模** | 7B-70B 参数（需 4-64GB 内存）  | 轻量模型（&lt;1GB，量化后更小）      | Stable Diffusion 系列（2-8GB） |
+| **延迟**     | 秒级（取决于模型大小和硬件）   | 毫秒到秒级（首次加载需下载模型）     | 十秒到分钟级（图像生成本身慢） |
+| **隐私**     | 数据不出本地                   | 数据不出浏览器                       | 数据不出本地                   |
+| **前端集成** | REST API / ollama-js SDK       | npm 包 `@huggingface/transformers`   | REST API + WebSocket           |
+| **适用场景** | 本地开发测试、私有化部署、RAG  | 浏览器端分类、语义搜索、语音识别     | AI 图像生成、设计工具集成      |
+| **学习成本** | 低（安装即用）                 | 中（需了解模型选择和量化）           | 中高（需理解节点工作流）       |
 
 **适用场景选择指南：**
 
@@ -2181,19 +2201,19 @@ Ollama 是本地 LLM 的"Docker"——一键安装、API 兼容、模型管理�
 
 ## 📚 延伸阅读与引用参考
 
-- 📖 [Andrej Karpathy - Let's build GPT from scratch](https://www.youtube.com/watch?v=kCc8FmEb1nY)：*从零实现 GPT，将 Self-Attention 解释为"Token 之间的通信机制"，理解 Transformer 和自回归生成的最好入门教程。* <sup>[1]</sup>
-- 📖 [Lilian Weng - Attention? Attention!](https://lilianweng.github.io/posts/2018-06-24-attention/)：*OpenAI 应用研究主管对注意力机制的系统性梳理，涵盖 Self-Attention、Multi-Head Attention、位置编码的数学推导。* <sup>[2]</sup>
-- 📖 [Lilian Weng - Large Language Model Agents](https://lilianweng.github.io/posts/2023-06-23-agent/)：*对 LLM Agent 架构的深度分析，涵盖工具调用、规划、记忆三大核心组件的理论框架。* <sup>[3]</sup>
-- 📖 [Chip Huyen - AI Engineering (2025)](https://huyenchip.com/ai-engineering/)：*系统性梳理 LLM 的能力边界与工程化落地方法论，涵盖 RAG、Agent、评估体系等核心主题。* <sup>[4]</sup>
-- 🔗 [OpenAI Tokenizer 工具](https://platform.openai.com/tokenizer)：*在线可视化 Token 化过程，理解不同文本的 Token 分布。* <sup>[5]</sup>
-- 🔗 [Anthropic Claude 文档 - Context Windows](https://docs.anthropic.com/en/docs/build-with-claude/context-windows)：*Anthropic 对上下文窗口管理的官方指南。* <sup>[6]</sup>
-- 📖 [Lost in the Middle 论文 (Stanford, 2023)](https://arxiv.org/abs/2307.03172)：*注意力稀释的经典研究，LLM 对上下文中间部分的关注度显著下降。* <sup>[7]</sup>
-- 📖 [Attention Is All You Need (Google, 2017)](https://arxiv.org/abs/1706.03762)：*Transformer 架构的原始论文，所有 LLM 的理论基础。* <sup>[8]</sup>
-- 🟢 [Anthropic Prompt Caching 文档](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching)：*Prompt Cache 机制的详细说明，KV Cache 的工程实现。* <sup>[9]</sup>
-- 📖 [OpenAI GPT-4 Technical Report](https://arxiv.org/abs/2303.08774)：*GPT-4 的技术报告，了解现代 LLM 的能力边界。* <sup>[10]</sup>
-- 🧑‍💻 [Simon Willison 博客](https://simonwillison.net/)：*持续跟踪 LLM 领域的最新进展，对 Token 化、上下文窗口、幻觉等话题有深入分析。* <sup>[11]</sup>
-- 🟢 [Ollama 官方文档](https://ollama.com/)：*本地运行 LLM 的一键部署工具，支持 Llama 3、Mistral、Gemma 等主流开源模型。* <sup>[12]</sup>
-- 🟢 [Hugging Face Transformers.js 官方文档](https://huggingface.co/docs/transformers.js)：*浏览器端 AI 推理的 JavaScript 库，支持 WASM 和 WebGPU 双引擎。* <sup>[13]</sup>
-- 🟢 [ComfyUI GitHub 仓库](https://github.com/comfyanonymous/ComfyUI)：*节点式 Stable Diffusion GUI，提供完整的 REST API 用于前端集成。* <sup>[14]</sup>
-- 🔗 [ollama-js GitHub 仓库](https://github.com/ollama/ollama-js)：*Ollama 的官方 JavaScript/TypeScript SDK，轻量级客户端库。* <sup>[15]</sup>
-- 🔗 [Transformers.js GitHub 仓库](https://github.com/huggingface/transformers.js)：*Hugging Face Transformers 的 JavaScript 移植版，支持 100+ 模型架构。* <sup>[16]</sup>
+- 📖 [Andrej Karpathy - Let's build GPT from scratch](https://www.youtube.com/watch?v=kCc8FmEb1nY)：_从零实现 GPT，将 Self-Attention 解释为"Token 之间的通信机制"，理解 Transformer 和自回归生成的最好入门教程。_ <sup>[1]</sup>
+- 📖 [Lilian Weng - Attention? Attention!](https://lilianweng.github.io/posts/2018-06-24-attention/)：_OpenAI 应用研究主管对注意力机制的系统性梳理，涵盖 Self-Attention、Multi-Head Attention、位置编码的数学推导。_ <sup>[2]</sup>
+- 📖 [Lilian Weng - Large Language Model Agents](https://lilianweng.github.io/posts/2023-06-23-agent/)：_对 LLM Agent 架构的深度分析，涵盖工具调用、规划、记忆三大核心组件的理论框架。_ <sup>[3]</sup>
+- 📖 [Chip Huyen - AI Engineering (2025)](https://huyenchip.com/ai-engineering/)：_系统性梳理 LLM 的能力边界与工程化落地方法论，涵盖 RAG、Agent、评估体系等核心主题。_ <sup>[4]</sup>
+- 🔗 [OpenAI Tokenizer 工具](https://platform.openai.com/tokenizer)：_在线可视化 Token 化过程，理解不同文本的 Token 分布。_ <sup>[5]</sup>
+- 🔗 [Anthropic Claude 文档 - Context Windows](https://docs.anthropic.com/en/docs/build-with-claude/context-windows)：_Anthropic 对上下文窗口管理的官方指南。_ <sup>[6]</sup>
+- 📖 [Lost in the Middle 论文 (Stanford, 2023)](https://arxiv.org/abs/2307.03172)：_注意力稀释的经典研究，LLM 对上下文中间部分的关注度显著下降。_ <sup>[7]</sup>
+- 📖 [Attention Is All You Need (Google, 2017)](https://arxiv.org/abs/1706.03762)：_Transformer 架构的原始论文，所有 LLM 的理论基础。_ <sup>[8]</sup>
+- 🟢 [Anthropic Prompt Caching 文档](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching)：_Prompt Cache 机制的详细说明，KV Cache 的工程实现。_ <sup>[9]</sup>
+- 📖 [OpenAI GPT-4 Technical Report](https://arxiv.org/abs/2303.08774)：_GPT-4 的技术报告，了解现代 LLM 的能力边界。_ <sup>[10]</sup>
+- 🧑‍💻 [Simon Willison 博客](https://simonwillison.net/)：_持续跟踪 LLM 领域的最新进展，对 Token 化、上下文窗口、幻觉等话题有深入分析。_ <sup>[11]</sup>
+- 🟢 [Ollama 官方文档](https://ollama.com/)：_本地运行 LLM 的一键部署工具，支持 Llama 3、Mistral、Gemma 等主流开源模型。_ <sup>[12]</sup>
+- 🟢 [Hugging Face Transformers.js 官方文档](https://huggingface.co/docs/transformers.js)：_浏览器端 AI 推理的 JavaScript 库，支持 WASM 和 WebGPU 双引擎。_ <sup>[13]</sup>
+- 🟢 [ComfyUI GitHub 仓库](https://github.com/comfyanonymous/ComfyUI)：_节点式 Stable Diffusion GUI，提供完整的 REST API 用于前端集成。_ <sup>[14]</sup>
+- 🔗 [ollama-js GitHub 仓库](https://github.com/ollama/ollama-js)：_Ollama 的官方 JavaScript/TypeScript SDK，轻量级客户端库。_ <sup>[15]</sup>
+- 🔗 [Transformers.js GitHub 仓库](https://github.com/huggingface/transformers.js)：_Hugging Face Transformers 的 JavaScript 移植版，支持 100+ 模型架构。_ <sup>[16]</sup>

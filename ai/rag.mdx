@@ -1,10 +1,9 @@
 ---
 title: "RAG (检索增强生成)"
+description: "覆盖 RAG 的索引、检索、生成全链路，以及切片、重排、评估等高频面试问题。"
 ---
 
-> **面试官为什么问这个？**
->
-> RAG 是大模型落地企业场景的核心技术。面试官问这个，本质上是在考察你：**是否理解大模型的知识局限性，以及能不能设计一套完整的知识检索与生成系统来解决企业级问答需求。** 如果你答不清楚，说明你对 AI 应用的理解停留在"调 API"而不是"架构设计"。
+> 我最早用 RAG 只盯着生成效果，查过几次坏例子才明白，瓶颈多半在检索那一段。切片、Embedding、召回、重排、生成，哪一环出问题得能分开看。
 
 ---
 
@@ -180,8 +179,8 @@ const documents = await loadDocuments("./company-docs/");
 
 // 2. 文档切片：把长文档拆成小块
 const splitter = new RecursiveCharacterTextSplitter({
-  chunkSize: 1000,      // 每个切片 1000 字符
-  chunkOverlap: 200,    // 相邻切片重叠 200 字符
+  chunkSize: 1000, // 每个切片 1000 字符
+  chunkOverlap: 200, // 相邻切片重叠 200 字符
 });
 const chunks = await splitter.splitDocuments(documents);
 
@@ -200,7 +199,7 @@ const prompt = `根据以下文档回答问题。
 如果文档中没有相关信息，说"我不确定"。
 
 文档：
-${relevantDocs.map(d => d.pageContent).join('\n---\n')}
+${relevantDocs.map((d) => d.pageContent).join("\n---\n")}
 
 问题：什么是 Fiber 架构？`;
 
@@ -239,26 +238,28 @@ RAG 就像开卷考试。闭卷考试（没有 RAG）要求你记住所有知识
 
 **主流 Embedding 模型对比：**
 
-| 模型 | 维度 | MTEB 排名 | 成本 | 适用场景 |
-|------|------|----------|------|---------|
-| **text-embedding-3-large**（OpenAI） | 3072 | Top 5 | $0.13/1M tokens | 高质量英文检索 |
-| **text-embedding-3-small**（OpenAI） | 1536 | Top 20 | $0.02/1M tokens | 性价比之选 |
-| **BGE-large-zh**（BAAI） | 1024 | 中文 Top 1 | 免费（自部署） | 中文场景首选 |
-| **Jina-embeddings-v3** | 1024 | Top 10 | $0.02/1M tokens | 多语言场景 |
-| **Cohere embed-v3** | 1024 | Top 5 | $0.1/1M tokens | 多语言 + 混合检索 |
+| 模型                                 | 维度 | 说明                                | 成本            | 适用场景          |
+| ------------------------------------ | ---- | ----------------------------------- | --------------- | ----------------- |
+| **text-embedding-3-large**（OpenAI） | 3072 | 支持 MRL 截断维度的旗舰模型         | $0.13/1M tokens | 高质量英文检索    |
+| **text-embedding-3-small**（OpenAI） | 1536 | 支持 MRL 截断，性价比高             | $0.02/1M tokens | 性价比之选        |
+| **BGE-large-zh**（BAAI）             | 1024 | 中文开源模型，可自部署              | 免费（自部署）  | 中文场景首选      |
+| **Jina-embeddings-v3**               | 1024 | 多语言、支持长文本                  | $0.02/1M tokens | 多语言场景        |
+| **Cohere embed-v3**                  | 1024 | 支持 int8/binary 压缩，可配混合检索 | $0.1/1M tokens  | 多语言 + 混合检索 |
+
+> MTEB 榜单更新频繁，排名会随新模型发布变化。选型时应以自己的业务语料构造评测集，而不是只看榜单名次。
 
 ### 检索策略（向量检索、BM25、混合检索）
 
-| 检索策略 | 原理 | 优势 | 劣势 |
-|---------|------|------|------|
-| **向量检索** | 计算问题向量与文档向量的余弦相似度 | 理解语义（"汽车"能匹配"轿车"） | 对精确关键词不敏感 |
-| **BM25** | 基于词频（TF）和逆文档频率（IDF）的关键词匹配 | 精确匹配能力强 | 无法理解同义词 |
-| **混合检索** | 向量检索 + BM25 加权融合 | 兼顾语义和关键词 | 实现复杂度更高 |
+| 检索策略     | 原理                                          | 优势                           | 劣势               |
+| ------------ | --------------------------------------------- | ------------------------------ | ------------------ |
+| **向量检索** | 计算问题向量与文档向量的余弦相似度            | 理解语义（"汽车"能匹配"轿车"） | 对精确关键词不敏感 |
+| **BM25**     | 基于词频（TF）和逆文档频率（IDF）的关键词匹配 | 精确匹配能力强                 | 无法理解同义词     |
+| **混合检索** | 向量检索 + BM25 加权融合                      | 兼顾语义和关键词               | 实现复杂度更高     |
 
 ```javascript
 // 混合检索实现（LangChain）
-import { EnsembleRetriever } from 'langchain/retrievers/ensemble';
-import { BM25Retriever } from 'langchain/retrievers/bm25';
+import { EnsembleRetriever } from "langchain/retrievers/ensemble";
+import { BM25Retriever } from "langchain/retrievers/bm25";
 
 const vectorRetriever = vectorStore.asRetriever({ k: 10 });
 const bm25Retriever = BM25Retriever.fromDocuments(docs, { k: 10 });
@@ -274,32 +275,29 @@ const ensembleRetriever = new EnsembleRetriever({
 
 切片质量直接决定检索质量——切片太大，包含太多无关信息；切片太小，语义不完整。
 
-| 切片策略 | 原理 | 适用场景 | 推荐程度 |
-|---------|------|---------|---------|
+| 切片策略     | 原理                                              | 适用场景   | 推荐程度       |
+| ------------ | ------------------------------------------------- | ---------- | -------------- |
 | **语义切片** | 用 Embedding 计算相邻句子相似度，在相似度低处切分 | 高质量检索 | 效果最好但最慢 |
-| **递归切片** | 先按段落切，再按句子切，最后按字符切 | 通用场景 | 最常用的方案 |
-| **按段落切** | 按 Markdown 标题或 HTML 标签切分 | 结构化文档 | 保留文档结构 |
+| **递归切片** | 先按段落切，再按句子切，最后按字符切              | 通用场景   | 最常用的方案   |
+| **按段落切** | 按 Markdown 标题或 HTML 标签切分                  | 结构化文档 | 保留文档结构   |
 
 ```javascript
 // 递归切片（最通用）
-import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 
 const splitter = new RecursiveCharacterTextSplitter({
-  chunkSize: 1000,        // 推荐 500-1500
-  chunkOverlap: 200,      // 推荐 10-20%
+  chunkSize: 1000, // 推荐 500-1500
+  chunkOverlap: 200, // 推荐 10-20%
   separators: ["\n\n", "\n", "。", "！", "？", "，", " "],
 });
 
 // 语义切片（效果最好但最慢）
-import { SemanticChunker } from 'langchain/text_splitter';
+import { SemanticChunker } from "langchain/text_splitter";
 
-const semanticSplitter = new SemanticChunker(
-  new OpenAIEmbeddings(),
-  {
-    breakpointThresholdType: "percentile",
-    breakpointThresholdAmount: 75,
-  }
-);
+const semanticSplitter = new SemanticChunker(new OpenAIEmbeddings(), {
+  breakpointThresholdType: "percentile",
+  breakpointThresholdAmount: 75,
+});
 ```
 
 ### 重排序（Reranking）原理
@@ -324,7 +322,7 @@ Reranker 用的是 **Cross-Encoder**（交叉编码器）——把问题和文�
 
 ```javascript
 // Reranker 实现
-import { CohereRerank } from '@langchain/cohere';
+import { CohereRerank } from "@langchain/cohere";
 
 const reranker = new CohereRerank({
   model: "rerank-v3.5",
@@ -368,37 +366,37 @@ const retrievalChain = retriever.pipe(reranker);
 
 ### 向量数据库选型（Milvus、Pinecone、Weaviate、Chroma、Qdrant、Neo4j、ElasticSearch）
 
-| 向量数据库 | 类型 | 部署方式 | 混合检索 | 特点 | 适用场景 |
-|-----------|------|---------|---------|------|---------|
-| **Milvus** | 纯向量数据库 | 自部署 / Zilliz Cloud | 支持 | 高性能，支持亿级向量 | 大规模生产环境 |
-| **Pinecone** | 纯向量数据库 | 全托管 | 支持 | 开箱即用，无需运维 | 快速原型、小团队 |
-| **Weaviate** | 纯向量数据库 | 自部署 / Cloud | 原生支持 | 内置 BM25 + 向量混合检索 | 需要精确检索的场景 |
-| **Chroma** | 纯向量数据库 | 嵌入式 | 不支持 | 轻量级，零配置 | 本地开发、小型项目 |
-| **Qdrant** | 纯向量数据库 | 自部署 / Cloud | 支持 | Rust 实现，高性能 | 高性能生产环境 |
-| **Neo4j** | 图数据库 | 自部署 / Aura Cloud | 支持 | 原生向量索引 + 图关系遍历 | 实体关系复杂的知识库 |
-| **ElasticSearch** | 搜索引擎 | 自部署 / Elastic Cloud | 原生支持 | BM25 + 向量混合检索 | 全文搜索 + 语义检索 |
-| **Easysearch** | 搜索引擎 | 自部署 / Cloud | 原生支持 | ES API 兼容，内置中文分词，Apache 2.0 | 国产替代、企业级搜索 + RAG |
+| 向量数据库        | 类型         | 部署方式               | 混合检索 | 特点                                  | 适用场景                   |
+| ----------------- | ------------ | ---------------------- | -------- | ------------------------------------- | -------------------------- |
+| **Milvus**        | 纯向量数据库 | 自部署 / Zilliz Cloud  | 支持     | 高性能，支持亿级向量                  | 大规模生产环境             |
+| **Pinecone**      | 纯向量数据库 | 全托管                 | 支持     | 开箱即用，无需运维                    | 快速原型、小团队           |
+| **Weaviate**      | 纯向量数据库 | 自部署 / Cloud         | 原生支持 | 内置 BM25 + 向量混合检索              | 需要精确检索的场景         |
+| **Chroma**        | 纯向量数据库 | 嵌入式                 | 不支持   | 轻量级，零配置                        | 本地开发、小型项目         |
+| **Qdrant**        | 纯向量数据库 | 自部署 / Cloud         | 支持     | Rust 实现，高性能                     | 高性能生产环境             |
+| **Neo4j**         | 图数据库     | 自部署 / Aura Cloud    | 支持     | 原生向量索引 + 图关系遍历             | 实体关系复杂的知识库       |
+| **ElasticSearch** | 搜索引擎     | 自部署 / Elastic Cloud | 原生支持 | BM25 + 向量混合检索                   | 全文搜索 + 语义检索        |
+| **Easysearch**    | 搜索引擎     | 自部署 / Cloud         | 原生支持 | ES API 兼容，内置中文分词，Apache 2.0 | 国产替代、企业级搜索 + RAG |
 
 **对比：纯向量数据库 vs 图数据库 vs 搜索引擎（ElasticSearch / Easysearch）**
 
-| 维度 | 纯向量数据库（Milvus/Pinecone） | 图数据库（Neo4j） | 搜索引擎（ElasticSearch / Easysearch） |
-|------|-------------------------------|------------------|--------------------------|
-| **核心能力** | 高维向量相似度检索 | 实体关系遍历 + 向量检索 | 全文搜索 + 向量检索 |
-| **检索方式** | 余弦相似度 / 内积 | Cypher 图查询 + 向量索引 | BM25 + kNN 向量检索 |
-| **优势** | 向量检索性能最强，延迟最低 | 捕获实体间的多跳关系 | 关键词精确匹配 + 语义检索 |
-| **劣势** | 不擅长关系推理 | 向量检索性能不如专用向量库 | 向量检索精度不如专用向量库 |
-| **典型场景** | 纯语义检索（文档 QA） | 知识图谱 + RAG（"谁的老板是谁"） | 混合检索（关键词 + 语义） |
-| **学习成本** | 低 | 高（需要学 Cypher 查询语言） | 中（Query DSL 较复杂） |
+| 维度         | 纯向量数据库（Milvus/Pinecone） | 图数据库（Neo4j）                | 搜索引擎（ElasticSearch / Easysearch） |
+| ------------ | ------------------------------- | -------------------------------- | -------------------------------------- |
+| **核心能力** | 高维向量相似度检索              | 实体关系遍历 + 向量检索          | 全文搜索 + 向量检索                    |
+| **检索方式** | 余弦相似度 / 内积               | Cypher 图查询 + 向量索引         | BM25 + kNN 向量检索                    |
+| **优势**     | 向量检索性能最强，延迟最低      | 捕获实体间的多跳关系             | 关键词精确匹配 + 语义检索              |
+| **劣势**     | 不擅长关系推理                  | 向量检索性能不如专用向量库       | 向量检索精度不如专用向量库             |
+| **典型场景** | 纯语义检索（文档 QA）           | 知识图谱 + RAG（"谁的老板是谁"） | 混合检索（关键词 + 语义）              |
+| **学习成本** | 低                              | 高（需要学 Cypher 查询语言）     | 中（Query DSL 较复杂）                 |
 
 ### Embedding 模型选型（OpenAI、BGE、Jina、Cohere）
 
-| 场景 | 推荐模型 | 理由 |
-|------|---------|------|
-| **中文场景** | BGE-large-zh（BAAI） | MTEB 中文排名第一，开源免费 |
-| **英文场景** | text-embedding-3-small（OpenAI） | 性价比最高，MTEB 英文 Top 20 |
-| **多语言场景** | Jina-embeddings-v3 | 支持 89 种语言，成本低 |
-| **高质量检索** | text-embedding-3-large（OpenAI） | MTEB 英文 Top 5，效果最好 |
-| **本地部署** | BGE-large / E5-large | 开源免费，无需调用外部 API |
+| 场景           | 推荐模型                         | 理由                         |
+| -------------- | -------------------------------- | ---------------------------- |
+| **中文场景**   | BGE-large-zh（BAAI）             | MTEB 中文排名第一，开源免费  |
+| **英文场景**   | text-embedding-3-small（OpenAI） | 性价比最高，MTEB 英文 Top 20 |
+| **多语言场景** | Jina-embeddings-v3               | 支持 89 种语言，成本低       |
+| **高质量检索** | text-embedding-3-large（OpenAI） | MTEB 英文 Top 5，效果最好    |
+| **本地部署**   | BGE-large / E5-large             | 开源免费，无需调用外部 API   |
 
 <Tip title="🎢 通俗比喻: 拼图 vs 社交网络图">
 
@@ -566,20 +564,17 @@ ElasticSearch 的最大优势是**原生支持 BM25 + 向量混合检索**，不
 
 ```javascript
 // LangChain 集成 ElasticSearch 混合检索
-import { ElasticVectorSearch } from '@langchain/community/vectorstores/elasticsearch';
+import { ElasticVectorSearch } from "@langchain/community/vectorstores/elasticsearch";
 
-const vectorStore = new ElasticVectorSearch(
-  new OpenAIEmbeddings(),
-  {
-    client: elasticClient,
-    indexName: 'rag-documents',
-  }
-);
+const vectorStore = new ElasticVectorSearch(new OpenAIEmbeddings(), {
+  client: elasticClient,
+  indexName: "rag-documents",
+});
 
 // ElasticSearch 自动处理 BM25 + 向量混合检索
 const retriever = vectorStore.asRetriever({
   k: 5,
-  searchType: 'similarity',  // 或 'mmr'（最大边际相关性）
+  searchType: "similarity", // 或 'mmr'（最大边际相关性）
 });
 ```
 
@@ -788,11 +783,11 @@ BM25 的盲区：
 
 **混合检索的三种实现方式：**
 
-| 实现方式 | 原理 | 代表产品 | 适用场景 |
-|---------|------|---------|---------|
-| **应用层融合** | 分别调用向量库和 BM25，应用层合并结果 | LangChain EnsembleRetriever | 任意向量数据库 + 任意 BM25 引擎 |
-| **引擎原生融合** | 数据库内部同时执行两种检索并融合 | ElasticSearch RRF / Easysearch RRF / Weaviate | 一体化部署，性能最优 |
-| **向量数据库内建** | 向量数据库内置 BM25 或全文检索 | Milvus 2.4+ Hybrid Search | 不想引入额外引擎 |
+| 实现方式           | 原理                                  | 代表产品                                      | 适用场景                        |
+| ------------------ | ------------------------------------- | --------------------------------------------- | ------------------------------- |
+| **应用层融合**     | 分别调用向量库和 BM25，应用层合并结果 | LangChain EnsembleRetriever                   | 任意向量数据库 + 任意 BM25 引擎 |
+| **引擎原生融合**   | 数据库内部同时执行两种检索并融合      | ElasticSearch RRF / Easysearch RRF / Weaviate | 一体化部署，性能最优            |
+| **向量数据库内建** | 向量数据库内置 BM25 或全文检索        | Milvus 2.4+ Hybrid Search                     | 不想引入额外引擎                |
 
 **Reciprocal Rank Fusion (RRF) 算法：**
 
@@ -822,14 +817,14 @@ RRF_score(d) = Σ 1 / (k + rank_i(d))
 ```javascript
 // RRF 算法实现
 function reciprocalRankFusion(
-  rankedLists,    // 多个检索器的排序结果
-  k = 60          // 常数，通常取 60
+  rankedLists, // 多个检索器的排序结果
+  k = 60, // 常数，通常取 60
 ) {
   const scores = new Map();
 
   for (const rankedList of rankedLists) {
     rankedList.forEach((doc, index) => {
-      const rank = index + 1;  // 排名从 1 开始
+      const rank = index + 1; // 排名从 1 开始
       const prevScore = scores.get(doc.id) || 0;
       scores.set(doc.id, prevScore + 1 / (k + rank));
     });
@@ -842,8 +837,8 @@ function reciprocalRankFusion(
 }
 
 // 使用示例
-const vectorResults = ['docA', 'docC', 'docB'];  // 向量检索排名
-const bm25Results = ['docB', 'docA', 'docD'];     // BM25 排名
+const vectorResults = ["docA", "docC", "docB"]; // 向量检索排名
+const bm25Results = ["docB", "docA", "docD"]; // BM25 排名
 
 const fusedResults = reciprocalRankFusion([vectorResults, bm25Results]);
 // → [{ id: 'docA', score: 0.0323 }, { id: 'docB', score: 0.0318 }, ...]
@@ -851,8 +846,8 @@ const fusedResults = reciprocalRankFusion([vectorResults, bm25Results]);
 
 ```javascript
 // LangChain 混合检索 + RRF 完整实现
-import { EnsembleRetriever } from 'langchain/retrievers/ensemble';
-import { BM25Retriever } from 'langchain/retrievers/bm25';
+import { EnsembleRetriever } from "langchain/retrievers/ensemble";
+import { BM25Retriever } from "langchain/retrievers/bm25";
 
 // 1. 创建向量检索器
 const vectorRetriever = vectorStore.asRetriever({ k: 10 });
@@ -863,7 +858,7 @@ const bm25Retriever = BM25Retriever.fromDocuments(docs, { k: 10 });
 // 3. 混合检索：向量 0.6 + BM25 0.4
 const ensembleRetriever = new EnsembleRetriever({
   retrievers: [vectorRetriever, bm25Retriever],
-  weights: [0.6, 0.4],  // 向量权重更高，因为语义理解更通用
+  weights: [0.6, 0.4], // 向量权重更高，因为语义理解更通用
 });
 
 // 4. 检索 → Reranker 精排 → 生成
@@ -918,19 +913,22 @@ RAG 的高级优化就像做搜索引擎 SEO。查询改写是把用户的口语
 用 LLM 改写用户问题，提高检索命中率。用户的问题通常是口语化的短句，和文档的书面表述差异大。查询改写把口语化问题转为更适合检索的形式。
 
 ```javascript
-import { ChatOpenAI } from '@langchain/openai';
-import { ChatPromptTemplate } from '@langchain/core/prompts';
-import { StringOutputParser } from '@langchain/core/output_parsers';
+import { ChatOpenAI } from "@langchain/openai";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { StringOutputParser } from "@langchain/core/output_parsers";
 
 const rewritePrompt = ChatPromptTemplate.fromTemplate(
   `你是一个搜索查询改写专家。请把以下用户问题改写为更适合向量检索的形式，
   保持原意但增加关键词。
 
   用户问题：{question}
-  改写后的查询：`
+  改写后的查询：`,
 );
 
-const rewriter = rewritePrompt | new ChatOpenAI({ model: 'gpt-4o-mini' }) | new StringOutputParser();
+const rewriter =
+  rewritePrompt |
+  new ChatOpenAI({ model: "gpt-4o-mini" }) |
+  new StringOutputParser();
 
 // "怎么让页面快一点" → "前端页面加载性能优化策略，减少 FCP、LCP，降低 CLS"
 const rewrittenQuery = await rewriter.invoke({ question: "怎么让页面快一点" });
@@ -952,10 +950,13 @@ const hydePrompt = ChatPromptTemplate.fromTemplate(
   `请根据以下问题，写一段可能的答案（不需要准确，只需要符合问题的语义）。
 
   问题：{question}
-  假设性答案：`
+  假设性答案：`,
 );
 
-const hydeChain = hydePrompt | new ChatOpenAI({ model: 'gpt-4o-mini' }) | new StringOutputParser();
+const hydeChain =
+  hydePrompt |
+  new ChatOpenAI({ model: "gpt-4o-mini" }) |
+  new StringOutputParser();
 
 async function hydeRetrieve(question) {
   // 1. 生成假设性答案
@@ -971,10 +972,10 @@ async function hydeRetrieve(question) {
 用 LLM 把一个问题拆成多个子问题，分别检索，合并去重。覆盖更多角度，提高召回率。
 
 ```javascript
-import { MultiQueryRetriever } from 'langchain/retrievers/multi_query';
+import { MultiQueryRetriever } from "langchain/retrievers/multi_query";
 
 const multiQueryRetriever = MultiQueryRetriever.fromLLM({
-  llm: new ChatOpenAI({ model: 'gpt-4o-mini' }),
+  llm: new ChatOpenAI({ model: "gpt-4o-mini" }),
   retriever: vectorStore.asRetriever({ k: 5 }),
   // LLM 会自动生成 3-5 个不同角度的查询
 });
@@ -995,11 +996,11 @@ const multiQueryRetriever = MultiQueryRetriever.fromLLM({
 检索到的文档切片可能包含大量无关信息。上下文压缩用 LLM 提取切片中与问题相关的部分，减少噪声，节省 Token。
 
 ```javascript
-import { ContextualCompressionRetriever } from 'langchain/retrievers/contextual_compression';
-import { LLMChainExtractor } from 'langchain/retrievers/document_compressors/chain_extract';
+import { ContextualCompressionRetriever } from "langchain/retrievers/contextual_compression";
+import { LLMChainExtractor } from "langchain/retrievers/document_compressors/chain_extract";
 
 const compressor = LLMChainExtractor.fromLLM(
-  new ChatOpenAI({ model: 'gpt-4o-mini' })
+  new ChatOpenAI({ model: "gpt-4o-mini" }),
 );
 
 const compressionRetriever = new ContextualCompressionRetriever({
@@ -1050,10 +1051,13 @@ LangChain 的 RAG Chain 就像图书馆的参考咨询服务。你带着问题�
 LangChain 的 RAG Chain 本质是一个 `RunnableSequence`：检索器（Retriever）+ 提示词模板（Prompt）+ LLM + 输出解析器（Parser）。
 
 ```javascript
-import { RunnableSequence, RunnablePassthrough } from '@langchain/core/runnables';
-import { ChatOpenAI } from '@langchain/openai';
-import { ChatPromptTemplate } from '@langchain/core/prompts';
-import { StringOutputParser } from '@langchain/core/output_parsers';
+import {
+  RunnableSequence,
+  RunnablePassthrough,
+} from "@langchain/core/runnables";
+import { ChatOpenAI } from "@langchain/openai";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { StringOutputParser } from "@langchain/core/output_parsers";
 
 // 1. 定义 Prompt 模板
 const prompt = ChatPromptTemplate.fromTemplate(
@@ -1064,21 +1068,21 @@ const prompt = ChatPromptTemplate.fromTemplate(
 
 问题：{question}
 
-回答：`
+回答：`,
 );
 
 // 2. 定义格式化函数
-const formatDocs = (docs) => docs.map(d => d.pageContent).join('\n---\n');
+const formatDocs = (docs) => docs.map((d) => d.pageContent).join("\n---\n");
 
 // 3. 组装 RAG Chain
 const ragChain = RunnableSequence.from([
   {
-    context: retriever.pipe(formatDocs),     // 检索 + 格式化
-    question: new RunnablePassthrough(),     // 原样传递问题
+    context: retriever.pipe(formatDocs), // 检索 + 格式化
+    question: new RunnablePassthrough(), // 原样传递问题
   },
-  prompt,                                    // 拼接 Prompt
-  new ChatOpenAI({ model: 'gpt-4o' }),      // 调用 LLM
-  new StringOutputParser(),                  // 解析输出
+  prompt, // 拼接 Prompt
+  new ChatOpenAI({ model: "gpt-4o" }), // 调用 LLM
+  new StringOutputParser(), // 解析输出
 ]);
 
 const answer = await ragChain.invoke("什么是 Fiber 架构？");
@@ -1106,15 +1110,15 @@ Retriever 接口：
 
 当检索到的文档太多，超出 LLM 上下文窗口时，需要用不同的 Chain 策略处理：
 
-| Chain 类型 | 原理 | 优势 | 劣势 | 适用场景 |
-|-----------|------|------|------|---------|
-| **Stuff** | 把所有文档拼接成一个 Prompt | 最简单，一次调用 | 文档太多会超出上下文窗口 | 文档少（&lt; 5 个） |
-| **MapReduce** | 每个文档单独摘要，再合并摘要 | 支持大量文档 | 多次调用 LLM，成本高 | 文档多且需要全局视角 |
-| **Refine** | 先用第一个文档生成答案，再用后续文档逐个修正 | 答案逐步精炼 | 后续文档的影响递减 | 需要逐步深入的场景 |
-| **Map-Rerank** | 每个文档单独评分，选最高分的答案 | 忽略无关文档 | 可能丢失跨文档信息 | 有明确答案的场景 |
+| Chain 类型     | 原理                                         | 优势             | 劣势                     | 适用场景             |
+| -------------- | -------------------------------------------- | ---------------- | ------------------------ | -------------------- |
+| **Stuff**      | 把所有文档拼接成一个 Prompt                  | 最简单，一次调用 | 文档太多会超出上下文窗口 | 文档少（&lt; 5 个）  |
+| **MapReduce**  | 每个文档单独摘要，再合并摘要                 | 支持大量文档     | 多次调用 LLM，成本高     | 文档多且需要全局视角 |
+| **Refine**     | 先用第一个文档生成答案，再用后续文档逐个修正 | 答案逐步精炼     | 后续文档的影响递减       | 需要逐步深入的场景   |
+| **Map-Rerank** | 每个文档单独评分，选最高分的答案             | 忽略无关文档     | 可能丢失跨文档信息       | 有明确答案的场景     |
 
 ```javascript
-import { loadQAStuffChain, loadQAMapReduceChain } from 'langchain/chains';
+import { loadQAStuffChain, loadQAMapReduceChain } from "langchain/chains";
 
 // Stuff Chain：所有文档拼接成一个 Prompt（最常用）
 const stuffChain = loadQAStuffChain(llm);
@@ -1125,7 +1129,7 @@ const result = await stuffChain.call({
 
 // MapReduce Chain：每个文档单独摘要，再合并
 const mapReduceChain = loadQAMapReduceChain(llm);
-const result = await mapReduceChain.call({
+const summary = await mapReduceChain.call({
   input_documents: docs,
   question: "总结所有文档的核心观点",
 });
@@ -1136,7 +1140,7 @@ const result = await mapReduceChain.call({
 实际项目中，基础的 RAG Chain 往往不够用。你需要自定义 Pipeline，加入查询改写、混合检索、Reranker、答案验证等环节。
 
 ```javascript
-import { RunnableSequence } from '@langchain/core/runnables';
+import { RunnableSequence } from "@langchain/core/runnables";
 
 // 自定义 RAG Pipeline：查询改写 → 混合检索 → Reranker → 生成
 const customRAGPipeline = RunnableSequence.from([
@@ -1154,7 +1158,10 @@ const customRAGPipeline = RunnableSequence.from([
 
   // Step 3: Reranker 精排
   async ({ question, docs }) => {
-    const rerankedDocs = await reranker.invoke({ query: question, documents: docs });
+    const rerankedDocs = await reranker.invoke({
+      query: question,
+      documents: docs,
+    });
     return { question, docs: rerankedDocs.slice(0, 3) };
   },
 
@@ -1250,14 +1257,14 @@ Dify 的核心概念：
 
 ### n8n vs Dify 对比
 
-| 维度 | n8n | Dify |
-|------|-----|------|
-| **核心定位** | 工作流自动化（通用） | LLM 应用开发平台（AI 专项） |
-| **RAG 能力** | 需要自行集成（HTTP 调用向量数据库） | 内置完整 RAG 流程 |
-| **Agent 能力** | 需要自行编排 | 内置 Agent 推理循环 |
-| **可视化** | 工作流节点编辑器 | 应用配置 + 工作流编排 |
-| **目标用户** | 运维/开发人员 | 产品经理/业务人员/开发者 |
-| **适用场景** | 跨系统自动化、定时任务 | AI 应用快速搭建、企业知识库 |
+| 维度           | n8n                                 | Dify                        |
+| -------------- | ----------------------------------- | --------------------------- |
+| **核心定位**   | 工作流自动化（通用）                | LLM 应用开发平台（AI 专项） |
+| **RAG 能力**   | 需要自行集成（HTTP 调用向量数据库） | 内置完整 RAG 流程           |
+| **Agent 能力** | 需要自行编排                        | 内置 Agent 推理循环         |
+| **可视化**     | 工作流节点编辑器                    | 应用配置 + 工作流编排       |
+| **目标用户**   | 运维/开发人员                       | 产品经理/业务人员/开发者    |
+| **适用场景**   | 跨系统自动化、定时任务              | AI 应用快速搭建、企业知识库 |
 
 <Note title="一句话总结">
 
@@ -1295,15 +1302,15 @@ Fine-tuning（能力注入）：让 LLM "学会"某种风格/格式
 
 ### 适用场景对比
 
-| 维度 | RAG | Fine-tuning |
-|------|-----|-------------|
-| **解决的问题** | LLM 不知道（知识缺失） | LLM 不会（能力不足） |
-| **知识更新** | 实时（换文档就行） | 需要重新训练 |
-| **成本** | 低（只需向量数据库） | 高（需要 GPU 和训练数据） |
-| **幻觉控制** | 好（基于真实文档） | 一般（仍可能幻觉） |
-| **私有数据** | 天然支持 | 需要脱敏处理 |
-| **输出风格** | 不改变 LLM 的风格 | 可以精确控制输出风格 |
-| **适用场景** | 知识问答、文档检索 | 风格迁移、特定格式输出 |
+| 维度           | RAG                    | Fine-tuning               |
+| -------------- | ---------------------- | ------------------------- |
+| **解决的问题** | LLM 不知道（知识缺失） | LLM 不会（能力不足）      |
+| **知识更新**   | 实时（换文档就行）     | 需要重新训练              |
+| **成本**       | 低（只需向量数据库）   | 高（需要 GPU 和训练数据） |
+| **幻觉控制**   | 好（基于真实文档）     | 一般（仍可能幻觉）        |
+| **私有数据**   | 天然支持               | 需要脱敏处理              |
+| **输出风格**   | 不改变 LLM 的风格      | 可以精确控制输出风格      |
+| **适用场景**   | 知识问答、文档检索     | 风格迁移、特定格式输出    |
 
 ```javascript
 // RAG 场景：知识问答
@@ -1324,7 +1331,7 @@ Fine-tuning（能力注入）：让 LLM "学会"某种风格/格式
 
 <Note title="一句话总结">
 
-RAG 解决的是"不知道"的问题（知识注入），Fine-tuning 解决的是"不会做"的问题（能力注入）。80% 的企业场景用 RAG 就够了。Fine-tuning 只在两种场景下考虑：1) 需要特定的输出风格；2) 需要理解领域专用术语。两者也可以组合使用。
+RAG 解决的是"不知道"的问题（知识注入），Fine-tuning 解决的是"不会做"的问题（能力注入）。大多数企业场景用 RAG 就够了。Fine-tuning 只在两种场景下考虑：1) 需要特定的输出风格；2) 需要理解领域专用术语。两者也可以组合使用。
 
 </Note>
 
@@ -1362,18 +1369,18 @@ PDF 文档 → 文字提取 + 图片解析 + 表格结构化
 
 企业级文档（合同、财报、技术手册）通常是图文混排的 PDF。传统的 `pdf-parse` 或 `pdfjs-dist` 只能提取纯文本，图片、表格、公式全部丢失。专业的文档解析工具通过 OCR + 版面分析来保留完整的文档结构。
 
-| 工具 | 类型 | 特点 | 适用场景 |
-|------|------|------|---------|
-| **MinerU**（OpenDataLab） | 开源，自部署 | 版面分析 + OCR + 公式识别，保留文档结构 | 企业私有化部署，中文文档 |
-| **LlamaParse**（LlamaIndex） | 托管 API | 深度集成 LlamaIndex 生态，支持复杂 PDF/PPT | 快速原型，不想自建解析流水线 |
-| **Docling**（IBM Research） | 开源，自部署 | 支持 90+ 文件格式，文档级理解，多格式导出 | 多格式文档统一解析 |
+| 工具                         | 类型         | 特点                                       | 适用场景                     |
+| ---------------------------- | ------------ | ------------------------------------------ | ---------------------------- |
+| **MinerU**（OpenDataLab）    | 开源，自部署 | 版面分析 + OCR + 公式识别，保留文档结构    | 企业私有化部署，中文文档     |
+| **LlamaParse**（LlamaIndex） | 托管 API     | 深度集成 LlamaIndex 生态，支持复杂 PDF/PPT | 快速原型，不想自建解析流水线 |
+| **Docling**（IBM Research）  | 开源，自部署 | 支持 90+ 文件格式，文档级理解，多格式导出  | 多格式文档统一解析           |
 
 ```javascript
 // MinerU 解析 PDF（保留图片、表格、公式）
-import { MinerU } from 'magic-pdf';
+import { MinerU } from "magic-pdf";
 
 const parser = new MinerU();
-const result = await parser.parse('./quarterly-report.pdf');
+const result = await parser.parse("./quarterly-report.pdf");
 
 // result 包含：
 // - text_blocks：纯文本段落（带位置信息）
@@ -1387,25 +1394,33 @@ const result = await parser.parse('./quarterly-report.pdf');
 
 表格是 RAG 系统中最难处理的结构化数据。传统的文本切片会打碎表格的行列关系，导致检索到的切片丢失结构化语义。
 
-| 方案 | 原理 | 优势 | 劣势 |
-|------|------|------|------|
-| **Table Transformer**（Microsoft） | 基于 Transformer 的表格检测 + 结构识别 | 端到端，从图片中提取表格结构 | 需要 GPU，部署成本高 |
-| **Camelot** | 基于 PDF 线条检测的表格提取 | 轻量级，适合有明确边框的表格 | 无法处理无线框表格 |
-| **VLM 直接理解**（GPT-4V/Qwen-VL） | 多模态大模型直接"看"表格图片并结构化 | 理解力最强，能处理任意复杂表格 | 成本高，速度慢 |
+| 方案                               | 原理                                   | 优势                           | 劣势                 |
+| ---------------------------------- | -------------------------------------- | ------------------------------ | -------------------- |
+| **Table Transformer**（Microsoft） | 基于 Transformer 的表格检测 + 结构识别 | 端到端，从图片中提取表格结构   | 需要 GPU，部署成本高 |
+| **Camelot**                        | 基于 PDF 线条检测的表格提取            | 轻量级，适合有明确边框的表格   | 无法处理无线框表格   |
+| **VLM 直接理解**（GPT-4V/Qwen-VL） | 多模态大模型直接"看"表格图片并结构化   | 理解力最强，能处理任意复杂表格 | 成本高，速度慢       |
 
 ```javascript
 // VLM 表格解析：用多模态大模型直接理解表格图片
-const tableImage = fs.readFileSync('./table.png', { base64: true });
+const tableImage = fs.readFileSync("./table.png", { base64: true });
 
 const response = await openai.chat.completions.create({
-  model: 'gpt-4o',
-  messages: [{
-    role: 'user',
-    content: [
-      { type: 'text', text: '请将这个表格解析为 JSON 格式，保留所有行列关系。' },
-      { type: 'image_url', image_url: { url: `data:image/png;base64,${tableImage}` } }
-    ]
-  }]
+  model: "gpt-4o",
+  messages: [
+    {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: "请将这个表格解析为 JSON 格式，保留所有行列关系。",
+        },
+        {
+          type: "image_url",
+          image_url: { url: `data:image/png;base64,${tableImage}` },
+        },
+      ],
+    },
+  ],
 });
 // 输出结构化 JSON，可直接存入向量数据库或关系型数据库
 ```
@@ -1424,42 +1439,43 @@ const response = await openai.chat.completions.create({
          原始图片 → 图片 Embedding（CLIP/SigLIP）→ 存入向量数据库
 ```
 
-### 多模态嵌入（CLIP、SigLIP、BGE-M3）
+### 多模态嵌入（CLIP、SigLIP）
 
 多模态嵌入的核心是**把文本和图片映射到同一个向量空间**，使得"一张猫的图片"和"一只猫"在向量空间中距离很近。<sup>[2]</sup>
 
-| 模型 | 来源 | 特点 | 适用场景 |
-|------|------|------|---------|
-| **CLIP** | OpenAI | 图文对比学习的开创者，零样本图文匹配 | 通用图文检索基线 |
-| **SigLIP** | Google | 用 Sigmoid 替代 Softmax，扩展性更好 | 大规模图文检索 |
-| **BGE-M3** | BAAI | 多语言、多功能（Dense+Sparse+Multi-vector）| 中文多模态检索 |
+| 模型       | 来源   | 特点                                 | 适用场景         |
+| ---------- | ------ | ------------------------------------ | ---------------- |
+| **CLIP**   | OpenAI | 图文对比学习的开创者，零样本图文匹配 | 通用图文检索基线 |
+| **SigLIP** | Google | 用 Sigmoid 替代 Softmax，扩展性更好  | 大规模图文检索   |
+
+> BGE-M3 属于文本 Embedding（多语言，同时输出 Dense、Sparse、Multi-vector），不能处理图片，不要和多模态模型混用。
 
 ```javascript
 // 多模态 RAG 索引：文本和图片分别向量化
-import { OpenAIEmbeddings } from '@langchain/openai';
-import { Milvus } from '@langchain/community/vectorstores/milvus';
+import { OpenAIEmbeddings } from "@langchain/openai";
+import { Milvus } from "@langchain/community/vectorstores/milvus";
 
 // 文本切片 → 文本 Embedding
 const textChunks = await splitter.splitDocuments(documents);
-const textEmbeddings = new OpenAIEmbeddings({ model: 'text-embedding-3-small' });
+const textEmbeddings = new OpenAIEmbeddings({
+  model: "text-embedding-3-small",
+});
 
 // 图片 → CLIP/SigLIP Embedding
-const imageEmbeddings = new CLIPEmbeddings();  // 或 SigLIP Embedding
+const imageEmbeddings = new CLIPEmbeddings(); // 或 SigLIP Embedding
 
-// 分别存入向量数据库（同一个 Collection，不同字段）
-await milvus.addDocuments(textChunks, { embeddingField: 'text_embedding' });
-await milvus.addImages(imagePaths, { embeddingField: 'image_embedding' });
+// 分别存入向量数据库的文本字段和图片字段（同一 Collection，不同字段）
+await milvus.addDocuments(textChunks, { embeddingField: "text_embedding" });
+// 图片先经 CLIP/SigLIP 编码，再以 Document 形式写入 image_embedding 字段
+await milvus.addDocuments(imageDocs, { embeddingField: "image_embedding" });
 
-// 检索时：文本查询同时检索文本和图片
-const results = await milvus.similaritySearch(query, {
-  fields: ['text_embedding', 'image_embedding'],  // 多模态融合检索
-  k: 5,
-});
+// 检索时：文本查询同时检索文本和图片两个字段，再在应用层融合排序
+const results = await milvus.similaritySearch(query, { k: 5 });
 ```
 
 <Note title="一句话总结">
 
-多模态 RAG 的核心是让 RAG 系统能"看懂"文档中的图片和表格——用 MinerU/LlamaParse/Docling 解析 PDF 图文混排，用 Table Transformer/VLM 结构化表格数据，用 GPT-4V/Qwen-VL 提取图片语义描述，用 CLIP/SigLIP/BGE-M3 实现跨模态向量检索。2025 年的趋势是"视觉原生解析"——直接用多模态大模型理解文档版面，而不是传统的 OCR + 规则解析。
+多模态 RAG 的核心是让 RAG 系统能"看懂"文档中的图片和表格——用 MinerU/LlamaParse/Docling 解析 PDF 图文混排，用 Table Transformer/VLM 结构化表格数据，用 GPT-4V/Qwen-VL 提取图片语义描述，用 CLIP/SigLIP 实现跨模态向量检索。2025 年的趋势是"视觉原生解析"——直接用多模态大模型理解文档版面，而不是传统的 OCR + 规则解析。
 
 </Note>
 
@@ -1500,19 +1516,20 @@ async function queryRecipe(productName, ingredient) {
   // 1. 混合检索：向量语义 + BM25 关键词精确匹配
   const results = await hybridSearch({
     query: `${productName} 配方中 ${ingredient} 的含量和供应商`,
-    vectorWeight: 0.4,   // 降低语义权重
-    bm25Weight: 0.6,     // 提高关键词权重（成分名必须精确匹配）
+    vectorWeight: 0.4, // 降低语义权重
+    bm25Weight: 0.6, // 提高关键词权重（成分名必须精确匹配）
     metadataFilter: {
-      documentType: 'recipe',
-      status: 'active',          // 只检索当前生效的配方
-      market: 'CN',              // 按市场过滤
+      documentType: "recipe",
+      status: "active", // 只检索当前生效的配方
+      market: "CN", // 按市场过滤
     },
     topK: 5,
   });
 
   // 2. 版本校验：确保返回的是最新版本
-  const latestVersion = results
-    .sort((a, b) => b.metadata.version - a.metadata.version)[0];
+  const latestVersion = results.sort(
+    (a, b) => b.metadata.version - a.metadata.version,
+  )[0];
 
   return {
     content: latestVersion.pageContent,
@@ -1555,10 +1572,10 @@ async function diagnoseFault(faultCode, equipmentId) {
     {
       k: 3,
       filter: {
-        documentType: 'maintenance_manual',
-        equipmentModel: equipmentId.split('-')[0],  // 按设备型号过滤
+        documentType: "maintenance_manual",
+        equipmentModel: equipmentId.split("-")[0], // 按设备型号过滤
       },
-    }
+    },
   );
 
   // 3. LLM 生成维修方案（< 1s）
@@ -1567,7 +1584,7 @@ async function diagnoseFault(faultCode, equipmentId) {
     要求：每步包含操作说明、所需工具、安全注意事项。
 
     维修手册：
-    ${docs.map(d => d.pageContent).join('\n---\n')}`,
+    ${docs.map((d) => d.pageContent).join("\n---\n")}`,
   });
 
   // 4. 写入缓存（高频故障永久缓存）
@@ -1611,21 +1628,24 @@ async function diagnoseFault(faultCode, equipmentId) {
 // 金融合规 RAG：GraphRAG + 法规出处追溯
 async function complianceCheck(businessType, scenario) {
   // 1. 知识图谱查询：找到与业务类型相关的法规链
-  const regulationChain = await graphDB.run(`
+  const regulationChain = await graphDB.run(
+    `
     MATCH (b:Business {type: $bizType})<-[:REGULATES]-(r:Regulation)
     WHERE r.status = 'active'
     MATCH (r)-[:REFERENCES]->(referenced:Regulation)
     RETURN r.id, r.title, r.clause, referenced.id, referenced.clause
     ORDER BY r.effectiveDate DESC
-  `, { bizType: businessType });
+  `,
+    { bizType: businessType },
+  );
 
   // 2. 向量检索：找到法规原文和相关案例
   const docs = await vectorStore.similaritySearch(
     `${businessType} ${scenario} 合规要求 监管规定`,
     {
       k: 5,
-      filter: { documentType: { $in: ['regulation', 'case_study'] } },
-    }
+      filter: { documentType: { $in: ["regulation", "case_study"] } },
+    },
   );
 
   // 3. LLM 生成合规分析报告（强制引用法规编号）
@@ -1635,7 +1655,7 @@ async function complianceCheck(businessType, scenario) {
     业务场景：${scenario}
 
     相关法规：
-    ${docs.map((d, i) => `[${i + 1}] ${d.pageContent}（来源：${d.metadata.regulationId}）`).join('\n\n')}
+    ${docs.map((d, i) => `[${i + 1}] ${d.pageContent}（来源：${d.metadata.regulationId}）`).join("\n\n")}
 
     要求：
     1. 明确给出合规/不合规/需进一步确认的结论
@@ -1675,13 +1695,13 @@ async function checkDrugInteraction(drugA, drugB) {
     {
       k: 5,
       filter: {
-        documentType: 'drug_label',
+        documentType: "drug_label",
         $or: [
           { genericName: { $in: [drugA, drugB] } },
           { brandName: { $in: [drugA, drugB] } },
         ],
       },
-    }
+    },
   );
 
   // 2. LLM 生成药物相互作用分析（强制标注证据等级）
@@ -1689,7 +1709,7 @@ async function checkDrugInteraction(drugA, drugB) {
     prompt: `你是临床药师。分析 ${drugA} 和 ${drugB} 的相互作用。
 
     药物说明书：
-    ${docs.map(d => d.pageContent).join('\n---\n')}
+    ${docs.map((d) => d.pageContent).join("\n---\n")}
 
     要求：
     1. 明确指出是否存在相互作用
@@ -1735,10 +1755,13 @@ async function checkDrugInteraction(drugA, drugB) {
 
 ```javascript
 // 医疗 RAG：HIPAA 脱敏处理
-import { pipeline } from '@huggingface/transformers';
+import { pipeline } from "@huggingface/transformers";
 
 // 加载 NER 模型（识别 PII 实体）
-const nerPipeline = await pipeline('token-classification', 'dslim/bert-base-NER');
+const nerPipeline = await pipeline(
+  "token-classification",
+  "dslim/bert-base-NER",
+);
 
 async function deidentifyMedicalRecord(record) {
   // 1. 识别 PII 实体
@@ -1747,16 +1770,16 @@ async function deidentifyMedicalRecord(record) {
   // 2. 脱敏替换
   let deidentified = record;
   const piiMap = {
-    'PER': '[姓名已脱敏]',
-    'LOC': '[地址已脱敏]',
-    'ORG': '[机构已脱敏]',
+    PER: "[姓名已脱敏]",
+    LOC: "[地址已脱敏]",
+    ORG: "[机构已脱敏]",
   };
 
   // 按位置倒序替换（避免偏移）
   entities
     .sort((a, b) => b.start - a.start)
-    .forEach(entity => {
-      const replacement = piiMap[entity.entity] || '[已脱敏]';
+    .forEach((entity) => {
+      const replacement = piiMap[entity.entity] || "[已脱敏]";
       deidentified =
         deidentified.slice(0, entity.start) +
         replacement +
@@ -1769,14 +1792,16 @@ async function deidentifyMedicalRecord(record) {
 // 脱敏后的病历才能进入 RAG 知识库
 async function indexMedicalRecord(record) {
   const deidentified = await deidentifyMedicalRecord(record);
-  await vectorStore.addDocuments([{
-    pageContent: deidentified,
-    metadata: {
-      documentType: 'medical_record',
-      deidentified: true,  // 标记已脱敏
-      originalHash: hash(record),  // 原始记录哈希（用于审计追溯）
+  await vectorStore.addDocuments([
+    {
+      pageContent: deidentified,
+      metadata: {
+        documentType: "medical_record",
+        deidentified: true, // 标记已脱敏
+        originalHash: hash(record), // 原始记录哈希（用于审计追溯）
+      },
     },
-  }]);
+  ]);
 }
 ```
 
@@ -1880,7 +1905,7 @@ class IntentClassifier:
 class IntentClassifier {
   constructor(smallModel, llm) {
     this.smallModel = smallModel; // BERT/TextCNN 分类器
-    this.llm = llm;               // 大语言模型
+    this.llm = llm; // 大语言模型
     this.intentCache = new Map();
   }
 
@@ -1904,7 +1929,7 @@ class IntentClassifier {
       对话历史：${JSON.stringify(history.slice(-3))}
 
       返回格式：
-      {"intent": "意图标签", "confidence": 0.95, "entities": {"key": "value"}}`
+      {"intent": "意图标签", "confidence": 0.95, "entities": {"key": "value"}}`,
     );
 
     return JSON.parse(llmResult);
@@ -2045,7 +2070,7 @@ class ConversationManager {
       // 槽位不完整，追问
       return {
         content: await this.llm.invoke(
-          `用户意图：${state.intent}，已知信息：${JSON.stringify(state.slots)}，还需要：${missingSlots}。请用自然语言追问缺失信息。`
+          `用户意图：${state.intent}，已知信息：${JSON.stringify(state.slots)}，还需要：${missingSlots}。请用自然语言追问缺失信息。`,
         ),
         action: "ask_slot",
         missing: missingSlots,
@@ -2055,7 +2080,7 @@ class ConversationManager {
     // 槽位完整，基于知识库回答
     return {
       content: await this.llm.invoke(
-        `基于以下知识回答用户问题：\n${context}\n\n用户意图：${state.intent}\n用户信息：${JSON.stringify(state.slots)}`
+        `基于以下知识回答用户问题：\n${context}\n\n用户意图：${state.intent}\n用户信息：${JSON.stringify(state.slots)}`,
       ),
       action: "respond",
     };
@@ -2205,7 +2230,15 @@ class HumanHandoffStrategy {
   }
 
   isSensitiveTopic(message) {
-    const sensitiveKeywords = ["退款", "赔偿", "律师", "法律", "起诉", "密码", "账户"];
+    const sensitiveKeywords = [
+      "退款",
+      "赔偿",
+      "律师",
+      "法律",
+      "起诉",
+      "密码",
+      "账户",
+    ];
     return sensitiveKeywords.some((kw) => message.includes(kw));
   }
 }
@@ -2389,8 +2422,9 @@ class CustomerServiceAgent {
   }
 
   async handleMessage(sessionId, userMessage) {
-    const conv = this.conversations.get(sessionId)
-      || new ConversationManager(this.llm, this.kb);
+    const conv =
+      this.conversations.get(sessionId) ||
+      new ConversationManager(this.llm, this.kb);
 
     // 1. 意图识别
     const intent = await conv.classifyIntent(userMessage, conv.history);
@@ -2404,15 +2438,19 @@ class CustomerServiceAgent {
     const response = await conv.generateResponse(intent, context);
 
     // 4. 转人工判断
-    const handoffDecision = this.handoff.shouldTransfer(
-      userMessage, response, { history: conv.history }
-    );
+    const handoffDecision = this.handoff.shouldTransfer(userMessage, response, {
+      history: conv.history,
+    });
 
     if (handoffDecision.transfer) {
       const ticket = await this.tickets.createTicket(
-        { id: sessionId, userId: conv.userId,
-          intent: intent.intent, history: conv.history },
-        handoffDecision.reasons.join("; ")
+        {
+          id: sessionId,
+          userId: conv.userId,
+          intent: intent.intent,
+          history: conv.history,
+        },
+        handoffDecision.reasons.join("; "),
       );
       return {
         action: "transfer_to_human",
@@ -2475,26 +2513,26 @@ RAGAS 就像一个自动化的考试阅卷系统。Faithfulness（忠实度）�
 
 ### RAGAS 核心指标详解
 
-| 指标 | 评估维度 | 计算方式 | 含义 |
-|------|---------|---------|------|
-| **Faithfulness（忠实度）** | 生成质量 | 答案中的每句话是否能从 Context 中找到依据 | 答案是否基于文档（不编造） |
-| **Answer Relevancy（答案相关性）** | 生成质量 | 用 LLM 生成反向问题，计算与原问题的相似度 | 答案是否回答了问题 |
-| **Context Precision（上下文精确度）** | 检索质量 | 相关文档在检索结果中的排名 | 检索结果排序是否合理 |
-| **Context Recall（上下文召回率）** | 检索质量 | Ground Truth 中的关键信息是否被检索到 | 是否找到了所有相关文档 |
-| **Answer Correctness（答案正确性）** | 端到端 | 答案与 Ground Truth 的语义相似度 | 最终答案是否正确 |
+| 指标                                  | 评估维度 | 计算方式                                  | 含义                       |
+| ------------------------------------- | -------- | ----------------------------------------- | -------------------------- |
+| **Faithfulness（忠实度）**            | 生成质量 | 答案中的每句话是否能从 Context 中找到依据 | 答案是否基于文档（不编造） |
+| **Answer Relevancy（答案相关性）**    | 生成质量 | 用 LLM 生成反向问题，计算与原问题的相似度 | 答案是否回答了问题         |
+| **Context Precision（上下文精确度）** | 检索质量 | 相关文档在检索结果中的排名                | 检索结果排序是否合理       |
+| **Context Recall（上下文召回率）**    | 检索质量 | Ground Truth 中的关键信息是否被检索到     | 是否找到了所有相关文档     |
+| **Answer Correctness（答案正确性）**  | 端到端   | 答案与 Ground Truth 的语义相似度          | 最终答案是否正确           |
 
 ```javascript
 // RAGAS 评估实现
-import { evaluate } from 'ragas';
-import { RagasLLM, RagasEmbeddings } from 'ragas';
+import { evaluate } from "ragas";
+import { RagasLLM, RagasEmbeddings } from "ragas";
 
 // 1. 准备测试集
 const testDataset = [
   {
-    question: '什么是 React Fiber 架构？',
-    ground_truth: 'Fiber 是 React 16 引入的协调算法...',
-    contexts: ['Fiber 是 React 16 引入的增量渲染架构...'],
-    answer: 'Fiber 是 React 的协调算法，用于实现增量渲染...',
+    question: "什么是 React Fiber 架构？",
+    ground_truth: "Fiber 是 React 16 引入的协调算法...",
+    contexts: ["Fiber 是 React 16 引入的增量渲染架构..."],
+    answer: "Fiber 是 React 的协调算法，用于实现增量渲染...",
   },
   // ... 更多测试用例
 ];
@@ -2502,12 +2540,12 @@ const testDataset = [
 // 2. 运行评估
 const result = await evaluate(testDataset, {
   metrics: [
-    'faithfulness',
-    'answer_relevancy',
-    'context_precision',
-    'context_recall',
+    "faithfulness",
+    "answer_relevancy",
+    "context_precision",
+    "context_recall",
   ],
-  llm: new RagasLLM(new ChatOpenAI({ model: 'gpt-4o' })),
+  llm: new RagasLLM(new ChatOpenAI({ model: "gpt-4o" })),
   embeddings: new RagasEmbeddings(new OpenAIEmbeddings()),
 });
 
@@ -2609,13 +2647,15 @@ async function indexDocument(file) {
   const chunks = await splitter.splitDocuments(parsed.textBlocks);
 
   // 3. 向量化（批处理，降低成本）
-  const embeddings = await embeddingModel.embedBatch(chunks, { batchSize: 100 });
+  const embeddings = await embeddingModel.embedBatch(chunks, {
+    batchSize: 100,
+  });
 
   // 4. 存入向量数据库
   await vectorStore.addDocuments(chunks, embeddings);
 
   // 5. 更新索引版本
-  await cache.invalidate('index_version');
+  await cache.invalidate("index_version");
 }
 
 // 在线检索：用户提问 → 检索 → 生成
@@ -2633,7 +2673,7 @@ async function answerQuestion(question) {
   // 4. LLM 生成
   const answer = await generateAnswer(question, ranked);
 
-  return { answer, sources: ranked.map(d => d.metadata.source) };
+  return { answer, sources: ranked.map((d) => d.metadata.source) };
 }
 ```
 
@@ -2673,24 +2713,34 @@ async function vlmRerank(query, candidates, { topN = 3 }) {
     candidates.map(async (doc) => {
       // 对于包含图片的文档，VLM 能同时评估文本和图片的相关性
       const response = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'text', text: `查询：${query}\n\n文档：${doc.pageContent}\n\n请评估相关性（0-10 分）：` },
-            ...(doc.images ? doc.images.map(img => ({
-              type: 'image_url',
-              image_url: { url: img }
-            })) : [])
-          ]
-        }],
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `查询：${query}\n\n文档：${doc.pageContent}\n\n请评估相关性（0-10 分）：`,
+              },
+              ...(doc.images
+                ? doc.images.map((img) => ({
+                    type: "image_url",
+                    image_url: { url: img },
+                  }))
+                : []),
+            ],
+          },
+        ],
         max_tokens: 10,
       });
       return { doc, score: parseFloat(response.choices[0].message.content) };
-    })
+    }),
   );
 
-  return scores.sort((a, b) => b.score - a.score).slice(0, topN).map(s => s.doc);
+  return scores
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topN)
+    .map((s) => s.doc);
 }
 ```
 
@@ -2698,18 +2748,18 @@ async function vlmRerank(query, candidates, { topN = 3 }) {
 
 前端与 RAG 系统的集成需要关注**流式渲染、引用来源展示、用户反馈收集**三个核心体验。
 
-| 最佳实践 | 实现方式 | 用户体验价值 |
-|---------|---------|------------|
-| **流式渲染（SSE）** | 后端用 Server-Sent Events 逐字返回答案 | 用户不用等全部生成完，实时看到答案 |
-| **引用来源高亮** | 答案中标注 `[1]`、`[2]`，点击跳转到原文 | 用户可以验证答案的可信度 |
-| **反馈收集（Thumbs Up/Down）** | 每个答案下方加反馈按钮 | 收集用户满意度数据，驱动评估迭代 |
-| **答案置信度展示** | 低置信度答案标注"仅供参考" | 降低用户对错误答案的信任 |
+| 最佳实践                       | 实现方式                                | 用户体验价值                       |
+| ------------------------------ | --------------------------------------- | ---------------------------------- |
+| **流式渲染（SSE）**            | 后端用 Server-Sent Events 逐字返回答案  | 用户不用等全部生成完，实时看到答案 |
+| **引用来源高亮**               | 答案中标注 `[1]`、`[2]`，点击跳转到原文 | 用户可以验证答案的可信度           |
+| **反馈收集（Thumbs Up/Down）** | 每个答案下方加反馈按钮                  | 收集用户满意度数据，驱动评估迭代   |
+| **答案置信度展示**             | 低置信度答案标注"仅供参考"              | 降低用户对错误答案的信任           |
 
 ```javascript
 // 前端流式渲染 RAG 答案
-const response = await fetch('/api/rag/query', {
-  method: 'POST',
-  body: JSON.stringify({ question: '什么是 Fiber 架构？' }),
+const response = await fetch("/api/rag/query", {
+  method: "POST",
+  body: JSON.stringify({ question: "什么是 Fiber 架构？" }),
 });
 
 const reader = response.body.getReader();
@@ -2723,9 +2773,9 @@ while (true) {
   // 解析 SSE 事件，逐字渲染到页面
   const events = parseSSE(chunk);
   for (const event of events) {
-    if (event.type === 'token') {
-      appendToken(event.data);  // 逐字追加到 DOM
-    } else if (event.type === 'source') {
+    if (event.type === "token") {
+      appendToken(event.data); // 逐字追加到 DOM
+    } else if (event.type === "source") {
       showCitation(event.data); // 显示引用来源 [1]
     }
   }
@@ -2786,7 +2836,7 @@ RAG 质量优化从四个维度入手：
 - **RAG** 解决的是"LLM 不知道"的问题——知识注入。让 LLM 查资料而不是背书。适用于知识问答、文档检索。成本低，实时更新。
 - **Fine-tuning** 解决的是"LLM 不会做"的问题——能力注入。让 LLM 学会某种风格或格式。适用于风格迁移、特定格式输出。成本高，需要重新训练。
 
-80% 的企业场景用 RAG 就够了。Fine-tuning 只在需要特定输出风格或领域术语理解时考虑。两者也可以组合：Fine-tuning 让模型理解领域术语，RAG 提供最新知识。
+大多数企业场景用 RAG 就够了。Fine-tuning 只在需要特定输出风格或领域术语理解时考虑。两者也可以组合：Fine-tuning 让模型理解领域术语，RAG 提供最新知识。
 
 ### n8n 和 Dify 的区别？
 
@@ -2801,12 +2851,12 @@ RAG 质量优化从四个维度入手：
 
 RAGAS（Retrieval Augmented Generation Assessment）是 RAG 系统的权威评估框架，核心指标包括：
 
-| 指标 | 评估维度 | 含义 |
-|------|---------|------|
-| **Faithfulness（忠实度）** | 生成质量 | 答案是否基于检索到的文档（不编造） |
-| **Answer Relevancy（答案相关性）** | 生成质量 | 答案是否与问题相关 |
-| **Context Precision（上下文精确度）** | 检索质量 | 检索到的文档是否与问题相关 |
-| **Context Recall（上下文召回率）** | 检索质量 | 是否检索到了所有相关文档 |
+| 指标                                  | 评估维度 | 含义                               |
+| ------------------------------------- | -------- | ---------------------------------- |
+| **Faithfulness（忠实度）**            | 生成质量 | 答案是否基于检索到的文档（不编造） |
+| **Answer Relevancy（答案相关性）**    | 生成质量 | 答案是否与问题相关                 |
+| **Context Precision（上下文精确度）** | 检索质量 | 检索到的文档是否与问题相关         |
+| **Context Recall（上下文召回率）**    | 检索质量 | 是否检索到了所有相关文档           |
 
 <Warning title="核心机制: 评估驱动优化">
 
@@ -2853,7 +2903,7 @@ RAG 面试的核心是理解"检索质量决定最终质量"——切片策略�
 ## 🔍 底层源码：向量检索是如何实现的？
 
 <div class="follow-up">
-向量数据库是怎么在百万级向量中快速找到最相似的 Top-K 个？
+  向量数据库是怎么在百万级向量中快速找到最相似的 Top-K 个？
 </div>
 
 主流向量数据库使用 **HNSW（Hierarchical Navigable Small World）** 算法实现近似最近邻搜索。核心思想是构建一个多层的图结构，从顶层开始贪心搜索，逐层下降，最终在底层找到最近邻（详见 [HNSW 论文](https://arxiv.org/abs/1603.09320)）：
@@ -2877,9 +2927,7 @@ Layer 0（最密集）: G ─ H ─ I ─ J ─ K ─ L
 
 HNSW 的时间复杂度是 O(log N)，比暴力搜索的 O(N) 快得多。100 万条 1536 维的向量，暴力搜索需要几秒，HNSW 只需要几毫秒。
 
-<div class="follow-up">
-BM25 的底层实现原理是什么？
-</div>
+<div class="follow-up">BM25 的底层实现原理是什么？</div>
 
 BM25 基于**词频（TF）和逆文档频率（IDF）**的统计模型（详见 [Lucene BM25 实现](https://github.com/apache/lucene)）：
 
@@ -2898,26 +2946,27 @@ BM25 的优势是精确关键词匹配，劣势是无法理解语义（"汽车"�
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## Q14: 满分回答 vs 及格回答
 
 ### 问题："说说 RAG 的核心原理和质量优化策略"
 
 **及格回答（60-70分）：**
+
 > "RAG 就是先检索文档，再让 LLM 根据文档回答。流程是文档切片、向量化、检索、生成。质量优化可以用更好的 Embedding 模型。"
 
-面试官评价：**知道流程但不理解瓶颈**。
+问题出在：**知道流程但不理解瓶颈**。
 
 **满分回答（90-100分）：**
 
 > "RAG 的核心是**检索增强生成**——先从知识库中检索相关文档，再把文档作为上下文注入 Prompt，让 LLM 基于真实文档回答，而不是依赖训练时记住的知识。完整流程分三个阶段：索引（文档加载 → 切片 → 向量化 → 存入向量数据库）、检索（问题向量化 → 相似度检索 → 返回 Top-K）、生成（拼接 Prompt → 调用 LLM → 生成答案）。<sup>[1]</sup>"
 
-> "RAG 的质量瓶颈不在 LLM，而在**检索**。检索不到正确的文档，LLM 再强也答不对。优化有四个维度：1) 切片策略——推荐递归切片，chunkSize 500-1500，overlap 10-20%；2) 检索策略——混合检索（向量 + BM25，权重 0.6:0.4）效果最好，加 Reranker（Cross-Encoder）精排通常能提升 20-30% 准确率；3) 查询优化——查询改写、HyDE、多路召回；4) 上下文优化——上下文压缩减少噪声。<sup>[2]</sup>"
+> "RAG 的质量瓶颈不在 LLM，而在**检索**。检索不到正确的文档，LLM 再强也答不对。优化有四个维度：1) 切片策略——推荐递归切片，chunkSize 500-1500，overlap 10-20%；2) 检索策略——混合检索（向量 + BM25，权重 0.6:0.4）效果最好，加 Reranker（Cross-Encoder）精排通常能明显提升检索精度；3) 查询优化——查询改写、HyDE、多路召回；4) 上下文优化——上下文压缩减少噪声。<sup>[2]</sup>"
 
 > "实际项目中，我会先用 RAGAS 建立评估基线（Faithfulness、Answer Relevancy、Context Precision、Context Recall），然后逐步优化。优先级：切片策略 > 混合检索 + Reranker > 查询改写 > Embedding 模型升级。没有评估的优化就是盲人摸象。<sup>[3]</sup>"
 
 > "企业级部署还需要考虑多模态 RAG（用 MinerU/LlamaParse 解析 PDF 图文混排，用 GPT-4V 提取图片语义，用 CLIP/SigLIP 实现跨模态向量检索）、行业合规（金融要求每句话有法规出处，医疗要求病历脱敏）、以及离线/在线分离架构（离线批量预处理文档，在线低延迟检索生成）。前端集成关注流式渲染（SSE）和引用来源展示。<sup>[4]</sup>"
 
-### 大厂高频连环拷问
+### 常见追问
 
 > 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。每个模块 **8 个 Accordion**，覆盖 4 个难度层级。
 
@@ -3003,7 +3052,7 @@ RAG 解决的是'LLM 不知道'的问题——知识注入。典型场景：公�
 
 Fine-tuning 解决的是'LLM 不会做'的问题——能力注入。典型场景：特定语气写作、特定格式输出（SQL/JSON）。数据流：训练数据 → 微调模型 → 新的模型行为。成本高，需要重新训练。
 
-选择标准：80% 的场景用 RAG 就够了。Fine-tuning 只在两种场景下考虑：1) 需要特定的输出风格；2) 需要理解领域专用术语。两者也可以组合：Fine-tuning 让模型理解领域术语，RAG 提供最新知识。"
+选择标准：大多数场景用 RAG 就够了。Fine-tuning 只在两种场景下考虑：1) 需要特定的输出风格；2) 需要理解领域专用术语。两者也可以组合：Fine-tuning 让模型理解领域术语，RAG 提供最新知识。"
 
   </Accordion>
 
@@ -3067,24 +3116,22 @@ Cross-Encoder 的工作方式：把问题和文档拼接在一起，输入同一
 
 ## 📚 延伸阅读与引用参考
 
-- 📖 [Harrison Chase - RAG from Scratch (LangChain)](https://blog.langchain.dev/)：*LangChain 创始人 Harrison Chase 的 RAG 系列教程，从索引、检索、生成三阶段系统性讲解 RAG 架构设计，强调"检索质量决定最终质量"。* <sup>[1]</sup>
-- 🔗 [RAG 论文原文](https://arxiv.org/abs/2005.11401)：*Meta AI 在 2020 年发表的 RAG 原始论文，理解检索增强生成的理论基础。* <sup>[2]</sup>
-- 📖 [Lilian Weng - Retrieval Augmented Generation](https://lilianweng.github.io/posts/2023-06-23-agent/)：*OpenAI 应用研究主管 Lilian Weng 对 RAG 和 Agent 的深度解析，包含 HyDE、Reranking 等高级策略的理论分析。* <sup>[3]</sup>
-- 🔗 [LangChain RAG 教程](https://js.langchain.com/docs/tutorials/rag/)：*LangChain 官方的 RAG 实战教程，包含从文档加载到检索生成的完整流程。* <sup>[4]</sup>
-- 🟢 [MTEB Leaderboard](https://huggingface.co/spaces/mteb/leaderboard)：*Embedding 模型的权威评测排行榜，选型时的参考标准。* <sup>[5]</sup>
-- 📖 [Chip Huyen - AI Engineering (2025)](https://huyenchip.com/ai-engineering/)：*系统性梳理 RAG 架构的工程化落地方法论，涵盖 Naive RAG、Advanced RAG、Agentic RAG 的演进路线。* <sup>[6]</sup>
-- 🔗 [RAGAS 评估框架](https://docs.ragas.io/)：*RAG 系统的权威评估框架，包含 Faithfulness、Relevancy 等核心指标的定义和使用方法。* <sup>[7]</sup>
-- 🔗 [Milvus 官方文档](https://milvus.io/docs)：*大规模向量数据库 Milvus 的官方文档，理解 HNSW 索引、混合检索等底层原理。* <sup>[8]</sup>
-- 🔗 [n8n 官方文档](https://docs.n8n.io/)：*开源工作流自动化工具 n8n 的官方文档，了解节点、连接、触发器的核心概念。* <sup>[9]</sup>
-- 🔗 [Dify 官方文档](https://docs.dify.ai/)：*开源 LLM 应用开发平台 Dify 的官方文档，了解知识库、应用、工作流的核心能力。* <sup>[10]</sup>
-- 🔗 [Neo4j Vector Index 文档](https://neo4j.com/docs/cypher-manual/current/indexes-for-vectors/)：*Neo4j 原生向量索引的官方文档，理解图数据库如何支持向量检索和 Graph RAG。* <sup>[11]</sup>
-- 🔗 [ElasticSearch kNN Search 文档](https://www.elastic.co/guide/en/elasticsearch/reference/current/knn-search.html)：*ElasticSearch 向量检索和混合检索（RRF）的官方文档，理解 BM25 + 向量融合的实现原理。* <sup>[12]</sup>
-- 🔗 [Easysearch 官方文档（极限科技 INFINI Labs）](https://docs.easysearch.io.cn/docs/overview/)：*ElasticSearch 的国产替代方案，兼容 ES API，内置中文分词和向量检索，Apache 2.0 开源协议，适合国内企业合规场景。* <sup>[5]</sup>
-- 📖 [Microsoft GraphRAG 论文](https://arxiv.org/abs/2404.16130)：*微软 2024 年发表的 GraphRAG 论文，提出基于知识图谱的 RAG 架构，解决传统 RAG 无法进行多跳推理的问题。* <sup>[13]</sup>
-- 🔗 [MinerU (OpenDataLab)](https://github.com/opendatalab/MinerU)：*开源 PDF 解析工具，支持版面分析、OCR、公式识别、表格提取，保留文档结构，是多模态 RAG 的核心组件。* <sup>[14]</sup>
-- 🔗 [LlamaParse (LlamaIndex)](https://docs.cloud.llamaindex.ai/llamaparse)：*LlamaIndex 的托管文档解析服务，深度集成 LlamaIndex 生态，支持复杂 PDF/PPT 解析。* <sup>[15]</sup>
-- 🔗 [Docling (IBM Research)](https://github.com/DS4SD/docling)：*IBM 开源的文档转换库，支持 90+ 文件格式，提供文档级理解和多格式导出。* <sup>[16]</sup>
-- 📖 [OpenAI CLIP 论文](https://arxiv.org/abs/2103.00020)：*OpenAI 发表的对比语言-图像预训练模型，开创了图文对比学习范式，是多模态 RAG 嵌入层的基础。* <sup>[17]</sup>
-- 🔗 [RAGAS 评估框架官方文档](https://docs.ragas.io/)：*RAG 系统的权威评估框架，包含 Faithfulness、Relevancy 等核心指标的定义和使用方法。* <sup>[18]</sup>
-- 📖 [Andrej Karpathy - RAG from Scratch](https://github.com/karpathy/rag-from-scratch)：*前 OpenAI 核心技术专家 Andrej Karpathy 的 RAG 教程仓库，从零实现 RAG 的完整流程。* <sup>[19]</sup>
-- 📖 [Anthropic Engineering Blog](https://www.anthropic.com/engineering)：*Anthropic 的工程博客，深入探讨 MCP 底层标准设计和 RAG 最佳实践。* <sup>[20]</sup>
+- 📖 [Harrison Chase - RAG from Scratch (LangChain)](https://blog.langchain.dev/)：_LangChain 创始人 Harrison Chase 的 RAG 系列教程，从索引、检索、生成三阶段系统性讲解 RAG 架构设计，强调"检索质量决定最终质量"。_ <sup>[1]</sup>
+- 🔗 [RAG 论文原文](https://arxiv.org/abs/2005.11401)：_Meta AI 在 2020 年发表的 RAG 原始论文，理解检索增强生成的理论基础。_ <sup>[2]</sup>
+- 📖 [Lilian Weng - LLM Powered Autonomous Agents](https://lilianweng.github.io/posts/2023-06-23-agent/)：_对 LLM Agent 架构的系统梳理，其中讨论了检索、规划、记忆等组件在 RAG 类应用中的作用。_ <sup>[3]</sup>
+- 🔗 [LangChain RAG 教程](https://js.langchain.com/docs/tutorials/rag/)：_LangChain 官方的 RAG 实战教程，包含从文档加载到检索生成的完整流程。_ <sup>[4]</sup>
+- 🟢 [MTEB Leaderboard](https://huggingface.co/spaces/mteb/leaderboard)：_Embedding 模型的权威评测排行榜，选型时的参考标准。_ <sup>[5]</sup>
+- 📖 [Chip Huyen - AI Engineering (2025)](https://huyenchip.com/ai-engineering/)：_系统性梳理 RAG 架构的工程化落地方法论，涵盖 Naive RAG、Advanced RAG、Agentic RAG 的演进路线。_ <sup>[6]</sup>
+- 🔗 [RAGAS 评估框架](https://docs.ragas.io/)：_RAG 系统的权威评估框架，包含 Faithfulness、Relevancy 等核心指标的定义和使用方法。_ <sup>[7]</sup>
+- 🔗 [Milvus 官方文档](https://milvus.io/docs)：_大规模向量数据库 Milvus 的官方文档，理解 HNSW 索引、混合检索等底层原理。_ <sup>[8]</sup>
+- 🔗 [n8n 官方文档](https://docs.n8n.io/)：_开源工作流自动化工具 n8n 的官方文档，了解节点、连接、触发器的核心概念。_ <sup>[9]</sup>
+- 🔗 [Dify 官方文档](https://docs.dify.ai/)：_开源 LLM 应用开发平台 Dify 的官方文档，了解知识库、应用、工作流的核心能力。_ <sup>[10]</sup>
+- 🔗 [Neo4j Vector Index 文档](https://neo4j.com/docs/cypher-manual/current/indexes-for-vectors/)：_Neo4j 原生向量索引的官方文档，理解图数据库如何支持向量检索和 Graph RAG。_ <sup>[11]</sup>
+- 🔗 [ElasticSearch kNN Search 文档](https://www.elastic.co/guide/en/elasticsearch/reference/current/knn-search.html)：_ElasticSearch 向量检索和混合检索（RRF）的官方文档，理解 BM25 + 向量融合的实现原理。_ <sup>[12]</sup>
+- 🔗 [Easysearch 官方文档（极限科技 INFINI Labs）](https://docs.easysearch.io.cn/docs/overview/)：_ElasticSearch 的国产替代方案，兼容 ES API，内置中文分词和向量检索，Apache 2.0 开源协议，适合国内企业合规场景。_ <sup>[21]</sup>
+- 📖 [Microsoft GraphRAG 论文](https://arxiv.org/abs/2404.16130)：_微软 2024 年发表的 GraphRAG 论文，提出基于知识图谱的 RAG 架构，解决传统 RAG 无法进行多跳推理的问题。_ <sup>[13]</sup>
+- 🔗 [MinerU (OpenDataLab)](https://github.com/opendatalab/MinerU)：_开源 PDF 解析工具，支持版面分析、OCR、公式识别、表格提取，保留文档结构，是多模态 RAG 的核心组件。_ <sup>[14]</sup>
+- 🔗 [LlamaParse (LlamaIndex)](https://docs.cloud.llamaindex.ai/llamaparse)：_LlamaIndex 的托管文档解析服务，深度集成 LlamaIndex 生态，支持复杂 PDF/PPT 解析。_ <sup>[15]</sup>
+- 🔗 [Docling (IBM Research)](https://github.com/DS4SD/docling)：_IBM 开源的文档转换库，支持 90+ 文件格式，提供文档级理解和多格式导出。_ <sup>[16]</sup>
+- 📖 [OpenAI CLIP 论文](https://arxiv.org/abs/2103.00020)：_OpenAI 发表的对比语言-图像预训练模型，开创了图文对比学习范式，是多模态 RAG 嵌入层的基础。_ <sup>[17]</sup>
+- 📖 [Anthropic Engineering Blog](https://www.anthropic.com/engineering)：_Anthropic 的工程博客，讨论 MCP 等底层标准与 RAG 相关实践。_ <sup>[20]</sup>

@@ -1,10 +1,9 @@
 ---
 title: "React Native"
+description: "梳理 Bridge 到新架构的演进，覆盖 JSI、Fabric、TurboModules、Hermes 与性能排查。"
 ---
 
-> **面试官为什么问这个？**
->
-> React Native 是目前最主流的跨端开发方案之一。面试官问这个，本质上是在考察你：**你是否理解跨端框架的底层架构演进，以及能否在真实项目中做出正确的技术决策？** 如果你只会写 `View` 和 `Text`，但说不清 Bridge 为什么要去掉、Fabric 怎么工作、冷加载为什么慢，说明你的理解停留在"会用"而不是"懂原理"。
+> React Native 我最早只当它是"用 JS 写 App"，后来做性能排查才分清 Bridge 和新架构的职责：JSI 管通信，Fabric 管渲染，TurboModules 管原生模块。
 
 ---
 
@@ -42,7 +41,7 @@ title: "React Native"
   </Step>
   <Step title="2022年: 新架构正式发布">
 
-    React Native 0.68+ 正式引入新架构：Fabric 渲染器、TurboModules、JSI 取代 Bridge。通信从异步 JSON 变为同步 C++ 直接调用，性能大幅提升。0.73+ 引入 Bridgeless Mode，彻底移除旧 Bridge。
+    React Native 0.68 起提供新架构（Fabric 渲染器、TurboModules、JSI）的 opt-in 能力，通信从异步 JSON 变为 C++ 直接调用，减少序列化开销。Bridgeless Mode 在后续版本逐步稳定，0.76 起新架构成为默认。
 
   </Step>
 
@@ -58,10 +57,10 @@ PhoneGap/Cordova → WebView 渲染 → 动画卡顿、滚动不跟手
 
 解决：用 JavaScript 驱动原生组件渲染
 
-React Native → JS 线程计算布局 → 原生线程渲染真实组件 → 兼顾性能和效率
+React Native → JS 线程生成组件树 → 原生层计算布局并渲染真实组件 → 兼顾性能和效率
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 React Native 用 JavaScript 驱动原生组件渲染，兼顾了 Web 的开发效率和原生的用户体验。
 
@@ -69,21 +68,21 @@ React Native 用 JavaScript 驱动原生组件渲染，兼顾了 Web 的开发�
 
 <CardGroup cols={2}>
 
-<Card title="🚫 没有 React Native">
+<Card title="没有 React Native">
 
 跨端开发只有两条路：用 WebView 做 Hybrid 应用（性能差），或者每个平台各写一套原生代码（成本翻倍）。就像你要开两家分店，要么用同一套简易装修（看起来廉价），要么请两拨设计师分别设计（费用翻倍）。
 
 </Card>
-<Card title="✅ 引入 React Native">
+<Card title="引入 React Native">
 
 React Native 让你用 JavaScript 写逻辑，但渲染的是真正的原生组件。就像请了一个设计师团队，他们懂两种装修风格，能用同一套设计图纸（JS 逻辑），分别适配 iOS 和 Android 的原生规范，既有原生质感，又不需要两套代码。
 
 </Card>
 </CardGroup>
 
-<Tip title="💡 面试技巧">
+<Tip title="面试技巧">
 
-回答时先说"为什么"（Hybrid 性能差 + 纯原生成本高），再说 React Native 的核心思路（JS 驱动原生渲染），最后提一句新旧架构的区别。面试官想听的是你理解跨端方案的演进脉络，而不是背 API。
+回答时先说"为什么"（Hybrid 性能差 + 纯原生成本高），再说 React Native 的核心思路（JS 驱动原生渲染），最后提一句新旧架构的区别。想听的是你对跨端方案演进脉络的理解，而不是背 API。
 
 </Tip>
 
@@ -98,10 +97,10 @@ React Native 的版本演进本质上是**架构的三次跃迁**：从旧架构
 │                    React Native 架构演进                            │
 ├─────────────────┬──────────────────┬────────────────────────────────┤
 │   旧架构 (Bridge) │  过渡期          │  新架构 (JSI + Fabric)         │
-│   0.0.1 - 0.67  │  0.68 - 0.72    │  0.73+ (Bridgeless Mode)      │
+│   0.0.1 - 0.67  │  0.68 - 0.75    │  0.76+ (新架构默认)           │
 │                 │                  │                                │
 │  JS ←JSON→ Bridge ←JSON→ Native  │  JS ←C++→ Native (直接调用)    │
-│  异步通信        │  JSI 可选启用    │  同步通信 + 并发渲染            │
+│  异步通信        │  新架构 opt-in   │  同步通信 + 并发渲染            │
 └─────────────────┴──────────────────┴────────────────────────────────┘
 ```
 
@@ -122,9 +121,9 @@ React Native 的版本演进本质上是**架构的三次跃迁**：从旧架构
     0.68 是架构分水岭。新架构引入三大核心组件：Fabric（并发渲染器）、TurboModules（按需加载的原生模块）、JSI（C++ 层的 JavaScript 接口，取代 JSON Bridge）。JSI 让 JS 可以直接持有 C++ 对象的引用，实现同步调用，不再需要序列化。
 
   </Step>
-  <Step title="0.73+: Bridgeless Mode">
+  <Step title="0.73+ - 0.76: Bridgeless 逐步稳定并成为默认">
 
-    0.73 引入 Bridgeless Mode，彻底移除旧 Bridge。所有通信都通过 JSI 完成。这意味着新架构不再是"可选的"，而是默认启用。旧的 `NativeModules` API 被标记为废弃，项目必须迁移到 TurboModules。
+    0.73 起 Bridgeless Mode 逐步稳定，但仍是可选项；0.76 起新架构（含 Bridgeless）默认启用，通信走 JSI。旧 `NativeModules` 仍可使用，但官方主推 TurboModules，新项目应按新架构方式编写原生模块。
 
   </Step>
 
@@ -132,19 +131,19 @@ React Native 的版本演进本质上是**架构的三次跃迁**：从旧架构
 
 ### 版本里程碑速查表
 
-| 版本范围 | 架构 | 关键特性 | 通信方式 |
-|---------|------|---------|---------|
-| 0.0.1 - 0.59 | 旧架构 | Bridge 通信、JSX 渲染原生组件 | 异步 JSON Bridge |
-| 0.60 - 0.61 | 旧架构增强 | Autolinking、CocoaPods 集成 | 异步 JSON Bridge |
-| 0.62 - 0.67 | 旧架构 + Hermes | Hermes 引擎、Flipper 调试器 | 异步 JSON Bridge |
-| 0.68 - 0.72 | 新架构（可选） | Fabric、TurboModules、JSI | JSI 同步调用（可选） |
-| 0.73+ | 新架构（默认） | Bridgeless Mode、默认 Hermes | JSI 同步调用（默认） |
+| 版本范围     | 架构            | 关键特性                      | 通信方式              |
+| ------------ | --------------- | ----------------------------- | --------------------- |
+| 0.0.1 - 0.59 | 旧架构          | Bridge 通信、JSX 渲染原生组件 | 异步 JSON Bridge      |
+| 0.60 - 0.61  | 旧架构增强      | Autolinking、CocoaPods 集成   | 异步 JSON Bridge      |
+| 0.62 - 0.67  | 旧架构 + Hermes | Hermes 引擎、Flipper 调试器   | 异步 JSON Bridge      |
+| 0.68 - 0.75  | 新架构（可选）  | Fabric、TurboModules、JSI     | JSI 调用（可 opt-in） |
+| 0.76+        | 新架构（默认）  | Bridgeless Mode、默认 Hermes  | JSI 调用（默认）      |
 
 ### Hermes 引擎的作用
 
-Hermes 是 Meta 专为 React Native 开发的 JavaScript 引擎（替代 V8/JavaScriptCore），由 Tzvetan Mikov 领导的核心团队主导。Hermes 的设计目标不是通用 JS 引擎，而是针对 React Native 启动场景的极致优化<sup>[3]</sup>。核心优化：
+Hermes 是 Meta 专为 React Native 开发的 JavaScript 引擎（替代 V8/JavaScriptCore）。Hermes 的设计目标不是通用 JS 引擎，而是针对 React Native 的启动与内存表现做优化<sup>[3]</sup>。核心优化：
 
-- **字节码预编译（AOT）**：在构建时将 JS 编译为 Hermes 字节码，运行时不需要解析和编译，启动速度提升 40%-60%
+- **字节码预编译（AOT）**：在构建时将 JS 编译为 Hermes 字节码，运行时省去解析和编译步骤，缩短启动时间
 - **内存优化**：增量式垃圾回收（Incremental GC），避免主线程长时间停顿
 - **包体积优化**：字节码比源码更紧凑，减少 Bundle 大小
 
@@ -158,10 +157,10 @@ Hermes 是 Meta 专为 React Native 开发的 JavaScript 引擎（替代 V8/Java
 
 // 验证是否使用 Hermes
 const isHermes = () => !!global.HermesInternal;
-console.log('Hermes enabled:', isHermes());
+console.log("Hermes enabled:", isHermes());
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 React Native 的架构演进经历了三代：旧架构用异步 JSON Bridge 通信，新架构用 JSI 实现同步 C++ 直接调用，Bridgeless Mode 彻底移除了旧 Bridge。
 
@@ -231,22 +230,22 @@ TurboModules 是新架构的原生模块系统，取代了旧架构中的 Native
 
 ```text
 旧架构 NativeModules：
-启动时 → 注册所有模块 → 内存占用高 → 启动慢
+启动时 → 注册所有模块的元信息与类引用 → 启动期开销大
 
 TurboModules：
-启动时 → 不注册任何模块
+启动时 → 注册模块元信息 / 生成接口，但不提前实例化
 JS 调用 → 按需实例化 → 内存占用低 → 启动快
 ```
 
 ```javascript
 // 旧架构：NativeModules（启动时全部注册）
-import { NativeModules } from 'react-native';
+import { NativeModules } from "react-native";
 const { MyModule } = NativeModules;
-MyModule.doSomething(); // 同步调用被阻塞，异步调用经过 Bridge
+MyModule.doSomething(); // 通过 Bridge 异步调用，结果走回调，参数与返回值需 JSON 序列化
 
 // 新架构：TurboModules（按需加载）
-import MyModule from './NativeMyModule'; // 代码生成的类型安全接口
-MyModule.doSomething(); // 通过 JSI 直接调用，同步且类型安全
+import MyModule from "./NativeMyModule"; // 代码生成的类型安全接口
+MyModule.doSomething(); // 通过 JSI 调用，可同步返回（取决于 spec 声明），类型安全
 ```
 
 ### JSI（JavaScript Interface）
@@ -286,7 +285,7 @@ jsi::Function::createFromHostFunction(
 
 ### Bridgeless Mode
 
-Bridgeless Mode 是新架构的最终形态，彻底移除了旧 Bridge。在 0.73+ 中默认启用。
+Bridgeless Mode 是新架构的最终形态，移除了旧 Bridge。0.73 起逐步稳定但仍需显式开启，0.76 起随新架构默认启用。
 
 ```text
 Bridgeless Mode 的变化：
@@ -297,13 +296,13 @@ Bridgeless Mode 的变化：
 4. 移除 JSI Bridge 兼容层 → 纯 JSI 通信
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 新架构用 JSI 替代 JSON Bridge 实现同步通信，用 Fabric 实现并发渲染，用 TurboModules 实现按需加载，Bridgeless Mode 彻底移除了旧 Bridge。
 
 </Note>
 
-<Tip title="🎢 通俗比喻: 从写信到打电话">
+<Tip title="通俗比喻: 从写信到打电话">
 
 旧架构的 Bridge 就像写信——你（JS）把想说的话写在纸上（JSON 序列化），交给邮递员（Bridge），邮递员送到对方（Native），对方看完再回一封信（JSON 序列化）。一来一回好几天（异步延迟）。新架构的 JSI 就像直接打电话——你拨通对方号码（持有 C++ 对象引用），直接说话、直接听到回复（同步调用），效率天差地别。Bridgeless Mode 就是把邮局关了（移除旧 Bridge），所有人都只能打电话。
 
@@ -346,7 +345,7 @@ Bridgeless Mode 的变化：
 
     旧架构中，`AppDelegate` 创建 `RCTBridge` 对象，它负责管理 JS 和 Native 之间的所有通信。`RCTBridge` 内部会创建 `RCTBatchedBridge`（实际的桥接实现），初始化 JS 执行环境。
 
-    新架构（0.73+）中，`RCTBridge` 被 `RCTHost` 替代。`RCTHost` 使用 JSI 直接通信，不再需要 JSON Bridge。
+    新架构（Bridgeless）中，`RCTBridge` 被 `RCTHost` 替代。`RCTHost` 使用 JSI 直接通信，不再需要 JSON Bridge。
 
     ```objectivec
     // 旧架构：AppDelegate.mm
@@ -388,7 +387,7 @@ Bridgeless Mode 的变化：
     //    → 生产模式：NSData dataWithContentsOfURL 读取本地文件
     // 3. JSExecutor 执行 Bundle：AppRegistry.registerComponent('MyApp', ...)
     // 4. React Reconciler 开始渲染组件树
-    // 5. Shadow Thread 运行 Yoga 计算布局
+    // 5. 旧架构：Yoga 在 Shadow Thread（iOS）/ mqt_native_modules 线程（Android）计算布局
     // 6. UI Thread 创建原生 UIView 并添加到视图层级
     ```
 
@@ -427,7 +426,7 @@ Bridgeless Mode 的变化：
   </Step>
   <Step title="首屏渲染完成">
 
-    Bundle 执行完成后，React 组件树开始渲染。Fabric（新架构）或 UIManager（旧架构）将 JS 侧的组件树转换为原生 View。Yoga 引擎在 Shadow Thread 计算 Flexbox 布局，UI Thread 创建 `UIView` 并添加到 `RCTRootView` 的视图层级中。首屏渲染完成后，`RCTRootView` 发出 `contentDidAppear` 通知。
+    Bundle 执行完成后，React 组件树开始渲染。旧架构由 UIManager 处理，Yoga 在 Shadow Thread（iOS）或 mqt_native_modules 线程（Android）计算布局；新架构由 Fabric 在 C++ 侧构建 Shadow Tree 并用 Yoga 计算布局，不依赖独立的 Shadow Thread。最后由 UI Thread 创建 `UIView` 并添加到 `RCTRootView` 的视图层级中。首屏渲染完成后，`RCTRootView` 发出 `contentDidAppear` 通知。
 
   </Step>
 
@@ -883,23 +882,20 @@ JSI（JavaScript Interface）是新架构的基石——它在 C++ 层提供了�
     JSI 的性能优势来自三个维度：**零序列化**、**同步调用**和**无队列**。
 
     ```text
-    性能对比（传一个 1000 元素的数组）：
+    Bridge 与 JSI 的调用路径对比：
 
-    Bridge 耗时：
-    JSON.stringify (3ms) + 入队 (1ms) + 出队 (1ms)
-    + JSON.parse (3ms) + 执行 (1ms)
-    + JSON.stringify 结果 (1ms) + 回调 (1ms) = ~11ms
+    Bridge：
+    JS 数据 → JSON.stringify → 入队 → 原生侧出队 → JSON.parse → 执行 → 结果再序列化回调
 
-    JSI 耗时：
-    直接传递 JS 引擎内部的 ArrayBuffer 引用 (0.1ms)
-    + 执行 C++ 函数 (1ms) = ~1.1ms
+    JSI：
+    JS 直接持有 C++ 对象引用 → 调用 C++ 函数 → 立即返回结果
 
-    性能差距：~10x
-
-    关键原因：
+    关键差异：
     1. 零序列化 → JS 直接持有 C++ 对象引用，不需要 JSON
-    2. 同步调用 → JS 调用后立即拿到结果，不需要回调
-    3. 无队列 → 直接执行，不排队，不阻塞
+    2. 同步调用 → JS 调用后可以直接拿到结果，不需要回调
+    3. 无跨线程队列等待 → 数据量大、调用频繁时优势更明显
+
+    具体耗时取决于数据量、调用频率和设备，不能用一个固定倍数概括。
     ```
 
   </Step>
@@ -922,7 +918,7 @@ const buffer = new ArrayBuffer(1024 * 1024); // 1MB
 
 <Note title="一句话总结">
 
-JSI 通过 HostObject 让 JS 直接持有 C++ 对象引用，实现同步调用和零序列化通信，性能比 Bridge 快约 10 倍，是新架构（Fabric + TurboModules）的基石。
+JSI 通过 HostObject 让 JS 直接持有 C++ 对象引用，实现同步调用和零序列化通信，省去 Bridge 的序列化与队列开销，是新架构（Fabric + TurboModules）的基石。
 
 </Note>
 
@@ -930,11 +926,11 @@ JSI 通过 HostObject 让 JS 直接持有 C++ 对象引用，实现同步调用�
 
 ## Q8: React Native 启动线程顺序
 
-React Native 的运行依赖多个线程协作，理解线程模型是理解性能优化的基础。
+React Native 运行时涉及多个线程，理解线程模型是性能优化的基础。注意：**旧架构**才有独立的 Shadow Thread（Yoga 布局线程，Android 上对应 mqt_native_modules 线程）；**新架构**由 Fabric 在 C++ 侧维护 Shadow Tree 并计算布局，不再依赖独立的 Shadow Thread。
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
-│                    React Native 线程模型                         │
+│               React Native 线程模型（旧架构）                     │
 │                                                                 │
 │  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐        │
 │  │   JS Thread  │   │  UI Thread   │   │Shadow Thread │        │
@@ -943,8 +939,11 @@ React Native 的运行依赖多个线程协作，理解线程模型是理解性�
 │  │  业务逻辑     │   │  用户交互     │   │  Flexbox      │        │
 │  └──────┬───────┘   └──────┬───────┘   └──────┬───────┘        │
 │         │                  │                  │                │
-│         └──────── JSI ─────┴──── NativeUI ────┘                │
-│                    (C++ 直接调用)                                │
+│         └──────── Bridge ──┴──── NativeUI ────┘                │
+│                    (JSON 消息队列)                               │
+│                                                                 │
+│  新架构：JS Thread 与 UI Thread 通过 JSI 通信，                     │
+│  Shadow Tree 与 Yoga 布局在 Fabric 的 C++ 渲染阶段完成             │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -965,9 +964,9 @@ React Native 的运行依赖多个线程协作，理解线程模型是理解性�
     JS Thread 加载并执行 JavaScript Bundle（开发模式通过 Metro 服务器加载，生产模式从本地文件加载）。Hermes 引擎解析字节码，执行 `AppRegistry.registerComponent()` 注册根组件。
 
   </Step>
-  <Step title="Shadow Thread（Yoga 布局线程）启动">
+  <Step title="布局计算（旧架构 Shadow Thread / 新架构 Fabric C++）">
 
-    当 JS 侧创建组件树时，Shadow Thread 运行 Yoga 布局引擎，计算每个节点的 Flexbox 布局（位置、尺寸）。计算结果传递给 UI Thread，由原生层创建真实的原生 View 并渲染。
+    旧架构中，JS 侧创建组件树后，Shadow Thread（iOS）或 mqt_native_modules 线程（Android）运行 Yoga 计算每个节点的 Flexbox 布局。新架构中，Fabric 在 C++ 侧构建 Shadow Tree 并用 Yoga 计算布局，布局结果随后交给 UI Thread 创建真实原生 View。
 
   </Step>
   <Step title="原生模块注册">
@@ -980,12 +979,14 @@ React Native 的运行依赖多个线程协作，理解线程模型是理解性�
 
 ### 线程职责对照表
 
-| 线程 | 运行环境 | 职责 | 通信方式 |
-|------|---------|------|---------|
-| **JS Thread** | Hermes / JSC | 执行 JS 业务逻辑、React 渲染 | 通过 JSI 调用 Native |
-| **UI Thread** | 原生（UIKit / Android View） | 用户交互、原生 View 渲染 | 通过 JSI 接收 JS 指令 |
-| **Shadow Thread** | Yoga (C++) | Flexbox 布局计算 | 将布局结果传给 UI Thread |
-| **Native Modules Thread** | 原生 | 执行原生模块逻辑（网络、文件等） | 通过 TurboModules 按需加载 |
+| 线程                      | 运行环境                     | 职责                             | 通信方式                      |
+| ------------------------- | ---------------------------- | -------------------------------- | ----------------------------- |
+| **JS Thread**             | Hermes / JSC                 | 执行 JS 业务逻辑、React 渲染     | 旧架构走 Bridge，新架构走 JSI |
+| **UI Thread**             | 原生（UIKit / Android View） | 用户交互、原生 View 渲染         | 旧架构走 Bridge，新架构走 JSI |
+| **Shadow Thread**         | Yoga (C++)                   | 旧架构的 Flexbox 布局计算        | 将布局结果传给 UI Thread      |
+| **Native Modules Thread** | 原生                         | 执行原生模块逻辑（网络、文件等） | 通过 TurboModules 按需加载    |
+
+新架构下不存在独立的 Shadow Thread：Fabric 在 C++ 渲染阶段完成 Shadow Tree 构建与 Yoga 布局。
 
 ### 新架构下的启动时序
 
@@ -993,7 +994,7 @@ React Native 的运行依赖多个线程协作，理解线程模型是理解性�
 1. 原生层启动 → 创建 RCTHost
 2. JS Thread 启动 → 初始化 Hermes + JSI Runtime
 3. 加载 Bundle → 执行 AppRegistry.registerComponent()
-4. Shadow Thread 启动 → Yoga 计算布局
+4. Fabric 在 C++ 侧构建 Shadow Tree，用 Yoga 计算布局
 5. UI Thread → 创建原生 View → 渲染首屏
 
 优化点：
@@ -1002,15 +1003,15 @@ React Native 的运行依赖多个线程协作，理解线程模型是理解性�
 - Fabric 并发渲染 → 步骤 4 和步骤 5 可以并行
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
-React Native 的启动涉及 UI Thread、JS Thread、Shadow Thread 三个线程协作，新架构通过 JSI 直连、TurboModules 按需加载和 Hermes 字节码预编译大幅优化启动速度。
+旧架构的启动涉及 UI Thread、JS Thread、Shadow Thread 协作；新架构由 Fabric 在 C++ 渲染阶段完成布局，不再有独立 Shadow Thread，并通过 JSI 直连、TurboModules 按需加载和 Hermes 字节码预编译优化启动速度。
 
 </Note>
 
-<Tip title="🎢 通俗比喻: 开一家餐厅">
+<Tip title="通俗比喻: 开一家餐厅">
 
-启动一个 React Native 应用就像开一家餐厅。UI Thread 是前台服务员（接待客人、上菜），JS Thread 是后厨主厨（做菜、出菜品指令），Shadow Thread 是摆盘师（计算每道菜的摆盘位置）。旧架构中，主厨每次出菜都要写一张纸条（JSON 序列化）交给服务员，服务员看完再去做（异步 Bridge）。新架构中，主厨和服务员之间装了对讲机（JSI），可以直接同步沟通，效率大幅提升。
+启动一个 React Native 应用就像开一家餐厅。UI Thread 是前台服务员（接待客人、上菜），JS Thread 是后厨主厨（做菜、出菜品指令），旧架构里还有一位摆盘师（Shadow Thread，计算每道菜的摆盘位置）。旧架构中，主厨每次出菜都要写一张纸条（JSON 序列化）交给服务员，服务员看完再去做（异步 Bridge）。新架构中，主厨和服务员之间装了对讲机（JSI），可以直接同步沟通；摆盘（布局计算）也并入了厨房内部的 C++ 流程。
 
 </Tip>
 
@@ -1050,13 +1051,13 @@ App 未在后台 → 从头启动 → 初始化原生容器 + JS 引擎 + 加载
 
 ### 冷加载 vs 热加载 vs Fast Refresh 对比
 
-| 特性 | 冷加载 (Cold Start) | Live Reload | Fast Refresh |
-|------|-------------------|-------------|--------------|
-| **触发条件** | App 完全关闭后启动 | 代码变更 | 代码变更 |
-| **加载范围** | 整个 App | 整个 JS Bundle | 仅变更的模块 |
-| **App 状态** | 从零开始 | 丢失 | 保留 |
-| **速度** | 1-3 秒 | 较慢 | 极快（毫秒级） |
-| **适用场景** | 生产环境 | 开发环境（已废弃） | 开发环境（推荐） |
+| 特性         | 冷加载 (Cold Start) | Live Reload        | Fast Refresh     |
+| ------------ | ------------------- | ------------------ | ---------------- |
+| **触发条件** | App 完全关闭后启动  | 代码变更           | 代码变更         |
+| **加载范围** | 整个 App            | 整个 JS Bundle     | 仅变更的模块     |
+| **App 状态** | 从零开始            | 丢失               | 保留             |
+| **速度**     | 1-3 秒              | 较慢               | 极快（毫秒级）   |
+| **适用场景** | 生产环境            | 开发环境（已废弃） | 开发环境（推荐） |
 
 ### 冷加载的性能瓶颈分析
 
@@ -1089,26 +1090,26 @@ App 未在后台 → 从头启动 → 初始化原生容器 + JS 引擎 + 加载
 // 2. 文件不是 React 组件（工具函数、常量等）
 // 3. 类组件（class component）的状态会被重置
 
-// ✅ 状态保持的写法
+// 状态保持的写法
 function Counter() {
   const [count, setCount] = useState(0); // 修改其他代码时，count 不会丢失
-  return <Text onPress={() => setCount(c => c + 1)}>{count}</Text>;
+  return <Text onPress={() => setCount((c) => c + 1)}>{count}</Text>;
 }
 
-// ❌ 状态丢失的写法：非组件导出
+// 状态丢失的写法：非组件导出
 export const helper = () => {}; // 这个导出会导致整个文件重新执行
 export default function Counter() {
   const [count, setCount] = useState(0); // count 会被重置
 }
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 冷加载是 App 从零启动的完整流程（1-3 秒），Fast Refresh 是开发时只替换变更模块并保持状态的实时更新机制。
 
 </Note>
 
-<Tip title="🎢 通俗比喻: 快递配送">
+<Tip title="通俗比喻: 快递配送">
 
 冷加载就像你网购了一整套家具——从下单、仓库发货、物流运输、到货安装，整个流程需要好几天。Fast Refresh 就像你已经住进去了，发现少了个床头柜——快递员直接把床头柜送到你卧室摆好，其他家具原封不动，你甚至不用从沙发上站起来。
 
@@ -1157,16 +1158,16 @@ export default function Counter() {
 
 ### 分包方案对比
 
-| 方案 | 原理 | 优点 | 缺点 |
-|------|------|------|------|
-| **Metro 多 Bundle** | 将代码拆分为多个 Bundle，按需加载 | 灵活、可控 | 配置复杂 |
-| **React.lazy + Suspense** | 组件级别的懒加载 | 简单、标准 React API | 只能懒加载组件 |
-| **CodePush** | 服务端推送完整 Bundle | 无需审核、更新快 | 只更新 JS，不更新原生代码 |
-| **Hermes 字节码分包** | 将字节码拆分，按需加载字节码 | 启动更快 | 需要 Hermes 引擎 |
+| 方案                      | 原理                              | 优点                 | 缺点                      |
+| ------------------------- | --------------------------------- | -------------------- | ------------------------- |
+| **Metro 多 Bundle**       | 将代码拆分为多个 Bundle，按需加载 | 灵活、可控           | 配置复杂                  |
+| **React.lazy + Suspense** | 组件级别的懒加载                  | 简单、标准 React API | 只能懒加载组件            |
+| **CodePush**              | 服务端推送完整 Bundle             | 无需审核、更新快     | 只更新 JS，不更新原生代码 |
+| **Hermes 字节码分包**     | 将字节码拆分，按需加载字节码      | 启动更快             | 需要 Hermes 引擎          |
 
 ### 携程 CRN 的拆包实践
 
-携程 CRN 团队是国内最早大规模落地 React Native 并进行底层拆包优化的企业级团队<sup>[12]</sup>。他们的核心策略是将 Bundle 拆分为**公共包**（React 运行时、RN 核心模块）和**业务包**（各业务线独立代码），公共包预置在 App 中，业务包按需下载。配合预渲染机制（在用户进入页面前提前渲染首屏），实现了首屏秒开。这套方案对国内 RN 生态影响深远，美团 MRN、字节跨端团队都借鉴了类似思路。
+携程 CRN 团队在公开分享中介绍过 React Native 的拆包思路<sup>[12]</sup>：把 Bundle 拆分为**公共包**（React 运行时、RN 核心模块）和**业务包**（各业务线独立代码），公共包预置在 App 中，业务包按需下载；配合预渲染（在用户进入页面前提前渲染首屏）改善首屏体验。具体收益取决于业务包体积和加载策略，不能直接套用固定数字。
 
 ### CodePush 热更新的工作流程
 
@@ -1181,7 +1182,7 @@ export default function Counter() {
 
 ```javascript
 // CodePush 基本使用
-import codePush from 'react-native-code-push';
+import codePush from "react-native-code-push";
 
 // 包裹根组件
 const App = () => {
@@ -1196,15 +1197,15 @@ export default codePush({
 // 手动检查更新
 codePush.sync({
   updateDialog: {
-    title: '发现新版本',
-    mandatoryUpdateMessage: '请更新到最新版本',
-    mandatoryContinueButtonLabel: '立即更新',
+    title: "发现新版本",
+    mandatoryUpdateMessage: "请更新到最新版本",
+    mandatoryContinueButtonLabel: "立即更新",
   },
   installMode: codePush.InstallMode.IMMEDIATE,
 });
 ```
 
-<Warning title="⚠️ CodePush 的限制">
+<Warning title="CodePush 的限制">
 
 CodePush 只能更新 **JS Bundle**，不能更新原生代码。如果新版本引入了新的原生依赖（如新增了一个需要原生实现的 SDK），必须通过应用商店发布新版本。
 
@@ -1214,7 +1215,7 @@ CodePush 只能更新 **JS Bundle**，不能更新原生代码。如果新版本
 
 </Warning>
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 React Native 分包机制通过 Bundle 拆分、按需加载和 CodePush 热更新，解决了大型应用的 Bundle 体积和更新效率问题。
 
@@ -1760,14 +1761,14 @@ Krzysztof Magiera（Software Mansion）设计 Reanimated 时面临的核心问�
 
 ### 动画性能对比
 
-| 特性 | Animated | Reanimated | Lottie |
-|------|----------|------------|--------|
-| 执行线程 | JS Thread（默认） | UI Thread（Worklet） | 原生渲染 |
-| 支持的属性 | `useNativeDriver` 只支持 transform/opacity | 几乎所有样式属性 | 预制的 JSON 关键帧 |
-| 手势驱动 | 需要 `Animated.event` 桥接 | 原生手势直接驱动 | 不适用 |
-| 动画中断 | 不支持（跳帧） | 支持（平滑过渡） | 不适用 |
-| 适用场景 | 简单动画 | 复杂交互动画 | 设计师驱动的动画 |
-| 推荐度 | 仅简单场景 | **首选方案** | 微交互动画 |
+| 特性       | Animated                                   | Reanimated           | Lottie             |
+| ---------- | ------------------------------------------ | -------------------- | ------------------ |
+| 执行线程   | JS Thread（默认）                          | UI Thread（Worklet） | 原生渲染           |
+| 支持的属性 | `useNativeDriver` 只支持 transform/opacity | 几乎所有样式属性     | 预制的 JSON 关键帧 |
+| 手势驱动   | 需要 `Animated.event` 桥接                 | 原生手势直接驱动     | 不适用             |
+| 动画中断   | 不支持（跳帧）                             | 支持（平滑过渡）     | 不适用             |
+| 适用场景   | 简单动画                                   | 复杂交互动画         | 设计师驱动的动画   |
+| 推荐度     | 仅简单场景                                 | **首选方案**         | 微交互动画         |
 
 <Note title="一句话总结">
 
@@ -1786,13 +1787,13 @@ RN 动画首选 Reanimated（UI Thread 执行，60fps），手势用 Gesture Han
 React Native 中最常遇到的性能问题就是长列表。直接用 `ScrollView` 渲染 1000 个列表项会导致内存暴涨和卡顿——因为 `ScrollView` 会一次性渲染所有子组件。
 
 ```javascript
-// ❌ 错误做法：ScrollView 渲染长列表
-import { ScrollView, View, Text } from 'react-native';
+// 错误做法：ScrollView 渲染长列表
+import { ScrollView, View, Text } from "react-native";
 
 function BadList({ data }) {
   return (
     <ScrollView>
-      {data.map(item => (
+      {data.map((item) => (
         <View key={item.id}>
           <Text>{item.title}</Text>
         </View>
@@ -1802,24 +1803,24 @@ function BadList({ data }) {
 }
 // 所有 1000 个 item 都会被渲染，内存占用高
 
-// ✅ 正确做法：FlatList 虚拟化
-import { FlatList } from 'react-native';
+// 正确做法：FlatList 虚拟化
+import { FlatList } from "react-native";
 
 function GoodList({ data }) {
   return (
     <FlatList
       data={data}
-      keyExtractor={item => item.id}
+      keyExtractor={(item) => item.id}
       renderItem={({ item }) => (
         <View>
           <Text>{item.title}</Text>
         </View>
       )}
       // 性能优化配置
-      initialNumToRender={10}        // 首屏渲染数量
-      maxToRenderPerBatch={10}       // 每批渲染数量
-      windowSize={5}                 // 可视区域外保留的屏幕数
-      removeClippedSubviews={true}   // 移除屏幕外的 View（Android）
+      initialNumToRender={10} // 首屏渲染数量
+      maxToRenderPerBatch={10} // 每批渲染数量
+      windowSize={5} // 可视区域外保留的屏幕数
+      removeClippedSubviews={true} // 移除屏幕外的 View（Android）
       getItemLayout={(data, index) => ({
         length: ITEM_HEIGHT,
         offset: ITEM_HEIGHT * index,
@@ -1832,21 +1833,21 @@ function GoodList({ data }) {
 
 **FlatList 关键优化参数：**
 
-| 参数 | 默认值 | 作用 | 优化建议 |
-|------|--------|------|---------|
-| `initialNumToRender` | 10 | 首屏渲染数量 | 设为屏幕可见数量 |
-| `maxToRenderPerBatch` | 10 | 每批渲染数量 | 适当增大可减少白屏 |
-| `windowSize` | 21 | 可视区域外保留的屏幕数 | 设为 5-10 平衡内存和滑动体验 |
-| `removeClippedSubviews` | false | 移除屏幕外 View | Android 设为 true |
-| `getItemLayout` | undefined | 跳过动态测量 | 固定高度时必须提供 |
+| 参数                    | 默认值    | 作用                   | 优化建议                     |
+| ----------------------- | --------- | ---------------------- | ---------------------------- |
+| `initialNumToRender`    | 10        | 首屏渲染数量           | 设为屏幕可见数量             |
+| `maxToRenderPerBatch`   | 10        | 每批渲染数量           | 适当增大可减少白屏           |
+| `windowSize`            | 21        | 可视区域外保留的屏幕数 | 设为 5-10 平衡内存和滑动体验 |
+| `removeClippedSubviews` | false     | 移除屏幕外 View        | Android 设为 true            |
+| `getItemLayout`         | undefined | 跳过动态测量           | 固定高度时必须提供           |
 
 ### 动画优化（Animated vs Reanimated）
 
 React Native 有两种动画方案，性能差异巨大。
 
 ```javascript
-// ❌ Animated（旧方案）：动画逻辑在 JS Thread
-import { Animated } from 'react-native';
+// Animated（旧方案）：动画逻辑在 JS Thread
+import { Animated } from "react-native";
 
 function SlowAnimation() {
   const translateX = new Animated.Value(0);
@@ -1857,19 +1858,17 @@ function SlowAnimation() {
     useNativeDriver: true, // 必须开启！否则在 JS 线程执行
   }).start();
 
-  return (
-    <Animated.View style={{ transform: [{ translateX }] }} />
-  );
+  return <Animated.View style={{ transform: [{ translateX }] }} />;
 }
 // 即使 useNativeDriver: true，也只能支持有限的属性（transform, opacity）
 
-// ✅ Reanimated（推荐方案）：动画逻辑在 UI Thread
+// Reanimated（推荐方案）：动画逻辑在 UI Thread
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
   withSpring,
-} from 'react-native-reanimated';
+} from "react-native-reanimated";
 
 function SmoothAnimation() {
   const translateX = useSharedValue(0);
@@ -1882,27 +1881,25 @@ function SmoothAnimation() {
     translateX.value = withSpring(300); // UI 线程执行，不阻塞 JS
   };
 
-  return (
-    <Animated.View style={animatedStyle} onTouchEnd={handlePress} />
-  );
+  return <Animated.View style={animatedStyle} onTouchEnd={handlePress} />;
 }
 // 动画完全在 UI Thread 执行，即使 JS Thread 阻塞也不影响动画流畅度
 ```
 
 **Animated vs Reanimated 对比：**
 
-| 特性 | Animated | Reanimated |
-|------|----------|------------|
-| 动画执行线程 | JS Thread（默认）或 Native Driver | UI Thread（Worklet） |
-| 支持的属性 | `useNativeDriver` 只支持 transform/opacity | 几乎所有样式属性 |
-| 手势驱动 | 需要 `Animated.event` 桥接 | 原生手势直接驱动 |
-| 动画中断 | 不支持（会出现跳帧） | 支持（平滑过渡） |
-| 性能 | 一般 | 优秀 |
+| 特性         | Animated                                   | Reanimated           |
+| ------------ | ------------------------------------------ | -------------------- |
+| 动画执行线程 | JS Thread（默认）或 Native Driver          | UI Thread（Worklet） |
+| 支持的属性   | `useNativeDriver` 只支持 transform/opacity | 几乎所有样式属性     |
+| 手势驱动     | 需要 `Animated.event` 桥接                 | 原生手势直接驱动     |
+| 动画中断     | 不支持（会出现跳帧）                       | 支持（平滑过渡）     |
+| 性能         | 一般                                       | 优秀                 |
 
 ### 内存优化
 
 ```javascript
-// ❌ 常见内存泄漏：未清理的定时器和事件监听
+// 常见内存泄漏：未清理的定时器和事件监听
 function LeakyComponent() {
   useEffect(() => {
     const timer = setInterval(() => {
@@ -1914,12 +1911,12 @@ function LeakyComponent() {
   }, []);
 
   useEffect(() => {
-    const subscription = EventEmitter.addListener('event', handler);
+    const subscription = EventEmitter.addListener("event", handler);
     // 忘记清理！
   }, []);
 }
 
-// ✅ 正确做法：清理副作用
+// 正确做法：清理副作用
 function CleanComponent() {
   useEffect(() => {
     const timer = setInterval(() => {
@@ -1930,7 +1927,7 @@ function CleanComponent() {
   }, []);
 
   useEffect(() => {
-    const subscription = EventEmitter.addListener('event', handler);
+    const subscription = EventEmitter.addListener("event", handler);
 
     return () => subscription.remove(); // 组件卸载时清理
   }, []);
@@ -1950,7 +1947,7 @@ function CleanComponent() {
 ```text
 启动优化四板斧：
 
-1. Hermes 字节码预编译 → 跳过 JS 解析和编译 → 启动速度提升 40-60%
+1. Hermes 字节码预编译 → 跳过 JS 解析和编译 → 缩短启动时间
 2. TurboModules 按需加载 → 减少启动时的模块初始化 → 内存占用降低
 3. Bundle 拆分 → 首屏只加载必要代码 → 减少 Bundle 执行时间
 4. 延迟初始化 → 非首屏功能延迟到空闲时初始化 → 加快首屏渲染
@@ -1958,21 +1955,21 @@ function CleanComponent() {
 
 ```javascript
 // 延迟初始化非关键模块
-import { InteractionManager } from 'react-native';
+import { InteractionManager } from "react-native";
 
 function HomeScreen() {
   useEffect(() => {
     // 首屏渲染完成后再执行非关键初始化
     InteractionManager.runAfterInteractions(() => {
-      initAnalytics();        // 数据埋点
-      prefetchUserData();     // 预加载用户数据
+      initAnalytics(); // 数据埋点
+      prefetchUserData(); // 预加载用户数据
       initPushNotification(); // 推送通知
     });
   }, []);
 }
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 React Native 性能优化的核心是：列表用 FlatList 虚拟化、动画用 Reanimated 在 UI Thread 执行、内存及时清理副作用、启动用 Hermes + TurboModules + 延迟初始化。
 
@@ -1991,7 +1988,7 @@ React Native 开发中有大量平台差异和性能陷阱。以下是实际项�
     FlatList 是 RN 中最常用的列表组件，但默认配置往往不是最优的。常见的性能问题：没有提供 `getItemLayout` 导致每次滚动都要动态测量、`windowSize` 过大导致内存暴涨、没有使用 `keyExtractor` 导致不必要的重渲染。
 
     ```javascript
-    // ❌ 常见的 FlatList 性能问题
+    // 常见的 FlatList 性能问题
     <FlatList
       data={data}
       renderItem={({ item }) => <ComplexItem item={item} />}
@@ -2001,7 +1998,7 @@ React Native 开发中有大量平台差异和性能陷阱。以下是实际项�
       // 问题 4：renderItem 没有 memo → 每次都创建新组件
     />
 
-    // ✅ 优化后的 FlatList
+    // 优化后的 FlatList
     const ITEM_HEIGHT = 80;
 
     const renderItem = useCallback(({ item }) => (
@@ -2025,7 +2022,6 @@ React Native 开发中有大量平台差异和性能陷阱。以下是实际项�
       maxToRenderPerBatch={10}       // 每批渲染 10 个
       windowSize={5}                 // 可视区域外保留 5 屏
       removeClippedSubviews={true}   // 移除屏幕外的 View（Android）
-      getItemLayout={getItemLayout}
     />;
     ```
 
@@ -2035,7 +2031,7 @@ React Native 开发中有大量平台差异和性能陷阱。以下是实际项�
     RN 中最常见的内存泄漏来源：定时器未清理、事件监听未移除、WebSocket 未关闭、图片未释放。
 
     ```javascript
-    // ❌ 内存泄漏示例
+    // 内存泄漏示例
     function LeakyScreen() {
       useEffect(() => {
         // 泄漏 1：定时器未清理
@@ -2051,7 +2047,7 @@ React Native 开发中有大量平台差异和性能陷阱。以下是实际项�
       // 组件卸载后，定时器、监听器、WebSocket 仍然存在 → 内存泄漏
     }
 
-    // ✅ 正确做法：清理所有副作用
+    // 正确做法：清理所有副作用
     function CleanScreen() {
       useEffect(() => {
         const timer = setInterval(() => fetchUpdates(), 5000);
@@ -2226,7 +2222,7 @@ RN 常见坑点：FlatList 需要提供 `getItemLayout` 和 `windowSize` 优化�
     Flutter:      Dart → Skia 引擎 → 自绘像素（不经过原生组件）
     ```
 
-    在性能方面，Flutter 的渲染流程更短（没有 Bridge 或 JSI 的开销），动画和滚动通常更流畅。React Native 的优势是**生态成熟**——npm 上有海量 JS 库可以直接用，而 Flutter 的 pub.dev 生态相对较小。此外，React Native 可以渐进式集成到现有原生项目中（只需要在几个页面用 RN），Flutter 则需要整个项目使用。
+    在性能方面，Flutter 的渲染流程更短（没有 Bridge 或 JSI 的开销），动画和滚动通常更流畅。React Native 的优势是**生态成熟**——npm 上有海量 JS 库可以直接用，而 Flutter 的 pub.dev 生态相对较小。此外，React Native 可以渐进式集成到现有原生项目中（只需要在几个页面用 RN）；Flutter 也提供 add-to-app 方式接入现有工程，但混合栈和路由管理的成本通常更高。
 
     **选择建议：** 如果团队有 React 经验、需要渐进式集成到现有原生 App，选 React Native。如果追求极致 UI 一致性、团队愿意学习 Dart，选 Flutter。"
 
@@ -2269,13 +2265,13 @@ RN 常见坑点：FlatList 需要提供 `getItemLayout` 和 `windowSize` 优化�
 
     **第一层（JS 层）：** React 的 Reconciler 计算出组件树的变更（哪些组件新增、更新、删除），生成一个 'Shadow Tree' 的变更描述。
 
-    **第二层（C++ 层）：** Fabric 在 C++ 层维护一个 Shadow Tree 的副本（类似于 React 的 Virtual DOM），用 Yoga 引擎计算布局。这一步在 Shadow Thread 执行，不阻塞 UI Thread。
+    **第二层（C++ 层）：** Fabric 在 C++ 层维护一个 Shadow Tree 的副本（类似于 React 的 Virtual DOM），用 Yoga 引擎计算布局。布局在 Fabric 的 C++ 渲染阶段完成，不阻塞 JS Thread 和 UI Thread（这里没有旧架构那种独立的 Shadow Thread）。
 
     **第三层（原生层）：** 布局计算完成后，Fabric 将结果提交给 UI Thread，由原生层创建或更新真实的 View。
 
     ```text
     React Reconciler → Shadow Tree 变更 → Yoga 布局计算 → 原生 View 更新
-         (JS)              (C++)            (Shadow Thread)    (UI Thread)
+         (JS)              (C++)          (C++ 渲染阶段)      (UI Thread)
     ```
 
     Fabric 最大的改进是**并发渲染**。旧架构中，JS Thread 和 UI Thread 通过 Bridge 串行通信——JS 计算完一个布局，等 Bridge 传过去，UI Thread 渲染完，再处理下一个。Fabric 允许 JS Thread 连续计算多个布局变更，由 Fabric 调度器决定何时提交给 UI Thread 渲染。这与 React 18 的并发特性（Concurrent Features）配合，可以实现：高优先级更新（用户输入）中断低优先级更新（后台数据加载）。"
@@ -2345,13 +2341,13 @@ RN 常见坑点：FlatList 需要提供 `getItemLayout` 和 `windowSize` 优化�
 
     | 阶段 | 优化手段 | 效果 |
     |------|---------|------|
-    | 原生初始化 | 减少启动时的原生依赖 | 减少 100-200ms |
-    | JS 引擎 | Hermes 字节码预编译 | 减少 40-60% 启动时间 |
-    | Bundle 加载 | 代码拆分 + 按需加载 | 减少 Bundle 体积 50%+ |
+    | 原生初始化 | 减少启动时的原生依赖 | 减少原生初始化耗时 |
+    | JS 引擎 | Hermes 字节码预编译 | 省去解析/编译，缩短启动时间 |
+    | Bundle 加载 | 代码拆分 + 按需加载 | 减少首屏需要加载的代码量 |
     | 布局计算 | 减少首屏组件层级 | 减少布局计算时间 |
     | View 创建 | 延迟渲染非首屏组件 | 加快首屏渲染 |
 
-    实际项目中，最有效的优化组合是：**Hermes 字节码预编译 + TurboModules 按需加载 + 代码拆分**，可以将冷加载时间从 3 秒缩短到 1 秒以内。"
+    实际项目中，常见的优化组合是：**Hermes 字节码预编译 + TurboModules 按需加载 + 代码拆分**，具体收益要在目标机型上测量，不同 Bundle 结构差异很大。"
 
   </Accordion>
 
@@ -2386,7 +2382,7 @@ RN 常见坑点：FlatList 需要提供 `getItemLayout` 和 `windowSize` 优化�
 
   </Accordion>
 
-  <Accordion title="🔥 React Native 中 JS Thread 阻塞会导致什么问题？如何排查？" icon="skull">
+  <Accordion title="React Native 中 JS Thread 阻塞会导致什么问题？如何排查？" icon="skull">
 
     **答题要点：**
     要讲清楚阻塞的影响、排查工具、解决方案。
@@ -2395,20 +2391,20 @@ RN 常见坑点：FlatList 需要提供 `getItemLayout` 和 `windowSize` 优化�
     "JS Thread 阻塞会导致**动画卡顿、手势不响应、UI 无更新**——因为 React 的状态更新、组件渲染、手势回调都在 JS Thread 执行。如果 JS Thread 被一个耗时操作（如大数组排序、JSON 解析大数据）阻塞超过 16ms，就会丢帧。
 
     **排查工具：**
-    1. **Flipper Performance Monitor**：实时监控 JS Thread 和 UI Thread 的帧率。如果 JS Thread 帧率持续低于 60fps，说明有阻塞。
+    1. **React Native DevTools Performance Monitor**：实时监控 JS Thread 和 UI Thread 的帧率。如果 JS Thread 帧率持续低于 60fps，说明有阻塞。
     2. **React DevTools Profiler**：分析组件渲染耗时，找出渲染最慢的组件。
     3. **Systrace（Android）/ Instruments（iOS）**：系统级的线程分析工具，可以看到每个函数的执行耗时。
 
     **解决方案：**
 
     ```javascript
-    // ❌ 阻塞 JS Thread：在主线程排序大数组
+    // 阻塞 JS Thread：在主线程排序大数组
     function processLargeData(data) {
       const sorted = data.sort((a, b) => a.value - b.value); // 可能阻塞几百毫秒
       setData(sorted);
     }
 
-    // ✅ 方案 1：用 InteractionManager 延迟执行
+    // 方案 1：用 InteractionManager 延迟执行
     import { InteractionManager } from 'react-native';
 
     function processLargeData(data) {
@@ -2418,8 +2414,8 @@ RN 常见坑点：FlatList 需要提供 `getItemLayout` 和 `windowSize` 优化�
       });
     }
 
-    // ✅ 方案 2：用 react-native-worklets 在后台线程执行
-    // ✅ 方案 3：分批处理（时间切片）
+    // 方案 2：用 react-native-worklets 在后台线程执行
+    // 方案 3：分批处理（时间切片）
     function processInChunks(data, chunkSize = 100) {
       let index = 0;
       function processChunk() {
@@ -2436,7 +2432,7 @@ RN 常见坑点：FlatList 需要提供 `getItemLayout` 和 `windowSize` 优化�
 
   </Accordion>
 
-  <Accordion title="🔥 如何设计一个 React Native 的热更新方案？" icon="skull">
+  <Accordion title="如何设计一个 React Native 的热更新方案？" icon="skull">
 
     **答题要点：**
     要覆盖方案选型、版本管理、回滚机制、安全考虑。
@@ -2471,11 +2467,9 @@ RN 常见坑点：FlatList 需要提供 `getItemLayout` 和 `windowSize` 优化�
 
 ---
 
-## 🔍 底层源码：React Native 新架构是如何实现的？
+## Q17: React Native 新架构的源码实现是怎样的？
 
-<div class="follow-up">
-JSI 的核心实现是什么？
-</div>
+<div class="follow-up">JSI 的核心实现是什么？</div>
 
 JSI 的核心实现在 React Native 的 C++ 层（[jsi/jsi.h](https://github.com/facebook/react-native/blob/main/packages/react-native/ReactCommon/jsi/jsi.h)）：
 
@@ -2488,14 +2482,13 @@ public:
     const std::shared_ptr<const Buffer>& buffer,
     const std::string& sourceURL) = 0;
 
-  // 创建全局函数，JS 可以调用
-  virtual void setGlobal(
-    const std::string& name,
-    Value value) = 0;
+  // 获取全局对象，用于向 JS 暴露函数/对象
+  virtual Object global() = 0;
 
-  // 创建 HostObject，C++ 对象暴露给 JS
-  virtual std::shared_ptr<HostObject> createHostObject(
-    std::shared_ptr<HostObject> hostObject) = 0;
+  // 把 C++ HostObject 暴露给 JS：
+  // 先构造 std::shared_ptr<HostObject>，再通过全局对象挂载
+  // 例如 global().setProperty(rt, "nativeModule",
+  //        Object::createFromHostObject(rt, hostObject));
 };
 
 // HostObject：C++ 对象暴露给 JS
@@ -2511,18 +2504,15 @@ public:
 
 JSI 的核心设计是 `HostObject`——当 JS 代码访问一个 HostObject 的属性时，会触发 C++ 的 `get` 方法，直接返回结果，不需要任何序列化。这就是为什么 JSI 比 Bridge 快得多。
 
-<div class="follow-up">
-Fabric 的 Shadow Tree 是怎么实现的？
-</div>
+<div class="follow-up">Fabric 的 Shadow Tree 是怎么实现的？</div>
 
 Fabric 的 Shadow Tree 实现在 C++ 层（[react/renderer/components/view](https://github.com/facebook/react-native/blob/main/packages/react-native/ReactCommon/react/renderer/components/view)），每个 React 组件对应一个 Shadow Node：
 
 ```cpp
-// ShadowNode：Fabric 的核心数据结构
+// ShadowNode：Fabric 的核心数据结构（简化示意，实际结构还包含 Props、State、Family 等）
 class ShadowNode {
   Tag tag_;              // 唯一标识
   Tag rootTag_;          // 根节点标识
-  std::shared_ptr<const ReactNativeDrawable> drawable_;
   LayoutMetrics layoutMetrics_;  // Yoga 计算的布局信息
 
   // 子节点列表
@@ -2536,11 +2526,9 @@ class ShadowNode {
 // 4. 提交给 UI Thread 渲染
 ```
 
-Fabric 的 Shadow Tree 与 React 的 Fiber Tree 一一对应，但运行在 C++ 层。这使得布局计算可以脱离 JS Thread，在 Shadow Thread 独立执行，不阻塞 UI 渲染。
+Fabric 的 Shadow Tree 与 React 的 Fiber Tree 一一对应，但运行在 C++ 层。这使得布局计算可以脱离 JS Thread，在 C++ 渲染阶段完成，不阻塞 UI 渲染。
 
-<div class="follow-up">
-旧架构 Bridge 的消息队列是怎么实现的？
-</div>
+<div class="follow-up">旧架构 Bridge 的消息队列是怎么实现的？</div>
 
 旧架构的 Bridge 消息队列实现在 `RCTBatchedBridge`（iOS）和 `CatalystInstanceImpl`（Android）中。核心是一个**双缓冲队列**——JS 侧写入一个缓冲区，Native 侧从另一个缓冲区读取，避免锁竞争：
 
@@ -2575,9 +2563,7 @@ private native void jniCallJSFunction(int moduleId, int methodId, NativeArray pa
 
 批量处理（Batching）是 Bridge 的重要优化——JS 侧在一个事件循环中产生的多条调用会被攒起来，一次 flush 发送给 Native，减少线程切换开销。
 
-<div class="follow-up">
-TurboModules 的按需加载是怎么实现的？
-</div>
+<div class="follow-up">TurboModules 的按需加载是怎么实现的？</div>
 
 TurboModules 的按需加载实现在 `TurboModuleManager`（C++ 层）中。核心机制是：启动时只注册模块的**名称列表**，不实例化任何模块。当 JS 首次调用某个模块时，`TurboModuleManager` 才通过 `ModuleProvider` 创建模块实例：
 
@@ -2605,28 +2591,28 @@ std::shared_ptr<TurboModule> TurboModuleManager::getModule(
 
 ```typescript
 // JS 侧：TurboModuleRegistry.ts（简化）
-// TurboModuleRegistry.get() 返回的是一个 Proxy
-// 只有真正调用方法时才触发 C++ 侧的模块实例化
-const MyModule = TurboModuleRegistry.get<MyModuleSpec>('MyModule');
-// 此时模块还未实例化
+// get() 返回模块对象；模块实例由 C++/原生侧的 TurboModuleManager
+// 在首次获取或调用时创建并缓存（具体时机随版本实现略有差异）
+const MyModule = TurboModuleRegistry.get<MyModuleSpec>("MyModule");
 
 const result = MyModule.doSomething();
-// 此时才触发 C++ TurboModuleManager.getModule('MyModule')
-// → 创建模块实例 → 缓存 → 调用方法
+// 调用会走到 C++ TurboModuleManager.getModule('MyModule')
+// → 创建或复用模块实例 → 执行方法
 ```
 
 TurboModules 的 Codegen 流程：开发者定义 TypeScript 接口（`extends TurboModule`）→ Codegen 自动生成 C++/ObjC/Kotlin 的类型安全胶水代码 → 开发者只需实现业务逻辑。这比旧架构手动处理 JSON 序列化安全得多——类型错误在编译时就能发现，而不是运行时崩溃。
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## Q18: 及格回答和满分回答差在哪？
 
 ### 问题："说说 React Native 的新架构"
 
 **及格回答（60-70分）：**
+
 > "新架构用 JSI 替代了 Bridge，用 Fabric 替代了 UIManager，用 TurboModules 替代了 NativeModules。通信从异步变成同步，性能更好。"
 
-面试官评价：**知道名词但不理解原理**。
+问题出在：**知道名词但不理解原理**。
 
 **满分回答（90-100分）：**
 
@@ -2634,11 +2620,11 @@ TurboModules 的 Codegen 流程：开发者定义 TypeScript 接口（`extends T
 
 > 新架构有三大核心组件。Fabric 是并发渲染器，它在 C++ 层维护 Shadow Tree，用 Yoga 引擎计算布局，支持 React 18 的并发特性——高优先级更新（用户输入）可以中断低优先级更新（后台数据）。TurboModules 是按需加载的原生模块系统，旧架构在启动时注册所有模块（拖慢启动），TurboModules 只在 JS 首次调用时才实例化。JSI 是两者的基石，提供了同步、无序列化的通信通道。<sup>[2]</sup>
 
-> 实际项目中最大的变化是**启动速度提升**。我在一个中型项目中从 0.67 迁移到 0.73，冷加载时间从 2.8 秒降到 1.2 秒，主要收益来自 TurboModules 按需加载（减少 20 多个模块的启动初始化）和 Hermes 字节码预编译（跳过 JS 解析）。但迁移成本不低——所有 NativeModules 都需要用 Codegen 重新定义 TypeScript 接口，旧的 `NativeModules` API 被废弃。<sup>[3]</sup>
+> 实际项目中最先感受到的通常是启动阶段：TurboModules 按需加载减少了启动时的模块初始化，Hermes 字节码预编译省去了解析步骤，冷启动时间往往有改善，但幅度取决于模块数量和 Bundle 结构，不能一概而论。迁移成本不低——原生模块需要用 Codegen 重新定义 TypeScript 接口，第三方库也要逐个确认兼容性。<sup>[3]</sup>
 
-> 项目建议：如果是新项目，直接用 0.73+ 启用新架构。如果是老项目，先在 0.72 上用 `turboModulesEnabled` flag 逐步迁移单个模块，验证无问题后再全面切换。不要一次性迁移所有模块——风险太大。
+> 项目建议：新项目直接按当前稳定版本的新架构方式编写。老项目通过 `newArchEnabled`（不同版本开关位置不同）先开启新架构，再逐步迁移单个模块，验证无问题后全面切换。不要一次性迁移所有模块——风险太大。
 
-### 大厂高频连环拷问
+### 常见追问
 
 > 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。每个模块 **8 个 Accordion**，覆盖 4 个难度层级。
 
@@ -2756,11 +2742,12 @@ TurboModules 的 Codegen 流程：开发者定义 TypeScript 接口（`extends T
 
     **1. 开发调试：**
     - **React DevTools**：查看组件树、Props、State，和 Web 端的 React DevTools 用法一致。
-    - **Flipper**：Meta 出品的调试平台，支持查看网络请求、日志、数据库、布局检查。它是 React Native 调试的核心工具。
-    - **Chrome DevTools**：旧架构中可以通过 Remote JS Debugging 在 Chrome 中调试 JS 代码。新架构推荐用 Flipper 或 VS Code 调试器。
+    - **React Native DevTools**：0.73 起官方推荐的调试入口，基于 Chrome DevTools 前端，支持断点、Console、Network 等能力。
+    - **Flipper**：早期常用的调试平台，支持日志、布局检查等；新版本 RN 已不再默认集成，建议优先使用 React Native DevTools。
+    - **VS Code 调试器**：通过 debugger 配置直接附加到 Hermes，适合断点调试。
 
     **2. 性能调试：**
-    - **Performance Monitor**：Flipper 内置的性能监控，实时显示 JS Thread 和 UI Thread 的帧率。
+    - **Performance Monitor**：React Native DevTools/开发者菜单中的性能监控，可查看 JS Thread 和 UI Thread 的帧率。
     - **Systrace**：系统级的线程分析工具，可以精确看到每个函数的执行耗时。
     - **React DevTools Profiler**：分析组件渲染耗时，找出不必要的重渲染。
 
@@ -2768,17 +2755,12 @@ TurboModules 的 Codegen 流程：开发者定义 TypeScript 接口（`extends T
     - **Sentry / Bugsnag**：错误监控平台，捕获生产环境的 JS 异常和 Native Crash。
     - **LogBox**：开发环境的错误和警告提示，生产环境自动隐藏。
 
-    ```javascript
-    // 开发时常用的调试技巧
-    // 1. 快速查看性能
-    import { PerfMonitor } from 'react-native/Libraries/Performance/RCTRenderingPerf';
-
-    // 2. 查看组件重渲染
-    // 在 React DevTools 中开启 'Highlight updates'
-
-    // 3. 查看内存使用
-    // Flipper → Databases → 查看 AsyncStorage 内容
-    // Flipper → Network → 查看请求详情
+    ```text
+    开发时常用的调试入口：
+    1. 性能总览：开发者菜单 → Performance Monitor，观察 JS/UI 线程帧率
+    2. 组件重渲染：React DevTools → Profiler，或开启 Highlight updates
+    3. 网络请求：React Native DevTools → Network
+    4. 存储排查：在 JS 侧读取 AsyncStorage / MMKV，或使用对应调试面板
     ```
 
   </Accordion>
@@ -2852,7 +2834,7 @@ TurboModules 的 Codegen 流程：开发者定义 TypeScript 接口（`extends T
     "React Native 和小程序的区别体现在三个维度：
 
     **1. 渲染方式：**
-    React Native 用 JS 驱动原生组件渲染——`<View>` 对应 `UIView` 或 `android.view.View`。小程序用 WebView 渲染——`<view>` 是 HTML 标签，在 WebView 中渲染。所以 React Native 的 UI 是原生的，小程序的 UI 是 Web 的。
+    React Native 用 JS 驱动原生组件渲染——`<View>` 对应 `UIView` 或 `android.view.View`。小程序的视图层通常由 WebView 承载（Skyline 等新渲染引擎除外），`<view>` 是平台内置组件，最终映射为视图层节点。所以 React Native 的 UI 是原生的，小程序的 UI 主要由 Web 技术渲染。
 
     **2. 通信模型：**
     React Native 用 JSI（新架构）直接在 JS 和原生之间通信。小程序用双线程模型——逻辑层（JSCore）和视图层（WebView）是两个独立线程，通过 `setData` 通信。小程序的 `setData` 是性能瓶颈——每次数据变更都要序列化传递给视图层。
@@ -2863,13 +2845,13 @@ TurboModules 的 Codegen 流程：开发者定义 TypeScript 接口（`extends T
     ```
 
     **3. 生态：**
-    React Native 可以使用 npm 生态，原生能力通过原生模块扩展。小程序的能力受限于平台 API（微信、支付宝等），无法直接使用 npm 包，原生扩展受限。
+    React Native 可以直接使用 npm 生态，原生能力通过原生模块扩展。小程序也能用 npm，但需要经过开发者工具的“构建 npm”流程，且只能使用兼容小程序运行时的包；原生扩展受平台限制。
 
     **选择建议：** 如果目标是独立 App，选 React Native。如果目标是在微信/支付宝生态内分发，选小程序。两者不冲突——很多团队同时维护 App（React Native）和小程序（Taro/uni-app）。"
 
   </Accordion>
 
-  <Accordion title="🔥 如何从零设计一个 React Native 组件库？" icon="skull">
+  <Accordion title="如何从零设计一个 React Native 组件库？" icon="skull">
 
     **答题要点：**
     要覆盖架构设计、主题系统、跨平台适配、测试策略。
@@ -2925,7 +2907,7 @@ TurboModules 的 Codegen 流程：开发者定义 TypeScript 接口（`extends T
 
   </Accordion>
 
-  <Accordion title="🔥 React Native 中如何实现离线优先（Offline-First）架构？" icon="skull">
+  <Accordion title="React Native 中如何实现离线优先（Offline-First）架构？" icon="skull">
 
     **答题要点：**
     要覆盖本地存储、数据同步、冲突解决三个核心问题。
@@ -2984,7 +2966,7 @@ TurboModules 的 Codegen 流程：开发者定义 TypeScript 接口（`extends T
 
     5. **原生模块注册**：旧架构通过 `RCT_EXPORT_MODULE()` 宏在启动时注册所有模块；新架构 TurboModules 按需加载，只在 JS 首次调用时实例化。
 
-    6. **渲染首屏**：Fabric（新架构）或 UIManager（旧架构）将组件树转换为原生 UIView，Yoga 在 Shadow Thread 计算布局，UI Thread 创建 View 并添加到视图层级。
+    6. **渲染首屏**：旧架构由 UIManager 处理，Yoga 在 Shadow Thread（iOS）/ mqt_native_modules 线程（Android）计算布局；新架构由 Fabric 在 C++ 侧构建 Shadow Tree 并计算布局。最后由 UI Thread 创建 View 并添加到视图层级。
 
     关键优化点：TurboModules 按需加载减少启动模块数、Hermes 字节码预编译跳过 JS 解析、延迟初始化非关键 SDK。"
 
@@ -3056,7 +3038,7 @@ TurboModules 的 Codegen 流程：开发者定义 TypeScript 接口（`extends T
 
   </Accordion>
 
-  <Accordion title="🔥 React Native 中最常踩的坑有哪些？如何避免？" icon="skull">
+  <Accordion title="React Native 中最常踩的坑有哪些？如何避免？" icon="skull">
 
     **答题要点：**
     要覆盖列表性能、内存泄漏、样式差异、热更新四个维度。
@@ -3074,7 +3056,7 @@ TurboModules 的 Codegen 流程：开发者定义 TypeScript 接口（`extends T
 
   </Accordion>
 
-  <Accordion title="🔥 如何从 Bridge 架构迁移到新架构？迁移成本有多大？" icon="skull">
+  <Accordion title="如何从 Bridge 架构迁移到新架构？迁移成本有多大？" icon="skull">
 
     **答题要点：**
     要讲清楚迁移步骤、风险点和回退策略。
@@ -3082,7 +3064,7 @@ TurboModules 的 Codegen 流程：开发者定义 TypeScript 接口（`extends T
     **高分回答：**
     "从 Bridge 迁移到新架构需要四个步骤：
 
-    **1. 升级 RN 版本到 0.68+：** 新架构从 0.68 开始支持，建议直接用 0.73+（默认 Bridgeless Mode）。
+    **1. 升级 RN 版本：** 新架构从 0.68 起可 opt-in，0.76 起默认启用；建议升到当前稳定版本后再迁移。
 
     **2. 迁移 NativeModules 到 TurboModules：** 为每个原生模块定义 TypeScript 接口（`extends TurboModule`），用 Codegen 生成 C++/ObjC/Kotlin 胶水代码。旧的 `NativeModules.ModuleName` 调用改为 `TurboModuleRegistry.getEnforcing('ModuleName')`。
 
@@ -3090,7 +3072,7 @@ TurboModules 的 Codegen 流程：开发者定义 TypeScript 接口（`extends T
 
     **4. 验证第三方库兼容性：** 部分库仍使用旧的 NativeModules API，需要等作者更新或自行 fork。
 
-    迁移成本：中型项目（20+ 原生模块）通常需要 2-4 周。最大风险是第三方库不兼容——建议先在开发环境逐步迁移单个模块，验证无问题后再全面切换。不要一次性迁移所有模块。"
+    迁移成本取决于原生模块数量和第三方库兼容情况，没有统一工期。最大风险是第三方库不兼容——建议先在开发环境逐步迁移单个模块，验证无问题后再全面切换。不要一次性迁移所有模块。"
 
   </Accordion>
 
@@ -3098,18 +3080,18 @@ TurboModules 的 Codegen 流程：开发者定义 TypeScript 接口（`extends T
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 🔗 [React Native 官方文档 - 新架构](https://reactnative.dev/docs/the-new-architecture/landing-page)：Meta 官方对 Fabric、TurboModules、JSI 的最权威解释。<sup>[1]</sup>
-- 📖 [React Native 新架构深度解析](https://reactnative.dev/blog/2022/03/15/an-update-on-the-new-architecture-rollout)：Meta 官方博客，详细介绍了新架构的迁移策略和性能数据。<sup>[2]</sup>
-- 🟢 [Hermes 引擎官方文档](https://hermesengine.dev/)：Hermes 字节码预编译和增量式 GC 的底层原理。<sup>[3]</sup>
-- 🔗 [Fabric 渲染器源码](https://github.com/facebook/react-native/tree/main/packages/react-native/ReactCommon/react/renderer)：Fabric 的 C++ 实现，包含 Shadow Tree 和 Yoga 布局引擎。<sup>[4]</sup>
-- 📖 [react-native-reanimated 文档](https://docs.swmansion.com/react-native-reanimated/)：Reanimated 的 Worklet 机制和 UI Thread 动画原理。Krzysztof Magiera（Software Mansion）设计的 Worklet 让动画计算完全在 UI Thread 执行，即使 JS Thread 完全阻塞也不影响 60fps 流畅度。<sup>[5]</sup>
-- 🟢 [CodePush 官方文档](https://microsoft.github.io/code-push/)：React Native 热更新方案的官方指南。<sup>[6]</sup>
-- 🔗 [React Navigation 官方文档](https://reactnavigation.org/)：RN 社区标准导航方案，包含 Stack/Tab/Drawer 和 Deep Linking。<sup>[7]</sup>
-- 📖 [react-native-gesture-handler 文档](https://docs.swmansion.com/react-native-gesture-handler/)：原生手势识别库，配合 Reanimated 实现 UI Thread 手势动画。<sup>[8]</sup>
-- 🟢 [Krzysztof Magiera - Reanimated 作者](https://swmansion.com/)：Software Mansion 团队，Reanimated 和 Gesture Handler 的核心设计者。其 Worklet 架构彻底解决了旧架构中动画因 JS Thread 阻塞而卡顿的问题。<sup>[9]</sup>
-- 📖 [Evan Bacon - Expo Router 作者](https://twitter.com/baconbrix)：Expo 核心成员，推动了 RN 全栈化和文件路由化。<sup>[10]</sup>
-- 🟢 [William Candillon - YouTube](https://www.youtube.com/user/wcandill)："Can it be done in React Native?" 系列，RN Skia 和动画顶级教程。通过 React Native Skia 实现硬件加速的 Canvas 渲染，展示了 RN 在复杂图形场景下的极限性能。<sup>[11]</sup>
-- 📖 [携程 CRN 团队 - React Native 企业级实践](https://zhuanlan.zhihu.com/ctriptech)：国内最早大规模落地 RN 并进行底层拆包、首屏秒开深度优化的企业级团队。其拆包策略（公共包 + 业务包分离）和预渲染机制对国内 RN 生态影响深远。<sup>[12]</sup>
-- 🟢 [Marc Rousavy - VisionCamera 作者](https://twitter.com/mrousavy)：Margelo 创始人，通过 JSI 直接调用原生相机 API，展示了新架构在高频数据流场景下的性能优势。<sup>[13]</sup>
+- [React Native 官方文档 - 新架构](https://reactnative.dev/docs/the-new-architecture/landing-page)：Meta 官方对 Fabric、TurboModules、JSI 的最权威解释。<sup>[1]</sup>
+- [React Native 新架构深度解析](https://reactnative.dev/blog/2022/03/15/an-update-on-the-new-architecture-rollout)：Meta 官方博客，详细介绍了新架构的迁移策略和性能数据。<sup>[2]</sup>
+- [Hermes 引擎官方文档](https://hermesengine.dev/)：Hermes 字节码预编译和增量式 GC 的底层原理。<sup>[3]</sup>
+- [Fabric 渲染器源码](https://github.com/facebook/react-native/tree/main/packages/react-native/ReactCommon/react/renderer)：Fabric 的 C++ 实现，包含 Shadow Tree 和 Yoga 布局引擎。<sup>[4]</sup>
+- [react-native-reanimated 文档](https://docs.swmansion.com/react-native-reanimated/)：Reanimated 的 Worklet 机制和 UI Thread 动画原理。Krzysztof Magiera（Software Mansion）设计的 Worklet 让动画计算完全在 UI Thread 执行，即使 JS Thread 完全阻塞也不影响 60fps 流畅度。<sup>[5]</sup>
+- [CodePush 官方文档](https://microsoft.github.io/code-push/)：React Native 热更新方案的官方指南。<sup>[6]</sup>
+- [React Navigation 官方文档](https://reactnavigation.org/)：RN 社区标准导航方案，包含 Stack/Tab/Drawer 和 Deep Linking。<sup>[7]</sup>
+- [react-native-gesture-handler 文档](https://docs.swmansion.com/react-native-gesture-handler/)：原生手势识别库，配合 Reanimated 实现 UI Thread 手势动画。<sup>[8]</sup>
+- [Krzysztof Magiera - Reanimated 作者](https://swmansion.com/)：Software Mansion 团队，Reanimated 和 Gesture Handler 的核心设计者。其 Worklet 架构彻底解决了旧架构中动画因 JS Thread 阻塞而卡顿的问题。<sup>[9]</sup>
+- [Evan Bacon - Expo Router 作者](https://twitter.com/baconbrix)：Expo 核心成员，推动了 RN 全栈化和文件路由化。<sup>[10]</sup>
+- [William Candillon - YouTube](https://www.youtube.com/user/wcandill)："Can it be done in React Native?" 系列，RN Skia 和动画顶级教程。通过 React Native Skia 实现硬件加速的 Canvas 渲染，展示了 RN 在复杂图形场景下的极限性能。<sup>[11]</sup>
+- [携程 CRN 团队 - React Native 企业级实践](https://zhuanlan.zhihu.com/ctriptech)：公开分享过 RN 拆包（公共包 + 业务包分离）和预渲染等工程实践。<sup>[12]</sup>
+- [Marc Rousavy - VisionCamera 作者](https://twitter.com/mrousavy)：Margelo 创始人，通过 JSI 直接调用原生相机 API，展示了新架构在高频数据流场景下的性能优势。<sup>[13]</sup>

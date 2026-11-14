@@ -1,10 +1,9 @@
 ---
 title: "正则表达式"
+description: "正则语法、分组与捕获、断言、回溯与灾难性回溯的成因，以及正则引擎的匹配过程。"
 ---
 
-> **面试官为什么问这个？**
->
-> 正则表达式是前端表单验证、文本处理、数据提取的核心工具。面试官问这个，本质上是在考察你：**你能不能用正则解决实际的文本匹配问题？你知不知道正则引擎的匹配原理？** 如果你答不清楚，说明你对字符串处理的理解停留在 `indexOf` 层面。
+> 我最早写正则只靠试，后来遇到回溯导致的卡顿，才开始看引擎是怎么匹配的。
 
 ---
 
@@ -74,7 +73,7 @@ indexOf('@') 只能检查有没有 @，无法检查格式是否正确
 
 <Tip title="💡 面试技巧">
 
-回答时先说"为什么需要正则"（普通字符串方法的局限性），再说"正则能做什么"（模式匹配）。面试官想听的是你理解正则的使用场景，而不是背诵语法规则。
+回答时先说"为什么需要正则"（普通字符串方法的局限性），再说"正则能做什么"（模式匹配）。想听的是你对正则使用场景的理解，而不是背诵语法规则。
 
 </Tip>
 
@@ -103,28 +102,28 @@ indexOf('@') 只能检查有没有 @，无法检查格式是否正确
 
 **常用元字符：**
 
-| 元字符 | 含义 | 示例 | 匹配 |
-|--------|------|------|------|
-| `.` | 任意字符（除换行） | `a.c` | `abc`, `a1c`, `a c` |
-| `*` | 0 次或多次 | `ab*c` | `ac`, `abc`, `abbc` |
-| `+` | 1 次或多次 | `ab+c` | `abc`, `abbc`（不匹配 `ac`） |
-| `?` | 0 次或 1 次 | `ab?c` | `ac`, `abc` |
-| `^` | 开头 | `^a` | 字符串以 `a` 开头 |
-| `$` | 结尾 | `a$` | 字符串以 `a` 结尾 |
-| `\d` | 数字 | `\d+` | `123` |
-| `\w` | 单词字符 | `\w+` | `hello` |
-| `\s` | 空白字符 | `\s+` | ` `, `\t`, `\n` |
+| 元字符 | 含义               | 示例   | 匹配                         |
+| ------ | ------------------ | ------ | ---------------------------- |
+| `.`    | 任意字符（除换行） | `a.c`  | `abc`, `a1c`, `a c`          |
+| `*`    | 0 次或多次         | `ab*c` | `ac`, `abc`, `abbc`          |
+| `+`    | 1 次或多次         | `ab+c` | `abc`, `abbc`（不匹配 `ac`） |
+| `?`    | 0 次或 1 次        | `ab?c` | `ac`, `abc`                  |
+| `^`    | 开头               | `^a`   | 字符串以 `a` 开头            |
+| `$`    | 结尾               | `a$`   | 字符串以 `a` 结尾            |
+| `\d`   | 数字               | `\d+`  | `123`                        |
+| `\w`   | 单词字符           | `\w+`  | `hello`                      |
+| `\s`   | 空白字符           | `\s+`  | ` `, `\t`, `\n`              |
 
 ```javascript
 // 基础匹配
-/hello/.test('hello world');     // true
-/hello/.test('Hello world');     // false（区分大小写）
+/hello/.test("hello world"); // true
+/hello/.test("Hello world"); // false（区分大小写）
 
 // 忽略大小写
-/hello/i.test('Hello world');    // true
+/hello/i.test("Hello world"); // true
 
 // 全局匹配
-'hello hello'.match(/hello/g);   // ['hello', 'hello']
+"hello hello".match(/hello/g); // ['hello', 'hello']
 ```
 
 <Warning title="⚠️ 核心机制: 贪婪匹配 vs 非贪婪匹配">
@@ -133,14 +132,13 @@ indexOf('@') 只能检查有没有 @，无法检查格式是否正确
 
 ```javascript
 // 贪婪匹配：尽可能多
-'<div>hello</div>'.match(/<.*>/);   // ['<div>hello</div>']
+"<div>hello</div>".match(/<.*>/); // ['<div>hello</div>']
 // 匹配了从第一个 < 到最后一个 > 的所有内容
 
 // 非贪婪匹配：尽可能少
-'<div>hello</div>'.match(/<.*?>/);  // ['<div>']
+"<div>hello</div>".match(/<.*?>/); // ['<div>']
 // 只匹配了第一个 < 到第一个 > 的内容
 ```
-
 
 </Warning>
 
@@ -148,32 +146,31 @@ indexOf('@') 只能检查有没有 @，无法检查格式是否正确
 
 贪婪匹配就像一个贪吃的人——看到一桌菜，他会尽可能多吃。非贪婪匹配就像一个节制的人——只吃够自己需要的量。在正则中，`*` 是贪吃的人，`*?` 是节制的人。
 
-
 </Tip>
 
 ### 字符集（Character Classes）
 
 ```javascript
 // 字符集：匹配括号内的任意一个字符
-/[abc]/.test('apple');    // true（匹配 a）
-/[abc]/.test('hello');    // false（没有 a, b, c）
+/[abc]/.test("apple"); // true（匹配 a）
+/[abc]/.test("hello"); // false（没有 a, b, c）
 
 // 范围：匹配范围内的字符
-/[a-z]/.test('hello');    // true（小写字母）
-/[A-Z]/.test('Hello');    // true（大写字母）
-/[0-9]/.test('123');      // true（数字）
+/[a-z]/.test("hello"); // true（小写字母）
+/[A-Z]/.test("Hello"); // true（大写字母）
+/[0-9]/.test("123"); // true（数字）
 
 // 取反：匹配不在括号内的字符
-/[^abc]/.test('hello');   // true（有非 a, b, c 的字符）
-/[^abc]/.test('aabbcc');  // false（全是 a, b, c）
+/[^abc]/.test("hello"); // true（有非 a, b, c 的字符）
+/[^abc]/.test("aabbcc"); // false（全是 a, b, c）
 
 // 预定义字符集
-/\d/.test('123');         // true（数字，等价于 [0-9]）
-/\D/.test('hello');       // true（非数字，等价于 [^0-9]）
-/\w/.test('hello');       // true（单词字符，等价于 [a-zA-Z0-9_]）
-/\W/.test('!@#');         // true（非单词字符）
-/\s/.test(' ');           // true（空白字符）
-/\S/.test('hello');       // true（非空白字符）
+/\d/.test("123"); // true（数字，等价于 [0-9]）
+/\D/.test("hello"); // true（非数字，等价于 [^0-9]）
+/\w/.test("hello"); // true（单词字符，等价于 [a-zA-Z0-9_]）
+/\W/.test("!@#"); // true（非单词字符）
+/\s/.test(" "); // true（空白字符）
+/\S/.test("hello"); // true（非空白字符）
 ```
 
 ---
@@ -184,18 +181,18 @@ indexOf('@') 只能检查有没有 @，无法检查格式是否正确
 
 ```javascript
 // 量词
-/a{3}/.test('aaa');       // true（恰好 3 次）
-/a{2,4}/.test('aa');      // true（2 到 4 次）
-/a{2,}/.test('aaaaa');    // true（至少 2 次）
+/a{3}/.test("aaa"); // true（恰好 3 次）
+/a{2,4}/.test("aa"); // true（2 到 4 次）
+/a{2,}/.test("aaaaa"); // true（至少 2 次）
 
 // 边界
-/^hello/.test('hello world');  // true（字符串开头）
-/world$/.test('hello world');  // true（字符串结尾）
-/^hello$/.test('hello');       // true（完全匹配）
+/^hello/.test("hello world"); // true（字符串开头）
+/world$/.test("hello world"); // true（字符串结尾）
+/^hello$/.test("hello"); // true（完全匹配）
 
 // 单词边界
-/\bword\b/.test('hello word');  // true（独立的单词）
-/\bword\b/.test('wordsmith');   // false（不是独立的单词）
+/\bword\b/.test("hello word"); // true（独立的单词）
+/\bword\b/.test("wordsmith"); // false（不是独立的单词）
 ```
 
 <Warning title="⚠️ 边界匹配的常见错误">
@@ -204,17 +201,16 @@ indexOf('@') 只能检查有没有 @，无法检查格式是否正确
 
 ```javascript
 // ❌ 错误理解：以为 ^ 和 $ 是单词边界
-/^hello$/.test('hello world');  // false（整个字符串是 'hello world'）
+/^hello$/.test("hello world"); // false（整个字符串是 'hello world'）
 
 // ✅ 正确理解：^ 和 $ 是字符串边界
-/^hello/.test('hello world');   // true（字符串以 'hello' 开头）
-/hello$/.test('say hello');     // true（字符串以 'hello' 结尾）
+/^hello/.test("hello world"); // true（字符串以 'hello' 开头）
+/hello$/.test("say hello"); // true（字符串以 'hello' 结尾）
 
 // ✅ 用 \b 匹配单词边界
-/\bhello\b/.test('say hello world');  // true（'hello' 是独立的单词）
-/\bhello\b/.test('say helloworld');   // false（'hello' 不是独立的单词）
+/\bhello\b/.test("say hello world"); // true（'hello' 是独立的单词）
+/\bhello\b/.test("say helloworld"); // false（'hello' 不是独立的单词）
 ```
-
 
 </Warning>
 
@@ -226,20 +222,20 @@ indexOf('@') 只能检查有没有 @，无法检查格式是否正确
 
 ```javascript
 // 基础分组
-/(ab)+/.test('ababab');  // true（'ab' 重复多次）
+/(ab)+/.test("ababab"); // true（'ab' 重复多次）
 
 // 捕获分组
-'hello world'.match(/(\w+) (\w+)/);
+"hello world".match(/(\w+) (\w+)/);
 // ['hello world', 'hello', 'world']
 // 第一个元素是完整匹配，后续元素是捕获组
 
 // 非捕获分组（?:）
-'hello world'.match(/(?:\w+) (\w+)/);
+"hello world".match(/(?:\w+) (\w+)/);
 // ['hello world', 'world']
 // (?:) 不捕获，只分组
 
 // 命名捕获分组（ES2018）
-'2024-01-15'.match(/(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})/);
+"2024-01-15".match(/(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})/);
 // groups: { year: '2024', month: '01', day: '15' }
 ```
 
@@ -249,19 +245,18 @@ indexOf('@') 只能检查有没有 @，无法检查格式是否正确
 
 ```javascript
 // 编号规则：按左括号的顺序
-/(a)(b(c)d)e/.match('abcde');
+/(a)(b(c)d)e/.match("abcde");
 // 捕获组 1: 'a'
 // 捕获组 2: 'bcd'
 // 捕获组 3: 'c'
 
 // 反向引用：用 \n 引用第 n 个捕获组
-/(a)\1/.test('aa');          // true（\1 引用第一个捕获组 'a'）
-/(a)(b)\2/.test('abb');      // true（\2 引用第二个捕获组 'b'）
+/(a)\1/.test("aa"); // true（\1 引用第一个捕获组 'a'）
+/(a)(b)\2/.test("abb"); // true（\2 引用第二个捕获组 'b'）
 
 // 命名反向引用（ES2018）
-/(?<char>a)\k<char>/.test('aa');  // true
+/(?<char>a)\k<char>/.test("aa"); // true
 ```
-
 
 </Warning>
 
@@ -269,7 +264,7 @@ indexOf('@') 只能检查有没有 @，无法检查格式是否正确
 
 ```javascript
 // 1. 提取日期
-const dateStr = '2024-01-15';
+const dateStr = "2024-01-15";
 const match = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
 if (match) {
   const [, year, month, day] = match;
@@ -277,12 +272,12 @@ if (match) {
 }
 
 // 2. 替换格式
-'hello-world'.replace(/(\w+)-(\w+)/, '$2_$1'); // 'world_hello'
+"hello-world".replace(/(\w+)-(\w+)/, "$2_$1"); // 'world_hello'
 
 // 3. 命名捕获组
-const url = 'https://example.com:8080/path';
+const url = "https://example.com:8080/path";
 const { protocol, host, port, path } = url.match(
-  /(?<protocol>https?):\/\/(?<host>[^:]+):(?<port>\d+)(?<path>\/.*)?/
+  /(?<protocol>https?):\/\/(?<host>[^:]+):(?<port>\d+)(?<path>\/.*)?/,
 ).groups;
 // protocol: 'https', host: 'example.com', port: '8080', path: '/path'
 ```
@@ -295,20 +290,20 @@ const { protocol, host, port, path } = url.match(
 
 ```javascript
 // 正向前瞻（Lookahead）：后面必须跟着 ...
-/hello(?= world)/.test('hello world');  // true
-/hello(?= world)/.test('hello there');  // false
+/hello(?= world)/.test("hello world"); // true
+/hello(?= world)/.test("hello there"); // false
 
 // 负向前瞻（Negative Lookahead）：后面不能跟着 ...
-/hello(?! world)/.test('hello there');  // true
-/hello(?! world)/.test('hello world');  // false
+/hello(?! world)/.test("hello there"); // true
+/hello(?! world)/.test("hello world"); // false
 
 // 正向后顾（Lookbehind）：前面必须是 ...（ES2018）
-/(?<=hello) world/.test('hello world');  // true
-/(?<=hello) world/.test('hi world');     // false
+/(?<=hello) world/.test("hello world"); // true
+/(?<=hello) world/.test("hi world"); // false
 
 // 负向后顾（Negative Lookbehind）：前面不能是 ...（ES2018）
-/(?<!hello) world/.test('hi world');     // true
-/(?<!hello) world/.test('hello world');  // false
+/(?<!hello) world/.test("hi world"); // true
+/(?<!hello) world/.test("hello world"); // false
 ```
 
 <Warning title="⚠️ 断言的实际应用">
@@ -317,15 +312,14 @@ const { protocol, host, port, path } = url.match(
 
 ```javascript
 // 1. 匹配价格（但不包含货币符号）
-/(?<=\$)\d+\.\d{2}/.exec('$19.99');  // ['19.99']
+/(?<=\$)\d+\.\d{2}/.exec("$19.99"); // ['19.99']
 
 // 2. 匹配单词（但不在引号内）
-/(?<!")\bword\b(?!")/g.exec('say "word" and word');  // 匹配第二个 word
+/(?<!")\bword\b(?!")/g.exec('say "word" and word'); // 匹配第二个 word
 
 // 3. 密码强度验证（至少包含大小写字母和数字）
-/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test('Abc12345');  // true
+/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test("Abc12345"); // true
 ```
-
 
 </Warning>
 
@@ -337,25 +331,26 @@ const { protocol, host, port, path } = url.match(
 
 ```javascript
 // 简单版（够用）
-/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test('user@example.com');  // true
+/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test("user@example.com"); // true
 
 // 严格版（RFC 5322）
-/^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/
+/^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
 ```
 
 ### 手机号验证（中国大陆）
 
 ```javascript
 // 中国大陆手机号
-/^1[3-9]\d{9}$/.test('13812345678');  // true
-/^1[3-9]\d{9}$/.test('12345678901');  // false（第二位不是 3-9）
+/^1[3-9]\d{9}$/.test("13812345678"); // true
+/^1[3-9]\d{9}$/.test("12345678901"); // false（第二位不是 3-9）
 ```
 
 ### URL 解析
 
 ```javascript
-const url = 'https://www.example.com:8080/path?query=value#hash';
-const regex = /^(?<protocol>https?):\/\/(?<host>[^:\/?#]+)(?::(?<port>\d+))?(?<path>\/[^?#]*)?(?:\?(?<query>[^#]*))?(?:#(?<hash>.*))?$/;
+const url = "https://www.example.com:8080/path?query=value#hash";
+const regex =
+  /^(?<protocol>https?):\/\/(?<host>[^:\/?#]+)(?::(?<port>\d+))?(?<path>\/[^?#]*)?(?:\?(?<query>[^#]*))?(?:#(?<hash>.*))?$/;
 const { protocol, host, port, path, query, hash } = url.match(regex).groups;
 // protocol: 'https', host: 'www.example.com', port: '8080'
 // path: '/path', query: 'query=value', hash: 'hash'
@@ -365,11 +360,11 @@ const { protocol, host, port, path, query, hash } = url.match(regex).groups;
 
 ```javascript
 // 提取标签内容（简单场景）
-'<p>hello</p>'.match(/<p>(.*?)<\/p>/);  // ['<p>hello</p>', 'hello']
+"<p>hello</p>".match(/<p>(.*?)<\/p>/); // ['<p>hello</p>', 'hello']
 
 // ⚠️ 注意：正则不适合解析复杂的 HTML，应该用 DOMParser
 const parser = new DOMParser();
-const doc = parser.parseFromString(htmlString, 'text/html');
+const doc = parser.parseFromString(htmlString, "text/html");
 ```
 
 <Warning title="⚠️ 正则不适合解析 HTML">
@@ -378,16 +373,15 @@ HTML 不是正则语言（Regular Language），用正则解析 HTML 会导致�
 
 ```javascript
 // ❌ 用正则解析嵌套标签——无法正确处理
-'<div><p>hello</p></div>'.match(/<div>(.*?)<\/div>/);
+"<div><p>hello</p></div>".match(/<div>(.*?)<\/div>/);
 // 匹配到 '<p>hello</p>'，但如果嵌套更深就会出错
 
 // ✅ 用 DOMParser 解析 HTML
 const parser = new DOMParser();
-const doc = parser.parseFromString(htmlString, 'text/html');
-const div = doc.querySelector('div');
+const doc = parser.parseFromString(htmlString, "text/html");
+const div = doc.querySelector("div");
 console.log(div.textContent); // 'hello'
 ```
-
 
 </Warning>
 
@@ -419,13 +413,13 @@ console.log(div.textContent); // 'hello'
 ```javascript
 // ❌ 灾难性回溯的例子
 const regex = /^(a+)+$/;
-regex.test('aaaaaaaaaaaaaaaaaaaaaaaaaaaac');
+regex.test("aaaaaaaaaaaaaaaaaaaaaaaaaaaac");
 // 引擎需要尝试 2^30 种可能性，耗时数秒
 
 // ✅ 优化：用原子组（Atomic Group）或占有量词（Possessive Quantifier）
 // JavaScript 不支持原子组，但可以用其他方式优化
 const regex = /^a+$/;
-regex.test('aaaaaaaaaaaaaaaaaaaaaaaaaaaac');
+regex.test("aaaaaaaaaaaaaaaaaaaaaaaaaaaac");
 // 立即返回 false，因为后面有 'c'
 ```
 
@@ -435,16 +429,16 @@ regex.test('aaaaaaaaaaaaaaaaaaaaaaaaaaaac');
 
 ```javascript
 // ❌ 嵌套量词
-/(a+)+$/;      // 嵌套的 +
-/(a*)*$/;      // 嵌套的 *
-/(a|b)*$/;     // 交替和量词组合
+/(a+)+$/; // 嵌套的 +
+/(a*)*$/; // 嵌套的 *
+/(a|b)*$/; // 交替和量词组合
 
 // ❌ 重叠的字符集
-/([a-z]+)*$/;  // 量词嵌套
+/([a-z]+)*$/; // 量词嵌套
 
 // ✅ 优化方案
 // 1. 避免嵌套量词
-/^a+$/;        // 简单量词
+/^a+$/; // 简单量词
 
 // 2. 使用原子组（如果引擎支持）
 // /^(?>a+)+$/;  // 原子组（JavaScript 不支持）
@@ -453,28 +447,27 @@ regex.test('aaaaaaaaaaaaaaaaaaaaaaaaaaaac');
 // /^a++$/;       // 占有量词（JavaScript 不支持）
 ```
 
-
 </Warning>
 
 ### 正则表达式的优化技巧
 
 ```javascript
 // 1. 锚定开头：减少匹配尝试次数
-/^hello/.test('say hello');  // 从头开始匹配，快速失败
+/^hello/.test("say hello"); // 从头开始匹配，快速失败
 
 // 2. 避免不必要的捕获
-/(?:abc)+/;  // 非捕获分组，比 /(abc)+/ 更快
+/(?:abc)+/; // 非捕获分组，比 /(abc)+/ 更快
 
 // 3. 使用更精确的字符集
-/[a-zA-Z0-9]/;  // 比 /./ 更精确
+/[a-zA-Z0-9]/; // 比 /./ 更精确
 
 // 4. 避免回溯
-/^[a-z]+$/;  // 锚定开头和结尾，减少回溯
+/^[a-z]+$/; // 锚定开头和结尾，减少回溯
 
 // 5. 编译正则（复用）
-const regex = /^[a-z]+$/;  // 编译一次
-regex.test('hello');        // 多次使用
-regex.test('world');
+const regex = /^[a-z]+$/; // 编译一次
+regex.test("hello"); // 多次使用
+regex.test("world");
 ```
 
 ---
@@ -509,7 +502,7 @@ const regex2 = new RegExp('pattern', flags); // 构造函数
 ```javascript
 // exec：返回一个匹配，需要循环调用
 const regex = /\d+/g;
-const str = '123 abc 456';
+const str = "123 abc 456";
 let match;
 while ((match = regex.exec(str)) !== null) {
   console.log(match[0], match.index);
@@ -518,20 +511,17 @@ while ((match = regex.exec(str)) !== null) {
 // '456' 8
 
 // match：返回所有匹配
-'123 abc 456'.match(/\d+/g);
+"123 abc 456".match(/\d+/g);
 // ['123', '456']
 ```
-
 
 </Warning>
 
 ---
 
-## 🔍 底层源码：正则引擎是如何工作的？
+## 底层源码：正则引擎是如何工作的？
 
-<div class="follow-up">
-正则引擎的匹配原理是什么？
-</div>
+<div class="follow-up">正则引擎的匹配原理是什么？</div>
 
 正则引擎有两种实现方式：**NFA（非确定性有限自动机）** 和 **DFA（确定性有限自动机）**。JavaScript 使用 NFA（详见 [V8 源码：src/regexp/regexp-parser.cc](https://github.com/v8/v8/blob/main/src/regexp/regexp-parser.cc)）：
 
@@ -560,37 +550,36 @@ bool ExecuteNFA(RegExpBytecode bytecode, const char* input) {
 
 NFA 和 DFA 的区别：
 
-| 特性 | NFA | DFA |
-|------|-----|-----|
-| **回溯** | 有（可能回溯） | 无（不回溯） |
-| **性能** | 可能慢（灾难性回溯） | 快（线性时间） |
-| **功能** | 支持反向引用、断言 | 不支持反向引用、断言 |
-| **实现** | JavaScript、Java、Python | grep、awk |
+| 特性     | NFA                      | DFA                  |
+| -------- | ------------------------ | -------------------- |
+| **回溯** | 有（可能回溯）           | 无（不回溯）         |
+| **性能** | 可能慢（灾难性回溯）     | 快（线性时间）       |
+| **功能** | 支持反向引用、断言       | 不支持反向引用、断言 |
+| **实现** | JavaScript、Java、Python | grep、awk            |
 
-<div class="follow-up">
-为什么 JavaScript 选择 NFA 而不是 DFA？
-</div>
+<div class="follow-up">为什么 JavaScript 选择 NFA 而不是 DFA？</div>
 
 因为 NFA 支持更多功能（反向引用、断言等），而 DFA 不支持。JavaScript 的正则表达式需要支持这些高级功能，所以选择了 NFA。
 
 ```javascript
 // 反向引用：NFA 支持，DFA 不支持
-/(a)\1/.test('aa');  // true（\1 引用第一个捕获组 'a'）
+/(a)\1/.test("aa"); // true（\1 引用第一个捕获组 'a'）
 
 // 前瞻断言：NFA 支持，DFA 不支持
-/hello(?= world)/.test('hello world');  // true
+/hello(?= world)/.test("hello world"); // true
 ```
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 十、及格回答 vs 满分回答
 
 ### 问题："说说正则表达式的匹配原理，什么是灾难性回溯？"
 
 **及格回答（60-70分）：**
+
 > "正则表达式用模式匹配字符串。灾难性回溯是当正则表达式有嵌套量词时，引擎需要尝试大量可能性，导致性能急剧下降。比如 /(a+)+$/ 匹配 'aaaaaaaaac' 会很慢。"
 
-面试官评价：**知道现象但不理解原理**。
+问题出在：**知道现象但不理解原理**。
 
 **满分回答（90-100分）：**
 
@@ -602,7 +591,7 @@ NFA 和 DFA 的区别：
 
 > 实际项目中，正则表达式常用于表单验证、文本提取、URL 解析等场景。对于复杂的 HTML 解析，应该用 DOMParser 而不是正则——因为 HTML 不是正则语言，用正则解析嵌套标签会导致各种边界问题。
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
@@ -932,9 +921,9 @@ NFA 和 DFA 的区别：
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 🔗 [MDN 正则表达式指南](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions)：Mozilla 官方对 JavaScript 正则表达式的完整指南。<sup>[1]</sup>
-- 📖 [正则表达式调试工具](https://regex101.com/)：在线正则表达式测试和调试工具，支持多种引擎。<sup>[2]</sup>
-- 🟢 [V8 正则引擎源码](https://github.com/v8/v8/blob/main/src/regexp/)：V8 引擎的正则表达式实现，包括解析器和执行引擎。<sup>[3]</sup>
-- 📘 [Regular Expression Matching Can Be Simple And Fast](https://swtch.com/~rsc/regexp/regexp1.html)：Russ Cox 对正则引擎 NFA 和 DFA 的经典分析。<sup>[4]</sup>
+- [MDN 正则表达式指南](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions)：Mozilla 官方对 JavaScript 正则表达式的完整指南。<sup>[1]</sup>
+- [正则表达式调试工具](https://regex101.com/)：在线正则表达式测试和调试工具，支持多种引擎。<sup>[2]</sup>
+- [V8 正则引擎源码](https://github.com/v8/v8/blob/main/src/regexp/)：V8 引擎的正则表达式实现，包括解析器和执行引擎。<sup>[3]</sup>
+- [Regular Expression Matching Can Be Simple And Fast](https://swtch.com/~rsc/regexp/regexp1.html)：Russ Cox 对正则引擎 NFA 和 DFA 的经典分析。<sup>[4]</sup>

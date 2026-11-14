@@ -1,10 +1,9 @@
 ---
 title: "Embedding 与向量检索"
+description: "从 One-Hot 到现代 Embedding，覆盖向量维度、模型选型与相似度检索的考点。"
 ---
 
-> **面试官为什么问这个？**
->
-> Embedding 是 RAG、语义搜索、推荐系统等 AI 应用的底层基础。面试官问这个，本质上是在考察你：**是否理解如何把非结构化数据（文本、图片）转化为机器可计算的向量表示，以及如何在海量向量中高效检索。** 如果你答不清楚，说明你对 AI 应用的数据层缺乏认知，停留在"调 API"而不是"理解原理"。
+> 我最早用 Embedding 只记住"文本转向量"，真做过检索才明白，切片和模型选型比公式更影响效果。维度、归一化、切片粒度这几项，决定了召回质量。
 
 ---
 
@@ -32,7 +31,7 @@ title: "Embedding 与向量检索"
   </Step>
   <Step title="ELMo 与 Transformer：上下文感知的 Embedding">
 
-Word2Vec 的问题是"一词一向量"——"苹果"在"吃苹果"和"苹果公司"中是同一个向量。2018 年 ELMo 用双向 LSTM 生成上下文相关的词向量。同年 BERT 用 Transformer 的自注意力机制取代 LSTM，真正实现了"一个词在不同上下文中有不同的向量"。BERT 的 Embedding 是所有 Transformer 层输出的加权平均，捕捉了从浅层语法到深层语义的多粒度信息。<sup>[2]</sup>
+Word2Vec 的问题是"一词一向量"——"苹果"在"吃苹果"和"苹果公司"中是同一个向量。2018 年 ELMo 用双向 LSTM 生成上下文相关的词向量。同年 BERT 用 Transformer 的自注意力机制取代 LSTM，真正实现了"一个词在不同上下文中有不同的向量"。BERT 通常取最后一层表示（或 `[CLS]` token），不做跨层加权平均。<sup>[2]</sup>
 
   </Step>
   <Step title="Sentence Embedding：从词向量到句向量">
@@ -84,7 +83,7 @@ Embedding 的本质是将离散的、不可计算的非结构化数据（文本�
 
 <Tip title="💡 面试技巧">
 
-回答时先说"为什么"（One-Hot 的痛点），再说"怎么解决"（Word2Vec 到 Transformer Embedding 的演进）。面试官想听的是你理解技术演进的动机，而不是背诵时间线。
+回答时先说"为什么"（One-Hot 的痛点），再说"怎么解决"（Word2Vec 到 Transformer Embedding 的演进）。想听的是你对技术演进动机的理解，而不是背诵时间线。
 
 </Tip>
 
@@ -219,10 +218,10 @@ async function getEmbedding(text) {
 
 - **Mean Pooling**：取所有 token 向量的平均值。BGE、E5、GTE 系列默认使用。适合通用语义表示。
 - **CLS Token**：取 `[CLS]` token 的输出向量。BERT 原生方式，但各向异性问题严重。
-- **Last Token Pooling**：取最后一个 token 的输出向量。OpenAI text-embedding-3 系列使用。
+- **Last Token Pooling**：取最后一个 token 的输出向量。OpenAI 未公开其 text-embedding-3 系列的池化方式。
 - **Max Pooling**：取每个维度的最大值。少数模型使用，对关键词匹配有优势。
 
-选错池化策略会导致向量质量显著下降——例如对 BGE 模型使用 CLS Token 而非 Mean Pooling，检索准确率可能下降 10%+。
+选错池化策略会导致向量质量显著下降——例如对 BGE 模型使用 CLS Token 而非 Mean Pooling，检索准确率会明显降低。
 
 </Warning>
 
@@ -309,7 +308,9 @@ print(f"余弦相似度 (a,c): {cosine_similarity(a, c):.3f}")  # ~-0.3（不相
 // 1. 余弦相似度（Cosine Similarity）—— 最常用
 // 衡量两个向量的方向相似性，值域 [-1, 1]
 function cosineSimilarity(a, b) {
-  let dotProduct = 0, normA = 0, normB = 0;
+  let dotProduct = 0,
+    normA = 0,
+    normB = 0;
   for (let i = 0; i < a.length; i++) {
     dotProduct += a[i] * b[i];
     normA += a[i] * a[i];
@@ -331,29 +332,27 @@ function dotProduct(a, b) {
 
 // 3. 欧氏距离（L2 Distance）—— 向量数据库常用
 function euclideanDistance(a, b) {
-  return Math.sqrt(
-    a.reduce((sum, ai, i) => sum + (ai - b[i]) ** 2, 0)
-  );
+  return Math.sqrt(a.reduce((sum, ai, i) => sum + (ai - b[i]) ** 2, 0));
 }
 ```
 
-| 方法 | 公式 | 值域 | 适用场景 |
-|------|------|------|---------|
-| **余弦相似度** | `a·b / (|a|×|b|)` | [-1, 1] | 文本语义检索（最常用） |
-| **点积** | `a·b` | (-inf, +inf) | 归一化向量或推荐系统 |
-| **欧氏距离** | `|a-b|` | [0, +inf) | 聚类、异常检测 |
+| 方法           | 公式     | 值域         | 适用场景             |
+| -------------- | -------- | ------------ | -------------------- | --------- | -------------- | ------- | ---------------------- |
+| **余弦相似度** | `a·b / ( | a            | ×                    | b         | )`             | [-1, 1] | 文本语义检索（最常用） |
+| **点积**       | `a·b`    | (-inf, +inf) | 归一化向量或推荐系统 |
+| **欧氏距离**   | `        | a-b          | `                    | [0, +inf) | 聚类、异常检测 |
 
 ### 维度选择策略
 
 维度是 Embedding 最核心的超参数之一——维度越高，表达能力越强，但存储和计算成本也越高：
 
-| 模型 | 默认维度 | 可选维度 | 适用场景 |
-|------|---------|---------|---------|
-| **text-embedding-3-small** | 1536 | 512, 1024 | 通用场景，性价比高 |
-| **text-embedding-3-large** | 3072 | 256, 1024, 1536 | 高精度检索 |
-| **BGE-M3** | 1024 | — | 多语言、多粒度检索 |
-| **Jina-embeddings-v3** | 1024 | 64, 256, 512 | 长文档、多任务 |
-| **all-MiniLM-L6-v2** | 384 | — | 轻量级，移动端 |
+| 模型                       | 默认维度 | 可选维度         | 适用场景           |
+| -------------------------- | -------- | ---------------- | ------------------ |
+| **text-embedding-3-small** | 1536     | 任意（≤ 1536）   | 通用场景，性价比高 |
+| **text-embedding-3-large** | 3072     | 任意（≤ 3072）   | 高精度检索         |
+| **BGE-M3**                 | 1024     | —                | 多语言、多粒度检索 |
+| **Jina-embeddings-v3**     | 1024     | 32 ~ 1024（MRL） | 长文档、多任务     |
+| **all-MiniLM-L6-v2**       | 384      | —                | 轻量级，移动端     |
 
 ```javascript
 // OpenAI text-embedding-3 支持动态维度（Matryoshka Representation Learning）
@@ -367,7 +366,7 @@ const embedding1536 = await openai.embeddings.create({
 const embedding512 = await openai.embeddings.create({
   model: "text-embedding-3-small",
   input: "React 性能优化",
-  dimensions: 512,  // 截断维度，节省 67% 存储，精度损失 &lt; 2%
+  dimensions: 512, // 截断维度，节省约 67% 存储，精度小幅下降
 });
 ```
 
@@ -405,19 +404,21 @@ Embedding 模型的核心流程是：分词 → Transformer 编码 → 池化 �
 
 ### 基础梳理
 
-| 模型 | 厂商 | 维度 | 多语言 | 价格 | MTEB 得分 | 最大 Token |
-|------|------|------|--------|------|-----------|-----------|
-| **text-embedding-3-small** | OpenAI | 1536 | 有限 | $0.02/1M tokens | 62.26 | 8191 |
-| **text-embedding-3-large** | OpenAI | 3072 | 有限 | $0.13/1M tokens | 64.64 | 8191 |
-| **BGE-M3** | BAAI | 1024 | 100+ 语言 | 开源免费 | 66.08 | 8192 |
-| **Jina-embeddings-v3** | Jina AI | 1024 | 89 语言 | $0.02/1M tokens | 65.5 | 8192 |
-| **Cohere Embed v3** | Cohere | 1024 | 100+ 语言 | $0.1/1M tokens | 64.47 | 512 |
-| **E5-large-v2** | Microsoft | 1024 | 英文为主 | 开源免费 | 62.25 | 512 |
-| **GTE-large** | Alibaba | 1024 | 中英为主 | 开源免费 | 63.13 | 8192 |
+| 模型                       | 厂商      | 维度 | 多语言    | 价格            | MTEB 得分 | 最大 Token |
+| -------------------------- | --------- | ---- | --------- | --------------- | --------- | ---------- |
+| **text-embedding-3-small** | OpenAI    | 1536 | 有限      | $0.02/1M tokens | 62.26     | 8191       |
+| **text-embedding-3-large** | OpenAI    | 3072 | 有限      | $0.13/1M tokens | 64.64     | 8191       |
+| **BGE-M3**                 | BAAI      | 1024 | 100+ 语言 | 开源免费        | 66.08     | 8192       |
+| **Jina-embeddings-v3**     | Jina AI   | 1024 | 89 语言   | $0.02/1M tokens | 65.5      | 8192       |
+| **Cohere Embed v3**        | Cohere    | 1024 | 100+ 语言 | $0.1/1M tokens  | 64.47     | 512        |
+| **E5-large-v2**            | Microsoft | 1024 | 英文为主  | 开源免费        | 62.25     | 512        |
+| **GTE-large**              | Alibaba   | 1024 | 中英为主  | 开源免费        | 63.13     | 8192       |
+
+> 表中的 MTEB 得分为公开评测的近似值。MTEB 榜单与评测子集版本更新频繁，不同版本之间不可直接横向比较，选型时应以自己的业务语料构造评测集。
 
 ### 专家视角深度剖析
 
-很多候选人只知道"用 OpenAI 的 Embedding"，但大厂面试官真正在意的是：**怎么根据业务场景选择最合适的 Embedding 模型？选错了会怎样？**
+很多人只知道"用 OpenAI 的 Embedding"，但实际更在意的是：**怎么根据业务场景选择最合适的 Embedding 模型？选错了会怎样？**
 
 选型的核心决策树：
 
@@ -429,7 +430,7 @@ Embedding 模型的核心流程是：分词 → Transformer 编码 → 池化 �
          ├── 是 → BGE-M3 或 GTE-large（中文优化最好）
          └── 否 → 主要处理英文？
                   ├── 预算有限 → text-embedding-3-small（$0.02/1M tokens）
-                  ├── 需要最高精度 → text-embedding-3-large（MTEB 64.64）
+                  ├── 需要最高精度 → text-embedding-3-large（维度更高、精度更强）
                   └── 自建部署 → E5-large-v2 或 all-MiniLM-L6-v2
 ```
 
@@ -474,16 +475,19 @@ output = model.encode(
 ### 各模型核心特性对比
 
 **OpenAI text-embedding-3 系列：**
+
 - Matryoshka Representation Learning：支持运行时截断维度，无需重新训练
 - 原生集成 OpenAI API，前端工程师接入成本最低
 - 不支持开源部署，数据必须经过 OpenAI 服务器
 
 **BGE-M3（BAAI）：**
+
 - "M3" = Multi-linguality（100+ 语言）+ Multi-functionality（稠密+稀疏+多向量）+ Multi-granularity（短句到长文档）
 - 基于 XLM-RoBERTa 架构，开源可自部署
-- 支持融合检索（Fusion Retrieval），将三种检索方式的结果加权融合，准确率显著优于单一稠密检索
+- 支持融合检索（Fusion Retrieval），将三种检索方式的结果加权融合，在部分检索任务上优于单一稠密检索
 
 **Jina-embeddings-v3：**
+
 - 支持 Task LoRA：同一个模型通过 LoRA 适配不同任务（查询、文档、分类），无需部署多个模型
 - 支持 Matryoshka 维度截断（64/256/512/1024）
 - 长文档支持好（8192 tokens）
@@ -522,14 +526,14 @@ const trainingConfig = {
 
 ### 基础梳理
 
-| 数据库 | 类型 | 语言 | 索引算法 | 最大规模 | 部署方式 | 价格 |
-|--------|------|------|---------|---------|---------|------|
-| **Milvus/Zilliz** | 专用 | Go/C++ | HNSW, IVF, DiskANN | 100 亿+ | 自建/云 | 开源免费 / 云按量 |
-| **Pinecone** | 专用 | — | 专有 | 10 亿+ | 全托管 SaaS | 按向量数计费 |
-| **Weaviate** | 专用 | Go | HNSW | 10 亿+ | 自建/云 | 开源免费 / 云按量 |
-| **Qdrant** | 专用 | Rust | HNSW | 10 亿+ | 自建/云 | 开源免费 / 云按量 |
-| **Chroma** | 专用 | Python | HNSW | 1000 万 | 自建 | 开源免费 |
-| **PGVector** | 扩展 | C | IVFFlat, HNSW | 1 亿+ | PostgreSQL 扩展 | 跟随 PostgreSQL |
+| 数据库            | 类型 | 语言   | 索引算法           | 最大规模 | 部署方式        | 价格              |
+| ----------------- | ---- | ------ | ------------------ | -------- | --------------- | ----------------- |
+| **Milvus/Zilliz** | 专用 | Go/C++ | HNSW, IVF, DiskANN | 100 亿+  | 自建/云         | 开源免费 / 云按量 |
+| **Pinecone**      | 专用 | —      | 专有               | 10 亿+   | 全托管 SaaS     | 按向量数计费      |
+| **Weaviate**      | 专用 | Go     | HNSW               | 10 亿+   | 自建/云         | 开源免费 / 云按量 |
+| **Qdrant**        | 专用 | Rust   | HNSW               | 10 亿+   | 自建/云         | 开源免费 / 云按量 |
+| **Chroma**        | 专用 | Python | HNSW               | 1000 万  | 自建            | 开源免费          |
+| **PGVector**      | 扩展 | C      | IVFFlat, HNSW      | 1 亿+    | PostgreSQL 扩展 | 跟随 PostgreSQL   |
 
 ### 专家视角深度剖析
 
@@ -617,22 +621,25 @@ await pool.query(`
 `);
 
 // 3. 向量检索（余弦相似度）
-const results = await pool.query(`
+const results = await pool.query(
+  `
   SELECT text, 1 - (embedding <=> $1::vector) AS similarity
   FROM documents
   ORDER BY embedding <=> $1::vector
   LIMIT 10
-`, [JSON.stringify(queryEmbedding)]);
+`,
+  [JSON.stringify(queryEmbedding)],
+);
 ```
 
 ### 向量索引算法对比
 
-| 算法 | 原理 | 构建速度 | 查询速度 | 内存占用 | 精度 |
-|------|------|---------|---------|---------|------|
-| **HNSW** | 分层可导航小世界图 | 慢 | 极快 | 高 | 高 |
-| **IVF** | 倒排索引 + 聚类 | 快 | 快 | 中 | 中 |
-| **DiskANN** | 磁盘优化的近似搜索 | 中 | 快 | 低 | 高 |
-| **FLAT** | 暴力搜索 | 无需构建 | 最慢 | 低 | 100% |
+| 算法        | 原理               | 构建速度 | 查询速度 | 内存占用 | 精度 |
+| ----------- | ------------------ | -------- | -------- | -------- | ---- |
+| **HNSW**    | 分层可导航小世界图 | 慢       | 极快     | 高       | 高   |
+| **IVF**     | 倒排索引 + 聚类    | 快       | 快       | 中       | 中   |
+| **DiskANN** | 磁盘优化的近似搜索 | 中       | 快       | 低       | 高   |
+| **FLAT**    | 暴力搜索           | 无需构建 | 最慢     | 低       | 100% |
 
 <Warning title="⚠️ 核心机制: HNSW 参数调优">
 
@@ -699,7 +706,7 @@ const tripletData = [
 // margin 通常设为 0.2-0.5
 ```
 
-**方法 3：知识蒸馏（Knowledge Distillation）—— 2024 年趋势**
+**方法 3：知识蒸馏（Knowledge Distillation）—— 近年趋势**
 
 ```javascript
 // 用大模型（如 GPT-4）作为教师模型，生成查询-文档的相关性评分
@@ -710,8 +717,8 @@ const distillationData = [
     // GPT-4 给出的排序（教师信号）
     passages: [
       { text: "使用 React.memo 和 useMemo", score: 0.95 },
-      { text: "代码分割和懒加载", score: 0.80 },
-      { text: "Vue 的 Composition API", score: 0.10 },
+      { text: "代码分割和懒加载", score: 0.8 },
+      { text: "Vue 的 Composition API", score: 0.1 },
     ],
   },
 ];
@@ -720,12 +727,12 @@ const distillationData = [
 
 ### 微调数据准备
 
-| 数据类型 | 格式 | 数量要求 | 来源 |
-|---------|------|---------|------|
-| **正样本对** | (query, relevant_doc) | 1000+ 对 | 人工标注、搜索日志 |
-| **三元组** | (anchor, positive, negative) | 1000+ 条 | 人工标注 + 难负例挖掘 |
-| **查询-文档评分** | (query, doc, score) | 5000+ 条 | GPT-4 生成、人工评分 |
-| **难负例** | 语义相近但不相关的文档 | 占负样本 30%+ | BM25 高分但不相关的文档 |
+| 数据类型          | 格式                         | 数量要求       | 来源                    |
+| ----------------- | ---------------------------- | -------------- | ----------------------- |
+| **正样本对**      | (query, relevant_doc)        | 1000+ 对       | 人工标注、搜索日志      |
+| **三元组**        | (anchor, positive, negative) | 1000+ 条       | 人工标注 + 难负例挖掘   |
+| **查询-文档评分** | (query, doc, score)          | 5000+ 条       | GPT-4 生成、人工评分    |
+| **难负例**        | 语义相近但不相关的文档       | 约占负样本 1/3 | BM25 高分但不相关的文档 |
 
 ```javascript
 // 难负例挖掘（Hard Negative Mining）
@@ -735,9 +742,7 @@ async function mineHardNegatives(query, corpus, embeddingModel, topK = 100) {
   const candidates = await search(query, corpus, { topK: 100 });
 
   // 2. 过滤掉已标注为正样本的文档
-  const hardNegatives = candidates.filter(
-    (doc) => !isPositive(query, doc)
-  );
+  const hardNegatives = candidates.filter((doc) => !isPositive(query, doc));
 
   // 3. 取 top-10 作为难负例（与查询语义相近但不相关）
   return hardNegatives.slice(0, 10);
@@ -746,7 +751,7 @@ async function mineHardNegatives(query, corpus, embeddingModel, topK = 100) {
 
 ### Matryoshka Representation Learning（MRL）
 
-MRL 是 2024 年的热门技术——训练时同时优化多个维度的向量质量，使得截断维度后精度损失最小：
+MRL 是近年热门技术——训练时同时优化多个维度的向量质量，使得截断维度后精度损失最小：
 
 ```javascript
 // MRL 训练的核心思想
@@ -801,7 +806,7 @@ HNSW 适合对延迟要求极高的实时检索场景（毫秒级），但内存
 
 ### Embedding 的维度越高越好吗？
 
-不是。维度越高，表达能力越强，但存储和计算成本线性增长。MTEB 评测显示，从 512 维到 3072 维，性能提升通常只有 1-3%，但存储成本增加 6 倍。MRL 技术允许在运行时选择维度——先用高维度评测，确认效果后截断到低维度部署。实际项目中，768-1024 维通常是最佳平衡点。
+不是。维度越高，表达能力越强，但存储和计算成本线性增长。公开评测中，从 512 维提升到 3072 维，性能提升通常只有几个百分点，但存储成本增加 6 倍。MRL 技术允许在运行时选择维度——先用高维度评测，确认效果后截断到低维度部署。实际项目中，768-1024 维通常是最佳平衡点。
 
 ### 如何处理 Embedding 模型的版本升级？
 
@@ -825,11 +830,11 @@ Embedding API 有最大 token 限制（如 OpenAI text-embedding-3 系列为 819
 
 解决方案有三种：
 
-| 方案 | 原理 | 适用场景 |
-|------|------|---------|
-| **分块处理** | 把长文本切成多段，每段独立生成向量 | RAG 切片阶段（最常用） |
-| **滑动窗口** | 切片之间有重叠，避免边界语义丢失 | 需要保留上下文连续性 |
-| **摘要后再 Embedding** | 先用 LLM 生成摘要，再对摘要向量化 | 需要文档级向量表示 |
+| 方案                   | 原理                               | 适用场景               |
+| ---------------------- | ---------------------------------- | ---------------------- |
+| **分块处理**           | 把长文本切成多段，每段独立生成向量 | RAG 切片阶段（最常用） |
+| **滑动窗口**           | 切片之间有重叠，避免边界语义丢失   | 需要保留上下文连续性   |
+| **摘要后再 Embedding** | 先用 LLM 生成摘要，再对摘要向量化  | 需要文档级向量表示     |
 
 #### 批量写入导致向量变零
 
@@ -858,11 +863,11 @@ for batch in batch_iterable(all_documents, 200):
 
 Elasticsearch / Easysearch 的 kNN 向量检索依赖 HNSW 索引，有两个直接影响检索质量的参数：
 
-| 参数 | 含义 | 默认值 | 调优建议 |
-|------|------|--------|---------|
-| **num_candidates** | 每次查询时搜索的候选节点数 | 100 | 越大越精确但越慢，推荐 100-500 |
-| **m** | HNSW 图中每个节点的连接数 | 16 | 越大图越稠密，推荐 16-64 |
-| **ef_construction** | 构建索引时的搜索宽度 | 100 | 越大索引质量越高，推荐 200-500 |
+| 参数                | 含义                       | 默认值 | 调优建议                       |
+| ------------------- | -------------------------- | ------ | ------------------------------ |
+| **num_candidates**  | 每次查询时搜索的候选节点数 | 100    | 越大越精确但越慢，推荐 100-500 |
+| **m**               | HNSW 图中每个节点的连接数  | 16     | 越大图越稠密，推荐 16-64       |
+| **ef_construction** | 构建索引时的搜索宽度       | 100    | 越大索引质量越高，推荐 200-500 |
 
 ```javascript
 // 创建 kNN 索引时指定参数
@@ -892,14 +897,14 @@ Elasticsearch / Easysearch 的 kNN 向量检索依赖 HNSW 索引，有两个直
 
 ```javascript
 // 前端处理推理模型的流式响应
-const response = await fetch('/api/chat', {
-  method: 'POST',
-  body: JSON.stringify({ model: 'deepseek-reasoner', message: userInput }),
+const response = await fetch("/api/chat", {
+  method: "POST",
+  body: JSON.stringify({ model: "deepseek-reasoner", message: userInput }),
 });
 
 const reader = response.body.getReader();
 const decoder = new TextDecoder();
-let answer = '';
+let answer = "";
 
 while (true) {
   const { done, value } = await reader.read();
@@ -931,7 +936,7 @@ Embedding 向量的常见踩坑包括：1) 长文本超过 API 的 max token 限
 ## 🔍 底层源码：Transformer Embedding 是怎么计算的？
 
 <div class="follow-up">
-Transformer 编码器内部如何将 Token 转化为上下文向量？
+  Transformer 编码器内部如何将 Token 转化为上下文向量？
 </div>
 
 Transformer 编码器的核心是多头自注意力（Multi-Head Self-Attention）。每个 Token 通过 Q、K、V 矩阵与其他所有 Token 交互，生成上下文相关的向量表示（详见 [HuggingFace Transformers 源码 modeling_bert.py](https://github.com/huggingface/transformers/blob/main/src/transformers/models/bert/modeling_bert.py)）：
@@ -962,9 +967,7 @@ output = attention_weights @ V
 
 这段代码做了 3 件事：1) 每个 Token 通过注意力机制"看到"序列中所有其他 Token；2) 多头注意力在不同子空间捕捉不同类型的语义关系；3) 前馈网络（FFN）进一步变换向量，增加非线性表达能力。经过 12-24 层这样的编码，每个 Token 的向量已经编码了丰富的上下文信息。
 
-<div class="follow-up">
-池化策略的源码实现是什么样的？
-</div>
+<div class="follow-up">池化策略的源码实现是什么样的？</div>
 
 以 Sentence Transformers 的 Mean Pooling 为例（详见 [Sentence Transformers 源码 pooling.py](https://github.com/UKPLab/sentence-transformers/blob/master/sentence_transformers/models/Pooling.py)）：
 
@@ -984,14 +987,15 @@ def mean_pooling(model_output, attention_mask):
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## Q7: 满分回答 vs 及格回答
 
 ### 问题："说说 Embedding 的原理和在 RAG 中的应用"
 
 **及格回答（60-70分）：**
+
 > "Embedding 是把文本转化为向量，通过余弦相似度计算相似性，RAG 中用向量数据库检索相关文档。"
 
-面试官评价：**知道概念但不理解机制**。
+问题出在：**知道概念但不理解机制**。
 
 **满分回答（90-100分）：**
 
@@ -1003,7 +1007,7 @@ def mean_pooling(model_output, attention_mask):
 
 > "踩坑经验：Embedding 模型升级后新旧向量不兼容，不能在同一索引中混合使用，必须全量重新生成或双索引切换。长文档的向量模长比短文档大，必须做 L2 归一化才能公平比较。向量数据库的 HNSW 参数（M、efConstruction）需要根据数据规模调优——M=16、efConstruction=200 是默认起点，数据量超过 1000 万时 M 需要调到 32-64。"
 
-### 大厂高频连环拷问
+### 常见追问
 
 > 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。
 
@@ -1070,6 +1074,7 @@ Skip-gram：用中心词预测上下文词。输入是中心词，输出是上�
 ```
 
 使用场景：
+
 - **余弦相似度**：文本语义检索（最常用）。因为长文档和短文档的向量模长不同，但语义可能相同。
 - **点积**：1) 向量已归一化时（此时余弦相似度 = 点积，计算更快）；2) 推荐系统中需要考虑热度（模长代表热度）。
 - **欧氏距离**：聚类算法（K-Means）和异常检测。
@@ -1091,8 +1096,9 @@ Skip-gram：用中心词预测上下文词。输入是中心词，输出是上�
 3. **查询时**：从最高层的入口节点开始，逐层向下导航，每层找到最近邻节点作为下一层的起点
 
 参数调优：
+
 - **M**（连接数）：M=16 是默认值。数据量 100 万+ 时建议 M=32-64。M 越大，图越稠密，查询越精确，但内存占用线性增长。
-- **efConstruction**（构建参数）：efConstruction=200 是默认值。建议至少 2*M。efConstruction 越大，索引质量越高，但构建时间越长。
+- **efConstruction**（构建参数）：efConstruction=200 是默认值。建议至少 2\*M。efConstruction 越大，索引质量越高，但构建时间越长。
 - **efSearch**（查询参数）：efSearch=64 是默认值。efSearch 越大，查询越精确，但延迟越高。建议在 64-200 之间调优。
 
 内存估算：每个向量占用 `dim * 4 bytes`（float32）+ `M * 2 * 4 bytes`（图的边）。100 万 1536 维向量约需 6.5 GB（向量数据）+ 0.13 GB（图结构）。"
@@ -1111,16 +1117,16 @@ Skip-gram：用中心词预测上下文词。输入是中心词，输出是上�
 
 2. **重叠（Overlap）**：相邻切片之间重叠 50-100 tokens。避免语义在切片边界被截断——如果一个概念跨越两个切片，重叠确保两个切片都能检索到完整信息。
 
-3. **语义切片**：比固定长度切片效果好。按 Markdown 标题、段落、代码块等语义边界切片。LangChain 的 `RecursiveCharacterTextSplitter` 先按 `\\n\\n`（段落）切，段落太长再按 `\\n`（行）切，行太长再按字符切。
+3. **语义切片**：比固定长度切片效果好。按 Markdown 标题、段落、代码块等语义边界切片。LangChain 的 `RecursiveCharacterTextSplitter` 先按 `\n\n`（段落）切，段落太长再按 `\n`（行）切，行太长再按字符切。
 
 ```javascript
 // LangChain 切片示例
-import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 
 const splitter = new RecursiveCharacterTextSplitter({
-  chunkSize: 512,       // 每片最大 512 tokens
-  chunkOverlap: 50,     // 重叠 50 tokens
-  separators: ['\\n\\n', '\\n', '。', ' ', ''], // 按优先级切分
+  chunkSize: 512, // 每片最大 512 个字符（按字符计，不是 token）
+  chunkOverlap: 50, // 重叠 50 个字符
+  separators: ["\n\n", "\n", "。", " ", ""], // 按优先级切分
 });
 
 const chunks = await splitter.splitDocuments(documents);
@@ -1157,7 +1163,7 @@ function reciprocalRankFusion(rankedLists, k = 60) {
 }
 ```
 
-BGE-M3 原生支持融合检索（稠密+稀疏+多向量），是当前多语言混合检索的最佳选择。"
+BGE-M3 原生支持融合检索（稠密+稀疏+多向量），是多语言混合检索的常见方案之一。"
 
   </Accordion>
 
@@ -1173,7 +1179,7 @@ BGE-M3 原生支持融合检索（稠密+稀疏+多向量），是当前多语�
 
 2. **双索引切换**：同时维护新旧两个索引，新请求用新索引，旧请求逐步迁移。优点是零停机时间，缺点是双倍存储成本。切换完成后下线旧索引。
 
-3. **向量映射**：训练一个线性变换层，将旧向量映射到新空间。需要少量标注数据（1000 对新旧向量），训练成本低。精度损失通常 2-5%，适合对成本敏感但允许小幅精度下降的场景。
+3. **向量映射**：训练一个线性变换层，将旧向量映射到新空间。需要少量标注数据（1000 对新旧向量），训练成本低，但会带来小幅精度损失，适合对成本敏感但可接受精度下降的场景。
 
 ```python
 # 向量映射示例

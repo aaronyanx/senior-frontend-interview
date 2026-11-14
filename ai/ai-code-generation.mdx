@@ -1,10 +1,9 @@
 ---
 title: "AI 代码生成"
+description: "AI 代码生成的演进、上下文管理、工具差异、幻觉与安全风险，以及编码 Agent 的面试要点。"
 ---
 
-> **面试官为什么问这个？**
->
-> AI 代码生成已经从"锦上添花"的辅助功能变成了前端工程师日常工作流的核心环节。面试官问这个，本质上是在考察你：**是否理解 AI 代码生成的技术原理和工具差异，能不能在实际工程中正确使用这些工具，以及是否清楚它们的边界和风险。** 如果你答不清楚，说明你对 AI 工具的使用停留在"Tab 补全"而不是"系统化工程实践"。
+> 编码工具这块我关心的是边界：它能做什么、在哪一步容易出错、我该怎么验证。只说"AI 提效"说明不了问题。
 
 ---
 
@@ -66,7 +65,7 @@ AI 辅助流程：
   同样的 CRUD 接口可能只需 20 分钟
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 AI 代码生成的本质是**把开发者的角色从"写代码"转变为"审查和引导代码"**——从体力劳动转向脑力决策。
 
@@ -74,21 +73,21 @@ AI 代码生成的本质是**把开发者的角色从"写代码"转变为"审查
 
 <CardGroup cols={2}>
 
-<Card title="🚫 没有 AI 代码生成">
+<Card title="没有 AI 代码生成">
 
-开发者需要手动编写每一行样板代码：组件骨架、API 请求、类型定义、单元测试。一个中等复杂度的 React 组件可能需要 1-2 小时，其中 60% 的时间花在重复性代码上。
+开发者需要手动编写每一行样板代码：组件骨架、API 请求、类型定义、单元测试。一个中等复杂度的 React 组件可能需要一两个小时，其中相当一部分时间花在重复性代码上。
 
 </Card>
-<Card title="✅ 引入 AI 代码生成">
+<Card title="引入 AI 代码生成">
 
-开发者用自然语言描述需求（"创建一个带搜索和分页的用户列表组件"），AI 生成完整代码骨架。开发者只需审查逻辑正确性、调整样式细节、补充边界处理。同样的组件 15 分钟完成，效率提升 3-5 倍。
+开发者用自然语言描述需求（"创建一个带搜索和分页的用户列表组件"），AI 生成完整代码骨架。开发者只需审查逻辑正确性、调整样式细节、补充边界处理。同样的组件十几分钟即可完成，效率明显提升。
 
 </Card>
 </CardGroup>
 
-<Tip title="💡 面试技巧">
+<Tip title="面试技巧">
 
-回答时先说"为什么需要 AI 代码生成"（重复性编码的痛点），再说"它经历了哪些阶段"（从关键字补全到自主代理的演进），最后说"它的核心价值"（角色转变）。面试官想听的是你理解技术演进的驱动力，而不是背诵产品发布时间线。
+回答时先说"为什么需要 AI 代码生成"（重复性编码的痛点），再说"它经历了哪些阶段"（从关键字补全到自主代理的演进），最后说"它的核心价值"（角色转变）。想听的是你对技术演进驱动力的理解，而不是背诵产品发布时间线。
 
 </Tip>
 
@@ -127,18 +126,18 @@ AI 代码生成的核心是**大语言模型对代码序列的概率预测**。�
 async function generateCode(context) {
   // 1. 构建上下文：收集当前文件、相关文件、类型定义
   const prompt = buildPrompt({
-    currentFile: context.file,          // 当前打开的文件
-    cursorPosition: context.cursor,     // 光标位置
+    currentFile: context.file, // 当前打开的文件
+    cursorPosition: context.cursor, // 光标位置
     relatedFiles: context.getRelatedFiles(), // import 链上的相关文件
-    typeDefinitions: context.getTypes(),     // TypeScript 类型定义
-    gitHistory: context.getRecentChanges(),  // 最近的 Git 提交
+    typeDefinitions: context.getTypes(), // TypeScript 类型定义
+    gitHistory: context.getRecentChanges(), // 最近的 Git 提交
   });
 
   // 2. 调用 LLM 生成代码
   const completion = await llm.predict(prompt, {
-    temperature: 0.2,  // 低温度 = 更确定性的输出
+    temperature: 0.2, // 低温度 = 更确定性的输出
     maxTokens: 512,
-    stopSequences: ['\n\n'],  // 遇到空行停止
+    stopSequences: ["\n\n"], // 遇到空行停止
   });
 
   // 3. 后处理：语法检查、格式化
@@ -147,7 +146,7 @@ async function generateCode(context) {
 }
 ```
 
-<Warning title="⚠️ 核心机制: Token 预测 vs 语法分析">
+<Warning title="核心机制: Token 预测 vs 语法分析">
 
 传统补全和 LLM 补全的底层机制完全不同：
 
@@ -157,7 +156,7 @@ async function generateCode(context) {
 
 </Warning>
 
-<Tip title="🎢 通俗比喻: 翻译官 vs 词典">
+<Tip title="通俗比喻: 翻译官 vs 词典">
 
 传统代码补全就像查词典——你输入一个单词，它精确返回定义。你输入 `document.get`，它返回 `getElementById`、`getElementsByClassName` 等已知 API。LLM 代码生成就像请翻译官——你用中文描述意图（"获取页面上所有 class 为 active 的按钮"），翻译官根据语境生成完整表达（`document.querySelectorAll('button.active')`）。翻译官的优势是能处理模糊表达，风险是偶尔会"翻译错"——生成语法正确但逻辑有误的代码。
 
@@ -165,16 +164,16 @@ async function generateCode(context) {
 
 ### 代码补全 vs 代码生成
 
-很多候选人混淆"代码补全"和"代码生成"，但它们是两个不同的层次：
+很多人混淆"代码补全"和"代码生成"，但它们是两个不同的层次：
 
-| 维度 | 代码补全 (Completion) | 代码生成 (Generation) |
-|------|----------------------|----------------------|
-| 输入 | 当前行的部分代码 | 自然语言描述或多文件上下文 |
-| 输出 | 1-10 行的续写 | 完整函数、组件、甚至整个文件 |
-| 模型 | 轻量级（Codex-davinci、StarCoder） | 重量级（GPT-4、Claude Opus） |
-| 延迟 | &lt; 100ms（实时补全） | 1-10s（需要等待生成） |
-| 典型工具 | Copilot Tab 补全、Codeium | Cursor Composer、Claude Code |
-| 上下文范围 | 当前文件 + 光标前内容 | 整个项目 + 外部文档 |
+| 维度       | 代码补全 (Completion)              | 代码生成 (Generation)        |
+| ---------- | ---------------------------------- | ---------------------------- |
+| 输入       | 当前行的部分代码                   | 自然语言描述或多文件上下文   |
+| 输出       | 1-10 行的续写                      | 完整函数、组件、甚至整个文件 |
+| 模型       | 轻量级（Codex-davinci、StarCoder） | 重量级（GPT-4、Claude Opus） |
+| 延迟       | &lt; 100ms（实时补全）             | 1-10s（需要等待生成）        |
+| 典型工具   | Copilot Tab 补全、Codeium          | Cursor Composer、Claude Code |
+| 上下文范围 | 当前文件 + 光标前内容              | 整个项目 + 外部文档          |
 
 ### 上下文理解的三个层次
 
@@ -186,13 +185,13 @@ AI 代码生成的质量**高度依赖上下文的质量**。上下文理解分�
 
 ### 模型选择对代码生成质量的影响
 
-| 模型 | 代码能力 | 延迟 | 适用场景 |
-|------|---------|------|---------|
-| GPT-4o | 强，通用性好 | 中等 | 多语言项目、复杂推理 |
-| Claude Sonnet 4 | 极强，长上下文优秀 | 中等 | 大型代码库重构、多文件编辑 |
-| Claude Opus 4 | 最强，推理最深 | 较慢 | 架构设计、复杂算法 |
-| Codex / StarCoder | 中等，速度快 | 极快 | 实时 Tab 补全 |
-| Gemini 2.5 Pro | 强，多模态 | 中等 | 设计稿转代码、跨模态任务 |
+| 模型              | 代码能力           | 延迟 | 适用场景                   |
+| ----------------- | ------------------ | ---- | -------------------------- |
+| GPT-4o            | 强，通用性好       | 中等 | 多语言项目、复杂推理       |
+| Claude Sonnet 4   | 极强，长上下文优秀 | 中等 | 大型代码库重构、多文件编辑 |
+| Claude Opus 4     | 最强，推理最深     | 较慢 | 架构设计、复杂算法         |
+| Codex / StarCoder | 中等，速度快       | 极快 | 实时 Tab 补全              |
+| Gemini 2.5 Pro    | 强，多模态         | 中等 | 设计稿转代码、跨模态任务   |
 
 ---
 
@@ -200,16 +199,16 @@ AI 代码生成的质量**高度依赖上下文的质量**。上下文理解分�
 
 ### 基础梳理
 
-| 工具 | 类型 | 核心模型 | 上下文能力 | 价格（月） | 适用场景 |
-|------|------|---------|-----------|-----------|---------|
-| **GitHub Copilot** | IDE 插件 | GPT-4o / Codex | 文件级 + 有限项目级 | 免费 / $10 / $39 | 实时补全、快速原型 |
-| **Cursor** | 独立 IDE | GPT-4 / Claude | 项目级（自动索引） | 免费 / $20 / $40 | 多文件编辑、重构 |
-| **Claude Code** | 终端 Agent | Claude Sonnet/Opus | 项目级 + CLAUDE.md | $20-$200（订阅） | 复杂重构、自主编码 |
-| **Windsurf** | 独立 IDE | 多模型 | 项目级（Cascade） | 免费 / $15 | 全栈开发、自动化 |
+| 工具               | 类型       | 核心模型           | 上下文能力          | 价格（月）       | 适用场景           |
+| ------------------ | ---------- | ------------------ | ------------------- | ---------------- | ------------------ |
+| **GitHub Copilot** | IDE 插件   | GPT-4o / Codex     | 文件级 + 有限项目级 | 免费 / $10 / $39 | 实时补全、快速原型 |
+| **Cursor**         | 独立 IDE   | GPT-4 / Claude     | 项目级（自动索引）  | 免费 / $20 / $40 | 多文件编辑、重构   |
+| **Claude Code**    | 终端 Agent | Claude Sonnet/Opus | 项目级 + CLAUDE.md  | $20-$200（订阅） | 复杂重构、自主编码 |
+| **Windsurf**       | 独立 IDE   | 多模型             | 项目级（Cascade）   | 免费 / $15       | 全栈开发、自动化   |
 
 ### 专家视角深度剖析
 
-很多候选人能背诵上面的表格，但大厂面试官真正在意的是：**这些工具的底层架构差异是什么？为什么不同工具对同一个任务的生成质量差异很大？**
+很多人能背诵上面的表格，但实际更在意的是：**这些工具的底层架构差异是什么？为什么不同工具对同一个任务的生成质量差异很大？**
 
 底层差异在于**上下文窗口管理策略**。Cursor 使用的是"主动索引 + 智能检索"——它会预先 Embedding 项目的文件内容，当用户提问时，通过向量检索找到最相关的代码片段作为 prompt 的一部分。Claude Code 使用的是"工具调用 + 渐进探索"——它不会预先索引整个项目，而是通过 MCP 工具（read_file、grep、glob）按需探索代码库，像人类开发者一样"先看目录结构，再看相关文件，最后理解代码逻辑"。<sup>[2]</sup>
 
@@ -221,7 +220,7 @@ const cursorApproach = {
   // 1. 项目打开时，预先 Embedding 所有文件
   async onProjectOpen(project) {
     const files = await project.getAllFiles();
-    const embeddings = await embed(files);  // 预计算向量
+    const embeddings = await embed(files); // 预计算向量
     this.vectorStore.add(embeddings);
   },
   // 2. 用户提问时，向量检索相关文件
@@ -238,11 +237,11 @@ const claudeCodeApproach = {
   // 1. 不预先索引，通过工具按需探索
   async onUserQuery(query) {
     // 第一步：看目录结构
-    const tree = await this.tools.glob('**/*.{ts,tsx}');
+    const tree = await this.tools.glob("**/*.{ts,tsx}");
     // 第二步：读取可能相关的文件
     const files = await this.tools.readFile(tree.suspectedFiles);
     // 第三步：基于理解再深入
-    const deeperFiles = await this.tools.grep('UserList', { include: '*.ts' });
+    const deeperFiles = await this.tools.grep("UserList", { include: "*.ts" });
     return buildPrompt(query, [...files, ...deeperFiles]);
   },
   // 优势：理解更深（像人一样逐步探索），适合复杂重构
@@ -284,7 +283,7 @@ AI 代码生成的质量**80% 取决于 Prompt 的质量**。模糊的 prompt �
 
 很多开发者直接接受 AI 生成的代码，不验证就提交。这会导致隐蔽的逻辑 bug、安全漏洞和性能问题。
 
-**❌/✅ 代码对比（Prompt 质量对生成结果的影响）：**
+**代码对比（Prompt 质量对生成结果的影响）：**
 
 ```javascript
 // ❌ 模糊 Prompt：AI 只能猜你的意图
@@ -304,7 +303,7 @@ function UserList() {
 //   - 遵循 Ant Design 的 Table 组件规范
 //   - 添加 loading 和空状态处理"
 function UserList() {
-  const [keyword, setKeyword] = useState('');
+  const [keyword, setKeyword] = useState("");
   const [page, setPage] = useState(1);
   const { data, loading } = useRequest(() => fetchUsers({ keyword, page }));
   // ... AI 生成的代码完全符合项目规范
@@ -344,12 +343,12 @@ function UserList() {
 
 AI 生成的代码**必须经过验证**，验证分为四个层次：
 
-| 层次 | 验证方式 | 工具 | 发现的问题类型 |
-|------|---------|------|--------------|
-| 1. 语法检查 | ESLint / TypeScript | 编辑器实时检查 | 类型错误、语法错误 |
-| 2. 逻辑验证 | 单元测试 | Jest / Vitest | 逻辑 bug、边界情况 |
-| 3. 安全扫描 | SAST 工具 | Semgrep / CodeQL | SQL 注入、XSS、硬编码密钥 |
-| 4. 性能分析 | Lighthouse / Profiler | Chrome DevTools | 渲染性能、内存泄漏 |
+| 层次        | 验证方式              | 工具             | 发现的问题类型            |
+| ----------- | --------------------- | ---------------- | ------------------------- |
+| 1. 语法检查 | ESLint / TypeScript   | 编辑器实时检查   | 类型错误、语法错误        |
+| 2. 逻辑验证 | 单元测试              | Jest / Vitest    | 逻辑 bug、边界情况        |
+| 3. 安全扫描 | SAST 工具             | Semgrep / CodeQL | SQL 注入、XSS、硬编码密钥 |
+| 4. 性能分析 | Lighthouse / Profiler | Chrome DevTools  | 渲染性能、内存泄漏        |
 
 ### 如何处理 AI 生成的错误
 
@@ -380,7 +379,7 @@ AI 代码生成能大幅提升开发效率，是前端工程师的"超级助手"
 
 **风险一：生成的代码可能有隐蔽 bug**
 
-AI 生成的代码**语法几乎总是正确的**，但**逻辑不一定正确**。斯坦福大学 2023 年的研究发现，使用 AI 助手的开发者生成的代码中，**46% 存在安全漏洞**——因为 AI 会生成"看起来正确"但实际有安全缺陷的代码。<sup>[4]</sup>
+AI 生成的代码**语法几乎总是正确的**，但**逻辑不一定正确**。斯坦福大学 2023 年的一项对照研究发现，使用 AI 助手的参与者写出的代码安全性更低——因为 AI 会生成"看起来正确"但实际有安全缺陷的代码。<sup>[4]</sup>
 
 ```javascript
 // AI 生成的代码：看起来正确，但有隐蔽的 XSS 漏洞
@@ -391,7 +390,7 @@ function UserProfile({ user }) {
 
 // ✅ 正确做法：使用 React 的自动转义或显式转义
 function UserProfile({ user }) {
-  return <div>{user.bio}</div>;  // React 自动转义
+  return <div>{user.bio}</div>; // React 自动转义
 }
 ```
 
@@ -400,13 +399,13 @@ function UserProfile({ user }) {
 LLM 的训练数据有截止日期，且模型可能"记忆错误"。它可能生成调用不存在的 API、使用已废弃的参数、或者引用不存在的 npm 包。
 
 ```javascript
-// ❌ AI 编造的 API：Array.prototype.groupBy 在部分环境中不存在
-const grouped = users.groupBy(u => u.role);
+// ❌ 过时或不存在的 API：groupBy 提案最终改名，不能直接调用
+const grouped = users.groupBy((u) => u.role);
 
 // ✅ 安全做法：使用标准 API 或确认 polyfill
-const grouped = Object.groupBy(users, u => u.role);  // ES2024，需确认兼容性
+const grouped = Object.groupBy(users, (u) => u.role); // ES2024，需确认兼容性
 // 或使用 lodash
-const grouped = _.groupBy(users, 'role');
+const grouped = _.groupBy(users, "role");
 ```
 
 **风险三：性能问题——生成的代码可能不优化**
@@ -416,11 +415,11 @@ AI 倾向于生成"能跑"的代码，但不一定是最优的代码。它可能
 ```javascript
 // ❌ AI 生成的低效代码：每次渲染都创建新函数
 function UserList({ users }) {
-  return users.map(user => (
+  return users.map((user) => (
     <UserCard
       key={user.id}
       user={user}
-      onClick={() => handleClick(user.id)}  // 每次渲染创建新函数
+      onClick={() => handleClick(user.id)} // 每次渲染创建新函数
     />
   ));
 }
@@ -431,7 +430,7 @@ function UserList({ users }) {
     // 处理点击
   }, []);
 
-  return users.map(user => (
+  return users.map((user) => (
     <UserCard key={user.id} user={user} onClick={handleClick} />
   ));
 }
@@ -447,11 +446,9 @@ AI 代码生成是一把双刃剑——**它是"初级开发者"级别的代码�
 
 ---
 
-## 🔍 底层源码：AI 编码工具是如何实现的？
+## Q6: 底层源码——AI 编码工具是如何实现的？
 
-<div class="follow-up">
-Claude Code 的终端 Agent 是怎么实现的？
-</div>
+<div class="follow-up">Claude Code 的终端 Agent 是怎么实现的？</div>
 
 Claude Code 的核心是一个**工具调用循环（Tool Use Loop）**——它接收用户的自然语言指令，通过多轮工具调用逐步完成任务。每一轮，模型决定调用哪个工具（read_file、write_file、bash、grep 等），执行后将结果反馈给模型，模型再决定下一步操作，直到任务完成。<sup>[3]</sup>
 
@@ -467,9 +464,7 @@ Claude Code 的核心是一个**工具调用循环（Tool Use Loop）**——它
    │                          │  bash("npm test")         │  测试结果
 ```
 
-<div class="follow-up">
-Cursor 的多文件编辑是怎么实现的？
-</div>
+<div class="follow-up">Cursor 的多文件编辑是怎么实现的？</div>
 
 Cursor 的 Composer 模式核心是**Diff-based 多文件编辑**——它将多个文件的内容拼接成一个长 prompt，让模型生成完整的修改后文件内容，然后通过 diff 算法计算出变更行，以交互式 diff 视图展示给用户。用户可以逐行审查、接受或拒绝每个变更。
 
@@ -490,14 +485,15 @@ Cursor 的 Composer 模式核心是**Diff-based 多文件编辑**——它将多
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## Q7: 满分回答 vs 及格回答
 
 ### 问题："你平时用什么 AI 编码工具？它们的原理和区别是什么？"
 
 **及格回答（60-70分）：**
+
 > "我用 GitHub Copilot 写代码，它能自动补全代码。也用过 Cursor，它支持多文件编辑。Claude Code 是终端里的 AI 工具，能帮我写代码。"
 
-面试官评价：**知道工具名字，但不理解底层差异**。
+问题出在：**知道工具名字，但不理解底层差异**。
 
 **满分回答（90-100分）：**
 
@@ -505,9 +501,9 @@ Cursor 的 Composer 模式核心是**Diff-based 多文件编辑**——它将多
 
 > "我在团队中同时使用 Copilot 和 Claude Code。Copilot 负责日常的实时补全——写样板代码、生成类型定义、补全 import 语句。Claude Code 负责复杂的重构任务——上周我用它完成了一个跨 12 个文件的状态管理重构，它自动读取了所有相关文件、理解了数据流向、生成了完整的修改方案，我只需要审查 diff 和运行测试。<sup>[3]</sup>"
 
-> "但 AI 生成的代码不能盲目信任。我遇到过 AI 编造不存在的 API（`Array.prototype.groupBy` 在旧浏览器不支持）、生成有 XSS 漏洞的代码（直接用 `dangerouslySetInnerHTML` 渲染用户输入）、以及生成性能低下的代码（在循环中创建不必要的闭包）。所以我的工作流是：AI 生成 → ESLint 检查 → TypeScript 类型检查 → 单元测试 → 人工审查，五步验证后才提交。<sup>[4]</sup>"
+> "但 AI 生成的代码不能盲目信任。我遇到过 AI 编造不存在的 API（`Array.prototype.groupBy` 并不存在，提案最终改为 `Object.groupBy`）、生成有 XSS 漏洞的代码（直接用 `dangerouslySetInnerHTML` 渲染用户输入）、以及生成性能低下的代码（在循环中创建不必要的闭包）。所以我的工作流是：AI 生成 → ESLint 检查 → TypeScript 类型检查 → 单元测试 → 人工审查，五步验证后才提交。<sup>[4]</sup>"
 
-### 大厂高频连环拷问
+### 常见追问
 
 > 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。每个模块 **8 个 Accordion**，覆盖 4 个难度层级。
 
@@ -549,7 +545,7 @@ Cursor 的 Composer 模式核心是**Diff-based 多文件编辑**——它将多
     从"AI 不了解项目上下文"的痛点出发，解释配置文件如何作为持久化的系统指令。
 
     **高分回答：**
-    CLAUDE.md 解决的核心问题是：AI 每次启动时都从零开始，不了解你的项目架构、编码规范、禁止行为。CLAUDE.md 是放在项目根目录的 Markdown 配置文件，Claude Code 每次启动时自动读取它，将其内容作为系统级指令注入 prompt。典型内容包括：项目架构描述（"这是一个 Monorepo，使用 pnpm workspace"）、编码规范（"使用函数组件 + Hooks，禁止 class 组件"）、禁止行为（"不要使用 any 类型，不要直接修改 state"）、常用命令（"运行测试用 `pnpm test`"）。这本质上是一种**持久化的 Prompt Engineering**——把最佳实践写在配置文件里，让 AI 每次都遵循。类似的机制还有 AGENT.md（OpenAI）和 AGENTS.md（Sourcegraph），行业正在向标准化配置文件格式演进。
+    CLAUDE.md 解决的核心问题是：AI 每次启动时都从零开始，不了解你的项目架构、编码规范、禁止行为。CLAUDE.md 是放在项目根目录的 Markdown 配置文件，Claude Code 每次启动时自动读取它，将其内容作为系统级指令注入 prompt。典型内容包括：项目架构描述（"这是一个 Monorepo，使用 pnpm workspace"）、编码规范（"使用函数组件 + Hooks，禁止 class 组件"）、禁止行为（"不要使用 any 类型，不要直接修改 state"）、常用命令（"运行测试用 `pnpm test`"）。这本质上是一种**持久化的 Prompt Engineering**——把最佳实践写在配置文件里，让 AI 每次都遵循。类似的机制还有 AGENTS.md（由 OpenAI Codex 提出并捐给 AAIF）和 AGENT.md（Sourcegraph Amp 的约定），行业正在向标准化配置文件格式演进。
 
   </Accordion>
 
@@ -559,7 +555,7 @@ Cursor 的 Composer 模式核心是**Diff-based 多文件编辑**——它将多
     必须分场景讨论——XSS、注入、依赖风险、硬编码密钥，每种给出具体代码和防范措施。
 
     **高分回答：**
-    AI 生成的代码有四类安全风险。第一是 XSS——AI 可能用 `dangerouslySetInnerHTML` 直接渲染用户输入，防范方法是强制使用 React 的自动转义或 DOMPurify。第二是注入攻击——AI 生成的数据库查询可能直接拼接用户输入，防范方法是使用参数化查询。第三是依赖风险——AI 可能推荐已知有漏洞的 npm 包，防范方法是在 `npm install` 后运行 `npm audit`。第四是硬编码密钥——AI 可能在代码中直接写入 API Key，防范方法是使用环境变量和 `.env` 文件。最有效的防线是将 SAST 工具（Semgrep、CodeQL）集成到 CI/CD 流水线，对所有 AI 生成的代码自动扫描。2023 年斯坦福的研究表明，使用 AI 助手的开发者生成的代码中 46% 存在安全漏洞，这个数字说明人工审查不可省略。
+    AI 生成的代码有四类安全风险。第一是 XSS——AI 可能用 `dangerouslySetInnerHTML` 直接渲染用户输入，防范方法是强制使用 React 的自动转义或 DOMPurify。第二是注入攻击——AI 生成的数据库查询可能直接拼接用户输入，防范方法是使用参数化查询。第三是依赖风险——AI 可能推荐已知有漏洞的 npm 包，防范方法是在 `npm install` 后运行 `npm audit`。第四是硬编码密钥——AI 可能在代码中直接写入 API Key，防范方法是使用环境变量和 `.env` 文件。最有效的防线是将 SAST 工具（Semgrep、CodeQL）集成到 CI/CD 流水线，对所有 AI 生成的代码自动扫描。2023 年斯坦福的一项对照研究表明，使用 AI 助手的参与者更容易写出不安全的代码，这说明人工审查不可省略。
 
   </Accordion>
 
@@ -583,7 +579,7 @@ Cursor 的 Composer 模式核心是**Diff-based 多文件编辑**——它将多
 
   </Accordion>
 
-  <Accordion title="🔥 如何评估一个 AI 编码工具是否适合你的团队？" icon="skull">
+  <Accordion title="如何评估一个 AI 编码工具是否适合你的团队？" icon="skull">
 
     **答题要点：**
     从技术维度（模型能力、上下文管理、IDE 集成）和组织维度（安全合规、成本、学习曲线）全面评估。
@@ -597,13 +593,13 @@ Cursor 的 Composer 模式核心是**Diff-based 多文件编辑**——它将多
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 🔗 [Andrej Karpathy: Software is changing](https://x.com/karpathy/status/1886498126702567467)：Karpathy 关于 AI 重塑软件工程的核心论述，提出了 "vibe coding" 概念。<sup>[1]</sup>
-- 📖 [Simon Willison: Tips for using LLMs for code](https://simonwillison.net/)：Simon Willison 持续记录的 LLM 编码最佳实践，涵盖 prompt 技巧、安全审查、工具选择。<sup>[2]</sup>
-- 🟢 [Anthropic: Claude Code 官方文档](https://docs.anthropic.com/en/docs/claude-code)：Claude Code 的完整功能文档，包括 CLAUDE.md 配置、工具调用机制、安全特性。<sup>[3]</sup>
-- 📖 [Stanford Study: Do Users Write More Insecure Code with AI Assistants?](https://sites.google.com/view/aiassiststudy)：斯坦福大学关于 AI 助手生成代码安全性的实证研究，发现 46% 的 AI 辅助代码存在安全漏洞。<sup>[4]</sup>
-- 🔗 [GitHub: Copilot 官方文档](https://docs.github.com/en/copilot)：GitHub Copilot 的功能介绍、定价方案和 Agent 模式说明。<sup>[5]</sup>
-- 📖 [Cursor 官方文档](https://docs.cursor.com/)：Cursor IDE 的核心功能文档，包括 Composer 模式、上下文管理、多文件编辑。<sup>[6]</sup>
-- 🟢 [Addy Osmani: AI Pair Programming](https://addyosmani.com/)：Addy Osmani 关于 AI 配对编程最佳实践的系列文章，来自 Chrome 团队的工程视角。<sup>[7]</sup>
-- 📖 [LangChain Blog: AI Code Generation](https://blog.langchain.dev/)：LangChain 团队关于 AI 代码生成工具链和 Agent 架构的技术分析。<sup>[8]</sup>
+- [Andrej Karpathy: Software is changing](https://x.com/karpathy/status/1886498126702567467)：Karpathy 关于 AI 重塑软件工程的公开论述。<sup>[1]</sup>
+- [Simon Willison: Tips for using LLMs for code](https://simonwillison.net/)：Simon Willison 持续记录的 LLM 编码最佳实践，涵盖 prompt 技巧、安全审查、工具选择。<sup>[2]</sup>
+- [Anthropic: Claude Code 官方文档](https://docs.anthropic.com/en/docs/claude-code)：Claude Code 的完整功能文档，包括 CLAUDE.md 配置、工具调用机制、安全特性。<sup>[3]</sup>
+- [Stanford Study: Do Users Write More Insecure Code with AI Assistants?](https://sites.google.com/view/aiassiststudy)：斯坦福大学关于 AI 助手生成代码安全性的实证研究，发现使用 AI 助手的参与者写出的代码安全性更低。<sup>[4]</sup>
+- [GitHub: Copilot 官方文档](https://docs.github.com/en/copilot)：GitHub Copilot 的功能介绍、定价方案和 Agent 模式说明。<sup>[5]</sup>
+- [Cursor 官方文档](https://docs.cursor.com/)：Cursor IDE 的核心功能文档，包括 Composer 模式、上下文管理、多文件编辑。<sup>[6]</sup>
+- [Addy Osmani 博客](https://addyosmani.com/)：Addy Osmani 关于前端工程与 AI 辅助编程的文章合集。<sup>[7]</sup>
+- [LangChain Blog](https://blog.langchain.dev/)：LangChain 团队关于 AI 代码生成工具链和 Agent 架构的技术分析。<sup>[8]</sup>

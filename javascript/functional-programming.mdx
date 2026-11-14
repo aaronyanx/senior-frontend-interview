@@ -1,10 +1,9 @@
 ---
 title: "函数式编程"
+description: "纯函数、不可变数据、高阶函数、柯里化与组合、函子，以及函数式在 React 中的落地与常见误区。"
 ---
 
-> **面试官为什么问这个？**
->
-> 函数式编程是 JavaScript 的灵魂。面试官问这个，本质上是在考察你：**你写的代码是"命令式流水账"还是"声明式表达式"？** React Hooks、Redux Reducer、RxJS、Lodash/fp 的底层思想全是函数式。如果你不理解纯函数、不可变数据、高阶函数，你就无法真正理解这些框架为什么这样设计。
+> 我最早以为函数式就是多用 map，后来被共享状态坑过，才开始在意纯函数和不可变数据。
 
 ---
 
@@ -78,7 +77,7 @@ double(increment(0)); // 永远是 2，不管调用多少次
 
 <Tip title="💡 面试技巧">
 
-面试时不要上来就讲 Monad、Functor 这些高级概念。先讲清楚"纯函数"和"不可变数据"这两个核心，然后用 map/filter/reduce 展示你的日常编码习惯，最后如果面试官追问再深入柯里化、组合、函子等高级话题。
+面试时不要上来就讲 Monad、Functor 这些高级概念。先讲清楚"纯函数"和"不可变数据"这两个核心，然后用 map/filter/reduce 展示你的日常编码习惯，最后如果被追问再深入柯里化、组合、函子等高级话题。
 
 </Tip>
 
@@ -122,17 +121,18 @@ getPrice(100, 0.8); // 永远是 80
 
 ### 常见的副作用（Side Effects）
 
-| 副作用类型 | 示例 |
-|-----------|------|
-| **修改外部变量** | `count++`、`arr.push()` |
-| **修改函数参数** | `obj.name = 'new'` |
-| **I/O 操作** | `console.log()`、`fetch()`、`localStorage` |
-| **DOM 操作** | `document.getElementById()` |
-| **调用非纯函数** | `Math.random()`、`Date.now()` |
+| 副作用类型       | 示例                                       |
+| ---------------- | ------------------------------------------ |
+| **修改外部变量** | `count++`、`arr.push()`                    |
+| **修改函数参数** | `obj.name = 'new'`                         |
+| **I/O 操作**     | `console.log()`、`fetch()`、`localStorage` |
+| **DOM 操作**     | `document.getElementById()`                |
+| **调用非纯函数** | `Math.random()`、`Date.now()`              |
 
 <Warning title='⚠️ 纯函数不等于"没有 return"'>
 
 一个函数没有 return 值不代表它是不纯的，一个函数有 return 值也不代表它是纯的。关键看两点：
+
 1. 相同输入是否总是产生相同输出
 2. 是否有可观察的副作用
 
@@ -142,9 +142,10 @@ let multiplier = 2;
 const double = (n) => n * multiplier;
 
 // 没有 return，但是纯的（如果忽略 console.log 的副作用）
-const log = (msg) => { /* 纯粹为了调试 */ };
+const log = (msg) => {
+  /* 纯粹为了调试 */
+};
 ```
-
 
 </Warning>
 
@@ -167,7 +168,7 @@ pureGetPrice(100, 0.8); // 计算 → 缓存
 pureGetPrice(100, 0.8); // 直接返回缓存结果
 
 // 2. 可测试——不需要 mock 任何外部依赖
-test('getPrice', () => {
+test("getPrice", () => {
   expect(getPrice(100, 0.8)).toBe(80);
   expect(getPrice(200, 0.5)).toBe(100);
 });
@@ -178,7 +179,6 @@ test('getPrice', () => {
 <Tip title="🎢 通俗比喻: 数学函数">
 
 纯函数就像数学中的 f(x) = x + 1。f(1) 永远等于 2，不管你调用多少次、在什么时间调用、调用的顺序是什么。它不依赖"今天是星期几"，也不修改"x 的值"。这种确定性让代码变得极度可预测——你不需要"运行一遍才知道结果"，看一眼函数签名就够了。
-
 
 </Tip>
 
@@ -202,15 +202,15 @@ test('getPrice', () => {
 
 ```javascript
 // ❌ 可变数据——直接修改原对象
-const user = { name: 'Alice', age: 25 };
+const user = { name: "Alice", age: 25 };
 user.age = 26; // 原对象被修改了！
 // 如果其他地方引用了 user，它们看到的 age 也变了
 
 // ✅ 不可变数据——创建新对象
-const user = { name: 'Alice', age: 25 };
+const user = { name: "Alice", age: 25 };
 const updatedUser = { ...user, age: 26 };
 // user 不变，updatedUser 是新对象
-console.log(user);        // { name: 'Alice', age: 25 }
+console.log(user); // { name: 'Alice', age: 25 }
 console.log(updatedUser); // { name: 'Alice', age: 26 }
 ```
 
@@ -222,11 +222,11 @@ const updated = { ...user, age: 26 };
 
 // 数组：不修改原数组的方法
 const arr = [1, 2, 3];
-arr.push(4);           // ❌ 修改原数组
+arr.push(4); // ❌ 修改原数组
 const newArr = [...arr, 4]; // ✅ 创建新数组
 
-const filtered = arr.filter(x => x > 1);    // [2, 3] — 不修改原数组
-const mapped = arr.map(x => x * 2);          // [2, 4, 6] — 不修改原数组
+const filtered = arr.filter((x) => x > 1); // [2, 3] — 不修改原数组
+const mapped = arr.map((x) => x * 2); // [2, 4, 6] — 不修改原数组
 const sorted = [...arr].sort((a, b) => b - a); // [3, 2, 1] — 先复制再排序
 ```
 
@@ -235,22 +235,21 @@ const sorted = [...arr].sort((a, b) => b - a); // [3, 2, 1] — 先复制再排�
 展开运算符 `...` 只做浅拷贝。如果对象有嵌套属性，内层仍然是引用：
 
 ```javascript
-const user = { name: 'Alice', address: { city: 'Beijing' } };
-const updated = { ...user, name: 'Bob' };
-updated.address.city = 'Shanghai';
+const user = { name: "Alice", address: { city: "Beijing" } };
+const updated = { ...user, name: "Bob" };
+updated.address.city = "Shanghai";
 
 console.log(user.address.city); // 'Shanghai' — 原对象的嵌套属性被修改了！
 
 // ✅ 深层不可变更新
 const updated = {
   ...user,
-  name: 'Bob',
-  address: { ...user.address, city: 'Shanghai' },
+  name: "Bob",
+  address: { ...user.address, city: "Shanghai" },
 };
 ```
 
 对于复杂的嵌套结构，推荐使用 Immer 库——它用 Proxy 实现了"看起来像在修改，实际上创建新副本"的效果。
-
 
 </Warning>
 
@@ -258,22 +257,21 @@ const updated = {
 
 ```javascript
 // Immer 的用法：draft 是 Proxy 代理，看起来在"修改"
-import { produce } from 'immer';
+import { produce } from "immer";
 
-const user = { name: 'Alice', address: { city: 'Beijing' } };
+const user = { name: "Alice", address: { city: "Beijing" } };
 const updated = produce(user, (draft) => {
-  draft.name = 'Bob';
-  draft.address.city = 'Shanghai'; // 直接"修改"，但实际创建新副本
+  draft.name = "Bob";
+  draft.address.city = "Shanghai"; // 直接"修改"，但实际创建新副本
 });
 
-console.log(user);    // { name: 'Alice', address: { city: 'Beijing' } } — 不变
+console.log(user); // { name: 'Alice', address: { city: 'Beijing' } } — 不变
 console.log(updated); // { name: 'Bob', address: { city: 'Shanghai' } }
 ```
 
 <Tip title="🎢 通俗比喻: 版本管理">
 
 不可变数据就像 Git 的版本管理。你不会直接修改 main 分支上的代码——你创建一个新分支、做修改、然后合并。原来的 main 分支始终不变，任何时候你都可以回溯到任意版本。不可变数据也是这样：每次"修改"都创建一个新版本，旧版本永远不变。
-
 
 </Tip>
 
@@ -298,11 +296,11 @@ console.log(updated); // { name: 'Bob', address: { city: 'Shanghai' } }
 const numbers = [1, 2, 3, 4, 5];
 
 // map：对每个元素执行变换，返回新数组
-const doubled = numbers.map(n => n * 2);
+const doubled = numbers.map((n) => n * 2);
 // [2, 4, 6, 8, 10]
 
 // filter：筛选满足条件的元素，返回新数组
-const evens = numbers.filter(n => n % 2 === 0);
+const evens = numbers.filter((n) => n % 2 === 0);
 // [2, 4]
 
 // reduce：把数组归约为单个值
@@ -319,14 +317,17 @@ reduce 不只是"求和"——它可以实现 map 和 filter 的所有功能：
 const doubled = numbers.reduce((acc, n) => [...acc, n * 2], []);
 
 // 用 reduce 实现 filter
-const evens = numbers.reduce((acc, n) => n % 2 === 0 ? [...acc, n] : acc, []);
+const evens = numbers.reduce((acc, n) => (n % 2 === 0 ? [...acc, n] : acc), []);
 
 // 用 reduce 同时做多件事（一次遍历完成多个操作）
-const result = numbers.reduce((acc, n) => ({
-  sum: acc.sum + n,
-  evens: n % 2 === 0 ? [...acc.evens, n] : acc.evens,
-  doubled: [...acc.doubled, n * 2],
-}), { sum: 0, evens: [], doubled: [] });
+const result = numbers.reduce(
+  (acc, n) => ({
+    sum: acc.sum + n,
+    evens: n % 2 === 0 ? [...acc.evens, n] : acc.evens,
+    doubled: [...acc.doubled, n * 2],
+  }),
+  { sum: 0, evens: [], doubled: [] },
+);
 // { sum: 15, evens: [2, 4], doubled: [2, 4, 6, 8, 10] }
 ```
 
@@ -334,20 +335,22 @@ const result = numbers.reduce((acc, n) => ({
 
 ```javascript
 // 1. 回调函数——最常见的高阶函数应用
-setTimeout(() => console.log('延迟执行'), 1000);
-[1, 2, 3].forEach(n => console.log(n));
+setTimeout(() => console.log("延迟执行"), 1000);
+[1, 2, 3].forEach((n) => console.log(n));
 
 // 2. 事件处理
-button.addEventListener('click', handleClick);
+button.addEventListener("click", handleClick);
 
 // 3. Promise 链
-fetch('/api/users')
-  .then(response => response.json())
-  .then(data => renderUsers(data))
-  .catch(error => handleError(error));
+fetch("/api/users")
+  .then((response) => response.json())
+  .then((data) => renderUsers(data))
+  .catch((error) => handleError(error));
 
 // 4. React Hooks——本质就是高阶函数
-useEffect(() => { /* 副作用函数 */ }, [deps]);
+useEffect(() => {
+  /* 副作用函数 */
+}, [deps]);
 useState(0); // 返回 [state, setter]
 ```
 
@@ -391,8 +394,8 @@ function getPrice(price) {
 const vipPrice = getPrice(0.8); // VIP 打八折
 const vipPriceWithTax = vipPrice(0.1); // VIP 打八折 + 10% 税
 
-vipPriceWithTax(100);  // 88
-vipPriceWithTax(200);  // 176
+vipPriceWithTax(100); // 88
+vipPriceWithTax(200); // 176
 ```
 
 ### 通用柯里化函数
@@ -410,9 +413,9 @@ function curry(fn) {
 }
 
 const add = curry((a, b, c) => a + b + c);
-add(1)(2)(3);     // 6
-add(1, 2)(3);     // 6
-add(1)(2, 3);     // 6
+add(1)(2)(3); // 6
+add(1, 2)(3); // 6
+add(1)(2, 3); // 6
 ```
 
 ### 函数组合（Composition）
@@ -428,23 +431,29 @@ add(1)(2, 3);     // 6
 ```javascript
 // 手动组合——嵌套调用
 const toUpper = (str) => str.toUpperCase();
-const exclaim = (str) => str + '!';
-const repeat = (str) => str + ' ' + str;
+const exclaim = (str) => str + "!";
+const repeat = (str) => str + " " + str;
 
 // 嵌套调用很难读
-repeat(exclaim(toUpper('hello'))); // 'HELLO! HELLO!'
+repeat(exclaim(toUpper("hello"))); // 'HELLO! HELLO!'
 
 // compose 组合——从右到左执行
-const compose = (...fns) => (x) => fns.reduceRight((acc, fn) => fn(acc), x);
+const compose =
+  (...fns) =>
+  (x) =>
+    fns.reduceRight((acc, fn) => fn(acc), x);
 const shout = compose(repeat, exclaim, toUpper);
-shout('hello'); // 'HELLO! HELLO!'
+shout("hello"); // 'HELLO! HELLO!'
 ```
 
 ### pipe：从左到右的组合
 
 ```javascript
 // pipe 和 compose 的区别：执行方向相反
-const pipe = (...fns) => (x) => fns.reduce((acc, fn) => fn(acc), x);
+const pipe =
+  (...fns) =>
+  (x) =>
+    fns.reduce((acc, fn) => fn(acc), x);
 
 const processUser = pipe(
   (user) => ({ ...user, name: user.name.toUpperCase() }),
@@ -452,7 +461,7 @@ const processUser = pipe(
   (user) => user.fullName,
 );
 
-processUser({ name: 'alice', role: 'admin' }); // 'ALICE (admin)'
+processUser({ name: "alice", role: "admin" }); // 'ALICE (admin)'
 ```
 
 <Warning title="⚠️ compose vs pipe 的方向">
@@ -461,7 +470,6 @@ processUser({ name: 'alice', role: 'admin' }); // 'ALICE (admin)'
 - `pipe(f, g, h)`：从左到右执行，更符合代码的阅读顺序
 
 Redux 使用 compose，Ramda 使用 compose（从右到左），Unix 管道符 `|` 使用 pipe（从左到右）。
-
 
 </Warning>
 
@@ -483,13 +491,17 @@ Redux 使用 compose，Ramda 使用 compose（从右到左），Unix 管道符 `
 ```javascript
 // 最简单的函子：Container
 class Container {
-  constructor(value) { this.value = value; }
-  map(fn) { return new Container(fn(this.value)); }
+  constructor(value) {
+    this.value = value;
+  }
+  map(fn) {
+    return new Container(fn(this.value));
+  }
 }
 
 new Container(5)
-  .map(x => x + 1)    // Container(6)
-  .map(x => x * 2);   // Container(12)
+  .map((x) => x + 1) // Container(6)
+  .map((x) => x * 2); // Container(12)
 ```
 
 ### Maybe 函子：优雅地处理 null
@@ -497,11 +509,15 @@ new Container(5)
 ```javascript
 // Maybe 函子：值可能是 null/undefined 时安全地执行操作
 class Maybe {
-  constructor(value) { this.value = value; }
-  static of(value) { return new Maybe(value); }
+  constructor(value) {
+    this.value = value;
+  }
+  static of(value) {
+    return new Maybe(value);
+  }
   map(fn) {
     return this.value === null || this.value === undefined
-      ? Maybe.of(null)      // 值为空，跳过 map
+      ? Maybe.of(null) // 值为空，跳过 map
       : Maybe.of(fn(this.value)); // 值存在，执行 map
   }
 }
@@ -517,10 +533,9 @@ function getStreetName(user) {
 // ✅ 函子式：链式调用，自动处理 null
 function getStreetName(user) {
   return Maybe.of(user)
-    .map(u => u.address)
-    .map(a => a.street)
-    .map(s => s.name)
-    .value;
+    .map((u) => u.address)
+    .map((a) => a.street)
+    .map((s) => s.name).value;
 }
 // 任何一步为 null，后续的 map 都会跳过，不会报错
 ```
@@ -529,12 +544,20 @@ function getStreetName(user) {
 
 ```javascript
 class Left {
-  constructor(value) { this.value = value; }
-  map(fn) { return this; } // Left 不执行 map
+  constructor(value) {
+    this.value = value;
+  }
+  map(fn) {
+    return this;
+  } // Left 不执行 map
 }
 class Right {
-  constructor(value) { this.value = value; }
-  map(fn) { return new Right(fn(this.value)); }
+  constructor(value) {
+    this.value = value;
+  }
+  map(fn) {
+    return new Right(fn(this.value));
+  }
 }
 
 function parseJSON(str) {
@@ -545,15 +568,14 @@ function parseJSON(str) {
   }
 }
 
-parseJSON('{"a": 1}').map(x => x.a);        // Right(1)
-parseJSON('invalid').map(x => x.a);          // Left('Unexpected token...')
+parseJSON('{"a": 1}').map((x) => x.a); // Right(1)
+parseJSON("invalid").map((x) => x.a); // Left('Unexpected token...')
 // 错误被"短路"了，不会抛出异常
 ```
 
 <Tip title="🎢 通俗比喻: 安全快递箱">
 
 函子就像一个安全快递箱。你可以通过 `map` 在箱子外面贴标签、写地址（变换内容），但不需要打开箱子。Maybe 函子是一个"防碎箱"——如果箱子里是空的，你贴标签的操作会被自动跳过，不会报错。Either 函子是一个"有退款保障的箱子"——如果快递出了问题（Left），后续的操作全部跳过，但错误信息被保留下来了。
-
 
 </Tip>
 
@@ -569,15 +591,17 @@ React 的设计理念深度根植于函数式编程。理解这一点，才能�
 // React 的核心公式：UI 是状态的纯函数
 // 相同的 state → 相同的 UI（纯函数的确定性）
 function TodoApp({ todos, filter }) {
-  const filtered = todos.filter(todo => {
-    if (filter === 'all') return true;
-    if (filter === 'active') return !todo.completed;
+  const filtered = todos.filter((todo) => {
+    if (filter === "all") return true;
+    if (filter === "active") return !todo.completed;
     return todo.completed;
   });
 
   return (
     <ul>
-      {filtered.map(todo => <li key={todo.id}>{todo.text}</li>)}
+      {filtered.map((todo) => (
+        <li key={todo.id}>{todo.text}</li>
+      ))}
     </ul>
   );
 }
@@ -588,8 +612,8 @@ function TodoApp({ todos, filter }) {
 ```javascript
 // useState：不可变状态更新
 const [count, setCount] = useState(0);
-setCount(count + 1);   // 不是修改 count，而是创建新值
-setCount(prev => prev + 1); // 函数式更新——纯函数
+setCount(count + 1); // 不是修改 count，而是创建新值
+setCount((prev) => prev + 1); // 函数式更新——纯函数
 
 // useEffect：副作用的声明式管理
 useEffect(() => {
@@ -600,9 +624,12 @@ useEffect(() => {
 // useReducer：Redux 风格的纯函数状态管理
 function reducer(state, action) {
   switch (action.type) {
-    case 'increment': return { count: state.count + 1 };
-    case 'decrement': return { count: state.count - 1 };
-    default: return state;
+    case "increment":
+      return { count: state.count + 1 };
+    case "decrement":
+      return { count: state.count - 1 };
+    default:
+      return state;
   }
 }
 // reducer 是纯函数：相同输入 → 相同输出
@@ -612,7 +639,7 @@ function reducer(state, action) {
 
 ```javascript
 // ❌ 直接修改 state——React 不会重新渲染
-const [user, setUser] = useState({ name: 'Alice', age: 25 });
+const [user, setUser] = useState({ name: "Alice", age: 25 });
 user.age = 26;
 setUser(user); // React 用 Object.is 比较，引用没变，不会触发更新
 
@@ -643,14 +670,14 @@ React Hooks 的设计哲学就是函数式编程：纯函数组件、不可变�
 ```javascript
 // ❌ 极端的函数式——完全不用变量，代码不可读
 const result = [1, 2, 3, 4, 5]
-  .filter(x => x % 2 === 0)
-  .map(x => x * x)
+  .filter((x) => x % 2 === 0)
+  .map((x) => x * x)
   .reduce((a, b) => a + b, 0);
 
 // ✅ 适度使用变量——可读性更好
 const numbers = [1, 2, 3, 4, 5];
-const evens = numbers.filter(x => x % 2 === 0);
-const squares = evens.map(x => x * x);
+const evens = numbers.filter((x) => x % 2 === 0);
+const squares = evens.map((x) => x * x);
 const sum = squares.reduce((a, b) => a + b, 0);
 ```
 
@@ -669,7 +696,7 @@ for (let i = 0; i < arr.length; i++) {
 }
 
 // ✅ 函数式写法——可读性高，性能差异在大多数场景可以忽略
-const result = arr.filter(x => x > 0).map(x => x * 2);
+const result = arr.filter((x) => x > 0).map((x) => x * 2);
 ```
 
 ### 误区三：函数式 = 不需要面向对象
@@ -687,22 +714,20 @@ const result = arr.filter(x => x > 0).map(x => x * 2);
 <Warning title="⚠️ 函数式编程的边界">
 
 不是所有代码都适合函数式：
+
 - **I/O 操作**（网络请求、文件读写）天然是有副作用的，不可能变成纯函数
 - **DOM 操作**是有副作用的，React 用 `useEffect` 把它隔离到"副作用区域"
 - **性能敏感的热路径**（如游戏渲染循环）可能需要命令式优化
 
 函数式编程的正确用法是：**用纯函数处理业务逻辑，把副作用推到系统的边缘。**
 
-
 </Warning>
 
 ---
 
-## 🔍 底层源码：函数式特性在引擎中的实现
+## 底层源码：函数式特性在引擎中的实现
 
-<div class="follow-up">
-V8 是如何优化纯函数的？
-</div>
+<div class="follow-up">V8 是如何优化纯函数的？</div>
 
 V8 的 TurboFan 编译器会利用纯函数的特性进行激进优化：
 
@@ -718,9 +743,7 @@ function add(a, b) { return a + b; }
 add(1, 2); // 如果返回值没被使用，TurboFan 可以直接消除这行
 ```
 
-<div class="follow-up">
-Redux 的 combineReducers 如何运用函数式思想？
-</div>
+<div class="follow-up">Redux 的 combineReducers 如何运用函数式思想？</div>
 
 Redux 的 `combineReducers` 是函数组合的经典应用——每个 reducer 是一个纯函数，组合后仍然是纯函数：
 
@@ -748,8 +771,10 @@ function combineReducers(reducers) {
 // 每个 reducer 都是纯函数
 const todoReducer = (state = [], action) => {
   switch (action.type) {
-    case 'ADD': return [...state, action.todo]; // 不可变更新
-    default: return state;
+    case "ADD":
+      return [...state, action.todo]; // 不可变更新
+    default:
+      return state;
   }
 };
 
@@ -762,14 +787,15 @@ const rootReducer = combineReducers({
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 十、及格回答 vs 满分回答
 
 ### 问题："什么是函数式编程？你在项目中怎么用的？"
 
 **及格回答（60-70分）：**
+
 > "函数式编程就是用函数来写代码，避免修改变量。用 map、filter、reduce 处理数组，React Hooks 也是函数式的。"
 
-面试官评价：**知道概念但没有深度**。
+问题出在：**知道概念但没有深度**。
 
 **满分回答（90-100分）：**
 
@@ -781,7 +807,7 @@ const rootReducer = combineReducers({
 
 > 但函数式不是银弹。I/O 操作天然是有副作用的，我把它们推到系统边缘（React 的 useEffect、Redux 的 middleware），让核心业务逻辑保持纯粹。实际项目中是函数式和命令式的混合——纯函数处理业务逻辑，命令式处理 I/O 和性能敏感路径。
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
@@ -1050,8 +1076,8 @@ const rootReducer = combineReducers({
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 📖 [《JavaScript 轻量级函数式编程》](https://www.getprogrammingwithjavascript.com/)：Francesco Cesarini 的函数式编程入门，结合 JavaScript 实际案例。<sup>[1]</sup>
-- 🔗 [Ramda.js 官方文档](https://ramdajs.com/)：函数式 JavaScript 工具库，柯里化和函数组合的最佳实践。<sup>[2]</sup>
-- 🟢 [Professor Frisby's Mostly Adequate Guide](https://mostly-adequate.gitbook.io/mostly-adequate-guide/)：函数式编程的"圣经级"教程，用 JavaScript 讲解 Functor、Monad 等高级概念。<sup>[3]</sup>
+- [Functional-Light JavaScript](https://github.com/getify/Functional-Light-JS)：Kyle Simpson 的函数式编程入门，结合 JavaScript 实际案例。<sup>[1]</sup>
+- [Ramda.js 官方文档](https://ramdajs.com/)：函数式 JavaScript 工具库，柯里化和函数组合的最佳实践。<sup>[2]</sup>
+- [Professor Frisby's Mostly Adequate Guide](https://mostly-adequate.gitbook.io/mostly-adequate-guide/)：函数式编程的经典教程，用 JavaScript 讲解 Functor、Monad 等概念。<sup>[3]</sup>

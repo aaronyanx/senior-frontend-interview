@@ -1,10 +1,9 @@
 ---
 title: "Vue 响应式"
+description: "对比 Vue 2 defineProperty 与 Vue 3 Proxy 的边界，讲透三层 Map 依赖收集、ref 解包、effect 与 track/trigger。"
 ---
 
-> **面试官为什么问这个？**
->
-> 响应式系统是 Vue 的灵魂。面试官问这个，本质上是在考察你：**你理解数据变化是如何自动驱动视图更新的吗？** 如果你答不清楚，说明你对 Vue 的理解停留在"双向绑定"这个表面概念，而不理解依赖收集、触发更新、批量调度这些核心设计。
+> 响应式我从 Proxy 和 defineProperty 的差异入手，慢慢补上数组索引、新增属性、ref 解包和 track/trigger 这几块，才看清依赖是按属性收集的。
 
 ---
 
@@ -14,7 +13,7 @@ title: "Vue 响应式"
 
   <Step title="Vue 2 时代: Object.defineProperty">
 
-Vue 2 用 `Object.defineProperty` 给对象的每个属性设置 getter/setter。读取属性时收集依赖，修改属性时触发更新。这个方案在 2014 年推出时是开创性的。
+Vue 2 用 `Object.defineProperty` 给对象的每个属性设置 getter/setter。读取属性时收集依赖，修改属性时触发更新。这套方案支撑了 Vue 2 全系列的响应式实现。
 
   </Step>
   <Step title="致命痛点: 无法拦截新增属性">
@@ -63,7 +62,7 @@ const state = new Proxy({ name: '张三' }, {
 // 不管什么操作，Proxy 全部能拦截
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 defineProperty 是"逐个属性上锁"，Proxy 是"给整个保险箱上锁"——Vue 3 用对象级拦截替代属性级拦截，彻底消除了响应式盲区。
 
@@ -71,33 +70,33 @@ defineProperty 是"逐个属性上锁"，Proxy 是"给整个保险箱上锁"—�
 
 <CardGroup cols={2}>
 
-<Card title="🚫 Vue 2 的 defineProperty">
+<Card title="Vue 2 的 defineProperty">
 
 只能拦截已有属性的读写。新增属性需要 `$set`，删除属性需要 `$delete`，数组下标赋值不触发更新。就像你给家里的每扇门单独装了锁，但有人从窗户爬进来你完全不知道。
 
 </Card>
-<Card title="✅ Vue 3 的 Proxy">
+<Card title="Vue 3 的 Proxy">
 
 拦截整个对象的所有操作，包括新增、删除、遍历。就像你给整栋房子装了一个智能门禁系统，不管谁从哪个门进、带了什么东西出去，系统都能感知。
 
 </Card>
 </CardGroup>
 
-<Tip title="🎢 通俗比喻: 逐个上锁 vs 整栋门禁">
+<Tip title="通俗比喻: 逐个上锁 vs 整栋门禁">
 
 defineProperty 就像给家里的每扇门单独装锁——你必须提前知道有哪些门，新装的门（新增属性）没有锁，窗户（数组下标）也管不住。Proxy 就像给整栋房子装了一套智能门禁系统——不管是门、窗还是天窗，任何进出操作都能被感知到。Vue 3 换上这套"门禁系统"后，`$set`、`$delete` 这些补丁工具就光荣退休了。
 
 </Tip>
 
-<Tip title="💡 面试技巧">
+<Tip title="面试技巧">
 
-回答时先说 defineProperty 的三个缺陷（新增属性、删除属性、数组下标），再说 Proxy 如何一招解决所有问题，最后提一句 Proxy 不能代理原始类型所以需要 ref。这三步说完，面试官就知道你真正理解了这次架构升级的动机。
+回答时先说 defineProperty 的三个缺陷（新增属性、删除属性、数组下标），再说 Proxy 如何一招解决所有问题，最后提一句 Proxy 不能代理原始类型所以需要 ref。这三步说完，对方就知道你真正理解了这次架构升级的动机。
 
 </Tip>
 
 ### 数据响应式的本质：track、trigger 与响应式粒度
 
-很多候选人能说出"Vue 用 Proxy 实现响应式"，但被追问"响应式的本质到底是什么"时就卡壳了。面试官问这道冷门题，是在考察你是否理解响应式系统的三个核心机制：**依赖收集（track）**、**触发更新（trigger）**、**响应式粒度（组件级 vs 属性级）**。
+很多人能说出"Vue 用 Proxy 实现响应式"，但被追问"响应式的本质到底是什么"时就卡壳了。这道冷门题考的是你是否理解响应式系统的三个核心机制：**依赖收集（track）**、**触发更新（trigger）**、**响应式粒度（组件级 vs 属性级）**。
 
 响应式的本质是一个**发布-订阅模式**——数据是"发布者"，视图是"订阅者"。当数据被读取时，当前正在执行的副作用函数（effect）自动订阅这个数据（track）；当数据被修改时，所有订阅了这个数据的副作用函数被通知执行（trigger）。
 
@@ -136,31 +135,36 @@ defineProperty 就像给家里的每扇门单独装锁——你必须提前知�
 
 ```javascript
 // 响应式的核心流程（简化伪代码，每行注释）
-const targetMap = new WeakMap()  // 第一层：以目标对象为 key 的弱引用映射
+const targetMap = new WeakMap(); // 第一层：以目标对象为 key 的弱引用映射
 
 // track：读取属性时，把当前 effect 订阅到这个属性
 function track(target, key) {
-  if (!activeEffect) return        // 没有 effect 在执行，不收集（比如在 setup 外读取）
-  let depsMap = targetMap.get(target)  // 第二层：以属性名为 key 的 Map
-  if (!depsMap) targetMap.set(target, (depsMap = new Map()))
-  let dep = depsMap.get(key)           // 第三层：存储 effect 的 Set
-  if (!dep) depsMap.set(key, (dep = new Set()))
-  dep.add(activeEffect)           // 订阅：把当前 effect 加入依赖集合
-  activeEffect.deps.push(dep)     // 双向引用：effect 也记住 dep，方便 stop() 清理
+  if (!activeEffect) return; // 没有 effect 在执行，不收集（比如在 setup 外读取）
+  let depsMap = targetMap.get(target); // 第二层：以属性名为 key 的 Map
+  if (!depsMap) targetMap.set(target, (depsMap = new Map()));
+  let dep = depsMap.get(key); // 第三层：存储 effect 的 Set
+  if (!dep) depsMap.set(key, (dep = new Set()));
+  dep.add(activeEffect); // 订阅：把当前 effect 加入依赖集合
+  activeEffect.deps.push(dep); // 双向引用：effect 也记住 dep，方便 stop() 清理
 }
 
 // trigger：修改属性时，通知所有订阅了这个属性的 effect
-function trigger(target, key) {
-  const depsMap = targetMap.get(target)
-  if (!depsMap) return             // 从没有人读取过这个对象的任何属性，直接返回
-  const dep = depsMap.get(key)
-  if (dep) dep.forEach(effect => {
+function trigger(target, type, key) {
+  const depsMap = targetMap.get(target);
+  if (!depsMap) return; // 从没有人读取过这个对象的任何属性，直接返回
+  const effects = new Set();
+  if (key !== void 0) depsMap.get(key)?.forEach((e) => effects.add(e));
+  // 新增/删除属性时还要触发 ITERATE_KEY 的依赖（for...in / Object.keys 的使用者）
+  if (type === TriggerOpTypes.ADD || type === TriggerOpTypes.DELETE) {
+    depsMap.get(ITERATE_KEY)?.forEach((e) => effects.add(e));
+  }
+  effects.forEach((effect) => {
     if (effect.scheduler) {
-      effect.scheduler()           // 组件渲染：走 scheduler → queueJob → 批量更新
+      effect.scheduler(); // 组件渲染：走 scheduler → queueJob → 批量更新
     } else {
-      effect.run()                 // watchEffect：直接重新执行
+      effect.run(); // watchEffect：直接重新执行
     }
-  })
+  });
 }
 ```
 
@@ -170,25 +174,41 @@ function trigger(target, key) {
 
 ```javascript
 // Vue 2 的 defineProperty：属性级拦截，但有盲区
-const state = {}
-Object.defineProperty(state, 'name', {
-  get() { /* 收集依赖 */ },
-  set() { /* 触发更新 */ }
-})
+const state = {};
+Object.defineProperty(state, "name", {
+  get() {
+    /* 收集依赖 */
+  },
+  set() {
+    /* 触发更新 */
+  },
+});
 // ❌ state.age = 25  → 拦截不到（没有预定义 age）
 // ❌ delete state.name → 拦截不到
 
 // Vue 3 的 Proxy：对象级拦截，无盲区
-const state = new Proxy({ name: '张三' }, {
-  get(target, key) { track(target, key); return Reflect.get(target, key) },
-  set(target, key, value) { Reflect.set(target, key, value); trigger(target, key) },
-  deleteProperty(target, key) { Reflect.deleteProperty(target, key); trigger(target, key) }
-})
+const state = new Proxy(
+  { name: "张三" },
+  {
+    get(target, key) {
+      track(target, key);
+      return Reflect.get(target, key);
+    },
+    set(target, key, value) {
+      Reflect.set(target, key, value);
+      trigger(target, key);
+    },
+    deleteProperty(target, key) {
+      Reflect.deleteProperty(target, key);
+      trigger(target, key);
+    },
+  },
+);
 // ✅ state.age = 25  → 拦截到
 // ✅ delete state.name → 拦截到
 ```
 
-<Warning title="⚠️ 核心机制: 响应式粒度决定了更新效率">
+<Warning title="核心机制: 响应式粒度决定了更新效率">
 
 Vue 的响应式粒度是**属性级别**——修改 `state.name` 只会触发依赖 `name` 的 effect，不会触发依赖 `state.age` 的 effect。这得益于三层 Map 的依赖收集结构（WeakMap → Map → Set）。
 
@@ -251,31 +271,31 @@ targetMap (WeakMap<target, depsMap>)
 ```javascript
 // track()：读取属性时收集依赖（每行注释）
 function track(target, key) {
-  if (!activeEffect) return;          // 没有正在执行的 effect，不收集
+  if (!activeEffect) return; // 没有正在执行的 effect，不收集
   let depsMap = targetMap.get(target); // 从 WeakMap 取出该对象的依赖 Map
   if (!depsMap) targetMap.set(target, (depsMap = new Map()));
-  let dep = depsMap.get(key);          // 从 Map 取出该属性的依赖 Set
+  let dep = depsMap.get(key); // 从 Map 取出该属性的依赖 Set
   if (!dep) depsMap.set(key, (dep = new Set()));
-  dep.add(activeEffect);              // 把当前 effect 加入依赖集合
-  activeEffect.deps.push(dep);        // 双向引用：effect 也记住 dep，方便 stop() 时清理
+  dep.add(activeEffect); // 把当前 effect 加入依赖集合
+  activeEffect.deps.push(dep); // 双向引用：effect 也记住 dep，方便 stop() 时清理
 }
 
 // trigger()：修改属性时触发更新（每行注释）
 function trigger(target, key) {
   const depsMap = targetMap.get(target);
-  if (!depsMap) return;                // 从没有人读取过这个对象，直接返回
+  if (!depsMap) return; // 从没有人读取过这个对象，直接返回
   const effects = new Set();
-  if (key !== void 0) depsMap.get(key)?.forEach(e => effects.add(e));
+  if (key !== void 0) depsMap.get(key)?.forEach((e) => effects.add(e));
   // 新增/删除属性时还要触发 ITERATE_KEY 的依赖（for...in / Object.keys 的使用者）
   if (TriggerOpTypes.ADD || TriggerOpTypes.DELETE) {
-    depsMap.get(ITERATE_KEY)?.forEach(e => effects.add(e));
+    depsMap.get(ITERATE_KEY)?.forEach((e) => effects.add(e));
   }
   // 批量执行所有 effect，有 scheduler 走调度，没有则直接执行
-  effects.forEach(e => e.scheduler ? e.scheduler() : e.run());
+  effects.forEach((e) => (e.scheduler ? e.scheduler() : e.run()));
 }
 ```
 
-<Warning title="⚠️ 核心设计: 为什么是三层而不是两层?">
+<Warning title="核心设计: 为什么是三层而不是两层?">
 
 - **第一层 WeakMap**：以目标对象为 key。WeakMap 的弱引用保证对象被 GC 时依赖自动清理，不会内存泄漏。
 - **第二层 Map**：以属性名为 key。O(1) 的查找效率，一个对象的每个属性有独立的依赖集合。
@@ -285,19 +305,19 @@ function trigger(target, key) {
 
 </Warning>
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 三层 Map 的设计保证了属性级粒度的精确依赖收集——WeakMap 防内存泄漏、Map 保证 O(1) 查找、Set 自动去重。
 
 </Note>
 
-<Tip title="🎢 通俗比喻: 医院挂号系统">
+<Tip title="通俗比喻: 医院挂号系统">
 
 三层 Map 就像医院的挂号系统。第一层 WeakMap 是"医院大楼"（哪个对象），第二层 Map 是"科室"（哪个属性），第三层 Set 是"挂号名单"（哪些医生/effect 关注了这个科室）。当某个科室的检查结果更新时（属性变化），只有挂了这个科室号的医生（依赖该属性的 effect）会被通知，其他科室的医生完全不受影响。
 
 </Tip>
 
-<Tip title="🎢 通俗比喻: 保险柜 vs 快递盒 vs 自动售货机">
+<Tip title="通俗比喻: 保险柜 vs 快递盒 vs 自动售货机">
 
 reactive 就像一个保险柜——你把贵重物品（对象）放进去后，每次取东西都要开柜门（直接访问属性），但你不能把整个保险柜搬走（解构会丢失响应式）。ref 就像一个快递盒——不管里面装的是文件（对象）还是钥匙扣（原始值），你都要拆开包装（`.value`）才能拿到东西，但盒子本身可以随意搬动（解构不丢失响应式）。computed 就像自动售货机——你投币（读取 `.value`）时它才出货（计算），没人买的时候它就静静待着（惰性求值），而且同一瓶饮料不会重复出货（缓存）。
 
@@ -309,37 +329,40 @@ reactive 就像一个保险柜——你把贵重物品（对象）放进去后�
 
 ### 基础梳理
 
-| 特性 | reactive | ref | computed |
-|------|----------|-----|----------|
-| **适用类型** | 对象/数组/Map/Set | 任意类型（原始值+对象） | 依赖其他响应式数据的派生值 |
-| **访问方式** | 直接访问属性 | 必须 `.value` | 必须 `.value` |
-| **响应式原理** | Proxy 代理 | getter/setter 包装 | ReactiveEffect + 缓存 |
-| **解构** | ❌ 解构丢失响应式 | ✅ 保持响应式 | ✅ 保持响应式 |
-| **可写性** | 直接赋值 | 直接赋值 `.value` | 默认只读，可配置 setter |
-| **内部实现** | `createReactiveObject` | `RefImpl` 类 | `ComputedRefImpl` 类 |
+| 特性           | reactive               | ref                                           | computed                   |
+| -------------- | ---------------------- | --------------------------------------------- | -------------------------- |
+| **适用类型**   | 对象/数组/Map/Set      | 任意类型（原始值+对象）                       | 依赖其他响应式数据的派生值 |
+| **访问方式**   | 直接访问属性           | 必须 `.value`                                 | 必须 `.value`              |
+| **响应式原理** | Proxy 代理             | getter/setter 包装                            | ReactiveEffect + 缓存      |
+| **解构**       | ❌ 解构属性丢失响应式  | 注意：解构 `.value` 丢失；传 ref 对象本身保留 | 同 ref                     |
+| **可写性**     | 直接赋值               | 直接赋值 `.value`                             | 默认只读，可配置 setter    |
+| **内部实现**   | `createReactiveObject` | `RefImpl` 类                                  | `ComputedRefImpl` 类       |
 
 ### 专家视角深度剖析
 
-很多候选人能背出三者的 API 区别，但大厂面试官真正在意的是：**为什么 Vue 3 要同时设计 reactive 和 ref 两个 API？只用一个不行吗？**
+很多人能背出三者的 API 区别，但实际更在意的是：**为什么 Vue 3 要同时设计 reactive 和 ref 两个 API？只用一个不行吗？**
 
 核心原因是 **Proxy 无法代理原始类型**。`new Proxy(0, handlers)` 会报错，因为 Proxy 的第一个参数必须是对象。所以 Vue 3 必须用一个对象把原始值包起来——这就是 `ref`。
 
 但 `ref` 的 `.value` 语法确实不如 `reactive` 的直接访问直观。为什么 Vue 3 不把所有东西都做成 reactive 呢？因为 **reactive 返回的是 Proxy 对象，解构赋值会丢失响应式**：
 
 ```javascript
-const state = reactive({ count: 0, name: '张三' })
+const state = reactive({ count: 0, name: "张三" });
 
-// ❌ 解构丢失响应式——count 和 name 是普通变量
-let { count, name } = state
-count++ // 不触发更新
+// ❌ 解构丢失响应式——rawCount 和 rawName 是普通变量
+let { count: rawCount, name: rawName } = state;
+rawCount++; // 不触发更新
 
-// ✅ ref 不存在这个问题——解构出来的是 Ref 对象
-const countRef = ref(0)
-let { value } = countRef // value 是 getter，仍然走 Proxy 的 get trap
+// 注意：ref 本身也不会因为解构就保持响应式——解构 .value 拿到的是普通值
+const countRef = ref(0);
+let { value } = countRef; // value 是普通数字 0，同样丢失响应式
+
+// ✅ ref 的正确用法是传递 ref 对象本身，而不是解构它的 .value
+const holder = { count: countRef }; // 访问 holder.count.value 仍会 track
 
 // ✅ toRefs 的本质：把 reactive 的每个属性转成 ref
-const { count, name } = toRefs(state)
-count.value++ // 触发更新——count 现在是 Ref 对象
+const { count, name } = toRefs(state);
+count.value++; // 触发更新——count 现在是 Ref 对象
 ```
 
 `computed` 的设计哲学是**惰性求值 + 缓存**。依赖变化时只标记 dirty（推），有人读取时才计算（拉）。这比 eager 模式（每次依赖变化立即计算）更高效——如果 computed 没有被读取，计算就完全省掉了。
@@ -349,27 +372,27 @@ count.value++ // 触发更新——count 现在是 Ref 对象
 reactive 返回的是 Proxy 对象，解构赋值是值复制，脱离了 Proxy 代理。这是面试中最常被追问的点：
 
 ```javascript
-const state = reactive({ count: 0 })
-let { count } = state  // count 是普通数字 0
-count++  // 不触发更新——脱离了 Proxy
+const state = reactive({ count: 0 });
+let { count } = state; // count 是普通数字 0
+count++; // 不触发更新——脱离了 Proxy
 
 // toRefs 的本质：把 reactive 的每个属性转为 ref
-const { count: countRef } = toRefs(state)
-countRef.value++  // 触发更新——countRef 是 Ref 对象
+const { count: countRef } = toRefs(state);
+countRef.value++; // 触发更新——countRef 是 Ref 对象
 ```
 
 `toRefs` 的源码实现（`packages/reactivity/src/ref.ts`）遍历 reactive 对象的每个属性，为每个属性创建一个 getter/setter 包装的 ref——读取时走 reactive 的 get trap，写入时走 reactive 的 set trap，从而保持响应式连接。
 
 ```javascript
-const count = ref(0)
+const count = ref(0);
 const double = computed(() => {
-  console.log('计算了')
-  return count.value * 2
-})
+  console.log("计算了");
+  return count.value * 2;
+});
 
-count.value = 1  // 不输出"计算了"——只是标记 dirty
-count.value = 2  // 不输出"计算了"——还是标记 dirty
-console.log(double.value)  // 输出"计算了"——此时才计算，结果为 4
+count.value = 1; // 不输出"计算了"——只是标记 dirty
+count.value = 2; // 不输出"计算了"——还是标记 dirty
+console.log(double.value); // 输出"计算了"——此时才计算，结果为 4
 ```
 
 ---
@@ -379,34 +402,34 @@ console.log(double.value)  // 输出"计算了"——此时才计算，结果为
 **原因：解构赋值是值复制，脱离了 Proxy 代理。**
 
 ```javascript
-const state = reactive({ count: 0, nested: { value: 1 } })
+const state = reactive({ count: 0, nested: { value: 1 } });
 
 // ❌ 解构一层：丢失响应式
-let { count } = state
+let { count } = state;
 // count 是普通数字 0，不是 Proxy 的 get trap 返回值
-count++ // 直接修改了局部变量，不触发任何更新
+count++; // 直接修改了局部变量，不触发任何更新
 
 // ✅ 用 toRefs 转换：保持响应式
-const { count: countRef } = toRefs(state)
+const { count: countRef } = toRefs(state);
 // countRef 是一个 Ref 对象，访问 .value 会触发 track
-countRef.value++ // 触发更新
+countRef.value++; // 触发更新
 
-// ⚠️ 嵌套对象：toRefs 只处理一层
-const { nested } = toRefs(state)
+// 注意：嵌套对象——toRefs 只处理一层
+const { nested } = toRefs(state);
 // nested 是一个 Ref<对象>，nested.value 是 reactive Proxy
-nested.value.value++ // ✅ 触发更新
+nested.value.value++; // ✅ 触发更新
 ```
 
 **关键区别：**
 
-| 操作 | 结果 | 原因 |
-|------|------|------|
-| `let { count } = state` | ❌ 丢失响应式 | 值复制，脱离 Proxy |
-| `const { count } = toRefs(state)` | ✅ 保持响应式 | toRefs 把每个属性转为 ref |
-| `const c = toRef(state, 'count')` | ✅ 保持响应式 | 单个属性转为 ref |
+| 操作                               | 结果          | 原因                           |
+| ---------------------------------- | ------------- | ------------------------------ |
+| `let { count } = state`            | ❌ 丢失响应式 | 值复制，脱离 Proxy             |
+| `const { count } = toRefs(state)`  | ✅ 保持响应式 | toRefs 把每个属性转为 ref      |
+| `const c = toRef(state, 'count')`  | ✅ 保持响应式 | 单个属性转为 ref               |
 | `const { nested } = toRefs(state)` | ✅ 嵌套仍响应 | nested.value 是 reactive Proxy |
 
-<Tip title="🎢 通俗比喻: 钥匙串 vs 独立钥匙">
+<Tip title="通俗比喻: 钥匙串 vs 独立钥匙">
 
 reactive 对象就像一串钥匙串——所有钥匙（属性）都挂在同一个环（Proxy）上，你从环上取下一把钥匙（解构），它就变成了普通的金属片（脱离 Proxy），再也打不开门了。toRefs 就像给每把钥匙配了一个智能钥匙扣（Ref 对象）——即使从串上取下来，钥匙扣里的芯片仍然记得它属于哪扇门（保持响应式连接）。
 
@@ -426,9 +449,9 @@ Vue 的批量更新核心机制是：**同一事件循环内的多次数据修�
 
 ```javascript
 function handleClick() {
-  obj.a = 10    // trigger → effect.scheduler() → queueJob(update)
-  obj.b = 20    // trigger → effect.scheduler() → queueJob(update)（已存在，跳过）
-  obj.c = 30    // trigger → effect.scheduler() → queueJob(update)（已存在，跳过）
+  obj.a = 10; // trigger → effect.scheduler() → queueJob(update)
+  obj.b = 20; // trigger → effect.scheduler() → queueJob(update)（已存在，跳过）
+  obj.c = 30; // trigger → effect.scheduler() → queueJob(update)（已存在，跳过）
   // 同步代码结束
   // 微任务：flushJobs() → 执行队列中的 update → 组件只更新一次
 }
@@ -436,34 +459,35 @@ function handleClick() {
 
 ```javascript
 // queueJob 的核心逻辑
-const queue = []
-let isFlushPending = false
+const queue = [];
+let isFlushPending = false;
 
 function queueJob(job) {
-  if (!queue.includes(job)) {  // 去重：同一个 job 只入队一次
-    queue.push(job)
+  if (!queue.includes(job)) {
+    // 去重：同一个 job 只入队一次
+    queue.push(job);
   }
   if (!isFlushPending) {
-    isFlushPending = true
-    Promise.resolve().then(flushJobs)  // 安排一次微任务来刷新队列
+    isFlushPending = true;
+    Promise.resolve().then(flushJobs); // 安排一次微任务来刷新队列
   }
 }
 
 function flushJobs() {
-  isFlushPending = false
+  isFlushPending = false;
   // 1. 先执行 pre-flush job（watcher 的 beforeUpdate）
   // 2. 按组件层级排序，父组件先于子组件更新
   // 3. 执行所有 queued job
   // 4. 执行 post-flush job（updated 钩子、nextTick 回调）
-  queue.sort((a, b) => a.id - b.id)
+  queue.sort((a, b) => a.id - b.id);
   for (let i = 0; i < queue.length; i++) {
-    queue[i]()
+    queue[i]();
   }
-  queue.length = 0
+  queue.length = 0;
 }
 ```
 
-<Warning title="⚠️ 核心机制: 为什么用微任务而不是宏任务?">
+<Warning title="核心机制: 为什么用微任务而不是宏任务?">
 
 微任务（`Promise.resolve().then()`）在当前同步代码执行完毕后、浏览器渲染前执行。这意味着：
 
@@ -475,13 +499,13 @@ function flushJobs() {
 
 </Warning>
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 queueJob 用微任务实现批量更新——同一事件循环内的多次修改只触发一次组件更新，确保更新发生在浏览器渲染前。
 
 </Note>
 
-<Tip title="🎢 通俗比喻: 餐厅的出餐系统">
+<Tip title="通俗比喻: 餐厅的出餐系统">
 
 批量更新就像餐厅的后厨系统。客人的多道菜（多次数据修改）被一起送到后厨（queueJob 去重入队），后厨不会每收到一道菜就开一次火（不每次修改都更新组件），而是等这一桌的菜全部下单后，统一安排炒菜（微任务中 flushJobs），一次性出餐（组件更新一次）。如果客人中途又加了菜（微任务中新的修改触发新的 queueJob），后厨也会在这轮出餐中一并处理。
 
@@ -495,27 +519,27 @@ queueJob 用微任务实现批量更新——同一事件循环内的多次修�
 
   <Step title="数据变化后 DOM 不会立即更新">
 
-  Vue 的响应式系统在数据变化时不会立即同步更新 DOM，而是把更新任务推入一个异步队列（queueJob）。同一事件循环内的多次数据修改会被合并，只触发一次 DOM 更新。这意味着在同步代码中读取 DOM，拿到的还是旧值。
+Vue 的响应式系统在数据变化时不会立即同步更新 DOM，而是把更新任务推入一个异步队列（queueJob）。同一事件循环内的多次数据修改会被合并，只触发一次 DOM 更新。这意味着在同步代码中读取 DOM，拿到的还是旧值。
 
   </Step>
   <Step title="致命痛点: 怎么拿到更新后的 DOM?">
 
-  很多场景需要在 DOM 更新后执行逻辑——比如获取元素尺寸、操作滚动位置、初始化第三方库。但因为 DOM 更新是异步的，同步代码中读取 DOM 永远是旧值。
+很多场景需要在 DOM 更新后执行逻辑——比如获取元素尺寸、操作滚动位置、初始化第三方库。但因为 DOM 更新是异步的，同步代码中读取 DOM 永远是旧值。
 
   </Step>
   <Step title="nextTick: 等 DOM 更新完再执行">
 
-  `nextTick` 接受一个回调函数，把它推入一个微任务队列。当 DOM 更新完成后（queueJob 的 flushJobs 执行完毕），nextTick 的回调才会执行——此时读取 DOM 就是最新值。
+`nextTick` 接受一个回调函数，把它推入一个微任务队列。当 DOM 更新完成后（queueJob 的 flushJobs 执行完毕），nextTick 的回调才会执行——此时读取 DOM 就是最新值。
 
   </Step>
   <Step title="底层实现: 复用同一个 Promise">
 
-  Vue 3 的 `nextTick` 返回一个 Promise，内部用 `Promise.resolve()` 创建微任务。多个 `nextTick` 调用会复用同一个 `resolvedPromise`，保证回调在同一个微任务批次中按顺序执行。
+Vue 3 的 `nextTick` 返回一个 Promise，内部用 `Promise.resolve()` 创建微任务。多个 `nextTick` 调用会复用同一个 `resolvedPromise`，保证回调在同一个微任务批次中按顺序执行。
 
   </Step>
   <Step title="关键洞察: nextTick 是批量更新的出口">
 
-  nextTick 的本质是"批量更新完成后的一个通知机制"。它和 queueJob 共享同一个微任务调度——queueJob 负责安排更新，nextTick 负责在更新完成后执行用户回调。
+nextTick 的本质是"批量更新完成后的一个通知机制"。它和 queueJob 共享同一个微任务调度——queueJob 负责安排更新，nextTick 负责在更新完成后执行用户回调。
 
   </Step>
 
@@ -540,7 +564,7 @@ nextTick(() => {
 
 **一句话总结：nextTick 是"等 DOM 更新完再执行"的微任务回调机制，本质是批量更新的出口。**
 
-<Tip title='🎢 通俗比喻: 洗衣机的"洗涤完成"提示'>
+<Tip title='通俗比喻: 洗衣机的"洗涤完成"提示'>
 
 nextTick 就像洗衣机洗完衣服后的那声"滴滴"提示。你把脏衣服（数据修改）扔进洗衣机（queueJob），但你不会每放一件就打开盖子看一次（不会每次数据变化都读 DOM）。你等洗衣机发出"洗涤完成"的提示音（nextTick 回调），那时候衣服肯定已经洗好了（DOM 已经更新），你再打开盖子取衣服（读取 DOM）就是最新状态。
 
@@ -548,21 +572,21 @@ nextTick 就像洗衣机洗完衣服后的那声"滴滴"提示。你把脏衣服
 
 <CardGroup cols={2}>
 
-<Card title="🚫 没有 nextTick">
+<Card title="没有 nextTick">
 
 数据变化后立刻读 DOM，拿到的是旧值。就像你刚发出一封快递，立刻去查物流信息，系统还没来得及更新，显示的还是"未揽收"。
 
 </Card>
-<Card title="✅ 引入 nextTick">
+<Card title="引入 nextTick">
 
 用 `nextTick` 等 DOM 更新完成后再读取。就像你等快递员扫码揽收后（DOM 更新完成），再去查物流信息（nextTick 回调），就能看到最新状态。
 
 </Card>
 </CardGroup>
 
-<Tip title="💡 面试技巧">
+<Tip title="面试技巧">
 
-回答时先说"为什么需要"（DOM 异步更新的机制），再说"怎么实现的"（Promise.resolve 微任务），最后说"典型场景"（获取元素尺寸、初始化第三方库）。面试官想听的是你理解 nextTick 和批量更新机制的关系，而不是背 API。
+回答时先说"为什么需要"（DOM 异步更新的机制），再说"怎么实现的"（Promise.resolve 微任务），最后说"典型场景"（获取元素尺寸、初始化第三方库）。想听的是你对 nextTick 和批量更新机制关系的理解，而不是背 API。
 
 </Tip>
 
@@ -588,41 +612,48 @@ watch 和 watchEffect 都是 Vue 3 的侦听器 API，但设计理念完全不�
 └───────────────────────────────────────┘
 ```
 
-| 对比维度 | watch | watchEffect |
-|---------|-------|-------------|
-| **侦听源** | 必须明确指定 | 自动追踪回调中用到的响应式数据 |
-| **首次执行** | 默认不执行（`immediate: true` 可开启） | 立即执行一次 |
-| **旧值/新值** | ✅ 可以拿到 | ❌ 拿不到 |
-| **适用场景** | 需要对比新旧值、有条件地执行副作用 | 自动收集依赖、立即执行副作用 |
-| **底层实现** | `doWatch` 函数 | `doWatch` 函数 + `watchEffect` 标志 |
+| 对比维度      | watch                                  | watchEffect                         |
+| ------------- | -------------------------------------- | ----------------------------------- |
+| **侦听源**    | 必须明确指定                           | 自动追踪回调中用到的响应式数据      |
+| **首次执行**  | 默认不执行（`immediate: true` 可开启） | 立即执行一次                        |
+| **旧值/新值** | ✅ 可以拿到                            | ❌ 拿不到                           |
+| **适用场景**  | 需要对比新旧值、有条件地执行副作用     | 自动收集依赖、立即执行副作用        |
+| **底层实现**  | `doWatch` 函数                         | `doWatch` 函数 + `watchEffect` 标志 |
 
 ```javascript
 // watch：显式指定侦听源
-const count = ref(0)
-watch(count, (newVal, oldVal) => {
-  console.log(`count 从 ${oldVal} 变为 ${newVal}`)
-}, { immediate: false })  // 默认不立即执行
+const count = ref(0);
+watch(
+  count,
+  (newVal, oldVal) => {
+    console.log(`count 从 ${oldVal} 变为 ${newVal}`);
+  },
+  { immediate: false },
+); // 默认不立即执行
 
 // watchEffect：自动追踪依赖
 watchEffect(() => {
-  console.log(`count 的值是 ${count.value}`)  // 自动追踪 count
+  console.log(`count 的值是 ${count.value}`); // 自动追踪 count
   // 首次就执行，count 变化时再次执行
   // 无法拿到旧值
-})
+});
 ```
 
-<Warning title="⚠️ 核心机制: watch 的深度侦听">
+<Warning title="核心机制: watch 的深度侦听">
 
-watch 侦听 reactive 对象时默认是浅层侦听。要侦听嵌套属性的变化，需要开启 `deep: true`：
+watch 侦听 reactive 对象时，Vue 3 会隐式开启深层侦听；而侦听返回对象的 getter 时默认是浅层的：
 
 ```javascript
 const state = reactive({ nested: { count: 0 } })
 
-// ❌ 浅层侦听：只侦听 state 本身是否被替换
+// ✅ 侦听 reactive 对象：隐式 deep，嵌套属性变化也会触发
 watch(state, (newVal) => { ... })
 
-// ✅ 深层侦听：侦听嵌套属性的变化
-watch(state, (newVal) => { ... }, { deep: true })
+// 注意：侦听 getter 返回的对象——默认浅层，只有对象被整体替换才触发
+watch(() => state.nested, (newVal) => { ... })
+
+// ✅ 需要侦听 getter 返回对象内部变化时，显式开启 deep
+watch(() => state.nested, (newVal) => { ... }, { deep: true })
 
 // ✅ 更精确：只侦听特定路径
 watch(() => state.nested.count, (newVal) => { ... })
@@ -632,13 +663,13 @@ watch(() => state.nested.count, (newVal) => { ... })
 
 </Warning>
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 watch 是显式侦听源的惰性副作用，watchEffect 是自动追踪依赖的立即执行副作用——前者能拿旧值，后者不能。
 
 </Note>
 
-<Tip title="🎢 通俗比喻: 保安 vs 保洁">
+<Tip title="通俗比喻: 保安 vs 保洁">
 
 watch 就像门口的保安——你告诉他"盯住这个人"（指定侦听源），他只在那个人进出时才报告（惰性执行），而且能告诉你"之前是张三，现在换成了李四"（旧值/新值）。watchEffect 就像自动保洁机器人——你不需要指定它打扫哪里，它会自己扫描整个房间（自动收集依赖），发现脏了就立刻打扫（立即执行），但它不会告诉你"之前有多脏"（无法拿到旧值）。
 
@@ -688,7 +719,7 @@ class ComputedRefImpl {
 关键：如果 computed 没有被任何人读取，计算就完全省掉了
 ```
 
-<Warning title="⚠️ 核心机制: 为什么叫惰性求值?">
+<Warning title="核心机制: 为什么叫惰性求值?">
 
 惰性求值（lazy evaluation）的含义是：**不到真正需要结果的时候，就不计算。**
 
@@ -699,13 +730,13 @@ class ComputedRefImpl {
 
 </Warning>
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 computed 的核心是推拉结合——依赖变化只标记 dirty（推），读取时才计算（拉），无人读取则完全省掉计算。
 
 </Note>
 
-<Tip title="🎢 通俗比喻: 考试成绩单">
+<Tip title="通俗比喻: 考试成绩单">
 
 computed 的惰性求值就像学校的成绩单系统。每次考试成绩录入时（依赖变化），系统不会立刻打印每个学生的成绩单（不立即计算）。只有当家长来问"我孩子考了多少分"时（读取 .value），系统才去汇总计算并打印（执行 getter）。如果家长一直没来问，成绩单就永远不会打印（计算省掉了）。而且如果成绩录入了 5 次，家长只在最后问一次，系统只计算最终的那次结果。
 
@@ -769,14 +800,14 @@ function effect(fn, options?) {
 
 **谁在用 ReactiveEffect？**
 
-| 使用者 | 创建方式 | scheduler |
-|--------|---------|-----------|
-| **组件渲染** | `setupRenderEffect` 中创建 | `queueJob`（批量更新） |
-| **computed** | `ComputedRefImpl` 构造函数中创建 | `dirty = true`（惰性标记） |
-| **watch/watchEffect** | `doWatch` 中创建 | `queueJob`（调度回调） |
-| **effectScope** | `scope.run()` 中创建 | 无 |
+| 使用者                | 创建方式                         | scheduler                  |
+| --------------------- | -------------------------------- | -------------------------- |
+| **组件渲染**          | `setupRenderEffect` 中创建       | `queueJob`（批量更新）     |
+| **computed**          | `ComputedRefImpl` 构造函数中创建 | `dirty = true`（惰性标记） |
+| **watch/watchEffect** | `doWatch` 中创建                 | `queueJob`（调度回调）     |
+| **effectScope**       | `scope.run()` 中创建             | 无                         |
 
-<Warning title="⚠️ 核心机制: activeEffect 是全局变量">
+<Warning title="核心机制: activeEffect 是全局变量">
 
 Vue 3 用一个全局变量 `activeEffect` 来标记"当前正在执行的 effect"。当 `track()` 被调用时，它把 `activeEffect` 加入属性的依赖集合。这就是为什么响应式数据的读取必须在 effect 函数内部——只有此时 `activeEffect` 不为 null，依赖才能被收集。
 
@@ -784,13 +815,13 @@ Vue 3 用一个全局变量 `activeEffect` 来标记"当前正在执行的 effec
 
 </Warning>
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 ReactiveEffect 是响应式系统的底层核心类——组件渲染、computed、watch/watchEffect 都是它的实例，区别只在 scheduler 的实现。
 
 </Note>
 
-<Tip title="🎢 通俗比喻: 快递揽件">
+<Tip title="通俗比喻: 快递揽件">
 
 ReactiveEffect 就像快递员的揽件流程。`run()` 就是"揽件"——快递员（effect）去客户家（执行 fn），顺便记录客户地址（track 收集依赖）。下次客户有新包裹（数据变化），快递公司就知道派哪个快递员去（触发更新）。`stop()` 就是"离职"——从所有客户的派件名单中移除（清理依赖）。全局变量 `activeEffect` 就像快递员的工作证——只有在岗的快递员才能揽件，不在岗的揽不到件。
 
@@ -798,92 +829,95 @@ ReactiveEffect 就像快递员的揽件流程。`run()` 就是"揽件"——快�
 
 ---
 
-## 🔍 底层源码：Vue 3 的响应式是如何实现的？
+## 底层源码：Vue 3 的响应式是如何实现的？
 
-<div class="follow-up">
-Proxy 的 handler 是怎么定义的？
-</div>
+<div class="follow-up">Proxy 的 handler 是怎么定义的？</div>
 
 Vue 3 为不同类型的对象定义了不同的 handler（详见 [baseHandlers.ts#L38](https://github.com/vuejs/core/blob/main/packages/reactivity/src/baseHandlers.ts#L38)）：
 
 ```typescript
 // packages/reactivity/src/baseHandlers.ts
 // get trap：读取属性时收集依赖
-const get = /*#__PURE__*/ createGetter()
+const get = /*#__PURE__*/ createGetter();
 function createGetter() {
   return function get(target: Target, key: string | symbol, receiver: object) {
     // ...省略边界处理
-    track(target, TrackOpTypes.GET, key)  // 收集依赖
-    const res = Reflect.get(target, key, receiver)
+    track(target, TrackOpTypes.GET, key); // 收集依赖
+    const res = Reflect.get(target, key, receiver);
     if (isObject(res)) {
-      return reactive(res)  // 深层代理：嵌套对象也是 reactive
+      return reactive(res); // 深层代理：嵌套对象也是 reactive
     }
-    return res
-  }
+    return res;
+  };
 }
 
 // set trap：修改属性时触发更新
-function set(target: Target, key: string | symbol, value: unknown, receiver: object) {
-  const oldValue = (target as any)[key]
-  const result = Reflect.set(target, key, value, receiver)
+function set(
+  target: Target,
+  key: string | symbol,
+  value: unknown,
+  receiver: object,
+) {
+  const oldValue = (target as any)[key];
+  const result = Reflect.set(target, key, value, receiver);
   if (hasChanged(value, oldValue)) {
-    trigger(target, TriggerOpTypes.SET, key)  // 触发更新
+    trigger(target, TriggerOpTypes.SET, key); // 触发更新
   }
-  return result
+  return result;
 }
 ```
 
-<div class="follow-up">
-track 和 trigger 的实现细节？
-</div>
+<div class="follow-up">track 和 trigger 的实现细节？</div>
 
 详见 [effect.ts#L209](https://github.com/vuejs/core/blob/main/packages/reactivity/src/effect.ts#L209)：
 
 ```typescript
 // packages/reactivity/src/effect.ts
 // targetMap: WeakMap<Target, Map<Key, Set<ReactiveEffect>>>
-const targetMap = new WeakMap<any, KeyToDepMap>()
+const targetMap = new WeakMap<any, KeyToDepMap>();
 
 export function track(target: object, type: TrackOpTypes, key: unknown) {
-  if (!isTracking()) return        // activeEffect 为空时不收集
-  let depsMap = targetMap.get(target)
-  if (!depsMap) targetMap.set(target, (depsMap = new Map()))
-  let dep = depsMap.get(key)
-  if (!dep) depsMap.set(key, (dep = new Set()))
+  if (!isTracking()) return; // activeEffect 为空时不收集
+  let depsMap = targetMap.get(target);
+  if (!depsMap) targetMap.set(target, (depsMap = new Map()));
+  let dep = depsMap.get(key);
+  if (!dep) depsMap.set(key, (dep = new Set()));
   if (!dep.has(activeEffect)) {
-    dep.add(activeEffect)
-    activeEffect.deps.push(dep)    // 双向引用：方便 stop() 时清理
+    dep.add(activeEffect);
+    activeEffect.deps.push(dep); // 双向引用：方便 stop() 时清理
   }
 }
 
 export function trigger(target: object, type: TriggerOpTypes, key?: unknown) {
-  const depsMap = targetMap.get(target)
-  if (!depsMap) return
-  const effects = new Set<ReactiveEffect>()
+  const depsMap = targetMap.get(target);
+  if (!depsMap) return;
+  const effects = new Set<ReactiveEffect>();
   // 收集该属性的所有依赖
-  if (key !== void 0) addRunners(effects, depsMap.get(key))
+  if (key !== void 0) addRunners(effects, depsMap.get(key));
   // 新增/删除属性时，还要触发 ITERATE_KEY 的依赖（for...in 的使用者）
   if (type === TriggerOpTypes.ADD || type === TriggerOpTypes.DELETE) {
-    addRunners(effects, depsMap.get(ITERATE_KEY))
+    addRunners(effects, depsMap.get(ITERATE_KEY));
   }
   // 执行所有 effect
-  effects.forEach(e => {
-    if (e.scheduler) e.scheduler()  // 组件更新走 scheduler → queueJob
-    else e.run()                    // watchEffect 直接执行
-  })
+  effects.forEach((e) => {
+    if (e.scheduler)
+      e.scheduler(); // 组件更新走 scheduler → queueJob
+    else e.run(); // watchEffect 直接执行
+  });
 }
 ```
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 十、及格回答 vs 满分回答
 
 ### 问题："说说 Vue 3 的响应式原理"
 
 **及格回答（60-70分）：**
+
 > "Vue 3 用 Proxy 代理对象，读取属性时 track 收集依赖，修改属性时 trigger 触发更新。ref 包装原始类型，computed 是惰性求值加缓存。"
 
-面试官评价：**知道机制但不理解设计**。
+问题出在：**知道机制但不理解设计**。
 
 **满分回答（90-100分）：**
 
@@ -893,7 +927,7 @@ export function trigger(target: object, type: TriggerOpTypes, key?: unknown) {
 
 > "第三，computed 的推拉结合模型。依赖变化时只标记 dirty（推），有人读取时才计算（拉）。这比 eager 模式高效得多——如果 computed 没有被读取，计算完全省掉。queueJob 的批量更新机制保证同一事件循环内的多次修改只触发一次组件更新，用微任务调度确保更新发生在浏览器渲染前。<sup>[3]</sup>"
 
-### 大厂高频连环拷问
+### 常见追问
 
 > 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。
 
@@ -957,57 +991,57 @@ Vue 的 `setup()` 函数内部就隐式创建了一个 effectScope——所以 s
 
   <Accordion title="nextTick 的实现原理?为什么不用 setTimeout?" icon="layer-group">
 
-  **答题要点：**
-  nextTick 用 Promise.resolve 创建微任务，和 queueJob 共享调度。
+**答题要点：**
+nextTick 用 Promise.resolve 创建微任务，和 queueJob 共享调度。
 
-  **高分回答：**
-  "Vue 3 的 `nextTick` 内部用 `Promise.resolve()` 创建微任务，返回一个 Promise。它和 `queueJob`（组件更新的调度器）共享同一个微任务批次——先执行 queueJob 中的更新任务，再执行 nextTick 的回调。多个 `nextTick` 调用会复用同一个 `resolvedPromise`，保证回调按顺序执行。
+**高分回答：**
+"Vue 3 的 `nextTick` 内部用 `Promise.resolve()` 创建微任务，返回一个 Promise。它和 `queueJob`（组件更新的调度器）共享同一个微任务批次——先执行 queueJob 中的更新任务，再执行 nextTick 的回调。多个 `nextTick` 调用会复用同一个 `resolvedPromise`，保证回调按顺序执行。
 
-  为什么用微任务而不是宏任务（setTimeout）？因为微任务在当前同步代码执行完毕后、浏览器渲染前执行。这意味着：1）同步代码中的所有数据修改都收集完毕后，才统一更新 DOM；2）nextTick 回调在 DOM 更新后、浏览器渲染前执行。如果用 setTimeout，更新要等到浏览器渲染之后，会导致先渲染旧状态再更新为新状态的闪烁问题。"
+为什么用微任务而不是宏任务（setTimeout）？因为微任务在当前同步代码执行完毕后、浏览器渲染前执行。这意味着：1）同步代码中的所有数据修改都收集完毕后，才统一更新 DOM；2）nextTick 回调在 DOM 更新后、浏览器渲染前执行。如果用 setTimeout，更新要等到浏览器渲染之后，会导致先渲染旧状态再更新为新状态的闪烁问题。"
 
   </Accordion>
 
   <Accordion title="watch 和 watchEffect 的区别?什么时候用哪个?" icon="stopwatch">
 
-  **答题要点：**
-  watch 显式指定侦听源，可拿旧值；watchEffect 自动追踪依赖，立即执行。
+**答题要点：**
+watch 显式指定侦听源，可拿旧值；watchEffect 自动追踪依赖，立即执行。
 
-  **高分回答：**
-  "watch 和 watchEffect 底层都是 `doWatch` 函数（`packages/runtime-core/src/apiWatch.ts`），区别在于三个维度：
+**高分回答：**
+"watch 和 watchEffect 底层都是 `doWatch` 函数（`packages/runtime-core/src/apiWatch.ts`），区别在于三个维度：
 
-  1）**侦听源**：watch 需要明确指定侦听源（ref、reactive 或 getter 函数），watchEffect 不需要——它自动追踪回调中访问的所有响应式数据。
-  2）**首次执行**：watch 默认惰性（只在源变化时执行），加 `immediate: true` 可首次执行。watchEffect 立即执行一次。
-  3）**旧值**：watch 的回调可以拿到 `(newVal, oldVal)`，watchEffect 拿不到。
+1）**侦听源**：watch 需要明确指定侦听源（ref、reactive 或 getter 函数），watchEffect 不需要——它自动追踪回调中访问的所有响应式数据。
+2）**首次执行**：watch 默认惰性（只在源变化时执行），加 `immediate: true` 可首次执行。watchEffect 立即执行一次。
+3）**旧值**：watch 的回调可以拿到 `(newVal, oldVal)`，watchEffect 拿不到。
 
-  选型建议：需要对比新旧值或有条件地执行副作用时用 watch（如监听路由参数变化重新请求数据）；需要自动收集依赖并立即执行副作用时用 watchEffect（如根据响应式数据动态设置 document.title）。"
+选型建议：需要对比新旧值或有条件地执行副作用时用 watch（如监听路由参数变化重新请求数据）；需要自动收集依赖并立即执行副作用时用 watchEffect（如根据响应式数据动态设置 document.title）。"
 
   </Accordion>
 
   <Accordion title="effect 和 ReactiveEffect 的关系?组件渲染是怎么用的?" icon="node">
 
-  **答题要点：**
-  effect 是工厂函数，ReactiveEffect 是核心类，组件渲染是特殊的 ReactiveEffect。
+**答题要点：**
+effect 是工厂函数，ReactiveEffect 是核心类，组件渲染是特殊的 ReactiveEffect。
 
-  **高分回答：**
-  "`effect()` 是一个工厂函数（`packages/reactivity/src/effect.ts`），内部创建 `ReactiveEffect` 实例并立即执行一次。ReactiveEffect 是响应式系统的核心类，有 `run()`、`stop()` 等方法，`run()` 执行副作用函数并收集依赖。
+**高分回答：**
+"`effect()` 是一个工厂函数（`packages/reactivity/src/effect.ts`），内部创建 `ReactiveEffect` 实例并立即执行一次。ReactiveEffect 是响应式系统的核心类，有 `run()`、`stop()` 等方法，`run()` 执行副作用函数并收集依赖。
 
-  组件渲染也是 ReactiveEffect——在 `setupRenderEffect`（`packages/runtime-core/src/renderer.ts`）中创建，但它的 scheduler 不是直接执行，而是调用 `queueJob` 把组件更新推入队列。这就是为什么数据变化不会立即更新 DOM，而是等微任务中批量更新。
+组件渲染也是 ReactiveEffect——在 `setupRenderEffect`（`packages/runtime-core/src/renderer.ts`）中创建，但它的 scheduler 不是直接执行，而是调用 `queueJob` 把组件更新推入队列。这就是为什么数据变化不会立即更新 DOM，而是等微任务中批量更新。
 
-  computed 的 ReactiveEffect 更特殊——它的 scheduler 只设置 `dirty = true`，不触发更新。watch/watchEffect 的 ReactiveEffect 通过 `doWatch` 创建，scheduler 调用 `queueJob` 来调度回调执行。"
+computed 的 ReactiveEffect 更特殊——它的 scheduler 只设置 `dirty = true`，不触发更新。watch/watchEffect 的 ReactiveEffect 通过 `doWatch` 创建，scheduler 调用 `queueJob` 来调度回调执行。"
 
   </Accordion>
 
   <Accordion title="computed 的脏检查机制?连续修改 10 次会计算几次?" icon="skull">
 
-  **答题要点：**
-  computed 用 dirty 标志位实现惰性求值，连续修改只在读取时计算一次。
+**答题要点：**
+computed 用 dirty 标志位实现惰性求值，连续修改只在读取时计算一次。
 
-  **高分回答：**
-  "computed 的核心是 `dirty` 标志位。当依赖变化时，scheduler 只设置 `dirty = true`（推），不重新计算。只有当有人读取 `.value` 时，如果 `dirty` 为 true 才执行 getter 计算新值，并设置 `dirty = false`（拉）。
+**高分回答：**
+"computed 的核心是 `dirty` 标志位。当依赖变化时，scheduler 只设置 `dirty = true`（推），不重新计算。只有当有人读取 `.value` 时，如果 `dirty` 为 true 才执行 getter 计算新值，并设置 `dirty = false`（拉）。
 
-  所以连续修改 10 次：依赖变化 10 次 → dirty 被设置为 true 10 次（但每次都是同一个标志位）→ 只有在最终读取 `.value` 时才计算 1 次。这比 eager 模式（每次变化都计算）高效 10 倍。
+所以连续修改 10 次：依赖变化 10 次 → dirty 被设置为 true 10 次（但每次都是同一个标志位）→ 只有在最终读取 `.value` 时才计算 1 次。这比 eager 模式（每次变化都计算）高效 10 倍。
 
-  但有一个陷阱：如果模板中有多个地方使用了同一个 computed，Vue 的模板编译器会缓存读取结果——在同一个渲染 effect 中，computed 只计算一次。这就是为什么 computed 比在 methods 中写同样的逻辑更高效——methods 每次渲染都重新执行，computed 只在依赖变化时重新计算。"
+但有一个陷阱：如果模板中有多个地方使用了同一个 computed，Vue 的模板编译器会缓存读取结果——在同一个渲染 effect 中，computed 只计算一次。这就是为什么 computed 比在 methods 中写同样的逻辑更高效——methods 每次渲染都重新执行，computed 只在依赖变化时重新计算。"
 
   </Accordion>
 </AccordionGroup>
@@ -1040,22 +1074,22 @@ reactive(target)
 
 ```javascript
 // packages/reactivity/src/reactive.ts（简化）
-const reactiveMap = new WeakMap()  // 缓存已代理的对象
+const reactiveMap = new WeakMap(); // 缓存已代理的对象
 
 function reactive(target) {
   // 1. 如果 target 已经是 reactive，直接返回
-  if (target && target.__v_isReactive) return target
+  if (target && target.__v_isReactive) return target;
 
   // 2. 检查缓存，避免重复代理
-  const existingProxy = reactiveMap.get(target)
-  if (existingProxy) return existingProxy
+  const existingProxy = reactiveMap.get(target);
+  if (existingProxy) return existingProxy;
 
   // 3. 创建 Proxy
-  const proxy = new Proxy(target, mutableReactiveHandlers)
+  const proxy = new Proxy(target, mutableReactiveHandlers);
 
   // 4. 缓存并返回
-  reactiveMap.set(target, proxy)
-  return proxy
+  reactiveMap.set(target, proxy);
+  return proxy;
 }
 ```
 
@@ -1063,38 +1097,38 @@ function reactive(target) {
 
 ```javascript
 // packages/reactivity/src/baseHandlers.ts（简化）
-const get = createGetter()
-const set = createSetter()
+const get = createGetter();
+const set = createSetter();
 
 function createGetter() {
   return function get(target, key, receiver) {
     // 1. 收集依赖
-    track(target, TrackOpTypes.GET, key)
+    track(target, TrackOpTypes.GET, key);
 
     // 2. 获取值
-    const res = Reflect.get(target, key, receiver)
+    const res = Reflect.get(target, key, receiver);
 
     // 3. 惰性代理：嵌套对象也是 reactive
     if (isObject(res)) {
-      return reactive(res)
+      return reactive(res);
     }
 
-    return res
-  }
+    return res;
+  };
 }
 
 function createSetter() {
   return function set(target, key, value, receiver) {
-    const oldValue = target[key]
-    const result = Reflect.set(target, key, value, receiver)
+    const oldValue = target[key];
+    const result = Reflect.set(target, key, value, receiver);
 
     // 值变化时触发更新
     if (hasChanged(value, oldValue)) {
-      trigger(target, TriggerOpTypes.SET, key)
+      trigger(target, TriggerOpTypes.SET, key);
     }
 
-    return result
-  }
+    return result;
+  };
 }
 ```
 
@@ -1119,13 +1153,13 @@ Proxy 的惰性代理：
   → 只代理用户实际访问的部分
 ```
 
-<Tip title="🎢 通俗比喻: 快递驿站的按需取件">
+<Tip title="通俗比喻: 快递驿站的按需取件">
 
 Proxy 的惰性代理就像快递驿站的"按需取件"模式。defineProperty 是"全量派送"——快递员（初始化时）把所有包裹（所有嵌套属性）一次性送到你家门口，不管你用不用。Proxy 是"按需取件"——你只在驿站存了第一层的快递柜（代理第一层），只有你去取某个包裹时（访问嵌套属性），驿站才会把那个包裹从仓库里调出来（递归代理）。包裹越多，按需取件越省资源。
 
 </Tip>
 
-<Warning title="⚠️ reactive 的限制">
+<Warning title="reactive 的限制">
 
 reactive 只能代理对象，不能代理原始类型。`reactive(0)` 会报错。原始类型必须用 `ref()` 包装。另外，reactive 返回的 Proxy 对象解构会丢失响应式——因为解构是值复制，脱离了 Proxy 代理。
 
@@ -1135,7 +1169,7 @@ reactive 只能代理对象，不能代理原始类型。`reactive(0)` 会报错
 
 ## Q11: 解构 reactive 为什么丢失响应式？
 
-<Tip title="🎢 通俗比喻: 拍立得照片">
+<Tip title="通俗比喻: 拍立得照片">
 
 解构 reactive 就像用拍立得给朋友拍了一张照片——照片（解构出来的变量）是那个瞬间的静态快照，朋友后来换了发型（数据变化），照片不会自动更新。toRefs 就像给朋友装了一个实时视频通话——即使你把手机拿走（解构），画面仍然是实时的，因为数据流没有断开。
 
@@ -1147,23 +1181,27 @@ JavaScript 的解构赋值 `let { count } = state` 本质上是：
 
 ```javascript
 // 解构赋值等价于：
-let count = state.count
+let count = state.count;
 // state.count 触发 Proxy 的 get trap，返回值 0
 // count 是普通数字 0，和 Proxy 没有任何关系了
 ```
 
-### 为什么 ref 解构不会丢失？
+### ref 解构会丢失吗？
+
+会。`ref` 只是把值包在 `RefImpl` 对象里，解构 `.value` 仍然是值复制：
 
 ```javascript
-const countRef = ref(0)
+const countRef = ref(0);
 // countRef 是一个 RefImpl 对象
 // 访问 countRef.value 会触发 getter，收集依赖
 // 修改 countRef.value 会触发 setter，触发更新
 
-const { value } = countRef
-// value 是 getter，不是值复制
-// 但这里也有陷阱：value 是原始值的副本
-// 所以 ref 的解构其实也会丢失，只是用 .value 访问更自然
+const { value } = countRef;
+// value 是普通数字 0，不是 getter
+// 解构后修改 value 不会触发任何更新
+
+// ✅ 正确做法：保留 ref 对象本身，通过 .value 读写
+countRef.value++;
 ```
 
 ### toRefs 的原理
@@ -1173,30 +1211,30 @@ const { value } = countRef
 ```javascript
 // toRefs 的实现（简化）
 function toRefs(object) {
-  const result = {}
+  const result = {};
   for (const key in object) {
-    result[key] = toRef(object, key)
+    result[key] = toRef(object, key);
   }
-  return result
+  return result;
 }
 
 // toRef 的实现（简化）
 function toRef(object, key) {
   return {
     get value() {
-      return object[key]  // 触发 reactive 的 get trap
+      return object[key]; // 触发 reactive 的 get trap
     },
     set value(newVal) {
-      object[key] = newVal  // 触发 reactive 的 set trap
-    }
-  }
+      object[key] = newVal; // 触发 reactive 的 set trap
+    },
+  };
 }
 
 // 使用
-const state = reactive({ count: 0, name: '张三' })
-const { count, name } = toRefs(state)
+const state = reactive({ count: 0, name: "张三" });
+const { count, name } = toRefs(state);
 // count 和 name 都是 Ref 对象
-count.value++  // 触发更新 ✅
+count.value++; // 触发更新 ✅
 ```
 
 ```text
@@ -1225,7 +1263,7 @@ count.value++  ← 触发 Ref 的 setter → 触发 reactive 的 set trap → �
 
 ## Q12: ref vs reactive 的核心区别
 
-<Tip title="🎢 通俗比喻: 保险箱 vs 手提箱">
+<Tip title="通俗比喻: 保险箱 vs 手提箱">
 
 ref 就像一个手提箱——不管是小首饰（原始值）还是大件行李（对象），都能装进去，但你每次拿东西都要打开箱子（`.value`）。reactive 就像一个嵌入墙壁的保险箱——直接拉开抽屉就能拿东西（直接访问属性），但你不能把整面墙搬走（解构丢失响应式），而且保险箱只能放大件物品（只能代理对象，不能代理原始值）。
 
@@ -1237,13 +1275,13 @@ ref 就像一个手提箱——不管是小首饰（原始值）还是大件行�
 
 ```javascript
 // Proxy 的限制
-new Proxy(0, {})      // ❌ TypeError
-new Proxy('hello', {}) // ❌ TypeError
-new Proxy(true, {})    // ❌ TypeError
+new Proxy(0, {}); // ❌ TypeError
+new Proxy("hello", {}); // ❌ TypeError
+new Proxy(true, {}); // ❌ TypeError
 
 // 所以原始值必须用对象包起来
-const count = { value: 0 }  // ref 的本质
-new Proxy(count, handlers)  // ✅ 可以代理
+const count = { value: 0 }; // ref 的本质
+new Proxy(count, handlers); // ✅ 可以代理
 ```
 
 ### ref 的内部实现
@@ -1275,39 +1313,39 @@ class RefImpl {
 
 ### 详细对比
 
-| 对比维度 | reactive | ref |
-|---------|----------|-----|
-| **适用类型** | 对象/数组/Map/Set | 任意类型（原始值+对象） |
-| **访问方式** | 直接访问属性 `state.count` | 必须 `.value` `count.value` |
-| **响应式原理** | Proxy 代理 | getter/setter 包装 |
-| **解构** | ❌ 解构丢失响应式 | ✅ 保持响应式（但 .value 是值复制） |
-| **可替换整体** | ❌ 不能 `state = newObj` | ✅ 可以 `ref.value = newObj` |
-| **模板使用** | 直接用 `{{ state.count }}` | 自动脱 ref `{{ count }}` |
-| **TypeScript** | `UnwrapNestedRefs<T>` | `Ref<T>` |
+| 对比维度       | reactive                   | ref                                           |
+| -------------- | -------------------------- | --------------------------------------------- |
+| **适用类型**   | 对象/数组/Map/Set          | 任意类型（原始值+对象）                       |
+| **访问方式**   | 直接访问属性 `state.count` | 必须 `.value` `count.value`                   |
+| **响应式原理** | Proxy 代理                 | getter/setter 包装                            |
+| **解构**       | ❌ 解构属性丢失响应式      | 注意：解构 `.value` 丢失；传 ref 对象本身保留 |
+| **可替换整体** | ❌ 不能 `state = newObj`   | ✅ 可以 `ref.value = newObj`                  |
+| **模板使用**   | 直接用 `{{ state.count }}` | 自动脱 ref `{{ count }}`                      |
+| **TypeScript** | `UnwrapNestedRefs<T>`      | `Ref<T>`                                      |
 
 ### 什么时候用 ref，什么时候用 reactive？
 
 ```javascript
 // ✅ 原始值 → ref
-const count = ref(0)
-const name = ref('张三')
-const isVisible = ref(true)
+const count = ref(0);
+const name = ref("张三");
+const isVisible = ref(true);
 
 // ✅ 复杂对象 → reactive
 const form = reactive({
-  username: '',
-  password: '',
-  remember: false
-})
+  username: "",
+  password: "",
+  remember: false,
+});
 
 // ✅ 需要整体替换 → ref
-const list = ref([])
-list.value = newList  // ✅ 整体替换
+const list = ref([]);
+list.value = newList; // ✅ 整体替换
 
 // ❌ reactive 不能整体替换
-const state = reactive({ list: [] })
-state = { list: newList }  // ❌ 丢失响应式
-state.list = newList       // ✅ 修改属性
+const state = reactive({ list: [] });
+state = { list: newList }; // ❌ 丢失响应式
+state.list = newList; // ✅ 修改属性
 ```
 
 <Tip title="最佳实践: ">
@@ -1320,7 +1358,7 @@ state.list = newList       // ✅ 修改属性
 
 ## Q13: watch 的原理
 
-<Tip title="🎢 通俗比喻: 安保监控室">
+<Tip title="通俗比喻: 安保监控室">
 
 watch 的原理就像安保监控室的工作模式。`doWatch` 函数是监控室主任，他先确认"要监控哪个摄像头"（解析 source），然后安排一个保安（ReactiveEffect）盯着屏幕。保安发现画面变化时不会立刻行动（scheduler 调度），而是写一份报告（job）交给调度中心（queueJob）。调度中心根据优先级安排处理时间——`flush: 'pre'` 是在开门前处理，`flush: 'post'` 是在关门后处理，`flush: 'sync'` 是发现异常立刻出动。
 
@@ -1354,47 +1392,47 @@ watch(source, callback, options)
 // packages/runtime-core/src/apiWatch.ts（简化）
 function doWatch(source, cb, options) {
   // 1. 把 source 转为 getter 函数
-  let getter
+  let getter;
   if (isRef(source)) {
-    getter = () => source.value
+    getter = () => source.value;
   } else if (isReactive(source)) {
-    getter = () => source
-    deep = true  // reactive 默认深层侦听
+    getter = () => source;
+    deep = true; // reactive 默认深层侦听
   } else if (isFunction(source)) {
-    getter = source
+    getter = source;
   }
 
   // 2. 旧值和新值
-  let oldValue
+  let oldValue;
 
   // 3. 调度函数
   const job = () => {
-    const newValue = effect.run()  // 重新执行 getter，收集新依赖
+    const newValue = effect.run(); // 重新执行 getter，收集新依赖
     if (cb) {
-      cb(newValue, oldValue)       // 调用回调
-      oldValue = newValue          // 更新旧值
+      cb(newValue, oldValue); // 调用回调
+      oldValue = newValue; // 更新旧值
     }
-  }
+  };
 
   // 4. 创建 effect
   const effect = new ReactiveEffect(getter, () => {
     // scheduler：依赖变化时调用
-    if (options.flush === 'post') {
-      queuePostRenderEffect(job)  // 组件更新后执行
+    if (options.flush === "post") {
+      queuePostRenderEffect(job); // 组件更新后执行
     } else {
-      queueJob(job)               // 默认：组件更新前执行
+      queueJob(job); // 默认：组件更新前执行
     }
-  })
+  });
 
   // 5. 首次执行（immediate 或 watchEffect）
   if (options.immediate) {
-    job()
+    job();
   } else {
-    oldValue = effect.run()
+    oldValue = effect.run();
   }
 
   // 6. 返回 stop 函数
-  return () => effect.stop()
+  return () => effect.stop();
 }
 ```
 
@@ -1414,7 +1452,7 @@ watch(state, (newVal) => { ... }, { deep: true })
 watch(() => state.nested.count, (newVal) => { ... })
 ```
 
-<Warning title="⚠️ deep: true 的性能开销">
+<Warning title="deep: true 的性能开销">
 
 `deep: true` 会递归遍历对象的所有属性，对大对象有显著性能开销。优先用 getter 函数精确指定侦听路径。
 
@@ -1424,7 +1462,7 @@ watch(() => state.nested.count, (newVal) => { ... })
 
 ## Q14: computed 的原理
 
-<Tip title="🎢 通俗比喻: 懒人计算器">
+<Tip title="通俗比喻: 懒人计算器">
 
 computed 就像一个"懒人计算器"。你把计算公式（getter）告诉它，但它不会每时每刻都在算——只有你按下"等号"（读取 `.value`）时，它才检查"输入有没有变过"（dirty 标志位）。如果没变，直接显示上次的结果（缓存）；如果变了，才算一次新结果。最妙的是：如果从来没人按"等号"，计算器就永远在睡觉，连电都不耗（计算完全省掉）。
 
@@ -1487,32 +1525,32 @@ computed 的推拉流程：
 ### computed vs method 的区别
 
 ```javascript
-const count = ref(0)
+const count = ref(0);
 
 // computed：惰性求值 + 缓存
 const double = computed(() => {
-  console.log('computed 计算了')
-  return count.value * 2
-})
+  console.log("computed 计算了");
+  return count.value * 2;
+});
 
 // method：每次调用都执行
 function getDouble() {
-  console.log('method 计算了')
-  return count.value * 2
+  console.log("method 计算了");
+  return count.value * 2;
 }
 
-count.value = 1
-count.value = 2
-count.value = 3
+count.value = 1;
+count.value = 2;
+count.value = 3;
 // computed 和 method 都没有被调用，没有输出
 
-console.log(double.value)
+console.log(double.value);
 // 输出：computed 计算了 → 返回 6
-console.log(getDouble())
+console.log(getDouble());
 // 输出：method 计算了 → 返回 6
-console.log(double.value)
+console.log(double.value);
 // 没有输出，直接返回缓存的 6
-console.log(getDouble())
+console.log(getDouble());
 // 输出：method 计算了 → 返回 6（每次都执行）
 ```
 
@@ -1520,7 +1558,7 @@ console.log(getDouble())
 
 ## Q15: effect 的原理
 
-<Tip title="🎢 通俗比喻: 便签纸追踪系统">
+<Tip title="通俗比喻: 便签纸追踪系统">
 
 ReactiveEffect 的原理就像办公室的"便签纸追踪系统"。每次你打开一份文件（执行 fn），就在文件上贴一张便签"某某在看"（track 收集依赖）。当你修改了文件内容（数据变化），所有贴了便签的人（依赖该数据的 effect）都会收到通知。`run()` 就是"开始阅读 + 贴便签"的过程，`stop()` 就是"撕掉所有便签、退出追踪"。全局变量 `activeEffect` 就像"当前正在阅读的人的工牌"——只有拿着工牌的人贴的便签才有效，没拿工牌的人读文件不会被追踪。
 
@@ -1588,20 +1626,20 @@ activeEffect 的作用：标记"当前正在执行的 effect"
 
 ### 谁在创建 ReactiveEffect？
 
-| 使用者 | fn | scheduler | 用途 |
-|--------|-----|-----------|------|
-| **组件渲染** | `render()` 函数 | `queueJob`（批量更新） | 数据变化 → 组件重渲染 |
-| **computed** | `getter` 函数 | `dirty = true`（惰性标记） | 依赖变化 → 标记需要重新计算 |
-| **watch** | `source` 的 getter | `queueJob`（调度回调） | 依赖变化 → 执行回调 |
-| **watchEffect** | 用户的副作用函数 | `queueJob` | 依赖变化 → 重新执行 |
-| **effectScope** | 任意函数 | 无 | 批量管理 effect 生命周期 |
+| 使用者          | fn                 | scheduler                  | 用途                        |
+| --------------- | ------------------ | -------------------------- | --------------------------- |
+| **组件渲染**    | `render()` 函数    | `queueJob`（批量更新）     | 数据变化 → 组件重渲染       |
+| **computed**    | `getter` 函数      | `dirty = true`（惰性标记） | 依赖变化 → 标记需要重新计算 |
+| **watch**       | `source` 的 getter | `queueJob`（调度回调）     | 依赖变化 → 执行回调         |
+| **watchEffect** | 用户的副作用函数   | `queueJob`                 | 依赖变化 → 重新执行         |
+| **effectScope** | 任意函数           | 无                         | 批量管理 effect 生命周期    |
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 🔗 [Vue 3 源码：baseHandlers.ts - Proxy handler 定义](https://github.com/vuejs/core/blob/main/packages/reactivity/src/baseHandlers.ts#L38)：get/set/has/ownKeys/deleteProperty 的完整实现，理解 Proxy 代理的每一个拦截点。<sup>[1]</sup>
-- 📖 [Vue 3 源码：effect.ts - track/trigger 实现](https://github.com/vuejs/core/blob/main/packages/reactivity/src/effect.ts#L209)：三层 Map 的依赖收集和触发更新的核心逻辑，包括 ITERATE_KEY 和 MAP_KEY_ITERATE_KEY 的设计。<sup>[2]</sup>
-- 🟢 [Vue 3 官方文档：Reactivity in Depth](https://vuejs.org/guide/extras/reactivity-in-depth.html)：尤雨溪对响应式系统设计哲学的最权威解释，包括 Proxy vs defineProperty 的动机和响应式丢失的解决方案。<sup>[3]</sup>
-- 📖 [霍春阳《Vue.js 设计与实现》](https://book.douban.com/subject/35768338/)：国内最权威的 Vue 3 源码解析著作，从响应式系统到编译器的完整架构剖析。
-- 📖 [黄轶《Vue.js 技术揭秘》](https://ustbhuangyi.github.io/vue-analysis/)：从 Vue 2 defineProperty 到 Vue 3 Proxy 的演进脉络，源码级深度解析。
+- [Vue 3 源码：baseHandlers.ts - Proxy handler 定义](https://github.com/vuejs/core/blob/main/packages/reactivity/src/baseHandlers.ts#L38)：get/set/has/ownKeys/deleteProperty 的完整实现，理解 Proxy 代理的每一个拦截点。<sup>[1]</sup>
+- [Vue 3 源码：effect.ts - track/trigger 实现](https://github.com/vuejs/core/blob/main/packages/reactivity/src/effect.ts#L209)：三层 Map 的依赖收集和触发更新的核心逻辑，包括 ITERATE_KEY 和 MAP_KEY_ITERATE_KEY 的设计。<sup>[2]</sup>
+- [Vue 3 官方文档：Reactivity in Depth](https://vuejs.org/guide/extras/reactivity-in-depth.html)：尤雨溪对响应式系统设计哲学的最权威解释，包括 Proxy vs defineProperty 的动机和响应式丢失的解决方案。<sup>[3]</sup>
+- [霍春阳《Vue.js 设计与实现》](https://book.douban.com/subject/35768338/)：国内最权威的 Vue 3 源码解析著作，从响应式系统到编译器的完整架构剖析。
+- [黄轶《Vue.js 技术揭秘》](https://ustbhuangyi.github.io/vue-analysis/)：从 Vue 2 defineProperty 到 Vue 3 Proxy 的演进脉络，源码级深度解析。

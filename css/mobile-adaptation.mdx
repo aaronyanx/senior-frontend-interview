@@ -1,10 +1,595 @@
 ---
 title: "移动端适配与终端碎裂化"
-description: "AI 重构中"
+description: "视口、rem/vw/dvh、容器查询、1px、安全区、折叠屏与图片残影的适配取舍。"
 ---
 
-<Info>
+> 移动端适配我最早只会写 `px`，被 Retina 的 1px 和刘海屏坑过之后，才开始按"视口、单位、约束、细节"分层处理。
 
-此模块内容正在火速施工重建中，敬请期待完整版本！
+---
 
-</Info>
+## Q1: 移动端适配到底在适配什么？
+
+移动端适配不是"把 `px` 换成 `rem`"，而是同时处理四件事：**视口如何建立、尺寸用什么单位、布局在什么条件下变化、细节如何对齐物理像素**。把这四层分开，绝大多数适配问题都能定位到具体一层。
+
+### 三层视口
+
+| 视口                        | 含义                                   | 由谁决定                                |
+| --------------------------- | -------------------------------------- | --------------------------------------- |
+| 布局视口（layout viewport） | CSS 布局和百分比计算的基准宽度         | 浏览器默认值，可被 `viewport` meta 改写 |
+| 视觉视口（visual viewport） | 用户当前真正看到的区域，双指缩放时变化 | 用户手势、软键盘、浏览器 UI             |
+| 理想视口（ideal viewport）  | 设备宽度换算成 CSS 像素后的宽度        | 设备物理宽度与 `devicePixelRatio`       |
+
+不写 `viewport` meta 时，移动浏览器会用一个约 980px 的布局视口来渲染桌面页面，再把整页缩小塞进屏幕，字就会小到看不清。`width=device-width` 的作用就是把布局视口设为理想视口。
+
+```html
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1, viewport-fit=cover"
+/>
+```
+
+- `width=device-width`：布局视口等于设备宽度。
+- `initial-scale=1`：初始缩放为 1，避免部分浏览器自行缩放。
+- `viewport-fit=cover`：允许页面铺满刘海和圆角区域，这是 `env(safe-area-inset-*)` 生效的前提。
+
+`user-scalable=no` 和 `maximum-scale=1` 能"锁死"缩放，但会伤害低视力用户的可访问性，现代项目不应默认使用。
+
+### visualViewport 与软键盘
+
+`window.visualViewport` 暴露视觉视口的 `width`、`height`、`scale`、`offsetTop`。软键盘弹起时，布局视口通常不变，变化的正是视觉视口，所以底部固定输入框会被键盘顶起或遮挡：
+
+```js
+const vv = window.visualViewport;
+
+function syncKeyboardOffset() {
+  // 布局视口与视觉视口的高度差，近似为软键盘占用的高度
+  const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+  document.documentElement.style.setProperty("--kb-offset", `${offset}px`);
+}
+
+vv.addEventListener("resize", syncKeyboardOffset);
+vv.addEventListener("scroll", syncKeyboardOffset);
+syncKeyboardOffset();
+```
+
+```css
+.chat-input {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--kb-offset, 0px);
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+}
+```
+
+<Accordion title='不写 viewport meta 会怎样？只写 initial-scale=1 够不够？'>
+
+不写 meta 时，布局视口约为 980px，媒体查询和百分比都按 980px 计算，页面会被整体缩小，出现"字很小、点不准"。
+
+只写 `initial-scale=1` 而不写 `width=device-width`，部分浏览器仍会把布局视口设为一个大于屏幕的值，效果不稳定。两者一起写，布局视口才确定等于设备宽度。
+
+</Accordion>
+
+---
+
+## Q2: rem、vw、百分比、dvh 怎么选？
+
+没有一种单位能覆盖所有场景。实际项目里通常是"布局用弹性单位、文字用可读单位、视口高度用动态单位"。
+
+| 单位                  | 参照物                     | 适合                         | 风险                                         |
+| --------------------- | -------------------------- | ---------------------------- | -------------------------------------------- |
+| `px`                  | 绝对长度                   | 边框、圆角、图标细节         | 不随屏幕宽度变化                             |
+| `%`                   | 包含块尺寸                 | 流式宽度、图片、栅格         | 高度百分比依赖父级有确定高度                 |
+| `rem`                 | 根元素 `font-size`         | 整体等比缩放、间距           | 依赖脚本或媒体查询改根字号，影响用户字号偏好 |
+| `vw` / `vh`           | 布局视口宽 / 高            | 全屏区块、与视口强相关的尺寸 | 移动端 `vh` 不扣除地址栏，且会无限放大       |
+| `dvh` / `svh` / `lvh` | 动态 / 最小 / 最大视口高度 | 全屏滚动页、底部操作区       | 浏览器 UI 收缩时数值变化，频繁重排           |
+
+### rem：靠根字号整体缩放
+
+```css
+html {
+  /* 以 375px 设计稿为基准，1rem = 16px；用 clamp 给大屏封顶 */
+  font-size: clamp(14px, 4.2667vw, 20px);
+}
+
+.card {
+  padding: 1rem;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+}
+```
+
+`4.2667vw` 来自 `16 / 375`。用 `clamp()` 封顶可以避免平板上字大得像海报。若用 JS 动态设置根字号，要处理首屏脚本加载前的闪烁，并尊重用户在浏览器里调大的字号。
+
+### vw：与视口严格等比，但必须封顶
+
+```css
+.hero-title {
+  /* 手机端随宽度缩放，超过 480px 后不再放大 */
+  font-size: clamp(24px, 6vw, 40px);
+  line-height: 1.25;
+}
+```
+
+`vw` 的问题是没有上限：`1vw` 在窄屏上只有几像素，在宽屏上却很大。所有 `vw` 字号都应该配合 `clamp()` 或媒体查询使用。
+
+### 百分比：只解决"相对父级"
+
+```css
+.grid-item {
+  width: calc(50% - 8px); /* 两列，同时留出 gap */
+  margin: 4px;
+}
+```
+
+百分比宽度好用，但 `padding-top: 56.25%` 这类写法依赖父级宽度来撑高度，容易和 `gap`、`border` 叠加后溢出，现代项目更推荐 `aspect-ratio`。
+
+### dvh：解决移动端 100vh 的经典坑
+
+移动浏览器地址栏收起/展开时，`100vh` 取的是较大视口高度，内容会被地址栏盖住。`dvh` 跟随当前可见高度：
+
+```css
+.fullscreen {
+  min-height: 100svh; /* 首屏用最小视口，避免地址栏展开时内容跳动 */
+}
+
+.sheet {
+  max-height: 80dvh; /* 弹层用动态视口，始终完整可见 */
+  overflow-y: auto;
+}
+```
+
+`svh` 是地址栏展开时的最小高度，`lvh` 是收起时的最大高度，`dvh` 随浏览器 UI 实时变化。全屏首屏通常用 `svh` 更稳，弹层用 `dvh` 更贴手。
+
+<Accordion title='为什么很多团队不再推荐 JS 动态设置 rem？'>
+
+JS 方案要在页面渲染前执行，否则首屏字号会闪一下；同时它把根字号写死，会覆盖用户在浏览器里设置的字号偏好，影响可访问性。
+
+如果只是整体等比缩放，`clamp()` 配合 `vw` 已能覆盖大部分场景；确实需要按设计稿精确缩放时，再用 JS，并给根字号设置上下限。
+
+</Accordion>
+
+---
+
+## Q3: 媒体查询与容器查询怎么配合？
+
+媒体查询看的是**视口**，容器查询看的是**父容器**。前者决定页面级断点，后者决定组件在什么宽度下换布局。
+
+### 移动优先的断点
+
+```css
+/* 默认按手机写 */
+.card-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 768px) {
+  .card-list {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1200px) {
+  .card-list {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+```
+
+移动优先的含义是：基础样式服务最小屏，断点只做增强。断点值应来自设计稿的内容变化点，而不是照着机型宽度抄。
+
+### 容器查询
+
+```css
+.card-wrapper {
+  container-type: inline-size;
+  container-name: card;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+}
+
+@container card (min-width: 400px) {
+  .card {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+@container card (min-width: 600px) {
+  .card__title {
+    font-size: 1.25rem;
+  }
+}
+```
+
+`container-type: inline-size` 让容器在行内方向可被查询，同时建立独立的包含块；`container-name` 用来在同级多个容器间精确指定。容器查询单位 `cqw`、`cqh` 分别对应容器宽高的 1%。
+
+选择原则：
+
+- 页面骨架、导航形态：媒体查询或容器查询都可以，按视口更直观。
+- 可复用组件（卡片、表格、工具栏）：优先容器查询，组件放进侧栏或主区域都能自适应。
+- 需要 `hover`、`pointer`、`prefers-reduced-motion` 这类环境能力：只能用媒体查询。
+
+在触屏设备上，悬停样式可能永远不触发或触发后"粘住"，所以悬停效果应该包在 `@media (hover: hover) and (pointer: fine)` 里。
+
+---
+
+## Q4: 1px 边框在 devicePixelRatio 下为什么会变粗？
+
+`px` 是逻辑单位，`devicePixelRatio`（DPR）表示 1 个 CSS 像素覆盖多少个物理像素。
+
+- DPR = 1：1 CSS px = 1 物理像素。
+- DPR = 2：1 CSS px = 2×2 物理像素，一条 1 CSS px 宽的线横向占 2 个物理像素。
+- DPR = 3：同理，横向占 3 个物理像素。
+
+设计稿上的"1px 发丝线"通常指 1 个物理像素，换算成 CSS 单位是 `1 / DPR` px。直接写 `border: 1px` 就等于把线画粗了 DPR 倍，这是"1px 问题"的根源。
+
+### 方案对比
+
+| 方案                        | 写法             | 优点           | 局限                             |
+| --------------------------- | ---------------- | -------------- | -------------------------------- |
+| `border: 0.5px`             | 直接写小数       | 简单           | 部分安卓 WebView 会取整成 0 或 1 |
+| 伪元素 + `transform: scale` | 画 1px 再缩放    | 兼容性好，可控 | 需要额外元素或伪元素             |
+| `box-shadow`                | `inset 0 -1px 0` | 不占布局       | 多边、圆角场景难处理             |
+| `border-image` / 渐变       | 背景图或渐变     | 可实现渐变边   | 圆角支持差                       |
+
+### 伪元素缩放的通用写法
+
+```css
+.hairline {
+  position: relative;
+}
+
+.hairline::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: #e5e5e5;
+  transform: scaleY(1);
+  transform-origin: 0 100%;
+  pointer-events: none;
+}
+
+/* DPR = 2 时压到半个 CSS 像素，即 1 个物理像素 */
+@media (min-resolution: 2dppx) {
+  .hairline::after {
+    transform: scaleY(0.5);
+  }
+}
+
+/* DPR = 3 时压到三分之一 */
+@media (min-resolution: 3dppx) {
+  .hairline::after {
+    transform: scaleY(0.3333);
+  }
+}
+```
+
+缩放的是绝对定位的伪元素，不参与布局，所以不会引起周围元素位移。四条边都要时，用 `scale()` 同时缩放两个方向，或分别用四个伪元素/额外元素处理。
+
+<Accordion title='为什么 0.5px 在有些安卓机上会消失？'>
+
+部分渲染实现会把小数边框按设备像素取整，`0.5px` 可能被舍入为 0，边框直接不见；也可能被舍入为 1 个物理像素，效果又偏细。
+
+因此 `0.5px` 可以作为渐进增强，但不能作为唯一方案。需要稳定发丝线时，用伪元素缩放或背景渐变兜底。
+
+</Accordion>
+
+<Accordion title='用 transform 缩放会不会让线条变模糊？'>
+
+缩放后的线条落在物理像素边界上时是清晰的；如果元素的偏移量带有小数，缩放后可能落在半个物理像素上，出现灰边。
+
+排查时检查父级是否有 `translate`、`scale` 或非整数尺寸，把 `transform-origin` 设到边缘，并尽量让容器尺寸是整数。
+
+</Accordion>
+
+---
+
+## Q5: 刘海屏、圆角与安全区怎么处理？
+
+`viewport-fit=cover` 让页面延伸进刘海和圆角区域，此时必须用 `env(safe-area-inset-*)` 把内容推回安全区，否则文字会被刘海或 Home 指示条压住。
+
+```html
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1, viewport-fit=cover"
+/>
+```
+
+```css
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+.page {
+  padding-top: var(--safe-top);
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+
+.bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 8px 12px calc(8px + var(--safe-bottom));
+  background: #fff;
+}
+```
+
+`env()` 的第二个参数是回退值。不支持安全区的设备会返回 `0px`，不会把布局撑开。早期 iOS 使用 `constant()`，现在统一用 `env()` 即可。
+
+需要注意：安全区只在 `viewport-fit=cover` 时才有非零值；横屏时左右安全区才明显，竖屏主要看上下。
+
+---
+
+## Q6: 横竖屏、平板和折叠屏怎么适配？
+
+### 横竖屏
+
+```css
+/* 手机横屏：高度很矮，通常需要压缩纵向留白 */
+@media (orientation: landscape) and (max-height: 500px) {
+  .hero {
+    min-height: auto;
+    padding-block: 24px;
+  }
+
+  .hero__image {
+    display: none;
+  }
+}
+```
+
+只写 `orientation: landscape` 会把桌面浏览器也算进去，配合 `max-height` 才能更准确地命中手机横屏。
+
+### 平板
+
+平板不是"大号手机"。常见策略是限制内容最大宽度、增加列数，而不是把所有尺寸等比放大：
+
+```css
+.layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  max-width: 1200px;
+  margin-inline: auto;
+  padding-inline: 16px;
+}
+
+@media (min-width: 900px) {
+  .layout {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+}
+```
+
+`minmax(0, 1fr)` 是为了避免长内容把网格撑破，这一点在平板宽栏里尤其常见。
+
+### 折叠屏
+
+折叠屏展开后，浏览器可能把窗口拆成两个视口段。CSS Viewport Segments 提供了对应的媒体特性和环境变量：
+
+```css
+/* 支持横向双视口段的设备 */
+@media (horizontal-viewport-segments: 2) {
+  .reader {
+    display: grid;
+    grid-template-columns:
+      env(viewport-segment-width 0 0)
+      env(viewport-segment-width 1 0);
+  }
+}
+```
+
+这段代码的含义是：设备横向有两个视口段时，按两个视口段的宽度分栏，内容不会跨过中间的折痕。该特性依赖浏览器与设备支持，使用前要做能力判断，不能假设所有折叠屏都支持。
+
+<Accordion title='折叠屏适配的最小可用方案是什么？'>
+
+先保证不跨折痕：用 `env(viewport-segment-*)` 或媒体查询把内容限制在单段内，避免关键操作按钮压在折痕上。
+
+再保证布局可退化：不依赖双栏也能完整阅读，支持视口段时再增强为双栏。这样在老设备和未实现该特性的浏览器上都不会崩。
+
+</Accordion>
+
+---
+
+## Q7: 移动端点击延迟与 touch-action 怎么处理？
+
+早期的 300ms 点击延迟来自"双击缩放"判定：浏览器要等一段时间确认用户不是要双击放大，才派发 `click`。
+
+现代浏览器在 `viewport` 设置为 `width=device-width` 后基本取消了这段延迟，但在以下场景仍可能遇到：
+
+- 页面仍使用默认的宽布局视口。
+- 自定义手势与浏览器手势冲突。
+- 旧版 WebView 或内嵌浏览器。
+
+`touch-action` 用来声明元素上允许哪些触摸手势，从而让浏览器提前决定是否接管：
+
+```css
+/* 只允许纵向滚动，横向手势留给组件自己处理 */
+.carousel {
+  touch-action: pan-y;
+}
+
+/* 按钮：禁用双击缩放，保留点击 */
+.tap-button {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 画布、手写板：完全交给 JS */
+.signature-pad {
+  touch-action: none;
+}
+```
+
+`touch-action: manipulation` 允许平移和双指缩放，但去掉双击缩放，是最常用的"消除点击延迟"写法。`touch-action: none` 会同时禁用滚动和缩放，只适合确定要自己接管手势的区域。
+
+### 事件监听的 passive
+
+`touchstart`、`touchmove` 监听器如果调用 `preventDefault()`，会阻塞滚动，浏览器必须等 JS 执行完才能滚动。声明 `passive: true` 表示"不会阻止默认行为"，浏览器可以立即滚动：
+
+```js
+element.addEventListener(
+  "touchmove",
+  (event) => {
+    // 只读取手势，不调用 preventDefault
+    lastY = event.touches[0].clientY;
+  },
+  { passive: true },
+);
+```
+
+确实需要阻止滚动时，才用 `{ passive: false }`，并把处理逻辑控制得足够轻。需要同时支持鼠标、触控笔和触摸时，优先用 Pointer Events（`pointerdown` / `pointermove` / `pointerup`），不要和 Touch Events 混用。
+
+---
+
+## Q8: 响应式图片与 CLS 怎么控制？
+
+移动端图片同时影响三件事：流量、清晰度和布局稳定性。布局稳定性就是 CLS（Cumulative Layout Shift，累积布局偏移）。
+
+### srcset 与 sizes
+
+```html
+<img
+  src="photo-800.jpg"
+  srcset="photo-400.jpg 400w, photo-800.jpg 800w, photo-1600.jpg 1600w"
+  sizes="(min-width: 768px) 50vw, 100vw"
+  width="800"
+  height="600"
+  alt="示例图片"
+  loading="lazy"
+  decoding="async"
+/>
+```
+
+- `srcset` 提供候选图及其固有宽度。
+- `sizes` 告诉浏览器图片在布局中占多宽，浏览器据此选择合适密度的图。
+- `width` / `height` 提供宽高比，浏览器在图片加载前就能预留空间。
+
+### 预留空间，避免 CLS
+
+```css
+.media {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: #f2f2f2;
+}
+```
+
+`aspect-ratio` 和 `width` / `height` 属性至少保留一个。只写 `width: 100%` 而不给高度，图片加载完成的瞬间会把下方内容顶下去，这就是最常见的 CLS 来源。
+
+### 首屏图与懒加载
+
+```html
+<!-- LCP 图：不要懒加载，明确优先级 -->
+<img
+  src="hero.jpg"
+  width="1200"
+  height="600"
+  fetchpriority="high"
+  alt="首屏图"
+/>
+
+<!-- 首屏外的图：懒加载 -->
+<img src="below.jpg" width="800" height="600" loading="lazy" alt="内容图" />
+```
+
+首屏大图用 `loading="lazy"` 会推迟 LCP，应该正常加载并提升优先级；首屏外的图才懒加载。
+
+`picture` 适合按格式或艺术方向切换：在 `source` 上用 `type` 指定图片格式，或用 `media` 指定不同屏幕下的裁切版本，最后用 `img` 兜底。
+
+<Accordion title='图片压缩得越小，CLS 就越小吗？'>
+
+不是。CLS 衡量的是元素位置的非预期移动，和文件体积无直接关系。
+
+只要图片在加载前没有预留宽高，加载完成后把内容顶开，就会产生布局偏移；反过来，预留了 `aspect-ratio`，图片再大也不会造成 CLS（只会影响 LCP 和流量）。自定义字体同理，用 `font-display: swap` 配合度量接近的回退字体，减少加载前后的推挤。
+
+</Accordion>
+
+---
+
+## Q9: 面试现场怎么答这道题？
+
+**及格回答（60-70 分）：**
+
+> 移动端适配一般用 rem，写个脚本根据屏幕宽度设置根字号，设计稿 750 的话就除以 7.5。1px 就用 transform scale 缩放一下。刘海屏加个 padding。
+
+问题出在：**只报方案名，说不出方案解决哪一层问题，也说不出副作用**。
+
+**满分回答（90-100 分）：**
+
+> 我会把适配拆成四层。第一层是视口：`width=device-width` 建立布局视口，`viewport-fit=cover` 打开安全区，需要处理键盘或缩放时读 `visualViewport`。第二层是单位：布局宽度用 `%` 或 `fr`，整体缩放用 `rem` 或带 `clamp()` 的 `vw`，全屏高度用 `svh` / `dvh`，避免 `100vh` 被地址栏盖住。第三层是约束：页面级用媒体查询做移动优先断点，可复用组件用容器查询按父容器宽度变形，悬停效果放进 `hover` / `pointer` 能力查询。第四层是细节：1px 按 DPR 用伪元素缩放，安全区用 `env(safe-area-inset-*)`，点击延迟用 `touch-action: manipulation` 配合 passive 监听，图片用 `srcset` + `sizes` + 固定宽高比控制 CLS。
+>
+> 这套分层的好处是每个问题都能定位：字太小是视口层，元素溢出是单位层，组件在侧栏变形是约束层，线条粗是细节层。折叠屏和横竖屏属于约束层的边界情况，用视口段环境变量和 `orientation` 查询做增强，不假设所有设备都支持。
+
+### 常见追问
+
+<AccordionGroup>
+
+  <Accordion title="只做一套响应式，还是给移动端单独一套页面？" icon="layer-group">
+
+**答题要点：**
+按内容差异和维护成本判断，不要只按"响应式更先进"。
+
+**高分回答：**
+
+内容结构一致、交互差异小，用一套响应式，配合容器查询和断点增强。移动端需要完全不同的信息架构或性能预算（例如桌面是复杂表格、移动端是卡片流）时，单独一套更清晰，但要接受两套代码的维护成本。
+
+  </Accordion>
+
+  <Accordion title="rem 和 vw 哪个更适合做整体缩放？" icon="stopwatch">
+
+**答题要点：**
+说清两者的参照系和副作用。
+
+**高分回答：**
+
+`rem` 参照根字号，能通过 `clamp()` 或脚本统一缩放，适合把设计稿尺寸整体映射；缺点是改根字号会影响所有 `rem`，也可能覆盖用户的字号偏好。
+
+`vw` 参照视口宽度，纯 CSS 就能等比缩放，但无上限，必须用 `clamp()` 封顶。我的默认选择是 `clamp()` + `vw` 做字号，布局用 `fr` / `%`，`rem` 只用于需要跟随根字号的间距。
+
+  </Accordion>
+
+  <Accordion title="容器查询能完全替代媒体查询吗？" icon="stopwatch">
+
+**答题要点：**
+区分"容器尺寸"和"环境能力"。
+
+**高分回答：**
+
+不能。容器查询解决的是组件随父容器宽度变形，媒体查询还负责视口断点、`hover`、`pointer`、`prefers-reduced-motion`、`prefers-color-scheme` 这类环境能力。
+
+合理的组合是：页面骨架用媒体查询，组件内部用容器查询，能力探测用媒体查询。
+
+  </Accordion>
+
+  <Accordion title="移动端适配怎么验证？只看真机够吗？" icon="skull">
+
+**答题要点：**
+说清视口模拟与真机验证的边界。
+
+**高分回答：**
+
+DevTools 的设备模拟适合验证断点、布局和媒体查询，但它模拟不了真实 DPR 下的发丝线、刘海安全区、软键盘行为和触摸手势。
+
+我的流程是：模拟器过一遍断点和单位，再用真机验证安全区、1px、键盘弹起、横竖屏切换和滚动性能。折叠屏这类设备拿不到时，至少用视口段媒体查询的降级路径保证可用。
+
+  </Accordion>
+
+</AccordionGroup>

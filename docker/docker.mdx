@@ -1,10 +1,9 @@
 ---
 title: "Docker"
+description: "覆盖镜像分层、Namespace/Cgroups、Dockerfile 多阶段构建与缓存、Compose 编排与部署。"
 ---
 
-> **面试官为什么问这个？**
->
-> Docker 已经成为前端工程化和 DevOps 的标配技能。面试官问 Docker，本质上是在考察你：**你能不能独立搭建一套从开发到部署的完整链路？** 如果你只会 `npm run build`，说明你对"前端交付"的理解还停留在本地开发层面，缺乏对生产环境的掌控力。
+> 我最早用 Docker 只记住一条 `docker run`，后来被环境不一致坑过，才开始认真看镜像分层和 Dockerfile。
 
 ---
 
@@ -33,7 +32,7 @@ title: "Docker"
   </Step>
   <Step title="Docker 的核心价值">
 
-    Docker 解决了三个核心痛点：**环境一致性**（开发、测试、生产环境完全相同）、**快速交付**（秒级启动、秒级销毁）、**资源高效**（比虚拟机节省 50%-90% 的资源）。这三点让 Docker 迅速成为 DevOps 的基础设施。
+    Docker 解决了三个核心痛点：**环境一致性**（开发、测试、生产环境完全相同）、**快速交付**（秒级启动、秒级销毁）、**资源高效**（共享内核，资源开销显著小于虚拟机）。这三点让 Docker 迅速成为 DevOps 的基础设施。
 
   </Step>
 
@@ -56,10 +55,10 @@ title: "Docker"
 测试环境 = 同一个 Docker 镜像
 生产环境 = 同一个 Docker 镜像
 
-→ 100% 一致性，零环境差异
+→ 环境一致，差异大幅减少
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 Docker 用容器技术解决了"环境不一致"的问题，让应用可以一次构建、到处运行。
 
@@ -67,34 +66,34 @@ Docker 用容器技术解决了"环境不一致"的问题，让应用可以一�
 
 <CardGroup cols={2}>
 
-<Card title="🚫 没有 Docker">
+<Card title="没有 Docker">
 
 每个项目都要手动配环境，换台电脑就要重来一遍。"在我电脑上能跑"是开发和运维之间永恒的战争。
 
 </Card>
-<Card title="✅ 引入 Docker">
+<Card title="引入 Docker">
 
 一个 `Dockerfile` 定义所有依赖，`docker build` 一键打包，`docker run` 秒级启动。新人入职第一天就能跑起整个项目，不用花一周配环境。
 
 </Card>
 </CardGroup>
 
-<Tip title="💡 面试技巧">
+<Tip title="面试技巧">
 
-回答 Docker 历史时，重点讲"为什么要有它"（痛点），而不是罗列版本号。面试官想听的是你对技术演进的理解，不是背时间线。
+回答 Docker 历史时，重点讲"为什么要有它"（痛点），而不是罗列版本号。想听的是你对技术演进的理解，不是背时间线。
 
 </Tip>
 
 ### 虚拟机 vs 容器
 
-| 对比维度 | 虚拟机 (VM) | 容器 (Container) |
-|---------|------------|-----------------|
-| **隔离级别** | 硬件级隔离（完整 OS） | 进程级隔离（共享内核） |
-| **启动时间** | 分钟级 | 秒级 / 毫秒级 |
-| **资源占用** | GB 级（每个 VM 一个 OS） | MB 级（只打包应用和依赖） |
-| **性能损耗** | 5%-15%（Hypervisor 开销） | 接近原生（&lt; 1%） |
-| **密度** | 单机 10-20 个 VM | 单机数百个容器 |
-| **代表技术** | VMware、VirtualBox、KVM | Docker、Podman、containerd |
+| 对比维度     | 虚拟机 (VM)              | 容器 (Container)           |
+| ------------ | ------------------------ | -------------------------- |
+| **隔离级别** | 硬件级隔离（完整 OS）    | 进程级隔离（共享内核）     |
+| **启动时间** | 分钟级                   | 秒级 / 毫秒级              |
+| **资源占用** | GB 级（每个 VM 一个 OS） | MB 级（只打包应用和依赖）  |
+| **性能损耗** | 有虚拟化开销             | 接近原生（取决于负载）     |
+| **密度**     | 受 OS 资源限制，数量较少 | 单机可运行大量容器         |
+| **代表技术** | VMware、VirtualBox、KVM  | Docker、Podman、containerd |
 
 ```text
 ┌─────────────────────────────────────────────────┐
@@ -204,7 +203,7 @@ docker exec -it my-app /bin/sh
 docker stop my-app && docker rm my-app
 ```
 
-<Warning title="⚠️ 容器的生命周期">
+<Warning title="容器的生命周期">
 
 容器是"用完即弃"的。不要在容器里手动修改文件或安装依赖——这些修改在容器销毁后会丢失。如果需要持久化数据，应该使用数据卷（Volume）。
 
@@ -228,8 +227,8 @@ WORKDIR /app
 # 复制依赖文件（利用缓存）
 COPY package.json package-lock.json ./
 
-# 安装依赖
-RUN npm ci --production
+# 安装依赖（构建需要 devDependencies，所以不能用 --production）
+RUN npm ci
 
 # 复制源代码
 COPY . .
@@ -249,7 +248,7 @@ CMD ["node", "server.js"]
 Docker Compose 用于**定义和运行多容器应用**。通过一个 `docker-compose.yml` 文件，你可以同时启动前端、后端、数据库、Redis 等多个服务。
 
 ```yaml
-version: '3.8'
+version: "3.8"
 services:
   frontend:
     build: ./frontend
@@ -264,6 +263,12 @@ services:
     ports:
       - "6379:6379"
 ```
+
+<Note title="Compose 的 version 字段">
+
+Compose v2（`docker compose` 命令）已经不需要 `version` 字段，保留也能运行，但会有提示。旧版 `docker-compose` v1 才依赖它做格式校验。
+
+</Note>
 
 ### 数据卷（Volume）
 
@@ -280,7 +285,7 @@ docker run -v my-data:/app/data my-app:1.0
 docker run -v $(pwd)/src:/app/src my-app:1.0
 ```
 
-<Tip title="🎢 通俗比喻: 租房子">
+<Tip title="通俗比喻: 租房子">
 
 镜像就像一栋**毛坯房的图纸**——它定义了房子的结构，但图纸本身不能住人。容器就是按图纸**盖出来的实体房**——你可以同时盖 10 栋一模一样的房子。Dockerfile 是**施工说明书**，告诉工人（Docker Engine）怎么一步步把图纸变成房子。数据卷就是**保险柜**——即使房子拆了，保险柜里的东西还在。
 
@@ -315,14 +320,14 @@ Docker 容器并不是一个轻量级虚拟机——它本质上就是宿主机�
 
 Namespace 是 Linux 内核提供的一种**资源隔离**机制。Docker 使用 6 种 Namespace 来隔离容器的运行环境：
 
-| Namespace | 隔离内容 | 效果 |
-|-----------|---------|------|
-| **PID** | 进程 ID | 容器内只能看到自己的进程，PID 从 1 开始 |
-| **NET** | 网络 | 每个容器有独立的网卡、IP、端口 |
-| **MNT** | 文件系统挂载 | 每个容器有独立的文件系统视图 |
-| **UTS** | 主机名 | 每个容器可以有自己的 hostname |
-| **IPC** | 进程间通信 | 容器间的信号量、消息队列隔离 |
-| **USER** | 用户 ID | 容器内的 root 不等于宿主机的 root |
+| Namespace | 隔离内容     | 效果                                                          |
+| --------- | ------------ | ------------------------------------------------------------- |
+| **PID**   | 进程 ID      | 容器内只能看到自己的进程，PID 从 1 开始                       |
+| **NET**   | 网络         | 每个容器有独立的网卡、IP、端口                                |
+| **MNT**   | 文件系统挂载 | 每个容器有独立的文件系统视图                                  |
+| **UTS**   | 主机名       | 每个容器可以有自己的 hostname                                 |
+| **IPC**   | 进程间通信   | 容器间的信号量、消息队列隔离                                  |
+| **USER**  | 用户/UID     | 可映射容器用户与宿主机用户（需开启 userns-remap 或 rootless） |
 
 ```bash
 # 查看容器的 PID Namespace
@@ -346,12 +351,11 @@ docker run -d --cpus="1" --memory="512m" my-app:1.0
 docker stats my-app
 ```
 
-| 资源类型 | 限制参数 | 说明 |
-|---------|---------|------|
-| **CPU** | `--cpus` | 限制 CPU 核心数 |
-| **内存** | `--memory` | 限制最大内存 |
-| **IO** | `--device-read-bps` | 限制磁盘读取速度 |
-| **网络** | `--network` | 限制网络带宽 |
+| 资源类型 | 限制参数                                   | 说明               |
+| -------- | ------------------------------------------ | ------------------ |
+| **CPU**  | `--cpus`                                   | 限制 CPU 核心数    |
+| **内存** | `--memory`                                 | 限制最大内存       |
+| **IO**   | `--device-read-bps` / `--device-write-bps` | 限制块设备读写速度 |
 
 ### 联合文件系统（UnionFS）
 
@@ -411,12 +415,12 @@ CMD ["nginx", "-g", "daemon off;"]
 ```
 
 ```text
-镜像体积对比：
+镜像体积的变化：
 
-单阶段构建（node:20-alpine 全量）：  ~1.2 GB
-多阶段构建（nginx:alpine + dist）：  ~25 MB
+构建阶段：完整 Node 工具链 + node_modules + 源码，体积较大
+运行阶段：只有 Nginx 和 dist 静态文件，体积显著减小
 
-体积缩减 98%！
+具体数值取决于依赖数量和基础镜像版本，实际以 `docker images` 为准。
 ```
 
 ### 镜像体积优化
@@ -431,29 +435,35 @@ CMD ["nginx", "-g", "daemon off;"]
 5. 使用 .dockerignore  → 不复制无关文件
 ```
 
-**❌ 反面教材：**
+**反面教材：**
 
 ```dockerfile
-FROM node:20          # 1GB+ 的完整镜像
+FROM node:20          # 完整 Debian 镜像，体积大
 WORKDIR /app
 COPY . .              # 把 node_modules、.git 都复制进去了
 RUN npm install       # 又装了一遍依赖
 RUN npm run build
 ```
 
-**✅ 最佳实践：**
+**最佳实践：**
 
 ```dockerfile
-FROM node:20-alpine AS builder   # 选用 alpine（~180MB）
+FROM node:20-alpine AS builder   # 选用 alpine，体积更小
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci                        # 单独安装依赖（利用缓存）
 COPY . .
 RUN npm run build
 
-FROM nginx:alpine                 # 最终镜像只有 nginx（~25MB）
+FROM nginx:alpine                 # 最终镜像只包含 Nginx 和静态文件
 COPY --from=builder /app/dist /usr/share/nginx/html
 ```
+
+<Tip title="运行阶段还可以用 distroless">
+
+如果不需要 Nginx 做反向代理，运行阶段可以直接用 `gcr.io/distroless/static-debian12` 这类 distroless 镜像，只包含应用和必要运行时，没有 shell 和包管理器。代价是排障不能 `docker exec` 进去，只能靠日志和临时调试镜像。
+
+</Tip>
 
 ### 缓存优化
 
@@ -478,18 +488,30 @@ RUN npm run build
 改了一行 JS 代码
   → COPY . . 缓存失效
     → 如果 COPY package.json 在后面，npm ci 也要重新执行
-      → 多等 2 分钟下载依赖
+      → 每次都要重新下载依赖
+```
+
+使用 BuildKit 时，还可以给包管理器的缓存目录单独挂 cache mount，源码变化不会清空下载缓存：
+
+```dockerfile
+# syntax=docker/dockerfile:1
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+COPY . .
+RUN npm run build
 ```
 
 ### 安全最佳实践
 
-| 实践 | 说明 |
-|------|------|
-| **不以 root 运行** | 使用 `USER` 指令切换到非 root 用户 |
-| **不安装不必要的包** | 减小攻击面 |
+| 实践                 | 说明                                         |
+| -------------------- | -------------------------------------------- |
+| **不以 root 运行**   | 使用 `USER` 指令切换到非 root 用户           |
+| **不安装不必要的包** | 减小攻击面                                   |
 | **使用固定版本标签** | 避免 `node:latest`，用 `node:20.11.0-alpine` |
-| **扫描镜像漏洞** | 使用 `docker scout` 或 `trivy` |
-| **不存储密钥** | 使用环境变量或 Docker Secrets |
+| **扫描镜像漏洞**     | 使用 `docker scout` 或 `trivy`               |
+| **不存储密钥**       | 使用环境变量或 Docker Secrets                |
 
 ```dockerfile
 # 安全示例
@@ -511,7 +533,7 @@ EXPOSE 3000
 CMD ["node", "server.js"]
 ```
 
-<Tip title="💡 面试技巧">
+<Tip title="面试技巧">
 
 回答 Dockerfile 最佳实践时，重点讲多阶段构建和缓存优化——这是前端面试的高频考点。安全实践可以作为加分项。
 
@@ -527,7 +549,7 @@ CMD ["node", "server.js"]
 
 ```yaml
 # docker-compose.dev.yml
-version: '3.8'
+version: "3.8"
 services:
   frontend:
     build:
@@ -536,8 +558,8 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./src:/app/src          # 热更新：本地代码变化，容器内实时同步
-      - /app/node_modules       # 排除 node_modules（使用容器内的）
+      - ./src:/app/src # 热更新：本地代码变化，容器内实时同步
+      - /app/node_modules # 排除 node_modules（使用容器内的）
     environment:
       - NODE_ENV=development
 ```
@@ -581,6 +603,7 @@ jobs:
       - name: Run tests
         run: docker run my-app:${{ github.sha }} npm test
       - name: Push to registry
+        # 需先 docker login，并把 my-app 换成带 registry 前缀的镜像名
         run: docker push my-app:${{ github.sha }}
 ```
 
@@ -613,7 +636,7 @@ Docker 是微服务架构的天然载体。每个微服务独立打包、独立�
 
 ```yaml
 # docker-compose.yml（微服务架构示例）
-version: '3.8'
+version: "3.8"
 services:
   # API 网关
   gateway:
@@ -657,18 +680,18 @@ volumes:
 ### docker-compose.yml 语法
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   # 服务名称
   web:
     # 构建配置
     build:
-      context: .              # 构建上下文（Dockerfile 所在目录）
-      dockerfile: Dockerfile   # 指定 Dockerfile 文件名
-      args:                    # 构建参数
+      context: . # 构建上下文（Dockerfile 所在目录）
+      dockerfile: Dockerfile # 指定 Dockerfile 文件名
+      args: # 构建参数
         NODE_ENV: production
-      target: builder           # 多阶段构建的目标阶段
+      target: builder # 多阶段构建的目标阶段
 
     # 镜像（如果指定了 build，则 build 后的镜像名）
     image: my-app:1.0
@@ -688,8 +711,8 @@ services:
 
     # 数据卷
     volumes:
-      - ./src:/app/src          # 绑定挂载
-      - node_modules:/app/node_modules  # 命名卷
+      - ./src:/app/src # 绑定挂载
+      - node_modules:/app/node_modules # 命名卷
 
     # 依赖关系
     depends_on:
@@ -707,7 +730,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          cpus: "1.0"
           memory: 512M
 
 # 定义数据卷
@@ -770,14 +793,14 @@ networks:
 services:
   web:
     networks:
-      - frontend-net            # 只能访问前端网络
+      - frontend-net # 只能访问前端网络
   backend:
     networks:
       - frontend-net
-      - backend-net             # 同时在两个网络中
+      - backend-net # 同时在两个网络中
   db:
     networks:
-      - backend-net             # 只在后端网络（web 无法直接访问）
+      - backend-net # 只在后端网络（web 无法直接访问）
 ```
 
 ### 数据持久化
@@ -787,20 +810,20 @@ services:
   postgres:
     image: postgres:16-alpine
     volumes:
-      - pg-data:/var/lib/postgresql/data    # 命名卷（Docker 管理）
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql  # 绑定挂载（初始化脚本）
+      - pg-data:/var/lib/postgresql/data # 命名卷（Docker 管理）
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql # 绑定挂载（初始化脚本）
 
   web:
     build: .
     volumes:
-      - ./src:/app/src          # 绑定挂载（开发环境热更新）
+      - ./src:/app/src # 绑定挂载（开发环境热更新）
 
 volumes:
-  pg-data:                      # 命名卷声明
+  pg-data: # 命名卷声明
     driver: local
 ```
 
-<Warning title="⚠️ 命名卷 vs 绑定挂载">
+<Warning title="命名卷 vs 绑定挂载">
 
 - **命名卷（Named Volume）**：由 Docker 管理，存储在 Docker 的数据目录中。适合数据库等需要持久化的数据。
 - **绑定挂载（Bind Mount）**：映射宿主机的目录到容器。适合开发环境的热更新。
@@ -830,7 +853,7 @@ volumes:
   <Accordion title="Dockerfile 的 COPY 和 ADD 有什么区别？" icon="layer-group">
 
     **答题要点：**
-    ADD 有隐式行为，COPY 更透明。面试官想听的是你理解"隐式行为的风险"。
+    ADD 有隐式行为，COPY 更透明。想听的是你对"隐式行为的风险"的理解。
 
     **高分回答：**
     "`COPY` 只做一件事：把本地文件复制到镜像中。`ADD` 除了复制文件，还有两个额外功能：**自动解压 tar 包**和**支持远程 URL**。
@@ -874,7 +897,7 @@ volumes:
     COPY --from=builder /app/dist /usr/share/nginx/html
     ```
 
-    镜像体积从 ~1.2GB 缩减到 ~25MB，缩减了 98%。这不仅节省存储和传输时间，更重要的是**减小了攻击面**——最终镜像里没有 Node.js、没有 npm、没有源代码，只有 Nginx 和静态文件。"
+    镜像体积显著小于构建阶段。这不仅节省存储和传输时间，更重要的是**减小了攻击面**——最终镜像里没有 Node.js、没有 npm、没有源代码，只有 Nginx 和静态文件。"
 
   </Accordion>
 
@@ -888,9 +911,9 @@ volumes:
 
     **1. 选择小基础镜像**
     ```dockerfile
-    FROM node:20          # ~1GB（Debian 完整版）
-    FROM node:20-slim     # ~200MB（Debian 精简版）
-    FROM node:20-alpine   # ~50MB（Alpine Linux）
+    FROM node:20          # 完整 Debian 版（体积最大）
+    FROM node:20-slim     # Debian 精简版
+    FROM node:20-alpine   # Alpine 版（体积最小）
     ```
 
     **2. 多阶段构建**——只保留构建产物，丢弃构建工具。
@@ -914,7 +937,7 @@ volumes:
 
     **5. 使用 .dockerignore**——排除 node_modules、.git、测试文件等不必要文件。
 
-    实际项目中，组合使用这 5 种策略，通常可以把镜像从 1GB+ 压缩到 50MB 以内。"
+    实际项目中，组合使用这 5 种策略通常能明显压缩镜像体积，具体效果取决于依赖数量和基础镜像。"
 
   </Accordion>
 
@@ -1025,113 +1048,117 @@ volumes:
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 及格回答 vs 满分回答
 
 ### 问题："你们前端项目的 Docker 部署方案是怎样的？"
 
 **及格回答（60-70分）：**
+
 > "我们用 Docker 打包前端项目，写一个 Dockerfile，用 nginx 部署。"
 
-面试官评价：**知道 Docker 能用，但不理解工程化细节**。
+问题出在：**知道 Docker 能用，但不理解工程化细节**。
 
 **满分回答（90-100分）：**
 
-> "我们用**多阶段构建**优化前端 Docker 镜像。第一阶段用 `node:20-alpine` 安装依赖和构建，第二阶段用 `nginx:alpine` 只拷贝构建产物。最终镜像从 1.2GB 缩减到 25MB，缩减了 98%。<sup>[1]</sup>"
+> "我们用**多阶段构建**优化前端 Docker 镜像。第一阶段用 `node:20-alpine` 安装依赖和构建，第二阶段用 `nginx:alpine` 只拷贝构建产物。最终镜像只保留 Nginx 和静态文件，体积明显小于构建阶段。<sup>[1]</sup>"
 
 > "缓存优化是关键。Docker 按层缓存，我们把 `package.json` 的 COPY 和 `npm ci` 放在源代码 COPY 之前。这样只有依赖变化时才重新安装，改一行 JS 代码不会触发全量 `npm ci`。<sup>[2]</sup>"
 
 > "生产环境用 Docker Compose 编排前端（nginx）、后端（Node.js）和 Redis。服务间通过 Docker 内置网络通信，用服务名作为主机名。数据库数据用命名卷持久化，开发环境用绑定挂载实现热更新。<sup>[3]</sup>"
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
   <Accordion title="Dockerfile 的 COPY 和 ADD 有什么区别?" icon="layer-group">
 
-  **答题要点：** ADD 有隐式行为（自动解压、支持远程 URL），COPY 更透明。优先用 COPY。
+**答题要点：** ADD 有隐式行为（自动解压、支持远程 URL），COPY 更透明。优先用 COPY。
 
-  **高分回答：**
-  "`COPY` 只做一件事：把本地文件复制到镜像中。`ADD` 除了复制文件，还有两个额外功能：自动解压 tar 包和支持远程 URL。但 ADD 的隐式行为容易导致意外——比如你不小心把 tar.gz 文件 ADD 进去，它会自动解压，可能覆盖你不想覆盖的目录。最佳实践是优先使用 COPY，只有在需要自动解压时才用 ADD。"
+**高分回答：**
+"`COPY` 只做一件事：把本地文件复制到镜像中。`ADD` 除了复制文件，还有两个额外功能：自动解压 tar 包和支持远程 URL。但 ADD 的隐式行为容易导致意外——比如你不小心把 tar.gz 文件 ADD 进去，它会自动解压，可能覆盖你不想覆盖的目录。最佳实践是优先使用 COPY，只有在需要自动解压时才用 ADD。"
 
   </Accordion>
 
   <Accordion title="多阶段构建的原理是什么?为什么能减小体积?" icon="layer-group">
 
-  **答题要点：** 最终镜像只包含最后一个阶段的内容，前面阶段的工具链全部丢弃。
+**答题要点：** 最终镜像只包含最后一个阶段的内容，前面阶段的工具链全部丢弃。
 
-  **高分回答：**
-  "多阶段构建允许在一个 Dockerfile 中使用多个 FROM 指令。关键在于：最终镜像只包含最后一个 FROM 阶段的内容。对前端项目来说，构建需要 Node.js 和 node_modules（几百 MB），但运行只需要 Nginx 和静态文件（几十 MB）。多阶段构建把构建阶段和运行阶段分开，用 `COPY --from=builder` 只拷贝产物。镜像体积从 ~1.2GB 缩减到 ~25MB，同时减小了攻击面——最终镜像里没有 Node.js、没有 npm、没有源代码。"
+**高分回答：**
+"多阶段构建允许在一个 Dockerfile 中使用多个 FROM 指令。关键在于：最终镜像只包含最后一个 FROM 阶段的内容。对前端项目来说，构建需要 Node.js 和 node_modules，但运行只需要 Nginx 和静态文件。多阶段构建把构建阶段和运行阶段分开，用 `COPY --from=builder` 只拷贝产物。最终镜像体积显著减小，同时减小了攻击面——最终镜像里没有 Node.js、没有 npm、没有源代码。"
 
   </Accordion>
 
   <Accordion title="Docker 的分层缓存机制是怎么工作的?" icon="stopwatch">
 
-  **答题要点：** 每条指令创建一层，未变化的层直接用缓存。关键原则：变化频率低的指令放前面。
+**答题要点：** 每条指令创建一层，未变化的层直接用缓存。关键原则：变化频率低的指令放前面。
 
-  **高分回答：**
-  "Docker 的镜像由多个只读层叠加而成，每条 Dockerfile 指令（RUN、COPY、ADD 等）创建一层。构建时，Docker 会检查每一层是否变化——如果某一层的输入（指令 + 上下文）没变，就直接用缓存，不重新执行。关键原则是把变化频率低的指令放在前面：`COPY package.json` → `RUN npm ci` → `COPY . .` → `RUN npm build`。这样改一行 JS 代码，只有最后两层失效，前面的依赖安装层直接命中缓存。如果把 `COPY . .` 放在 `npm ci` 前面，每次改代码都要重新安装依赖。"
+**高分回答：**
+"Docker 的镜像由多个只读层叠加而成，每条 Dockerfile 指令（RUN、COPY、ADD 等）创建一层。构建时，Docker 会检查每一层是否变化——如果某一层的输入（指令 + 上下文）没变，就直接用缓存，不重新执行。关键原则是把变化频率低的指令放在前面：`COPY package.json` → `RUN npm ci` → `COPY . .` → `RUN npm build`。这样改一行 JS 代码，只有最后两层失效，前面的依赖安装层直接命中缓存。如果把 `COPY . .` 放在 `npm ci` 前面，每次改代码都要重新安装依赖。"
 
   </Accordion>
 
   <Accordion title="Docker 容器和虚拟机的本质区别是什么?" icon="stopwatch">
 
-  **答题要点：** 容器是进程级隔离（共享内核），虚拟机是硬件级隔离（完整 OS）。
+**答题要点：** 容器是进程级隔离（共享内核），虚拟机是硬件级隔离（完整 OS）。
 
-  **高分回答：**
-  "虚拟机通过 Hypervisor 模拟完整的硬件环境，每个 VM 都需要运行一个完整的 Guest OS，启动时间在分钟级别，占用 GB 级资源。Docker 容器共享宿主机的 Linux 内核，通过 Namespace 隔离进程视图（PID、NET、MNT 等），通过 Cgroups 限制资源使用（CPU、内存），启动时间在秒级，占用 MB 级资源。但容器的隔离性不如虚拟机——所有容器共享同一个内核，如果内核有漏洞，所有容器都受影响。所以多租户场景下虚拟机更安全，同一信任域内容器更高效。"
+**高分回答：**
+"虚拟机通过 Hypervisor 模拟完整的硬件环境，每个 VM 都需要运行一个完整的 Guest OS，启动时间在分钟级别，占用 GB 级资源。Docker 容器共享宿主机的 Linux 内核，通过 Namespace 隔离进程视图（PID、NET、MNT 等），通过 Cgroups 限制资源使用（CPU、内存），启动时间在秒级，占用 MB 级资源。但容器的隔离性不如虚拟机——所有容器共享同一个内核，如果内核有漏洞，所有容器都受影响。所以多租户场景下虚拟机更安全，同一信任域内容器更高效。"
 
   </Accordion>
 
   <Accordion title="Docker Compose 中服务间怎么通信?" icon="node">
 
-  **答题要点：** Docker Compose 自动创建默认网络，服务间通过服务名互相访问。
+**答题要点：** Docker Compose 自动创建默认网络，服务间通过服务名互相访问。
 
-  **高分回答：**
-  "Docker Compose 会自动创建一个默认 bridge 网络，所有服务都在同一网络中。服务间通过**服务名**作为主机名互相访问——比如前端容器可以用 `http://backend:8080` 访问后端，后端可以用 `postgres://db:5432` 连接数据库。不需要知道容器的 IP 地址。如果需要隔离不同环境（如前端只能访问 API 网关，不能直接访问数据库），可以用自定义网络把服务分配到不同的网络中。"
+**高分回答：**
+"Docker Compose 会自动创建一个默认 bridge 网络，所有服务都在同一网络中。服务间通过**服务名**作为主机名互相访问——比如前端容器可以用 `http://backend:8080` 访问后端，后端可以用 `postgres://db:5432` 连接数据库。不需要知道容器的 IP 地址。如果需要隔离不同环境（如前端只能访问 API 网关，不能直接访问数据库），可以用自定义网络把服务分配到不同的网络中。"
 
   </Accordion>
 
   <Accordion title="命名卷和绑定挂载的区别?什么时候用哪个?" icon="node">
 
-  **答题要点：** 命名卷由 Docker 管理（适合持久化），绑定挂载映射宿主机目录（适合开发热更新）。
+**答题要点：** 命名卷由 Docker 管理（适合持久化），绑定挂载映射宿主机目录（适合开发热更新）。
 
-  **高分回答：**
-  "命名卷（Named Volume）由 Docker 管理，存储在 `/var/lib/docker/volumes/` 目录下，适合数据库等需要持久化的数据。绑定挂载（Bind Mount）直接映射宿主机的目录到容器，适合开发环境的热更新——本地代码变化，容器内实时同步。选择原则：生产环境持久化数据用命名卷（可移植、Docker 管理生命周期），开发环境代码热更新用绑定挂载。一个常见错误是绑定挂载覆盖了容器内的 node_modules，解决方法是先用匿名卷占位：`-v /app/node_modules`。"
-
-  </Accordion>
-
-  <Accordion title="🔥 Dockerfile 中 CMD 和 ENTRYPOINT 的区别?" icon="skull">
-
-  **答题要点：** CMD 可被 docker run 参数覆盖，ENTRYPOINT 不容易被覆盖。两者组合使用是关键。
-
-  **高分回答：**
-  "`CMD` 设置默认命令，可以被 `docker run` 的参数覆盖。`ENTRYPOINT` 设置固定入口命令，docker run 的参数会作为 ENTRYPOINT 的参数。最佳实践是用 ENTRYPOINT 定义主命令，用 CMD 定义默认参数：
-  ```dockerfile
-  ENTRYPOINT ["node"]
-  CMD ["server.js"]
-  ```
-  这样 `docker run my-app` 运行 `node server.js`，`docker run my-app app.js` 运行 `node app.js`。用户可以通过传参自定义行为，而不会意外覆盖主命令。"
+**高分回答：**
+"命名卷（Named Volume）由 Docker 管理，存储在 `/var/lib/docker/volumes/` 目录下，适合数据库等需要持久化的数据。绑定挂载（Bind Mount）直接映射宿主机的目录到容器，适合开发环境的热更新——本地代码变化，容器内实时同步。选择原则：生产环境持久化数据用命名卷（可移植、Docker 管理生命周期），开发环境代码热更新用绑定挂载。一个常见错误是绑定挂载覆盖了容器内的 node_modules，解决方法是先用匿名卷占位：`-v /app/node_modules`。"
 
   </Accordion>
 
-  <Accordion title="🔥 怎么扫描 Docker 镜像的安全漏洞?" icon="skull">
+  <Accordion title='Dockerfile 中 CMD 和 ENTRYPOINT 的区别?' icon="skull">
 
-  **答题要点：** 用 docker scout 或 trivy 扫描，CI 中集成漏洞检查。
+**答题要点：** CMD 可被 docker run 参数覆盖，ENTRYPOINT 不容易被覆盖。两者组合使用是关键。
 
-  **高分回答：**
-  "扫描 Docker 镜像漏洞有两种主流工具：
-  1. **Docker Scout**：Docker 官方内置，`docker scout cves my-app:latest` 直接扫描
-  2. **Trivy**：开源工具，`trivy image my-app:latest` 扫描镜像中的 CVE 漏洞
+**高分回答：**
+"`CMD` 设置默认命令，可以被 `docker run` 的参数覆盖。`ENTRYPOINT` 设置固定入口命令，docker run 的参数会作为 ENTRYPOINT 的参数。最佳实践是用 ENTRYPOINT 定义主命令，用 CMD 定义默认参数：
 
-  最佳实践是在 CI/CD 流水线中集成镜像扫描，构建后自动检查漏洞。如果发现高危漏洞（CRITICAL/HIGH），阻止部署。同时用固定版本标签（如 `node:20.11.0-alpine` 而不是 `node:latest`），避免基础镜像突然引入漏洞。"
+```dockerfile
+ENTRYPOINT ["node"]
+CMD ["server.js"]
+```
+
+这样 `docker run my-app` 运行 `node server.js`，`docker run my-app app.js` 运行 `node app.js`。用户可以通过传参自定义行为，而不会意外覆盖主命令。"
+
+  </Accordion>
+
+  <Accordion title='怎么扫描 Docker 镜像的安全漏洞?' icon="skull">
+
+**答题要点：** 用 docker scout 或 trivy 扫描，CI 中集成漏洞检查。
+
+**高分回答：**
+"扫描 Docker 镜像漏洞有两种主流工具：
+
+1. **Docker Scout**：Docker 官方内置，`docker scout cves my-app:latest` 直接扫描
+2. **Trivy**：开源工具，`trivy image my-app:latest` 扫描镜像中的 CVE 漏洞
+
+最佳实践是在 CI/CD 流水线中集成镜像扫描，构建后自动检查漏洞。如果发现高危漏洞（CRITICAL/HIGH），阻止部署。同时用固定版本标签（如 `node:20.11.0-alpine` 而不是 `node:latest`），避免基础镜像突然引入漏洞。"
 
   </Accordion>
 </AccordionGroup>
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 🔗 [Docker 官方文档](https://docs.docker.com/)：Docker 最权威的参考资料，涵盖安装、CLI、Compose、Swarm 等全部内容。<sup>[1]</sup>
-- 📖 [Dockerfile 最佳实践](https://docs.docker.com/build/building/best-practices/)：Docker 官方推荐的 Dockerfile 编写规范，包含缓存优化、安全加固等。<sup>[2]</sup>
-- 🟢 [Docker 从入门到实践](https://yeasy.gitbook.io/docker_practice/)：中文社区维护的 Docker 完整教程，适合中文开发者入门。<sup>[3]</sup>
+- [Docker 官方文档](https://docs.docker.com/)：Docker 最权威的参考资料，涵盖安装、CLI、Compose、Swarm 等全部内容。<sup>[1]</sup>
+- [Dockerfile 最佳实践](https://docs.docker.com/build/building/best-practices/)：Docker 官方推荐的 Dockerfile 编写规范，包含缓存优化、安全加固等。<sup>[2]</sup>
+- [Docker 从入门到实践](https://yeasy.gitbook.io/docker_practice/)：中文社区维护的 Docker 完整教程，适合中文开发者入门。<sup>[3]</sup>

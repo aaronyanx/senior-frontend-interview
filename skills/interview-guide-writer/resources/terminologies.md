@@ -83,6 +83,7 @@
 *   **Task / Artifact (A2A)**: 任务 / 产物（A2A 中用于跟踪长任务生命周期和承载 Agent 输出的对象）
 *   **Vector Database**: 向量数据库
 *   **LangChain / LangGraph**: LangChain / LangGraph（保留英文，AI 应用开发与流程式/图结构多智能体编排的核心框架）
+*   **Eino**: Eino（字节跳动 CloudWeGo 开源的 Go 语言 AI 应用与 Agent 编排框架）
 *   **Skill**: Skill / 技能（赋予 Agent 的特定主动执行能力或工具集合，与被动的 RAG 数据集形成对比，❌ 严禁机翻为“技巧”）
 *   **Multi-Agent System**: 多智能体系统 / 多 Agent 协作
 *   **Autonomous Agent / Long-running Agent**: 自主智能体 / 长时间运行智能体（指代独立执行数小时乃至数天的 Agent 工作流。核心底层支撑技术为：**异步执行 Asynchronous Execution**、**状态快照与恢复 Checkpointing & Recovery**、**长期记忆 Long-term Memory**）

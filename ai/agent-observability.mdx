@@ -1,0 +1,397 @@
+---
+title: "Agent 可观测与评测（Langfuse 实战）"
+description: "Agent Trace、OTel 语义约定、采样脱敏与评测闭环面试考点"
+---
+
+> Agent 上线后我最想先解决的是"怎么知道它哪里出了问题"。一条 trace 要能定位到具体步骤和工具，光有日志不够。
+
+---
+
+## Q1: Trace、Span、Generation、Observation 到底是什么关系？
+
+先记住一句话：**Trace 是一次请求的完整故事，Observation 是故事里的每个步骤。**
+
+```text
+Session（一个多轮会话）
+└── Trace（一次用户请求 / 一个任务）
+    ├── Span: invoke_agent lead
+    │   ├── Span: invoke_agent researcher
+    │   │   ├── Generation: chat gpt-4o          ← LLM 调用
+    │   │   └── Span: execute_tool web_search    ← 工具调用
+    │   ├── Span: invoke_agent coder
+    │   │   ├── Generation: chat claude
+    │   │   └── Span: artifact.write patch.diff  ← 产物事件
+    │   └── Span: invoke_agent reviewer
+    │       └── Generation: chat gpt-4o
+    └── Scores: quality / correctness
+```
+
+| 概念        | 含义                             | 关键字段                      |
+| ----------- | -------------------------------- | ----------------------------- |
+| Session     | 多轮会话容器，例如一个聊天线程   | sessionId、userId             |
+| Trace       | 一次请求 / 一个任务的完整链路    | traceId、input、output、tags  |
+| Observation | 链路中的单个步骤，可嵌套         | observationId、parentId、type |
+| Span        | 通用步骤，例如 Agent、工具、检索 | name、startTime、endTime      |
+| Generation  | 一次模型调用                     | model、input、output、usage   |
+| Event       | 时间点事件，无持续时间           | name、metadata                |
+
+<Note title="关系要点">
+
+Trace 通过 `trace_id` 把 observations 逻辑分组；observation 可以嵌套形成父子树。很多系统（包括 Langfuse）在存储上就是一张 observations 表，每行带 trace 级属性的副本，因此按用户、会话、标签过滤非常快。
+
+</Note>
+
+---
+
+## Q2: 跨 Agent 的 trace 怎么串成一条链？
+
+多 Agent 最容易断链：Lead 调 Worker，Worker 又调工具，如果各写各的日志，就无法还原完整调用树。标准做法是用 **W3C Trace Context** 传播 `traceparent`。
+
+```text
+Lead (traceId=abc, spanId=001)
+   │  发起子任务时注入 traceparent: 00-abc-002-01
+   ▼
+Worker (读取 traceparent，创建 spanId=002，parent=001)
+   │  调用工具时注入 traceparent: 00-abc-003-01
+   ▼
+Tool (spanId=003, parent=002)
+```
+
+工程要点：
+
+| 要点       | 做法                                          |
+| ---------- | --------------------------------------------- |
+| 上下文注入 | HTTP header、消息队列属性、MCP `_meta` 字段   |
+| 跨进程     | 用 OTel propagator，不要自己拼字符串          |
+| 异步任务   | 把 traceparent 存进任务消息，消费时恢复上下文 |
+| 外部请求   | 若无上游 trace，用请求 ID 派生确定性 traceId  |
+| 会话归组   | 同一会话的多个 trace 用 sessionId 关联        |
+
+<Warning title="断链的常见原因">
+
+异步队列消费时没有恢复上下文、工具调用用了新的 TracerProvider、采样策略在子服务里各自为政——这三种情况都会导致 trace 断成好几段。排查多 Agent 问题前，先确认 trace 是完整的一棵树。
+
+</Warning>
+
+---
+
+## Q3: OpenTelemetry GenAI 语义约定里，哪些属性最关键？
+
+语义约定是为了让不同框架、不同厂商的 Agent 数据能对齐。最需要记住的：
+
+| 属性                                          | 作用            | 示例                                                              |
+| --------------------------------------------- | --------------- | ----------------------------------------------------------------- |
+| `gen_ai.operation.name`                       | 操作类型        | `chat`、`invoke_agent`、`execute_tool`、`embeddings`、`retrieval` |
+| `gen_ai.provider.name`                        | 模型提供方      | `openai`、`anthropic`                                             |
+| `gen_ai.request.model`                        | 请求的模型      | `gpt-4o`                                                          |
+| `gen_ai.usage.input_tokens` / `output_tokens` | token 用量      | 用于成本统计                                                      |
+| `gen_ai.agent.name`                           | Agent 名称      | `researcher`                                                      |
+| `gen_ai.conversation.id`                      | 会话 ID         | 跨 trace 归组                                                     |
+| `gen_ai.tool.name` / `gen_ai.tool.call.id`    | 工具名与调用 ID | 定位工具错误                                                      |
+| `error.type`                                  | 低基数错误类别  | `timeout`、`rate_limited`                                         |
+
+Span 命名建议跟随约定：`chat {model}`、`execute_tool {name}`、`invoke_agent {name}`。这样在 Langfuse 等后端里，GenAI span 能自动渲染成 Generation，普通 span 作为普通步骤展示。
+
+<Note title="内容捕获要可控">
+
+`gen_ai.input.messages` / `gen_ai.output.messages` 这类内容属性很有用，但涉及隐私和体积。生产环境要设开关、设大小上限、做脱敏，不能默认全量记录。
+
+</Note>
+
+---
+
+## Q4: 采样怎么做？为什么不能简单随机采样？
+
+Agent 的调用链很长，全量采集成本高，但简单随机采样会漏掉关键失败。
+
+| 采样方式 | 机制                   | 优点               | 问题             |
+| -------- | ---------------------- | ------------------ | ---------------- |
+| 头部采样 | 请求入口按比例决定     | 实现简单           | 可能整条链都丢掉 |
+| 尾部采样 | 根据链路结果决定保留   | 能保留错误和慢请求 | 需要缓冲整条链   |
+| 规则采样 | 按用户、任务类型、标签 | 可控               | 规则维护成本     |
+| 分层采样 | 错误全留、成功按比例   | 兼顾成本与覆盖     | 需要统一策略     |
+
+```text
+推荐策略：
+- 错误链路：100% 保留
+- 慢请求（超过 P95）：100% 保留
+- 人工接管 / 越级上报：100% 保留
+- 普通成功链路：按 5%-20% 采样
+- 特定租户 / 灰度流量：单独提高采样率
+```
+
+关键原则：**采样决策要基于整条 trace，而不是单个 span。** Langfuse 的 SDK 也提供采样率配置，但要和业务侧的"错误必留"策略配合，不能只靠一个全局比例。
+
+---
+
+## Q5: PII 脱敏应该放在哪一层？
+
+脱敏不是"最后导出时再处理"，而要在**产生数据的最早可拦截点**做：
+
+```text
+产生 → SDK / OTel 导出前脱敏 → 后端存储 → 查询展示
+         ↑
+    最优拦截点
+```
+
+| 层级              | 做法                                     | 风险                 |
+| ----------------- | ---------------------------------------- | -------------------- |
+| 应用层            | 记录前主动过滤敏感字段                   | 依赖开发者自觉，易漏 |
+| SDK / OTel 导出层 | 使用 mask hook / span processor 统一处理 | 推荐，覆盖全面       |
+| 后端存储层        | 入库前脱敏                               | 已产生传输风险       |
+| 查询展示层        | 前端打码                                 | 数据已落库，风险最高 |
+
+工程实践：
+
+- 对 email、手机号、身份证、token、密钥做正则与结构化识别。
+- 对 prompt / completion 内容设大小上限，避免整段用户数据入库。
+- 保留脱敏前后的映射关系时，映射表要单独加密存储。
+- 建立"禁止记录字段"清单，并在 CI 里做检查。
+
+<Warning title="脱敏不能只靠模型">
+
+不要指望让 LLM 自己"记得别输出敏感信息"。脱敏必须是确定性的代码规则，且默认开启。
+
+</Warning>
+
+---
+
+## Q6: Langfuse 的自托管架构为什么这么复杂？
+
+因为它的读写路径被拆成了"接收"和"处理"两段，以扛住高吞吐：
+
+```text
+SDK / OTel
+   │
+   ▼
+Langfuse Web（UI + API）
+   │  批量写入对象存储（原始事件）
+   │  Redis 只保留引用
+   ▼
+Redis / Valkey（缓存 + 队列）
+   │
+   ▼
+Langfuse Worker（异步处理）
+   │
+   ├── PostgreSQL（事务数据）
+   ├── ClickHouse（trace / observation / score 的 OLAP 查询）
+   └── S3 / Blob 存储（事件、多模态、大导出）
+```
+
+| 组件           | 作用                    | 不能省的原因     |
+| -------------- | ----------------------- | ---------------- |
+| Web            | 接收上报、提供 UI/API   | 入口             |
+| Worker         | 异步消费、写入分析库    | 削峰、解耦       |
+| PostgreSQL     | 事务性元数据            | 用户、项目、配置 |
+| ClickHouse     | 大规模 trace 查询与聚合 | 行存数据库扛不住 |
+| Redis / Valkey | 缓存与队列              | 异步缓冲         |
+| 对象存储       | 原始事件与大对象        | 低成本、可回放   |
+
+这也解释了自托管的代价：部署的是一整套数据栈，运维面比单个服务大得多。小团队如果只是要基础 trace，单容器的方案（如 Phoenix 默认 SQLite）运维成本更低；但要做大规模分析和长期留存，ClickHouse 这套架构更合适。
+
+<Note title="SDK 接入的基本形态">
+
+Python 侧常见的是装饰器 `@observe`、上下文管理器，以及短生命周期进程结束前调用 `flush()`；JS/TS 侧常用 `@langfuse/tracing` + `@langfuse/otel`，通过 `LangfuseSpanProcessor` 接入 OTel。具体 API 以对应版本文档为准，升级大版本前先看迁移说明。
+
+</Note>
+
+---
+
+## Q7: Langfuse 的评测能力怎么用？LLM-as-a-Judge 怎么防止放水？
+
+### 数据模型
+
+| 对象       | 用途                                 |
+| ---------- | ------------------------------------ |
+| Score      | 通用评分，支持数值、分类、布尔、文本 |
+| Dataset    | 离线评测的固定样本集                 |
+| Experiment | 在数据集上跑一次评测                 |
+| Evaluator  | 打分逻辑（LLM / 代码 / 人工）        |
+| Rule       | 决定哪些线上数据被评测，含过滤与采样 |
+
+### 在线 vs 离线
+
+```text
+在线评测：生产流量 → 规则匹配（如"包含工具错误"）→ Evaluator 打分 → 告警
+离线评测：固定数据集 → 跑新版本 → 与基线对比 → 回归门禁
+```
+
+### 防放水的四道保险
+
+| 风险                 | 保险                            |
+| -------------------- | ------------------------------- |
+| 同源模型给自己打高分 | 评估器换模型 / 换厂商           |
+| 标准模糊导致分数虚高 | 评分标准写成可逐条检查的 rubric |
+| 只看总分不看理由     | 强制输出理由，人工抽检理由质量  |
+| 评估器漂移           | 定期用人工标注校准，跟踪一致性  |
+
+关键指标是**评估分与人工分的一致性**，"评估分多高"参考价值有限。一致性低，评估器就不可信，再漂亮的分数也没有意义。
+
+<Note title="Prompt 管理也是评测的一部分">
+
+Prompt 用名称 + 版本管理，配合 `production` / `staging` 等标签做灰度。评测时固定数据集、只改 Prompt 版本，才能判断提升来自 Prompt 还是随机波动。
+
+</Note>
+
+---
+
+## Q8: 生产上要盯哪些指标？评测闭环怎么建？
+
+### 核心指标
+
+| 层次 | 指标                         | 说明             |
+| ---- | ---------------------------- | ---------------- |
+| 结果 | 任务成功率、一次验收通过率   | 最终质量         |
+| 过程 | 平均步数、工具错误率、重派率 | 定位效率与稳定性 |
+| 人工 | 人工接管率、越级上报率       | 自动化边界       |
+| 成本 | 单位任务成本、token 分布     | 是否可持续       |
+| 延迟 | P50 / P95 / P99              | 用户体验         |
+| 质量 | 幻觉率、引用准确率           | 需要抽样评估     |
+
+### 告警要有"可行动性"
+
+不要只告警"成功率下降"，要能定位到哪一层：
+
+```text
+成功率下降
+   ├─ 工具错误率上升？ → 看具体工具与错误码
+   ├─ 重派率上升？     → 看是否某个 Agent 熔断
+   ├─ 步数上升？       → 看是否陷入循环或拆解过细
+   └─ 成本上升？       → 看上下文膨胀或模型升级
+```
+
+### 评测闭环
+
+```text
+线上问题 → 沉淀为数据集样本 → 离线回归 → 修复验证
+   ↑                                        │
+   └────── 线上反馈 / 人工标注回流 ←────────┘
+```
+
+闭环的关键是**把线上失败案例变成可复现的评测样本**。只做离线评测、不回收线上失败，评测集很快会和真实分布脱节。
+
+---
+
+## Q9: 一个多 Agent 任务的完整 Trace 长什么样？
+
+以"生成订单导出 PDF 功能"为例，包含一次工具失败、一次重派、一次产物写入：
+
+```text
+Trace: task-export-pdf  (session=s-1024, user=u-7)
+├── span invoke_agent lead                   12.4s  OK
+│   ├── span invoke_agent researcher          2.1s  OK
+│   │   ├── gen chat gpt-4o  (1.2k/300 tok)   1.6s  OK
+│   │   └── span execute_tool repo_search     0.4s  OK
+│   ├── span invoke_agent coder               6.8s  RETRY→OK
+│   │   ├── gen chat claude  (3.4k/900 tok)   3.0s  OK
+│   │   ├── span execute_tool write_file      0.2s  ERROR timeout
+│   │   │     error.type=timeout
+│   │   │     → 重派 taskId=T3.2 attempt=2
+│   │   ├── gen chat claude  (3.1k/850 tok)   2.9s  OK
+│   │   └── span artifact.write patch.diff    0.3s  OK
+│   │         artifactId=a-9001 sha256=3f2c… version=1
+│   └── span invoke_agent reviewer            3.5s  OK
+│       └── gen chat gpt-4o  (2.0k/400 tok)   3.1s  OK
+└── scores: quality=0.86  correctness=0.92
+```
+
+从这条 trace 能直接读出四件事：
+
+1. **失败点**：`write_file` 超时，不是模型错。
+2. **重派**：带 `attempt=2`，可核对幂等键是否避免了重复写入。
+3. **产物链路**：`patch.diff` 的 artifactId、hash、version 都在，可回溯。
+4. **成本分布**：coder 两次调用占了大部分 token，是优化重点。
+
+<Note title='好的 trace 能回答"谁、在哪、为什么"'>
+
+面试时不要只说"我们接了 Langfuse"，而要能描述一条真实 trace：哪个 span 失败、错误类型、是否重派、产物落到哪、最终评分多少。
+
+</Note>
+
+---
+
+## Q10: 八道深度追问（及格 vs 满分）
+
+> 八题覆盖"数据模型 / 跨 Agent 传播 / 语义约定 / 采样 / 脱敏 / Langfuse 架构 / 评估器 / 指标闭环"。
+
+<AccordionGroup>
+
+<Accordion title="Trace、Span、Generation、Observation 是什么关系？">
+
+**及格回答：** Trace 是一次请求，Span 是里面的步骤，Generation 是模型调用。
+
+**满分回答：** Trace 是一次请求或一个任务的完整链路，通过 traceId 把多个 observation 逻辑分组；Observation 是链路中的单个步骤，可以嵌套形成父子树；Span 是通用步骤，Generation 专指一次模型调用，Event 是没有持续时间的时间点。Session 再往上把多轮 trace 归到一个会话。理解父子关系很重要，因为排障时你要能沿着树定位到底是哪个 Agent、哪次工具调用出的问题。
+
+</Accordion>
+
+<Accordion title="跨 Agent 的 trace 怎么串成一条链？">
+
+**及格回答：** 给每个请求加个相同 ID，日志里带上。
+
+**满分回答：** 用 W3C Trace Context 传播 `traceparent`，里面包含 traceId、parentSpanId 和采样标记。Lead 调 Worker 时通过 HTTP header 或消息属性注入，Worker 恢复上下文后创建子 span，工具调用继续往下传，异步任务则把 traceparent 存进任务消息、消费时恢复。不要自己拼字符串，也不要在子服务里新建 TracerProvider，否则 trace 会断成好几段。排查多 Agent 前，先确认 trace 是完整的一棵树。
+
+</Accordion>
+
+<Accordion title="OTel GenAI 语义约定里，最关键的属性有哪些？">
+
+**及格回答：** 记录模型名和 token 数就行。
+
+**满分回答：** 至少要有四组：`gen_ai.operation.name` 标明是 chat、invoke_agent 还是 execute_tool；`gen_ai.request.model` 和 `gen_ai.provider.name` 定位模型；`gen_ai.usage.input_tokens` / `output_tokens` 支撑成本统计；`error.type` 用低基数类别支撑错误聚合。多 Agent 场景再加 `gen_ai.agent.name` 和 `gen_ai.conversation.id`。Span 命名跟随约定，比如 `chat {model}`、`invoke_agent {name}`，这样后端能正确渲染成 Generation 而不是普通 span。
+
+</Accordion>
+
+<Accordion title="采样怎么做，为什么不能简单随机采样？">
+
+**及格回答：** 按比例随机采，比如 10%。
+
+**满分回答：** 简单随机采样会把关键失败一起丢掉，而且需要在整条 trace 上做决策，不能每个 span 各自随机。我的策略是分层：错误链路 100% 保留、超过 P95 的慢请求 100% 保留、人工接管和越级上报 100% 保留，普通成功链路按 5% 到 20% 采样，灰度或特定租户单独提高比例。实现上更推荐尾部采样，因为它能看到链路结果再决定是否保留。核心是保证"该看的都在"，而不是追求一个好看的采样率。
+
+</Accordion>
+
+<Accordion title="PII 脱敏应该放在哪一层？">
+
+**及格回答：** 展示的时候打码就行。
+
+**满分回答：** 要放在数据产生后、导出前的最早拦截点，也就是 SDK 或 OTel 的导出层，用统一的 mask hook 或 span processor 处理。展示层打码太晚，数据已经落库和传输了。具体做法是对 email、手机号、身份证、token、密钥做确定性规则识别，对 prompt 和 completion 设大小上限，建立禁止记录字段清单并在 CI 检查。绝不能依赖模型自己记得别输出敏感信息，脱敏必须是代码规则且默认开启。
+
+</Accordion>
+
+<Accordion title="Langfuse 自托管为什么需要这么多组件？">
+
+**及格回答：** 因为要存的东西多，所以要数据库和缓存。
+
+**满分回答：** 它把读写路径拆开了：Web 接收上报后批量写对象存储，Redis 只放引用做缓冲，Worker 异步消费再写入 ClickHouse 和 PostgreSQL。PostgreSQL 存事务性元数据，ClickHouse 扛大规模 trace 查询和聚合，对象存储放原始事件与大对象。这样能削峰、解耦、支撑高吞吐，但代价是运维一套数据栈，而不是一个服务。小团队只要基础 trace，可以选单容器方案；要做大规模分析和长期留存，才值得上这套架构。
+
+</Accordion>
+
+<Accordion title="LLM-as-a-Judge 怎么防止评估器放水？">
+
+**及格回答：** 多跑几次取平均。
+
+**满分回答：** 放水的根因是评估标准和评估者独立性。我做四件事：评分标准写成可逐条检查的 rubric，避免"写得好不好"这类模糊标准；评估器换模型或换厂商，避免同源模型偏袒；强制输出评分理由，人工抽检理由质量；定期用人工标注校准，跟踪评估分与人工分的一致性。关键指标是一致性，分数高低本身说明不了问题。一致性低就说明评估器不可信，需要重新设计 rubric 或换评估器。
+
+</Accordion>
+
+<Accordion title="生产指标怎么设告警，怎么闭环到评测？">
+
+**及格回答：** 成功率低于阈值就告警，然后看日志。
+
+**满分回答：** 告警要可行动，不能只报"成功率下降"，要能下钻到工具错误率、重派率、步数、成本这些过程指标，快速判断是工具挂了、某个 Agent 熔断、还是拆解过细。闭环是把线上失败案例沉淀成数据集样本，做离线回归，修复后再验证，同时把人工标注和用户反馈回流。只做离线评测、不回收线上失败，评测集会很快和真实分布脱节。
+
+</Accordion>
+
+</AccordionGroup>
+
+---
+
+## 延伸阅读与引用参考
+
+- [OpenTelemetry: GenAI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)：`gen_ai.*` 属性、操作类型与 span 命名约定。
+- [W3C Trace Context](https://www.w3.org/TR/trace-context/)：`traceparent` 与跨服务上下文传播标准。
+- [Langfuse: Observability](https://langfuse.com/docs/observability/overview)：Trace / Observation / Session 数据模型与 SDK 接入。
+- [Langfuse: Self-hosting](https://langfuse.com/self-hosting)：Web、Worker、PostgreSQL、ClickHouse、Redis、对象存储的部署架构。
+- [Langfuse: Evaluation](https://langfuse.com/docs/evaluation/overview)：Scores、Datasets、LLM-as-a-Judge、人工标注与在线评测。
+- [Langfuse: Prompt Management](https://langfuse.com/docs/prompts/get-started)：名称、版本、标签与变量编译。
+- [Arize Phoenix](https://docs.arize.com/phoenix)：基于 OpenTelemetry / OpenInference 的可观测方案。
+- [LangSmith](https://docs.smith.langchain.com/)：与 LangChain / LangGraph 深度集成的可观测与评测平台。
+- [Helicone](https://docs.helicone.ai/)：代理式可观测与网关方案。

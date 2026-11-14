@@ -1,10 +1,9 @@
 ---
 title: "Proxy / Reflect"
+description: "Proxy 的 13 种 trap、Reflect 与 trap 的对应关系、Vue 3 响应式应用及不可 polyfill 的局限。"
 ---
 
-> **面试官为什么问这个？**
->
-> Proxy/Reflect 是 ES6 引入的元编程（Metaprogramming）核心能力。面试官问这个，本质上是在考察你：**你是否理解对象行为的底层拦截机制，以及 Vue 3 为什么抛弃 defineProperty 转向 Proxy？** 如果你答不清楚，说明你对现代框架的响应式原理停留在"会用"而不是"知道为什么这么设计"。
+> 我理解 Proxy 是从 Vue 3 的响应式实现倒推的：先看它拦截了什么，再回头看 Reflect 为什么配套出现。
 
 ---
 
@@ -84,7 +83,7 @@ Proxy 包裹整个对象，像在整栋楼装了全覆盖监控——不管新�
 
 <Tip title="💡 面试技巧">
 
-回答时先说 `Object.defineProperty` 的痛点（为什么不够），再引入 Proxy 的解决方案（为什么更好）。面试官想听的是你理解"技术演进的必然性"，而不是背 API。
+回答时先说 `Object.defineProperty` 的痛点（为什么不够），再引入 Proxy 的解决方案（为什么更好）。想听的是你对"技术演进必然性"的理解，而不是背 API。
 
 </Tip>
 
@@ -109,7 +108,7 @@ Proxy 的本质是创建一个对象的"代理"，对这个代理的所有操作
 ```
 
 ```javascript
-const target = { name: 'Tom', age: 25 };
+const target = { name: "Tom", age: 25 };
 const handler = {
   get(target, prop, receiver) {
     console.log(`读取属性: ${prop}`);
@@ -118,12 +117,12 @@ const handler = {
   set(target, prop, value, receiver) {
     console.log(`设置属性: ${prop} = ${value}`);
     return Reflect.set(target, prop, value, receiver);
-  }
+  },
 };
 
 const proxy = new Proxy(target, handler);
-proxy.name;       // 输出: 读取属性: name
-proxy.age = 26;   // 输出: 设置属性: age = 26
+proxy.name; // 输出: 读取属性: name
+proxy.age = 26; // 输出: 设置属性: age = 26
 ```
 
 <Warning title="⚠️ 核心机制: 13 种 Handler Traps">
@@ -154,15 +153,15 @@ Proxy 就像小区的快递代收点。你（外部代码）的所有快递（�
 
 ### Proxy vs Object.defineProperty
 
-| 对比维度 | Proxy | Object.defineProperty |
-|---------|-------|----------------------|
-| **拦截粒度** | 对象级别 | 属性级别 |
-| **拦截操作** | 13 种（读写、删除、枚举等） | 只有 get/set |
-| **新增属性** | 自动拦截 | 无法拦截 |
-| **删除属性** | 自动拦截 | 无法拦截 |
-| **数组操作** | 自动拦截 | 需要重写方法 |
-| **初始化性能** | 惰性代理，按需创建 | 需递归遍历所有属性 |
-| **兼容性** | IE 不支持 | IE9+ |
+| 对比维度       | Proxy                       | Object.defineProperty |
+| -------------- | --------------------------- | --------------------- |
+| **拦截粒度**   | 对象级别                    | 属性级别              |
+| **拦截操作**   | 13 种（读写、删除、枚举等） | 只有 get/set          |
+| **新增属性**   | 自动拦截                    | 无法拦截              |
+| **删除属性**   | 自动拦截                    | 无法拦截              |
+| **数组操作**   | 自动拦截                    | 需要重写方法          |
+| **初始化性能** | 惰性代理，按需创建          | 需递归遍历所有属性    |
+| **兼容性**     | IE 不支持                   | IE9+                  |
 
 ### 不可取消的 Proxy vs 可取消的 Proxy
 
@@ -172,9 +171,9 @@ const proxy = new Proxy(target, handler);
 
 // Proxy.revocable——可以撤销的代理
 const { proxy, revoke } = Proxy.revocable(target, handler);
-proxy.name;   // 正常工作
-revoke();     // 撤销代理
-proxy.name;   // TypeError: Cannot perform 'get' on a proxy that has been revoked
+proxy.name; // 正常工作
+revoke(); // 撤销代理
+proxy.name; // TypeError: Cannot perform 'get' on a proxy that has been revoked
 ```
 
 `Proxy.revocable` 适用于需要"用完即焚"的安全场景，比如一次性数据访问授权。
@@ -187,21 +186,21 @@ Reflect 是一个内置对象，提供了与 Proxy trap 一一对应的静态方
 
 ### Reflect 的 13 个静态方法
 
-| Reflect 方法 | 对应 Proxy Trap | 替代的旧 API |
-|-------------|----------------|-------------|
-| `Reflect.get(target, prop, receiver)` | get | `target[prop]` |
-| `Reflect.set(target, prop, value, receiver)` | set | `target[prop] = value` |
-| `Reflect.has(target, prop)` | has | `prop in target` |
-| `Reflect.deleteProperty(target, prop)` | deleteProperty | `delete target[prop]` |
-| `Reflect.ownKeys(target)` | ownKeys | `Object.keys()` + `Object.getOwnPropertySymbols()` |
-| `Reflect.getOwnPropertyDescriptor(target, prop)` | getOwnPropertyDescriptor | `Object.getOwnPropertyDescriptor()` |
-| `Reflect.defineProperty(target, prop, descriptor)` | defineProperty | `Object.defineProperty()` |
-| `Reflect.getPrototypeOf(target)` | getPrototypeOf | `Object.getPrototypeOf()` |
-| `Reflect.setPrototypeOf(target, proto)` | setPrototypeOf | `Object.setPrototypeOf()` |
-| `Reflect.isExtensible(target)` | isExtensible | `Object.isExtensible()` |
-| `Reflect.preventExtensions(target)` | preventExtensions | `Object.preventExtensions()` |
-| `Reflect.apply(target, thisArg, args)` | apply | `Function.prototype.apply()` |
-| `Reflect.construct(target, args, newTarget)` | construct | `new target(...args)` |
+| Reflect 方法                                       | 对应 Proxy Trap          | 替代的旧 API                                       |
+| -------------------------------------------------- | ------------------------ | -------------------------------------------------- |
+| `Reflect.get(target, prop, receiver)`              | get                      | `target[prop]`                                     |
+| `Reflect.set(target, prop, value, receiver)`       | set                      | `target[prop] = value`                             |
+| `Reflect.has(target, prop)`                        | has                      | `prop in target`                                   |
+| `Reflect.deleteProperty(target, prop)`             | deleteProperty           | `delete target[prop]`                              |
+| `Reflect.ownKeys(target)`                          | ownKeys                  | `Object.keys()` + `Object.getOwnPropertySymbols()` |
+| `Reflect.getOwnPropertyDescriptor(target, prop)`   | getOwnPropertyDescriptor | `Object.getOwnPropertyDescriptor()`                |
+| `Reflect.defineProperty(target, prop, descriptor)` | defineProperty           | `Object.defineProperty()`                          |
+| `Reflect.getPrototypeOf(target)`                   | getPrototypeOf           | `Object.getPrototypeOf()`                          |
+| `Reflect.setPrototypeOf(target, proto)`            | setPrototypeOf           | `Object.setPrototypeOf()`                          |
+| `Reflect.isExtensible(target)`                     | isExtensible             | `Object.isExtensible()`                            |
+| `Reflect.preventExtensions(target)`                | preventExtensions        | `Object.preventExtensions()`                       |
+| `Reflect.apply(target, thisArg, args)`             | apply                    | `Function.prototype.apply()`                       |
+| `Reflect.construct(target, args, newTarget)`       | construct                | `new target(...args)`                              |
 
 ### 为什么 Proxy handler 中推荐使用 Reflect？
 
@@ -215,7 +214,7 @@ const handler = {
   // ✅ 推荐：使用 Reflect 保证正确的 receiver 传递
   get(target, prop, receiver) {
     return Reflect.get(target, prop, receiver); // receiver 正确传递
-  }
+  },
 };
 ```
 
@@ -254,7 +253,7 @@ function reactive(target) {
       const result = Reflect.get(target, prop, receiver);
       track(target, prop); // 依赖收集
       // 惰性代理：访问嵌套对象时才创建深层 Proxy
-      if (typeof result === 'object' && result !== null) {
+      if (typeof result === "object" && result !== null) {
         return reactive(result);
       }
       return result;
@@ -266,7 +265,7 @@ function reactive(target) {
         trigger(target, prop); // 触发更新
       }
       return result;
-    }
+    },
   });
 }
 ```
@@ -290,18 +289,21 @@ function validated(target, schema) {
         }
       }
       return Reflect.set(target, prop, value);
-    }
+    },
   });
 }
 
-const user = validated({}, {
-  age: { type: 'number', min: 0, max: 150 },
-  name: { type: 'string', required: true }
-});
+const user = validated(
+  {},
+  {
+    age: { type: "number", min: 0, max: 150 },
+    name: { type: "string", required: true },
+  },
+);
 
-user.age = 25;     // 正常
-user.age = -1;     // RangeError: age must be >= 0
-user.name = 123;   // TypeError: name must be of type string
+user.age = 25; // 正常
+user.age = -1; // RangeError: age must be >= 0
+user.name = 123; // TypeError: name must be of type string
 ```
 
 ### 应用三：缓存代理（惰性加载）
@@ -309,14 +311,17 @@ user.name = 123;   // TypeError: name must be of type string
 ```javascript
 function cacheProxy(factory) {
   const cache = new Map();
-  return new Proxy({}, {
-    get(target, prop) {
-      if (!cache.has(prop)) {
-        cache.set(prop, factory(prop));
-      }
-      return cache.get(prop);
-    }
-  });
+  return new Proxy(
+    {},
+    {
+      get(target, prop) {
+        if (!cache.has(prop)) {
+          cache.set(prop, factory(prop));
+        }
+        return cache.get(prop);
+      },
+    },
+  );
 }
 
 // 惰性创建昂贵对象
@@ -346,7 +351,7 @@ function observable(obj, onChange) {
       const result = Reflect.deleteProperty(target, prop);
       onChange(prop, undefined, target[prop]);
       return result;
-    }
+    },
   });
 }
 
@@ -354,8 +359,8 @@ const state = observable({ count: 0 }, (prop, newVal, oldVal) => {
   console.log(`${prop}: ${oldVal} -> ${newVal}`);
 });
 
-state.count = 1;  // 输出: count: 0 -> 1
-state.count = 2;  // 输出: count: 1 -> 2
+state.count = 1; // 输出: count: 0 -> 1
+state.count = 2; // 输出: count: 1 -> 2
 ```
 
 ---
@@ -371,17 +376,21 @@ const target = { a: 1, b: 2, c: 3 };
 const proxy = new Proxy(target, {
   get(target, prop) {
     return Reflect.get(target, prop);
-  }
+  },
 });
 
 // 直接访问 vs Proxy 访问（V8 优化后差距已缩小，但仍有开销）
-console.time('direct');
-for (let i = 0; i < 1000000; i++) { target.a; }
-console.timeEnd('direct');
+console.time("direct");
+for (let i = 0; i < 1000000; i++) {
+  target.a;
+}
+console.timeEnd("direct");
 
-console.time('proxy');
-for (let i = 0; i < 1000000; i++) { proxy.a; }
-console.timeEnd('proxy');
+console.time("proxy");
+for (let i = 0; i < 1000000; i++) {
+  proxy.a;
+}
+console.timeEnd("proxy");
 ```
 
 ### 局限二：无法 Polyfill
@@ -399,7 +408,7 @@ Proxy 只能代理**对象**（包括数组、函数、Map、Set 等），不能
 ```javascript
 // ❌ TypeError: Cannot create proxy with a non-object as target
 const proxy = new Proxy(42, handler);
-const proxy = new Proxy('hello', handler);
+const proxy = new Proxy("hello", handler);
 
 // ✅ 只能代理对象
 const proxy = new Proxy({}, handler);
@@ -415,7 +424,7 @@ const date = new Date();
 const proxy = new Proxy(date, {
   get(target, prop) {
     return Reflect.get(target, prop);
-  }
+  },
 });
 
 // ❌ TypeError: this is not a Date object
@@ -426,11 +435,11 @@ proxy.toISOString();
 const proxy = new Proxy(date, {
   get(target, prop) {
     const value = Reflect.get(target, prop);
-    if (typeof value === 'function') {
+    if (typeof value === "function") {
       return value.bind(target); // 绑定原始对象
     }
     return value;
-  }
+  },
 });
 ```
 
@@ -450,7 +459,7 @@ function defineReactive(obj, key, val) {
       if (newVal === val) return;
       console.log(`set ${key}: ${newVal}`);
       val = newVal;
-    }
+    },
   });
 }
 
@@ -464,35 +473,35 @@ function reactive(target) {
     set(target, prop, value, receiver) {
       console.log(`set ${prop}: ${value}`);
       return Reflect.set(target, prop, value, receiver);
-    }
+    },
   });
 }
 ```
 
 **关键区别：**
 
-| 场景 | Object.defineProperty | Proxy |
-|------|----------------------|-------|
-| 新增属性 | ❌ 无响应 | ✅ 自动拦截 |
-| 删除属性 | ❌ 无响应 | ✅ 自动拦截 |
-| 数组索引 | ❌ 无响应 | ✅ 自动拦截 |
-| 嵌套对象 | 初始化时递归遍历 | 惰性代理，按需创建 |
-| 兼容性 | IE9+ | 不支持 IE |
+| 场景     | Object.defineProperty | Proxy              |
+| -------- | --------------------- | ------------------ |
+| 新增属性 | ❌ 无响应             | ✅ 自动拦截        |
+| 删除属性 | ❌ 无响应             | ✅ 自动拦截        |
+| 数组索引 | ❌ 无响应             | ✅ 自动拦截        |
+| 嵌套对象 | 初始化时递归遍历      | 惰性代理，按需创建 |
+| 兼容性   | IE9+                  | 不支持 IE          |
 
 **❌/✅ 代码对比（新增属性的响应式）：**
 
 ```javascript
 // ❌ Object.defineProperty：新增属性无响应
 const data = {};
-defineReactive(data, 'name', 'Tom');
-data.name = 'Jerry';  // 触发 set ✅
-data.age = 25;        // 新增属性，不触发 ❌
+defineReactive(data, "name", "Tom");
+data.name = "Jerry"; // 触发 set ✅
+data.age = 25; // 新增属性，不触发 ❌
 // Vue 2 需要 this.$set(data, 'age', 25)
 
 // ✅ Proxy：新增属性自动响应
 const data = reactive({});
-data.name = 'Tom';    // 触发 set ✅
-data.age = 25;        // 新增属性，触发 set ✅
+data.name = "Tom"; // 触发 set ✅
+data.age = 25; // 新增属性，触发 set ✅
 ```
 
 <Tip title="最佳实践: ">
@@ -503,11 +512,9 @@ data.age = 25;        // 新增属性，触发 set ✅
 
 ---
 
-## 🔍 底层源码：V8 是如何实现 Proxy 的？
+## 底层源码：V8 是如何实现 Proxy 的？
 
-<div class="follow-up">
-V8 的 Proxy 内部是怎么实现的？
-</div>
+<div class="follow-up">V8 的 Proxy 内部是怎么实现的？</div>
 
 V8 内部用 **JSProxy** 对象表示 Proxy，它持有三个内部字段：`target`、`handler`、`revocable`（详见 [V8 源码：src/objects/js-proxy.h](https://github.com/v8/v8/blob/main/src/objects/js-proxy.h)）：
 
@@ -530,9 +537,7 @@ class JSProxy : public JSObject {
 
 这段代码做了 3 件事：检查 trap 是否存在、调用 trap 或透传、进行不变式检查（确保 trap 返回值与 target 的不可变属性一致）。
 
-<div class="follow-up">
-V8 怎么处理 Proxy 的不变式检查？
-</div>
+<div class="follow-up">V8 怎么处理 Proxy 的不变式检查？</div>
 
 V8 会对 Proxy trap 的返回值进行**不变式检查（Invariant Check）**，确保 Proxy 不会违反对象的基本契约（详见 [V8 源码：src/objects/js-proxy.cc](https://github.com/v8/v8/blob/main/src/objects/js-proxy.cc)）：
 
@@ -550,14 +555,15 @@ V8 会对 Proxy trap 的返回值进行**不变式检查（Invariant Check）**�
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 十、及格回答 vs 满分回答
 
 ### 问题："Vue 3 为什么用 Proxy 替代 Object.defineProperty？"
 
 **及格回答（60-70分）：**
+
 > "Object.defineProperty 不能监听新增属性和删除属性，Proxy 可以。所以 Vue 3 换了 Proxy。"
 
-面试官评价：**知道结论但不理解设计**。
+问题出在：**知道结论但不理解设计**。
 
 **满分回答（90-100分）：**
 
@@ -569,7 +575,7 @@ V8 会对 Proxy trap 的返回值进行**不变式检查（Invariant Check）**�
 
 > Vue 3 选择 Proxy 的代价是放弃了 IE 兼容。但考虑到 IE 已经退役，这是一个合理的架构决策——用更好的 API 设计换取更简洁、更强大的响应式系统。
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
@@ -704,7 +710,7 @@ V8 会对 Proxy trap 的返回值进行**不变式检查（Invariant Check）**�
 
     **高分回答：**
     "Proxy 的性能开销主要来自两个方面：
-    1. **函数调用开销**：每次属性访问都经过 trap 函数，V8 无法对 Proxy 的属性访问做内联缓存（Inline Cache）优化。在微基准测试中，Proxy 的属性访问比直接访问慢 2-10 倍（取决于 trap 的复杂度）。
+    1. **函数调用开销**：每次属性访问都经过 trap 函数，V8 无法对 Proxy 的属性访问做内联缓存（Inline Cache）优化。属性访问通常比直接访问慢，trap 越复杂差距越明显。
     2. **阻止优化**：V8 对普通对象有大量优化（隐藏类 Hidden Class、内联缓存 IC 等），Proxy 会阻止这些优化生效。
 
     什么时候不该用 Proxy：
@@ -776,8 +782,8 @@ V8 会对 Proxy trap 的返回值进行**不变式检查（Invariant Check）**�
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 🔗 [MDN Proxy 文档](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy)：Proxy 的 13 种 trap 的完整规范说明。<sup>[1]</sup>
-- 📖 [Vue 3 Reactivity In Depth](https://vuejs.org/guide/extras/reactivity-in-depth.html)：Vue 官方对 Proxy 响应式实现的深度解析。<sup>[2]</sup>
-- 🟢 [V8 Proxy 实现源码](https://github.com/v8/v8/blob/main/src/objects/js-proxy.h)：V8 引擎中 JSProxy 的内部结构与不变式检查逻辑。<sup>[3]</sup>
+- [MDN Proxy 文档](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy)：Proxy 的 13 种 trap 的完整规范说明。<sup>[1]</sup>
+- [Vue 3 Reactivity In Depth](https://vuejs.org/guide/extras/reactivity-in-depth.html)：Vue 官方对 Proxy 响应式实现的深度解析。<sup>[2]</sup>
+- [V8 Proxy 实现源码](https://github.com/v8/v8/blob/main/src/objects/js-proxy.h)：V8 引擎中 JSProxy 的内部结构与不变式检查逻辑。<sup>[3]</sup>

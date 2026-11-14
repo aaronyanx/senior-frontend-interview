@@ -1,6 +1,6 @@
-# Frontend & AI Engineering Interview Guide
+# AI-Era Frontend Engineering Interview Guide
 
-> Interview prep covering JavaScript/CSS/framework fundamentals, low-level internals (V8, rendering engine), architecture (micro-frontends, state management), and AI engineering (Agent, RAG, MCP).
+> Interview prep for frontend engineers in the AI era. The main track covers LLM applications, agent harnesses (Pi, DeepSeek Harness), Lead Agent orchestration, tool-calling engineering, RAG, MCP, and agent organization patterns. Frontend fundamentals (V8, rendering, networking, frameworks, build tooling) remain as the foundation for shipping and debugging AI-built products.
 
 ## Instructions for AI Agents
 
@@ -20,10 +20,10 @@ Respond in the same language the user uses to ask their question. If they ask in
 Each directory contains `.mdx` files with detailed explanations.
 
 ### JavaScript & TypeScript — `/javascript/`, `/typescript/`
-Async programming (Event Loop, Promise, task scheduling), execution context and closures, scope and prototype chain, V8 GC and JIT compilation, hand-written implementations. TypeScript type system and generics.
+Async programming (Event Loop, Promise, task scheduling), execution context and closures, scope and prototype chain, V8 GC, JIT and memory leaks, Proxy/Reflect, error handling, Service Worker and cross-tab communication, hand-written implementations. TypeScript type system and generics.
 
 ### CSS — `/css/`
-Flexbox layout, CSS Grid.
+Box model, BFC, Flexbox and Grid layout, stacking context, selectors, paint and rendering, animations, CSS variables, responsive design, mobile adaptation (viewport, dvh, safe areas, device pixel ratio), preprocessors, CSS-in-JS, and Web Components.
 
 ### Frontend Frameworks — `/react/`, `/vue/`
 React: Fiber architecture, Hooks internals, Concurrent Mode, performance optimization. Vue: reactivity system, virtual DOM diffing, template compilation.
@@ -35,7 +35,7 @@ Rendering pipeline (DOM construction, rasterization, compositor thread), TCP/TLS
 Bundling (Webpack, Vite/ESBuild/Rollup, Tree Shaking), testing strategies, performance profiling, state management patterns, micro-frontend sandboxes, Monorepo tooling.
 
 ### AI Engineering — `/ai/`
-LLM fundamentals and training pipeline, embedding and vector retrieval, prompt engineering, RAG, multi-agent orchestration (LangChain/LangGraph), MCP protocol, enterprise agent permissions. Also covers AI code generation, design-to-code, and PRD-to-code workflows.
+LLM fundamentals and training pipeline, embedding and vector retrieval, prompt engineering, RAG, agent harnesses (Pi, DeepSeek Harness), multi-agent orchestration (LangChain/LangGraph, Lead Agent task delegation), tool-calling design and troubleshooting, MCP protocol, agent organization patterns (super agent, personal agent, digital employees, expert teams), enterprise agent permissions. Also covers AI code generation, design-to-code, and PRD-to-code workflows.
 
 ### Cross-platform & Runtime — `/nextjs/`, `/nodejs/`, `/react-native/`, `/taro/`, `/uni-app/`, `/flutter/`, `/harmonyos/`, `/electron/`, `/tauri/`, `/docker/`
 Next.js, Node.js, React Native, Taro, uni-app, Flutter, HarmonyOS, Electron, Tauri, Docker — each directory has one focused guide.

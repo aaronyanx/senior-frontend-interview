@@ -1,10 +1,9 @@
 ---
 title: "ES6+ API"
+description: "let/const、箭头函数、解构、Map/Set/WeakMap、可选链与空值合并等 ES6+ 特性及规范版本。"
 ---
 
-> **面试官为什么问这个？**
->
-> ES6+ 是现代 JavaScript 的基石。面试官问这个，本质上是在考察你：**是否理解 ES6 解决了什么问题，以及这些特性的底层原理。** 如果你答不清楚，说明你对 JS 的理解停留在"会用 API"而不是"知道为什么这么设计"。
+> ES6 这块我按"能解释为什么"来记：`let` 的词法环境、Map 和 Object 的取舍、`??` 与 `||` 的边界，比报菜名有用。
 
 ---
 
@@ -12,31 +11,31 @@ title: "ES6+ API"
 
 <Steps>
 
-  <Step title="ES5 时代: var 的设计缺陷">
+<Step title="ES5 时代: var 的设计缺陷">
 
-    `var` 是函数作用域，变量提升后初始化为 `undefined`，容易掩盖 Bug。没有块级作用域，`for` 循环中的变量会泄漏到外部。
+`var` 是函数作用域，变量提升后初始化为 `undefined`，容易掩盖 Bug。没有块级作用域，`for` 循环中的变量会泄漏到外部。
 
-  </Step>
-  <Step title="致命痛点: 变量提升导致隐蔽 Bug">
+</Step>
+<Step title="致命痛点: 变量提升导致隐蔽 Bug">
 
-    `console.log(a); var a = 1;` 不报错，输出 `undefined`。你在不知情的情况下使用了未初始化的变量。
+`console.log(a); var a = 1;` 不报错，输出 `undefined`。你在不知情的情况下使用了未初始化的变量。
 
-  </Step>
-  <Step title="ES6 引入 let/const">
+</Step>
+<Step title="ES6 引入 let/const">
 
-    `let` 和 `const` 是块级作用域，有暂时性死区（TDZ），不能重复声明。声明前访问会报错，比 `var` 的静默失败更安全。
+`let` 和 `const` 是块级作用域，有暂时性死区（TDZ），不能重复声明。声明前访问会报错，比 `var` 的静默失败更安全。
 
-  </Step>
-  <Step title="核心机制: V8 的双环境设计">
+</Step>
+<Step title="核心机制: V8 的双环境设计">
 
-    ES6 后 V8 将执行上下文拆分为"词法环境"（存放 let/const）和"变量环境"（存放 var）。`let` 受控于词法环境栈的推入与弹出，完美隔绝块级作用域。
+ES6 后 V8 将执行上下文拆分为"词法环境"（存放 let/const）和"变量环境"（存放 var）。`let` 受控于词法环境栈的推入与弹出，完美隔绝块级作用域。
 
-  </Step>
-  <Step title="关键洞察: const 保证的是引用不变">
+</Step>
+<Step title="关键洞察: const 保证的是引用不变">
 
-    `const` 只保证引用不变，不保证值不变。`const obj = {}; obj.name = 'Tom'` 是合法的。
+`const` 只保证引用不变，不保证值不变。`const obj = {}; obj.name = 'Tom'` 是合法的。
 
-  </Step>
+</Step>
 
 </Steps>
 
@@ -52,7 +51,7 @@ var：提升后初始化为 undefined，没有块级作用域，容易泄漏
 let/const：声明前访问报错（TDZ），块级作用域隔离变量
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 let/const 用块级作用域和 TDZ 解决了 var 的设计缺陷，const 只保证引用不变。
 
@@ -60,38 +59,41 @@ let/const 用块级作用域和 TDZ 解决了 var 的设计缺陷，const 只保
 
 <CardGroup cols={2}>
 
-<Card title="🚫 var 的半吊子提升">
+<Card title="var 的半吊子提升">
 
 `var` 声明会被提升，并且在创建阶段就被强行初始化为 `undefined`。
+
 ```javascript
 console.log(a); // undefined（不会报错！）
 var a = 10;
 ```
+
 这种设计极易掩盖 Bug。
 
 </Card>
-<Card title="✅ let/const 与 TDZ">
+<Card title="let/const 与 TDZ">
 
 `let` 和 `const` 同样会被提升！但在执行到声明行之前，它们处于**未初始化状态**（TDZ）。此时访问会直接报错。
+
 ```javascript
 console.log(b); // ReferenceError
 let b = 20;
 ```
+
 报错比静默失败更安全。
 
 </Card>
 </CardGroup>
 
-<Tip title="🎢 通俗比喻: 租房合同 vs 产权证">
+<Tip title="通俗比喻: 租房合同 vs 产权证">
 
 `var` 就像一份租房合同——签完合同（声明）的瞬间，房子就是你的了（初始化为 undefined），你可以随时进去住（访问），虽然里面可能还是空的。`let/const` 就像买期房——虽然你已经签了购房合同（提升），但在交房日（声明语句）之前，你拿不到钥匙，硬闯进去就是违法（TDZ 报错）。而 `const` 是产权证——房子归你了，但你只能装修（修改属性），不能把房子拆了重建（重新赋值）。
 
 </Tip>
 
-<Warning title="⚠️ 核心机制: let 也会提升">
+<Warning title="核心机制: let 也会提升">
 
 很多人以为 `let` 不会提升，这是错误的。`let` 和 `const` 也会提升，但**不会初始化**。在声明语句之前访问会进入"暂时性死区"（TDZ），抛出 ReferenceError。
-
 
 </Warning>
 
@@ -101,12 +103,12 @@ let b = 20;
 
 ### 基础梳理
 
-| 维度 | 普通函数 | 箭头函数 |
-|------|---------|---------|
-| this | 调用时决定（四种绑定规则） | 定义时继承外层（词法 this） |
-| arguments | 有 arguments 对象 | 没有，用 rest 参数代替 |
-| 构造函数 | 可以 new | 不能 new（没有 prototype） |
-| prototype | 有 | 没有 |
+| 维度      | 普通函数                   | 箭头函数                    |
+| --------- | -------------------------- | --------------------------- |
+| this      | 调用时决定（四种绑定规则） | 定义时继承外层（词法 this） |
+| arguments | 有 arguments 对象          | 没有，用 rest 参数代替      |
+| 构造函数  | 可以 new                   | 不能 new（没有 prototype）  |
+| prototype | 有                         | 没有                        |
 
 ### 专家视角深度剖析
 
@@ -115,14 +117,14 @@ let b = 20;
 ```javascript
 // this 是最关键的区别
 const obj = {
-  name: 'Tom',
-  regular: function() {
+  name: "Tom",
+  regular: function () {
     console.log(this.name); // 'Tom'（隐式绑定：obj.regular()）
   },
   arrow: () => {
     console.log(this.name); // undefined（继承外层，外层是全局 this = window）
   },
-  delayed: function() {
+  delayed: function () {
     setTimeout(() => {
       console.log(this.name); // 'Tom'（箭头函数继承 delayed 的 this = obj）
     }, 100);
@@ -131,7 +133,7 @@ const obj = {
 
 // 箭头函数不能被 bind/call/apply 修改 this
 const fn = () => console.log(this);
-fn.call({ name: 'test' }); // 还是原来的 this，call 无效
+fn.call({ name: "test" }); // 还是原来的 this，call 无效
 ```
 
 ### 箭头函数输出题图解
@@ -143,8 +145,8 @@ const obj = {
   arrow: () => { console.log(this.name); },
 };
 
-obj.regular();  →  this = obj  →  输出 'Tom'   ✅
-obj.arrow();    →  this = window →  输出 undefined ⚠️
+obj.regular();  →  this = obj  →  输出 'Tom'
+obj.arrow();    →  this = window →  输出 undefined（易错点）
 
 为什么 obj.arrow() 不是 'Tom'？
 
@@ -198,10 +200,9 @@ class Timer {
 }
 ```
 
-<Tip title="🎢 通俗比喻: 租房 vs 自建房">
+<Tip title="通俗比喻: 租房 vs 自建房">
 
 普通函数的 `this` 就像租房——谁签的合同（谁调用），房子就归谁。你把钥匙（函数引用）给别人，别人就成了新的租户。箭头函数的 `this` 就像自建房——从出生起就被钉死在出生地（定义时的外层作用域），无论谁来住（怎么调用），房子的位置永远不会变。所以你在对象里写了一个箭头函数，它"出生"在全局作用域，`this` 就永远指向全局，跟这个对象没有半毛钱关系。
-
 
 </Tip>
 
@@ -214,18 +215,24 @@ class Timer {
 const [a, b, ...rest] = [1, 2, 3, 4]; // a=1, b=2, rest=[3,4]
 
 // 对象解构
-const { name, age, city = 'Beijing' } = { name: 'Tom', age: 25 };
+const { name, age, city = "Beijing" } = { name: "Tom", age: 25 };
 
 // 嵌套解构
-const { data: { user: { name } } } = response;
+const response = { data: { user: { name: "Tom" } } };
+const {
+  data: {
+    user: { name: userName },
+  },
+} = response;
+// userName = 'Tom'
 
 // 常见坑
-const { a } = { a: { b: 1 } };
-a.b = 2; // 原对象也被改了（解构是浅拷贝）
+const { a: nested } = { a: { b: 1 } };
+nested.b = 2; // 原对象也被改了（解构是浅拷贝）
 
 let x, y;
-// {x, y} = {x: 1, y: 2}; // ❌ 语法错误
-({x, y} = {x: 1, y: 2});  // ✅ 加括号
+// {x, y} = {x: 1, y: 2}; // 语法错误
+({ x, y } = { x: 1, y: 2 }); // 加括号
 ```
 
 ### 解构赋值的本质
@@ -234,7 +241,7 @@ let x, y;
 
 ```javascript
 // 对象解构的默认值：只有值严格等于 undefined 时才生效
-const { name = 'Tom', age = 0 } = { name: undefined };
+const { name = "Tom", age = 0 } = { name: undefined };
 // name='Tom', age=0
 
 // 数组解构可以跳过元素
@@ -245,14 +252,14 @@ const [a, , c] = [1, 2, 3]; // a=1, c=3
 
 ```javascript
 // 坑1：解构是浅拷贝，嵌套对象仍共享引用
-const { a } = { a: { b: 1 } };
-a.b = 2; // 原对象也被改了
+const { a: nested } = { a: { b: 1 } };
+nested.b = 2; // 原对象也被改了
 
 // 坑2：解构未匹配到的属性是 undefined
 const { x, y } = { x: 1 }; // y 是 undefined
 
 // 最佳实践：函数参数解构配合默认值
-function createUser({ name = 'Tom', age = 18 } = {}) {
+function createUser({ name = "Tom", age = 18 } = {}) {
   return { name, age };
 }
 createUser(); // { name: 'Tom', age: 18 }
@@ -262,47 +269,47 @@ createUser(); // { name: 'Tom', age: 18 }
 
 ## Q4: Map 和 Object 的区别？什么时候用 Map？
 
-| 维度 | Object | Map |
-|------|--------|-----|
-| key 类型 | 只能是 String/Symbol | 任意类型（对象、函数、NaN） |
-| 顺序 | 无序（数字 key 会排序） | 有序（按插入顺序） |
-| 长度 | Object.keys(obj).length | map.size |
-| 性能 | 频繁增删场景慢 | 频繁增删场景快 |
+| 维度     | Object                  | Map                         |
+| -------- | ----------------------- | --------------------------- |
+| key 类型 | 只能是 String/Symbol    | 任意类型（对象、函数、NaN） |
+| 顺序     | 无序（数字 key 会排序） | 有序（按插入顺序）          |
+| 长度     | Object.keys(obj).length | map.size                    |
+| 性能     | 频繁增删场景慢          | 频繁增删场景快              |
 
 ```javascript
 // Map 的 key 可以是对象
 const map = new Map();
 const key = { id: 1 };
-map.set(key, 'value');
+map.set(key, "value");
 map.get(key); // 'value'
 
 // Object 做不到
+const obj = {};
 obj[{ id: 1 }]; // undefined（key 被转成字符串 '[object Object]'）
 ```
 
 ### Map 的内部实现原理
 
-Map 内部使用哈希表（Hash Table）实现。V8 对 Map 的哈希表做了优化：当 key 数量较少时使用线性存储，数量增长后切换到哈希表模式。
+Map 内部使用哈希表实现（V8 中是 OrderedHashMap），同时维护一条插入顺序链，因此 `size` 是 O(1)，迭代严格按插入顺序。
 
 ```javascript
 // Map 的遍历顺序与插入顺序一致
 const map = new Map();
-map.set('c', 3);
-map.set('a', 1);
-map.set('b', 2);
+map.set("c", 3);
+map.set("a", 1);
+map.set("b", 2);
 [...map.keys()]; // ['c', 'a', 'b'] — 保持插入顺序
 
 // Object 的数字 key 会被排序
-const obj = { 3: 'c', 1: 'a', 2: 'b' };
+const obj = { 3: "c", 1: "a", 2: "b" };
 Object.keys(obj); // ['1', '2', '3'] — 数字 key 被排序
 ```
 
 ### Map vs Object 的选择策略
 
-<Tip title="最佳实践: ">
+<Tip title="最佳实践">
 
 当 key 不是字符串、需要频繁增删、需要保持插入顺序时用 Map。稳定结构的属性访问用 Object 更快（V8 的 Inline Cache 优化）。
-
 
 </Tip>
 
@@ -312,7 +319,7 @@ const cache = new Map();
 cache.set(domNode, metadata); // DOM 节点作为 key
 
 // ✅ 用 Object 的场景：稳定的属性结构
-const config = { host: 'localhost', port: 3000 };
+const config = { host: "localhost", port: 3000 };
 // V8 的 Inline Cache 对稳定形状的 Object 极其优化
 ```
 
@@ -322,8 +329,8 @@ WeakMap 的 key 必须是对象，且是弱引用——当 key 对象没有其�
 
 ```javascript
 const wm = new WeakMap();
-let obj = { name: 'Tom' };
-wm.set(obj, 'metadata');
+let obj = { name: "Tom" };
+wm.set(obj, "metadata");
 obj = null; // obj 被 GC，WeakMap 中的条目也会被清除
 ```
 
@@ -331,14 +338,15 @@ obj = null; // obj 被 GC，WeakMap 中的条目也会被清除
 
 **Map 的内部实现原理（哈希表）：**
 
-Map 内部使用哈希表（Hash Table）实现。V8 对 Map 做了分层优化：key 数量较少时使用线性数组存储（Fast Mode），数量增长后切换到哈希表模式（Dictionary Mode）。
+Map 内部使用哈希表实现。V8 使用 OrderedHashMap：哈希桶负责定位，另有一条插入顺序链保证迭代顺序稳定。
 
 ```text
 ┌──────────────────────────────────────────────┐
 │              Map 内部存储结构                   │
 ├──────────────────────────────────────────────┤
-│  key 数量 ≤ 阈值 → Fast Mode（线性数组）       │
-│  key 数量 > 阈值 → Dictionary Mode（哈希表）   │
+│  key 数量少或多都走同一套哈希表                     │
+│  哈希桶定位 + 桶内链表/开放寻址匹配 key              │
+│  另有插入顺序链，保证迭代顺序稳定                    │
 ├──────────────────────────────────────────────┤
 │  set(key, val)                               │
 │    → 计算 key 的哈希值                        │
@@ -354,35 +362,35 @@ Map 内部使用哈希表（Hash Table）实现。V8 对 Map 做了分层优化�
 
 **Map vs Object 详细对比（8 个维度）：**
 
-| 维度 | Object | Map |
-|------|--------|-----|
-| key 类型 | 只能是 String/Symbol | 任意类型（对象、函数、NaN、数字） |
-| 遍历顺序 | 数字 key 会升序排列，其他按插入顺序 | 严格按插入顺序 |
-| 长度获取 | `Object.keys(obj).length`（O(n)） | `map.size`（O(1)） |
-| 频繁增删 | 性能差（V8 Inline Cache 失效） | 性能好（哈希表 O(1)） |
-| 原型链 | 有原型链属性干扰 | 无原型链污染 |
-| 序列化 | `JSON.stringify` 直接支持 | 不支持 JSON 序列化 |
-| 迭代协议 | 需要 `Object.entries()` | 原生可迭代（`for...of`） |
-| 内存开销 | 属性少时更省内存 | 属性多时更省内存（无 hidden class 开销） |
+| 维度     | Object                              | Map                                      |
+| -------- | ----------------------------------- | ---------------------------------------- |
+| key 类型 | 只能是 String/Symbol                | 任意类型（对象、函数、NaN、数字）        |
+| 遍历顺序 | 数字 key 会升序排列，其他按插入顺序 | 严格按插入顺序                           |
+| 长度获取 | `Object.keys(obj).length`（O(n)）   | `map.size`（O(1)）                       |
+| 频繁增删 | 性能差（V8 Inline Cache 失效）      | 性能好（哈希表 O(1)）                    |
+| 原型链   | 有原型链属性干扰                    | 无原型链污染                             |
+| 序列化   | `JSON.stringify` 直接支持           | 不支持 JSON 序列化                       |
+| 迭代协议 | 需要 `Object.entries()`             | 原生可迭代（`for...of`）                 |
+| 内存开销 | 属性少时更省内存                    | 属性多时更省内存（无 hidden class 开销） |
 
 ```javascript
 // Map 的 key 可以是任意类型
 const map = new Map();
 const fnKey = () => {};
 const objKey = { id: 1 };
-map.set(fnKey, 'function value');
-map.set(objKey, 'object value');
-map.set(NaN, 'NaN works too');
+map.set(fnKey, "function value");
+map.set(objKey, "object value");
+map.set(NaN, "NaN works too");
 
 // Object 的数字 key 会排序
-const obj = { 3: 'c', 1: 'a', 2: 'b' };
+const obj = { 3: "c", 1: "a", 2: "b" };
 Object.keys(obj); // ['1', '2', '3'] — 数字 key 被排序
 
 // Map 严格保持插入顺序
 const map2 = new Map();
-map2.set('3', 'c');
-map2.set('1', 'a');
-map2.set('2', 'b');
+map2.set("3", "c");
+map2.set("1", "a");
+map2.set("2", "b");
 [...map2.keys()]; // ['3', '1', '2'] — 保持插入顺序
 ```
 
@@ -391,8 +399,8 @@ map2.set('2', 'b');
 ```javascript
 // Map 的遍历是 O(n)，且没有原型链干扰
 const map = new Map();
-map.set('a', 1);
-map.set('b', 2);
+map.set("a", 1);
+map.set("b", 2);
 
 // 直接遍历
 for (const [key, value] of map) {
@@ -400,6 +408,7 @@ for (const [key, value] of map) {
 }
 
 // Object 需要 Object.keys/entries 过滤原型链
+const obj = { a: 1, b: 2 };
 for (const [key, value] of Object.entries(obj)) {
   // 只遍历自身可枚举属性，但需要额外方法调用
 }
@@ -408,10 +417,10 @@ for (const [key, value] of Object.entries(obj)) {
 **性能基准对比：**
 
 ```javascript
-// 频繁增删场景：Map 完胜
+// 频繁增删场景：Map 通常更稳
 // 测试：10000 次 set + get + delete 操作
 
-// Map: ~2ms（哈希表 O(1) 操作）
+// Map：哈希表 O(1) 操作，不受对象形状变化影响
 const map = new Map();
 for (let i = 0; i < 10000; i++) {
   map.set(i, i);
@@ -419,7 +428,7 @@ for (let i = 0; i < 10000; i++) {
   map.delete(i);
 }
 
-// Object: ~15ms（V8 Inline Cache 频繁失效）
+// Object：频繁增删会让 V8 的 Hidden Class / Inline Cache 失效
 const obj = {};
 for (let i = 0; i < 10000; i++) {
   obj[i] = i;
@@ -574,7 +583,7 @@ set3.size; // 2 — 引用不同，无法去重
 // 如果需要按内容去重对象，需要借助 Map
 const seen = new Map();
 const items = [{ id: 1 }, { id: 1 }, { id: 2 }];
-const unique = items.filter(item => {
+const unique = items.filter((item) => {
   const key = item.id;
   if (seen.has(key)) return false;
   seen.set(key, true);
@@ -585,19 +594,19 @@ const unique = items.filter(item => {
 
 **Set vs Array 对比：**
 
-| 维度 | Set | Array |
-|------|-----|-------|
-| 元素唯一性 | 自动去重（SameValueZero） | 允许重复 |
-| 查找元素 | `set.has(val)` — O(1) | `arr.includes(val)` — O(n) |
-| 删除元素 | `set.delete(val)` — O(1) | `arr.splice(i, 1)` — O(n) |
-| 有序性 | 有序（按插入顺序） | 有序（按索引） |
-| 访问方式 | 不能通过索引访问 | `arr[i]` 直接访问 |
-| 适用场景 | 去重、集合运算、快速查找 | 有序数据、索引访问 |
+| 维度       | Set                       | Array                      |
+| ---------- | ------------------------- | -------------------------- |
+| 元素唯一性 | 自动去重（SameValueZero） | 允许重复                   |
+| 查找元素   | `set.has(val)` — O(1)     | `arr.includes(val)` — O(n) |
+| 删除元素   | `set.delete(val)` — O(1)  | `arr.splice(i, 1)` — O(n)  |
+| 有序性     | 有序（按插入顺序）        | 有序（按索引）             |
+| 访问方式   | 不能通过索引访问          | `arr[i]` 直接访问          |
+| 适用场景   | 去重、集合运算、快速查找  | 有序数据、索引访问         |
 
 ```javascript
 // Set 的去重性能优势
 const largeArray = Array.from({ length: 100000 }, () =>
-  Math.floor(Math.random() * 1000)
+  Math.floor(Math.random() * 1000),
 );
 
 // Set 去重：O(n)
@@ -605,7 +614,7 @@ const unique1 = [...new Set(largeArray)];
 
 // filter + indexOf 去重：O(n²)
 const unique2 = largeArray.filter((v, i, arr) => arr.indexOf(v) === i);
-// 性能差距可达 100 倍以上
+// 复杂度差距会随数据量放大
 ```
 
 **Set 的集合运算实现：**
@@ -615,17 +624,17 @@ const unique2 = largeArray.filter((v, i, arr) => arr.indexOf(v) === i);
 const union = (a, b) => new Set([...a, ...b]);
 
 // 交集
-const intersect = (a, b) => new Set([...a].filter(x => b.has(x)));
+const intersect = (a, b) => new Set([...a].filter((x) => b.has(x)));
 
 // 差集
-const difference = (a, b) => new Set([...a].filter(x => !b.has(x)));
+const difference = (a, b) => new Set([...a].filter((x) => !b.has(x)));
 
 // 使用示例
 const setA = new Set([1, 2, 3, 4]);
 const setB = new Set([3, 4, 5, 6]);
 
-[...union(setA, setB)];      // [1, 2, 3, 4, 5, 6]
-[...intersect(setA, setB)];  // [3, 4]
+[...union(setA, setB)]; // [1, 2, 3, 4, 5, 6]
+[...intersect(setA, setB)]; // [3, 4]
 [...difference(setA, setB)]; // [1, 2]
 ```
 
@@ -641,7 +650,7 @@ function processNode(node) {
   if (visited.has(node)) return; // 防止循环引用
   visited.add(node);
   // 处理 node...
-  node.children.forEach(child => processNode(child));
+  node.children.forEach((child) => processNode(child));
 }
 
 // 使用场景 2：防止对象被重复添加到 DOM
@@ -649,7 +658,7 @@ const attachedElements = new WeakSet();
 
 function attachOnce(element, parent) {
   if (attachedElements.has(element)) {
-    console.warn('Element already attached');
+    console.warn("Element already attached");
     return;
   }
   attachedElements.add(element);
@@ -664,14 +673,16 @@ function attachOnce(element, parent) {
 
 ## Q5: 可选链 (?.) 和空值合并 (??) 的区别？
 
+可选链与空值合并都是 **ES2020** 引入的语法：
+
 ```javascript
 // 可选链：安全访问嵌套属性
 const city = user?.address?.city; // 如果 address 是 undefined，返回 undefined
 
 // 空值合并：只对 null 和 undefined 生效
-const a = null ?? 'default'; // 'default'
-const b = 0 ?? 'default';   // 0（0 不是 null/undefined）
-const c = 0 || 'default';   // 'default'（0 是 falsy）
+const a = null ?? "default"; // 'default'
+const b = 0 ?? "default"; // 0（0 不是 null/undefined）
+const c = 0 || "default"; // 'default'（0 是 falsy）
 ```
 
 ### ?? 和 || 的本质区别
@@ -681,7 +692,7 @@ const c = 0 || 'default';   // 'default'（0 是 falsy）
 ```javascript
 // 实际场景：用户配置合并
 const config = {
-  timeout: userConfig.timeout ?? 5000,  // 用户传 0 时保留 0
+  timeout: userConfig.timeout ?? 5000, // 用户传 0 时保留 0
   // ❌ 用 || 的话：userConfig.timeout || 5000，传 0 会被覆盖为 5000
 };
 ```
@@ -715,19 +726,19 @@ const timeout = config.timeout ?? 3000;
 
 ```javascript
 // Symbol：唯一的值，常用于对象的唯一 key
-const id = Symbol('id');
-const obj = { [id]: 123, name: 'Tom' };
+const id = Symbol("id");
+const obj = { [id]: 123, name: "Tom" };
 Object.keys(obj); // ['name']（Symbol key 不会被 for...in 遍历到）
 
 // 内置 Symbol
 const obj2 = {
   [Symbol.toPrimitive](hint) {
-    if (hint === 'number') return 42;
-    if (hint === 'string') return 'hello';
+    if (hint === "number") return 42;
+    if (hint === "string") return "hello";
     return true;
-  }
+  },
 };
-+obj2;    // 42
++obj2; // 42
 `${obj2}`; // 'hello'
 ```
 
@@ -736,12 +747,12 @@ const obj2 = {
 每个 Symbol 值都是唯一的，即使描述（description）相同。`Symbol.for()` 是例外——它会在全局注册表中查找或创建 Symbol。
 
 ```javascript
-Symbol('id') === Symbol('id'); // false — 每次创建都是新的
-Symbol.for('id') === Symbol.for('id'); // true — 全局注册表
+Symbol("id") === Symbol("id"); // false — 每次创建都是新的
+Symbol.for("id") === Symbol.for("id"); // true — 全局注册表
 
 // 查看全局注册表中的 Symbol
-Symbol.keyFor(Symbol.for('id')); // 'id'
-Symbol.keyFor(Symbol('id'));     // undefined（不在全局注册表中）
+Symbol.keyFor(Symbol.for("id")); // 'id'
+Symbol.keyFor(Symbol("id")); // undefined（不在全局注册表中）
 ```
 
 ### 内置 Symbol 的应用
@@ -749,7 +760,8 @@ Symbol.keyFor(Symbol('id'));     // undefined（不在全局注册表中）
 ```javascript
 // Symbol.iterator：定义对象的迭代行为
 const range = {
-  from: 1, to: 5,
+  from: 1,
+  to: 5,
   [Symbol.iterator]() {
     let current = this.from;
     const last = this.to;
@@ -758,16 +770,16 @@ const range = {
         return current <= last
           ? { value: current++, done: false }
           : { done: true };
-      }
+      },
     };
-  }
+  },
 };
 [...range]; // [1, 2, 3, 4, 5]
 
 // Symbol.hasInstance：自定义 instanceof 行为
 class Even {
   static [Symbol.hasInstance](num) {
-    return typeof num === 'number' && num % 2 === 0;
+    return typeof num === "number" && num % 2 === 0;
   }
 }
 2 instanceof Even; // true
@@ -780,7 +792,7 @@ class Even {
 
 ### 三大流派分类
 
-面试官问"你常用哪些数组方法"，如果你只是报菜名，那只能拿 60 分。真正拉开差距的回答是：**按副作用行为把数组方法分成三个流派，每个流派的适用场景和坑完全不同。**
+问到"你常用哪些数组方法"时，如果你只是报菜名，那只能拿 60 分。真正拉开差距的回答是：**按副作用行为把数组方法分成三个流派，每个流派的适用场景和坑完全不同。**
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
@@ -808,9 +820,9 @@ class Even {
 const arr = [3, 1, 2];
 
 // 副作用派：原地修改
-arr.sort();           // arr 变成 [1, 2, 3]，原数组被改了
-arr.push(4);          // arr 变成 [1, 2, 3, 4]
-arr.splice(1, 1);     // arr 变成 [1, 3, 4]，删除了索引 1
+arr.sort(); // arr 变成 [1, 2, 3]，原数组被改了
+arr.push(4); // arr 变成 [1, 2, 3, 4]
+arr.splice(1, 1); // arr 变成 [1, 3, 4]，删除了索引 1
 
 // 你以为只是"查看"了一下，其实原数组已经面目全非
 ```
@@ -823,15 +835,15 @@ arr.splice(1, 1);     // arr 变成 [1, 3, 4]，删除了索引 1
 const arr = [3, 1, 2];
 
 // 纯函数派：返回新数组
-const sorted = arr.toSorted();   // [1, 2, 3]，arr 仍是 [3, 1, 2]
-const sliced = arr.slice(1);     // [1, 2]，arr 不变
-const filtered = arr.filter(n => n > 1); // [3, 2]，arr 不变
-const mapped = arr.map(n => n * 2);      // [6, 2, 4]，arr 不变
+const sorted = arr.toSorted(); // [1, 2, 3]，arr 仍是 [3, 1, 2]
+const sliced = arr.slice(1); // [1, 2]，arr 不变
+const filtered = arr.filter((n) => n > 1); // [3, 2]，arr 不变
+const mapped = arr.map((n) => n * 2); // [6, 2, 4]，arr 不变
 ```
 
 ### 折叠派：reduce 不只是求和
 
-大多数候选人对 `reduce` 的理解停留在"求数组之和"。但 reduce 真正的威力是**把数组"降维"成任意数据结构**——Map、Object、嵌套树，什么都行。
+大部分人对 `reduce` 的理解停留在"求数组之和"。但 reduce 真正的威力是**把数组"降维"成任意数据结构**——Map、Object、嵌套树，什么都行。
 
 ```javascript
 // ❌ 大多数人的 reduce 用法：求和
@@ -840,9 +852,9 @@ const sum = [1, 2, 3, 4].reduce((acc, cur) => acc + cur, 0);
 
 // ✅ 真正有用的：把数组降维成 Map 字典，O(n) → O(1) 查找
 const users = [
-  { id: 1, name: 'Alice', dept: 'engineering' },
-  { id: 2, name: 'Bob', dept: 'design' },
-  { id: 3, name: 'Charlie', dept: 'engineering' },
+  { id: 1, name: "Alice", dept: "engineering" },
+  { id: 2, name: "Bob", dept: "design" },
+  { id: 3, name: "Charlie", dept: "engineering" },
 ];
 
 // 把 O(n) 的数组查找变成 O(1) 的 Map 查找
@@ -862,8 +874,8 @@ userMap.get(2); // { id: 2, name: 'Bob', dept: 'design' } — O(1)
 // 需要根据部门分组展示
 
 // ❌ 每次渲染都 filter — O(n) × 部门数
-const engineeringUsers = users.filter(u => u.dept === 'engineering');
-const designUsers = users.filter(u => u.dept === 'design');
+const engineeringUsers = users.filter((u) => u.dept === "engineering");
+const designUsers = users.filter((u) => u.dept === "design");
 // ... 每个部门遍历一次，10 个部门就是 50000 次比较
 
 // ✅ 用 reduce 一次性分组 — 只遍历一次 O(n)
@@ -876,9 +888,9 @@ const grouped = users.reduce((groups, user) => {
   return groups;
 }, new Map());
 
-grouped.get('engineering'); // [{ id: 1, name: 'Alice', ... }, ...]
-grouped.get('design');      // [{ id: 2, name: 'Bob', ... }]
-// 5000 条数据只遍历一次，比多次 filter 快 10 倍
+grouped.get("engineering"); // [{ id: 1, name: 'Alice', ... }, ...]
+grouped.get("design"); // [{ id: 2, name: 'Bob', ... }]
+// 5000 条数据只遍历一次，避免按部门重复扫描
 ```
 
 ### 结合框架规范：为什么 React 里不能直接 sort
@@ -908,7 +920,7 @@ function handleSort() {
 }
 ```
 
-<Warning title="⚠️ Vue 3 的 Proxy 陷阱">
+<Warning title="Vue 3 的 Proxy 陷阱">
 
 Vue 3 用 Proxy 代理响应式数据，`arr.sort()` 和 `arr.splice()` 会触发 Proxy 的 set 陷阱，Vue 能检测到变化。但这不意味着你可以随意使用副作用方法——在 `computed` 或 `watch` 中直接修改响应式数组会导致无限循环或意外行为。**养成用纯函数派方法的习惯，框架无关，代码更安全。**
 
@@ -927,9 +939,9 @@ const reversed1 = [...original].reverse();
 const spliced1 = [...original].splice(1, 2);
 
 // ES2023：直接调用纯函数版本
-const sorted2 = original.toSorted((a, b) => a - b);   // [1, 1, 3, 4, 5, 9]
-const reversed2 = original.toReversed();                // [9, 5, 1, 4, 1, 3]
-const spliced2 = original.toSpliced(1, 2);              // [3, 1, 5, 9]
+const sorted2 = original.toSorted((a, b) => a - b); // [1, 1, 3, 4, 5, 9]
+const reversed2 = original.toReversed(); // [9, 5, 1, 4, 1, 3]
+const spliced2 = original.toSpliced(1, 2); // [3, 1, 5, 9]
 
 // original 始终是 [3, 1, 4, 1, 5, 9]，从未被修改
 ```
@@ -964,13 +976,13 @@ result2.reverse(); // 一次性 O(n) 反转
 // ❌ delete 制造空洞 — 性能灾难
 const arr = [1, 2, 3, 4, 5];
 delete arr[1];
-console.log(arr);        // [1, empty, 3, 4, 5]
+console.log(arr); // [1, empty, 3, 4, 5]
 console.log(arr.length); // 5（length 不变！）
-console.log(arr[1]);     // undefined（不是真的删除，是变成 empty）
+console.log(arr[1]); // undefined（不是真的删除，是变成 empty）
 
 // ❌ 空洞数组的遍历也有坑
-arr.forEach(x => console.log(x)); // 只输出 1, 3, 4, 5（跳过 empty）
-arr.map(x => x * 2);              // [2, empty, 6, 8, 10]（empty 被保留）
+arr.forEach((x) => console.log(x)); // 只输出 1, 3, 4, 5（跳过 empty）
+arr.map((x) => x * 2); // [2, empty, 6, 8, 10]（empty 被保留）
 ```
 
 ```text
@@ -980,37 +992,37 @@ arr.map(x => x * 2);              // [2, empty, 6, 8, 10]（empty 被保留）
 │  Packed Elements（紧密模式）                                    │
 │    → 连续存储，没有空洞                                         │
 │    → V8 可以用连续内存块直接索引访问，性能最优                     │
-│    → [1, 2, 3, 4, 5] ✅                                      │
+│    → [1, 2, 3, 4, 5]                                         │
 │                                                              │
 │  Holey Elements（空洞模式）                                     │
 │    → 存在 empty slot（delete 或稀疏赋值导致）                    │
 │    → 每次访问需要额外检查"这个位置是不是空洞"                      │
-│    → 性能比 Packed 慢 2-3 倍                                   │
-│    → [1, empty, 3, 4, 5] ⚠️                                 │
+│    → 访问性能通常低于 Packed                                    │
+│    → [1, empty, 3, 4, 5]                                     │
 │                                                              │
 │  Dictionary Elements（字典模式）                                │
 │    → 空洞太多时，V8 直接退化为哈希表存储                          │
 │    → 每次访问都要算哈希，性能断崖式下降                            │
-│    → 性能比 Packed 慢 10 倍以上                                 │
-│    → { 0: 'a', 10000: 'b', 99999: 'c' } ❌                  │
+│    → 访问成本进一步高于 Holey                                   │
+│    → { 0: 'a', 10000: 'b', 99999: 'c' }                      │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 ```javascript
 // ❌ 稀疏数组触发 Dictionary Elements 降级
 const sparse = [];
-sparse[0] = 'a';
-sparse[10000] = 'b';
-sparse[99999] = 'c';
+sparse[0] = "a";
+sparse[10000] = "b";
+sparse[99999] = "c";
 // V8 会把 sparse 从 Packed 降级到 Dictionary Elements
 // 此时 arr[i] 的访问从 O(1) 直接索引变成 O(1) 哈希查找
 // 但常数因子大得多，而且失去了 V8 对连续数组的各种优化
 
 // ✅ 正确做法：用 Map 替代稀疏数组
 const map = new Map();
-map.set(0, 'a');
-map.set(10000, 'b');
-map.set(99999, 'c');
+map.set(0, "a");
+map.set(10000, "b");
+map.set(99999, "c");
 // Map 本身就是哈希表，不存在"降级"问题
 ```
 
@@ -1022,11 +1034,9 @@ map.set(99999, 'c');
 
 ---
 
-## 🔍 底层源码：V8 如何处理 Generator 和 async/await
+## 底层源码：V8 如何处理 Generator 和 async/await
 
-<div class="follow-up">
-Generator 在 V8 中是怎么实现暂停和恢复的？
-</div>
+<div class="follow-up">Generator 在 V8 中是怎么实现暂停和恢复的？</div>
 
 Generator 被 V8 编译为状态机（详见 [V8 源码：src/interpreter/bytecode-generator.cc](https://github.com/v8/v8/blob/main/src/interpreter/bytecode-generator.cc)）：
 
@@ -1035,23 +1045,24 @@ Generator 被 V8 编译为状态机（详见 [V8 源码：src/interpreter/byteco
 // （包括局部变量、程序计数器）到 Generator 对象的 context 中。
 // next() 恢复时，从 context 中恢复状态继续执行。
 
-// async/await 在 V8 内部被编译为 Generator + 自动执行器：
-// await expr 被转换为 yield Promise.resolve(expr)
-// 自动执行器在 Promise resolve 后调用 gen.next(value)
+// async/await 在语义上等价于 Generator + 自动执行器：
+// Babel/regenerator 的转译就是这种形态；
+// V8 原生则用 resumable function 内建机制完成挂起与恢复。
 ```
 
-这和 async/await 的关系：async 函数在 V8 内部被编译为 Generator + 自动执行器。`await expr` 被转换为 `yield Promise.resolve(expr)`，自动执行器在 Promise resolve 后调用 `gen.next(value)`。
+语义上可以把它理解为 Generator + 自动执行器的组合：`await` 相当于挂起等待 Promise settle，settle 后再恢复执行。需要区分的是，这是**转译层面的等价模型**——Babel 会把 `async` 函数编译成 Generator，而 V8 原生实现走的是内部挂起/恢复内建函数，不会真的创建一个 JS Generator 对象。
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 十、及格回答 vs 满分回答
 
 ### 问题："let/const 和 var 的区别？"
 
 **及格回答（60-70分）：**
+
 > "var 是函数作用域，let/const 是块级作用域。let/const 有暂时性死区，不能重复声明。const 不能重新赋值但可以修改对象属性。"
 
-面试官评价：**知道规则但不理解底层**。
+问题出在：**知道规则但不理解底层**。
 
 **满分回答（90-100分）：**
 
@@ -1059,20 +1070,21 @@ Generator 被 V8 编译为状态机（详见 [V8 源码：src/interpreter/byteco
 
 > "TDZ 的本质是 V8 在进入块级作用域时，将 `let/const` 变量初始化为特殊的 `the_hole`（空洞）值。在遇到赋值语句前访问它，V8 检测到 `the_hole` 即抛出 ReferenceError，这是保证代码严谨性的机制。<sup>[2]</sup>"
 
-> "Generator 在 V8 中被编译为状态机。每次 `yield` 暂停时，V8 保存当前的执行状态到 Generator 对象的 `context` 中。`next()` 恢复时，从 context 中恢复状态继续执行。async/await 在 V8 内部被编译为 Generator + 自动执行器，`await expr` 被转换为 `yield Promise.resolve(expr)`。<sup>[3]</sup>"
+> "Generator 在 V8 中被编译为状态机。每次 `yield` 暂停时，V8 保存当前的执行状态到 Generator 对象的 `context` 中。`next()` 恢复时，从 context 中恢复状态继续执行。async/await 可等价理解为 Generator + 自动执行器：`await` 挂起等待 Promise settle 后恢复；Babel 正是这样转译的，V8 原生则用 resumable function 内建机制实现。<sup>[3]</sup>"
 
 ### 问题："说说你 ES6 ES7 都用了什么 API"
 
 **及格回答（60-70分）：**
+
 > "我用过 let/const、箭头函数、解构赋值、Promise、async/await、Map/Set、可选链、空值合并……"
 
-面试官评价：**报菜名，没有深度**。
+问题出在：**报菜名，没有深度**。
 
 **满分回答（90-100分）：**
 
-> "ES6+ 的演进有三条主线。第一条是异步编程的演进——从回调地狱到 Promise 再到 async/await。Promise 解决了回调嵌套问题，async/await 让异步代码看起来像同步代码。V8 内部把 async/await 编译为 Generator + 自动执行器，`await expr` 被转换为 `yield Promise.resolve(expr)`，自动执行器在 Promise resolve 后调用 `gen.next(value)` 恢复执行。<sup>[1]</sup>"
+> "ES6+ 的演进有三条主线。第一条是异步编程的演进——从回调地狱到 Promise 再到 async/await。Promise 解决了回调嵌套问题，async/await 让异步代码看起来像同步代码。语义上 async/await 等价于 Generator + 自动执行器，Babel 的 regenerator 就是按这个模型转译的；V8 原生用 resumable function 内建机制完成挂起与恢复。<sup>[1]</sup>"
 
-> "第二条是数据结构的完善。ES5 时代只有 Object 和 Array，但 Object 的 key 只能是字符串，频繁增删性能差，遍历顺序不稳定。ES6 引入 Map/Set/WeakMap 解决了这些问题。Map 的 key 可以是任意类型，内部用哈希表实现，增删操作始终是 O(1)。WeakMap 的 key 是弱引用，当 key 对象没有其他引用时会被垃圾回收，适合存储 DOM 节点关联数据——用 Map 存 DOM 元素的元数据，节点移除后 Map 仍持有强引用，导致内存泄漏。<sup>[2]</sup>"
+> "第二条是数据结构的完善。ES5 时代只有 Object 和 Array，但 Object 的 key 只能是字符串，频繁增删性能差，遍历顺序不稳定。ES6 引入 Map/Set/WeakMap 解决了这些问题。Map 的 key 可以是任意类型，内部用哈希表实现，增删查通常是 O(1)（不考虑哈希冲突的极端情况）。WeakMap 的 key 是弱引用，当 key 对象没有其他引用时会被垃圾回收，适合存储 DOM 节点关联数据——用 Map 存 DOM 元素的元数据，节点移除后 Map 仍持有强引用，导致内存泄漏。<sup>[2]</sup>"
 
 > "第三条是防御性编程糖。ES2020 引入的可选链 `?.` 和空值合并 `??` 解决了深层属性访问和默认值设置的痛点。`??` 比 `||` 更精准——`||` 对所有 falsy 值生效（0、''、false），`??` 只对 null 和 undefined 生效。实际项目中用户传 `timeout: 0` 时，用 `||` 会被覆盖为默认值，用 `??` 则正确保留 0。<sup>[3]</sup>"
 
@@ -1116,7 +1128,7 @@ var fn = function fn() {
   var _getUser = getUser();
   var name = _getUser.name;
   var age = _getUser.age;
-  return 'Hello ' + name + ', age ' + age;
+  return "Hello " + name + ", age " + age;
 };
 // 只是代码层面的等价转换，不需要额外运行时
 
@@ -1159,17 +1171,15 @@ const plugin = {
       const { params, body } = path.node;
       // 替换为普通函数表达式
       path.replaceWith({
-        type: 'FunctionExpression',
+        type: "FunctionExpression",
         params,
         body: {
-          type: 'BlockStatement',
-          body: [
-            { type: 'ReturnStatement', argument: body }
-          ]
-        }
+          type: "BlockStatement",
+          body: [{ type: "ReturnStatement", argument: body }],
+        },
       });
-    }
-  }
+    },
+  },
 };
 ```
 
@@ -1181,17 +1191,20 @@ const plugin = {
 // babel.config.js — preset-env 的基本配置
 module.exports = {
   presets: [
-    ['@babel/preset-env', {
-      // 指定目标环境
-      targets: '> 0.25%, not dead',
-      // 或者指定具体浏览器
-      // targets: { chrome: '58', ie: '11' }
+    [
+      "@babel/preset-env",
+      {
+        // 指定目标环境
+        targets: "> 0.25%, not dead",
+        // 或者指定具体浏览器
+        // targets: { chrome: '58', ie: '11' }
 
-      // 决定如何注入 Polyfill
-      useBuiltIns: 'usage', // 'usage' | 'entry' | false
-      corejs: 3,            // core-js 版本
-    }]
-  ]
+        // 决定如何注入 Polyfill
+        useBuiltIns: "usage", // 'usage' | 'entry' | false
+        corejs: 3, // core-js 版本
+      },
+    ],
+  ],
 };
 ```
 
@@ -1296,32 +1309,38 @@ const hasItem = arr.includes(target);
 ```javascript
 // babel.config.js — 生产级配置
 module.exports = (api) => {
-  const isProd = api.env('production');
+  const isProd = api.env("production");
 
   return {
     presets: [
-      ['@babel/preset-env', {
-        // 使用 browserslist 配置
-        useBuiltIns: 'usage',
-        corejs: {
-          version: 3,
-          proposals: true, // 包含尚未正式纳入标准的提案 API
+      [
+        "@babel/preset-env",
+        {
+          // 使用 browserslist 配置
+          useBuiltIns: "usage",
+          corejs: {
+            version: 3,
+            proposals: true, // 包含尚未正式纳入标准的提案 API
+          },
+          // 不转换 ES 模块语法，交给 Webpack 处理（支持 tree-shaking）
+          modules: false,
+          // 调试模式：查看每个目标环境需要哪些 Polyfill
+          // debug: true,
         },
-        // 不转换 ES 模块语法，交给 Webpack 处理（支持 tree-shaking）
-        modules: false,
-        // 调试模式：查看每个目标环境需要哪些 Polyfill
-        // debug: true,
-      }],
-      ['@babel/preset-typescript', {
-        // 仅做类型剥离，不做类型检查（类型检查交给 tsc）
-        onlyRemoveTypeImports: true,
-      }],
+      ],
+      [
+        "@babel/preset-typescript",
+        {
+          // 仅做类型剥离，不做类型检查（类型检查交给 tsc）
+          onlyRemoveTypeImports: true,
+        },
+      ],
     ],
     plugins: [
       // 生产环境移除 console.log
-      isProd && 'transform-remove-console',
+      isProd && "transform-remove-console",
       // 按需导入（如 antd、lodash）
-      ['import', { libraryName: 'antd', libraryDirectory: 'es', style: true }],
+      ["import", { libraryName: "antd", libraryDirectory: "es", style: true }],
     ].filter(Boolean),
   };
 };
@@ -1347,7 +1366,7 @@ not ie 11
 
 </Note>
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
@@ -1357,7 +1376,7 @@ not ie 11
     说出 async/await 是 Generator + Promise 的语法糖。
 
     **高分回答：**
-    "async/await 是 Generator + Promise 的语法糖。Generator 提供暂停/恢复能力（`yield`），async/await 在此基础上自动执行并处理 Promise。`await expr` 被 V8 转换为 `yield Promise.resolve(expr)`，自动执行器在 Promise resolve 后调用 `gen.next(value)` 恢复执行。错误通过 `gen.throw(err)` 注入到 generator 内部，所以 `await` 的错误能被 `try/catch` 捕获。"
+    "async/await 在语义上是 Generator + Promise 的语法糖。Generator 提供暂停/恢复能力（`yield`），async/await 在此基础上自动执行并处理 Promise。Babel/regenerator 的转译正是把 `async` 编译成 Generator：遇到 `await` 就 `yield` 一个 Promise，Promise settle 后由自动执行器调用 `gen.next(value)` 继续；错误通过 `gen.throw(err)` 注入，所以 `await` 的错误能被 `try/catch` 捕获。V8 原生实现则用 resumable function 内建机制，效果等价。"
 
   </Accordion>
 
@@ -1383,7 +1402,7 @@ not ie 11
 
   </Accordion>
 
-  <Accordion title='🔥 Object.is() 和 === 有什么区别?' icon="skull">
+  <Accordion title='Object.is() 和 === 有什么区别?' icon="skull">
 
     **答题要点：**
     说出两个特殊 case。
@@ -1431,7 +1450,7 @@ not ie 11
 
   </Accordion>
 
-  <Accordion title='🔥 Promise.all / Promise.race / Promise.allSettled 的区别?' icon="skull">
+  <Accordion title='Promise.all / Promise.race / Promise.allSettled 的区别?' icon="skull">
 
     **答题要点：**
     从行为差异和适用场景两个维度对比。
@@ -1476,10 +1495,10 @@ not ie 11
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 🔗 [V8 Blog: Understanding V8's Bytecode](https://v8.dev/docs/ignition)：V8 官方文档，解释 Ignition 解释器如何处理 `let/const` 的 `LdaGlobal`/`LdaContextSlot` 字节码生成、变量提升与作用域绑定机制。<sup>[1]</sup>
-- 📖 [Axel Rauschmayer: Variables and Shadowing (ES6)](https://exploringjs.com/es6/ch_variables.html)：Axel Rauschmayer 在 Exploring ES6 中对 TDZ（暂时性死区）、`the_hole` 值和块级作用域的权威剖析，是理解 ES6 变量声明底层机制的最佳参考。<sup>[2]</sup>
-- 🟢 [V8 Source Code: bytecode-generator.cc](https://github.com/v8/v8/blob/main/src/interpreter/bytecode-generator.cc)：V8 字节码生成器的源码，包含箭头函数 `kLexical` this 模式、Generator 状态机和 async/await 编译为 Generator + 自动执行器的底层实现。<sup>[3]</sup>
-- 📘 [MDN Web Docs: ES6](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/JavaScript_technologies_overview)：MDN 对 ES6+ 特性的完整文档，包括 Map/Set/WeakMap、Symbol、解构赋值、可选链、空值合并等所有 API 的权威说明。
-- 📗 [Exploring JavaScript (ES2015)](https://exploringjs.com/)：Axel Rauschmayer 的 JavaScript 系列书籍网站，覆盖 ES2015 到最新标准的全面深度解析，包括箭头函数、解构赋值、Symbol 等专题。
+- [V8 Blog: Understanding V8's Bytecode](https://v8.dev/docs/ignition)：V8 官方文档，解释 Ignition 解释器如何处理 `let/const` 的 `LdaGlobal`/`LdaContextSlot` 字节码生成、变量提升与作用域绑定机制。<sup>[1]</sup>
+- [Axel Rauschmayer: Variables and Shadowing (ES6)](https://exploringjs.com/es6/ch_variables.html)：Axel Rauschmayer 在 Exploring ES6 中对 TDZ（暂时性死区）、`the_hole` 值和块级作用域的权威剖析，是理解 ES6 变量声明底层机制的最佳参考。<sup>[2]</sup>
+- [V8 Source Code: bytecode-generator.cc](https://github.com/v8/v8/blob/main/src/interpreter/bytecode-generator.cc)：V8 字节码生成器的源码，包含箭头函数 `kLexical` this 模式、Generator 状态机以及 async 函数的挂起/恢复实现。<sup>[3]</sup>
+- [MDN Web Docs: ES6](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/JavaScript_technologies_overview)：MDN 对 ES6+ 特性的完整文档，包括 Map/Set/WeakMap、Symbol、解构赋值、可选链、空值合并等所有 API 的权威说明。
+- [Exploring JavaScript (ES2015)](https://exploringjs.com/)：Axel Rauschmayer 的 JavaScript 系列书籍网站，覆盖 ES2015 到最新标准的全面深度解析，包括箭头函数、解构赋值、Symbol 等专题。

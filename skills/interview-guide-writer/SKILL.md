@@ -165,15 +165,15 @@ Match `_template.mdx` exactly. The template has **two Q1 modes** — choose base
 
 **页面结构：**
 
-- Opening: `> **面试官为什么问这个？**` blockquote
+- Opening: 第一人称笔记式引用块（1-3 句，交代"我"的理解路径或踩过的坑；不要用"面试官为什么问这个"这类第三人称套话，不要反问、对仗、加粗金句）
 - Questions: `## Q1:`, `## Q2:`, etc.
 - Q1 must have: `<Steps>` (5+ steps) + **XXX 解决的核心问题：** code block + `<Note title="💡 一句话总结">` + `<CardGroup>` + `<Tip title="💡 面试技巧">`（可选）
 - Q2 must have: ASCII diagram + `<Warning>` + `<Tip title="🎢 通俗比喻：XXX">` + 2-3 `###` sub-sections
 - Q3: comparison table + `### 专家视角深度剖析` + `###` sub-sections
 - Q4: classic pitfall scenarios + `<Tip title="最佳实践：">` + `###` sub-sections
 - Source code: `<div class="follow-up">` with GitHub links (specific functions, not directories)
-- 满分回答: `## 十、面试官视角：满分回答 vs 及格回答`
-- 追问链: `### 大厂高频连环拷问` + `<AccordionGroup>` + **8 个 `<Accordion>` items**（4 个难度层级，每个 2 个）
+- 满分回答: `## 十、及格回答 vs 满分回答`
+- 追问链: `### 常见追问` + `<AccordionGroup>` + **8 个 `<Accordion>` items**（4 个难度层级，每个 2 个）
 - Bottom: `## 📚 延伸阅读与引用参考`（带 📚 emoji，不可省略）
 
 ### Analogies: knowledge + fun scenario

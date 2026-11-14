@@ -1,10 +1,9 @@
 ---
 title: "this 与 Class"
+description: "this 四大绑定规则与优先级、手写 new、ES6 class 继承与 super 陷阱，附输出题解题框架。"
 ---
 
-> **面试官为什么问这个？**
->
-> `this` 的指向是 JavaScript 中最容易导致 bug 的机制，没有之一。面试官问这个，本质上是在考察你：**是否具备扎实的语言底层运行机制认知，能否在复杂的嵌套调用、回调传递、Class 继承等场景中精准定位上下文。** 不理解 `this` 和原型链，就写不出高健壮性的面向对象代码和高阶组件。
+> `this` 我是被输出题和 React 类组件坑出来的：绑定丢失、箭头函数不绑定、调用位置决定指向，这几点理清后就不容易错。
 
 ---
 
@@ -12,31 +11,31 @@ title: "this 与 Class"
 
 <Steps>
 
-  <Step title="this 不是在定义时确定的">
+<Step title="this 不是在定义时确定的">
 
-    `this` 的核心法则是：**它不是在定义时确定的，而是在代码执行（调用）时动态绑定的**（箭头函数除外）。
+`this` 的核心法则是：**它不是在定义时确定的，而是在代码执行（调用）时动态绑定的**（箭头函数除外）。
 
-  </Step>
-  <Step title="默认绑定: 独立调用">
+</Step>
+<Step title="默认绑定: 独立调用">
 
-    当函数被直接调用（如 `fn()`）时，`this` 指向全局对象 `window`。在严格模式下，`this` 为 `undefined`。
+当函数被直接调用（如 `fn()`）时，`this` 指向全局对象 `window`。在严格模式下，`this` 为 `undefined`。
 
-  </Step>
-  <Step title="隐式绑定: 对象调用">
+</Step>
+<Step title="隐式绑定: 对象调用">
 
-    当函数作为某个对象的方法被调用（如 `obj.fn()`）时，`this` 指向那个最后的调用者对象。
+当函数作为某个对象的方法被调用（如 `obj.fn()`）时，`this` 指向那个最后的调用者对象。
 
-  </Step>
-  <Step title="显式绑定: call/apply/bind">
+</Step>
+<Step title="显式绑定: call/apply/bind">
 
-    通过 `call`、`apply`、`bind` 强制指定 `this`。`bind` 属于硬绑定，返回新函数，`this` 无法再被普通的 call/apply 修改。
+通过 `call`、`apply`、`bind` 强制指定 `this`。`bind` 属于硬绑定，返回新函数，`this` 无法再被普通的 call/apply 修改。
 
-  </Step>
-  <Step title="new 绑定: 构造调用 (优先级最高) ">
+</Step>
+<Step title="new 绑定: 构造调用 (优先级最高)">
 
-    当使用 `new` 关键字调用函数时，引擎会创建一个全新的空对象，并将 `this` 指向这个新对象。`new` 能覆盖 `bind`。
+当使用 `new` 关键字调用函数时，引擎会创建一个全新的空对象，并将 `this` 指向这个新对象。`new` 能覆盖 `bind`。
 
-  </Step>
+</Step>
 
 </Steps>
 
@@ -54,10 +53,9 @@ this 丢失是最常见的 Bug 来源。
 new > 显式(bind) > 隐式 > 默认，箭头函数直接继承外层 this。
 ```
 
-<Tip title="🎢 通俗比喻: 谁拿着麦克风">
+<Tip title="通俗比喻: 谁拿着麦克风">
 
 `this` 就像一个麦克风，谁拿着麦克风（谁调用函数），声音就从谁那里出来。`obj.fn()` 是 obj 拿着麦克风，`this` 就是 obj。把方法赋值给变量 `const fn = obj.greet; fn()` 相当于把麦克风抢过来自己用，`this` 就变成了全局对象。`bind` 就是用胶带把麦克风粘死在某人手上，怎么抢都抢不走。而箭头函数更狠——它根本没有麦克风，它直接借外层人的麦克风用，绑定的胶带都撕不掉。
-
 
 </Tip>
 
@@ -153,24 +151,25 @@ this 绑定规则漏斗（优先级从高到低）：
 // ① 默认绑定：函数独立调用，this 指向全局
 // ========================================
 function sayHi() {
-  console.log(this);  // 非严格模式：window | 严格模式：undefined
+  console.log(this); // 非严格模式：window | 严格模式：undefined
 }
-sayHi();              // 独立调用，没有 obj. 前缀 → 默认绑定
+sayHi(); // 独立调用，没有 obj. 前缀 → 默认绑定
 
 // ========================================
 // ② 隐式绑定：通过对象调用，this 指向对象
 // ========================================
 const user = {
-  name: '张三',
+  name: "张三",
   greet() {
-    console.log(this.name);  // this = user（调用者对象）
-  }
+    console.log(this.name); // this = user（调用者对象）
+  },
 };
-user.greet();         // '张三' — obj.fn() 形式，隐式绑定
+user.greet(); // '张三' — obj.fn() 形式，隐式绑定
 
-// ⚠️ 隐式绑定丢失：赋值给变量后独立调用
-const fn = user.greet;  // fn 只是函数引用，不带 user 上下文
-fn();                   // undefined — 退化为默认绑定，this = window
+// 隐式绑定丢失：赋值给变量后独立调用
+const fn = user.greet; // fn 只是函数引用，不带 user 上下文
+fn(); // 取不到 user.name：退化为默认绑定，this = 全局对象
+// 严格模式下 this 为 undefined，读取 this.name 会直接 TypeError
 
 // ========================================
 // ③ 显式绑定：用 call/apply/bind 强制指定 this
@@ -178,24 +177,24 @@ fn();                   // undefined — 退化为默认绑定，this = window
 function showName() {
   console.log(this.name);
 }
-const boss = { name: '老板' };
-showName.call(boss);       // '老板' — call 立即执行，this = boss
-showName.apply(boss);      // '老板' — apply 立即执行，参数是数组
-const bound = showName.bind(boss);  // bind 返回新函数，this 锁定为 boss
-bound();                          // '老板'
+const boss = { name: "老板" };
+showName.call(boss); // '老板' — call 立即执行，this = boss
+showName.apply(boss); // '老板' — apply 立即执行，参数是数组
+const bound = showName.bind(boss); // bind 返回新函数，this 锁定为 boss
+bound(); // '老板'
 
 // ========================================
 // ④ new 绑定：构造函数调用，this 指向新实例（优先级最高）
 // ========================================
 function Person(name) {
-  this.name = name;  // this = 新创建的空对象 {}
+  this.name = name; // this = 新创建的空对象 {}
 }
-const p = new Person('新来的');
+const p = new Person("新来的");
 console.log(p.name); // '新来的'
 
 // ⚡ new 的优先级高于 bind —— 即使函数被 bind 过，new 也能覆盖
-const BoundPerson = Person.bind({ name: '被绑定的' });
-const instance = new BoundPerson('实例');
+const BoundPerson = Person.bind({ name: "被绑定的" });
+const instance = new BoundPerson("实例");
 console.log(instance.name); // '实例'（不是 '被绑定的'！）
 // new 强行把 this 指向新实例，bind 的绑定被忽略
 ```
@@ -227,11 +226,11 @@ console.log(instance.name); // '实例'（不是 '被绑定的'！）
                                 this = obj   this = window
                                              (严格模式 = undefined)
 
-    ⚠️ 特殊情况：如果 fn 是箭头函数，以上全部跳过！
+    特殊情况：如果 fn 是箭头函数，以上全部跳过！
     直接沿词法作用域向外层查找 this。
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 this 的优先级是 new > 显式(bind) > 隐式 > 默认。箭头函数跳出整套规则，直接继承外层 this。
 
@@ -239,26 +238,33 @@ this 的优先级是 new > 显式(bind) > 隐式 > 默认。箭头函数跳出�
 
 <CardGroup cols={2}>
 
-<Card title="🚨 陷阱: 隐式绑定丢失">
+<Card title="陷阱: 隐式绑定丢失">
 
 把对象的方法赋值给变量，然后独立调用：
+
 ```javascript
-const obj = { name: '张三', greet() { console.log(this.name); } };
-const fn = obj.greet; 
-fn(); // undefined (退化为默认绑定)
-setTimeout(obj.greet, 100); // undefined (同理)
+const obj = {
+  name: "张三",
+  greet() {
+    console.log(this.name);
+  },
+};
+const fn = obj.greet;
+fn(); // 取不到 obj.name（退化为默认绑定）
+setTimeout(obj.greet, 100); // 同理：回调执行时没有 obj. 前缀
 ```
 
 </Card>
-<Card title="✅ 破局: 箭头函数的优势">
+<Card title="破局: 箭头函数的优势">
 
 箭头函数**根本没有自己的 this**！它在被定义的那一刻起，就顺着词法作用域往上找，牢牢捕获外层的 `this`。
+
 ```javascript
 const obj = {
-  name: '张三',
+  name: "张三",
   greet() {
-    setTimeout(() => console.log(this.name), 100); 
-  }
+    setTimeout(() => console.log(this.name), 100);
+  },
 };
 obj.greet(); // "张三"
 ```
@@ -318,7 +324,7 @@ obj.greet(); // "张三"
 └──────────────────────────────────────────────────────────┘
 ```
 
-<Note title="💡 解题核心口诀">
+<Note title="解题核心口诀">
 
 找调用点，看形式，判规则，定 this。箭头函数不用看调用点，直接往上找。
 
@@ -330,13 +336,15 @@ obj.greet(); // "张三"
 
 ```javascript
 const obj = {
-  name: '张三',
-  greet() { console.log(this.name); }
+  name: "张三",
+  greet() {
+    console.log(this.name);
+  },
 };
 
-obj.greet();            // 输出什么？
+obj.greet(); // 输出什么？
 const fn = obj.greet;
-fn();                   // 输出什么？
+fn(); // 输出什么？
 ```
 
 ```text
@@ -365,7 +373,7 @@ fn();                   // 输出什么？
       隐式绑定丢失，退化为默认绑定。
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 方法赋值给变量后独立调用 = 隐式绑定丢失。这是 this 输出题的头号陷阱。
 
@@ -377,11 +385,13 @@ fn();                   // 输出什么？
 
 ```javascript
 const obj = {
-  name: '李四',
-  greet() { console.log(this.name); }
+  name: "李四",
+  greet() {
+    console.log(this.name);
+  },
 };
 
-setTimeout(obj.greet, 1000);  // 输出什么？
+setTimeout(obj.greet, 1000); // 输出什么？
 ```
 
 ```text
@@ -419,7 +429,7 @@ setTimeout(obj.greet.bind(obj), 1000);
 // bind 返回新函数，this 被永久锁定为 obj
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 `setTimeout(fn, delay)` 传的是函数引用，执行时丢失调用者上下文。用箭头函数包裹或 `.bind(this)` 修复。
 
@@ -439,11 +449,11 @@ class Logger {
   }
 }
 
-const logger = new Logger('App');
-logger.log();              // 输出什么？
+const logger = new Logger("App");
+logger.log(); // 输出什么？
 
 const { log } = logger;
-log();                     // 输出什么？
+log(); // 输出什么？
 
 setTimeout(logger.log, 100); // 输出什么？
 ```
@@ -495,11 +505,11 @@ class Logger {
   // 方案二：箭头函数类属性（最简洁，需 Babel 支持）
   log = () => {
     console.log(this.name);
-  }
+  };
 }
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 Class 方法定义在 prototype 上，解构或传参后会丢失 this。用 constructor bind 或箭头函数类属性修复。
 
@@ -511,20 +521,20 @@ Class 方法定义在 prototype 上，解构或传参后会丢失 this。用 con
 
 ```javascript
 const obj = {
-  name: '王五',
+  name: "王五",
   greet() {
     const inner = () => console.log(this.name);
     return inner;
-  }
+  },
 };
 
 const fn = obj.greet();
-fn();                    // 输出什么？
+fn(); // 输出什么？
 
-obj.greet()();           // 输出什么？
+obj.greet()(); // 输出什么？
 
 const { greet } = obj;
-greet()();               // 输出什么？
+greet()(); // 输出什么？
 ```
 
 ```text
@@ -573,7 +583,7 @@ Step 3: 箭头函数 inner 的 this = greet 的 this = window
       如果外层普通函数的 this 变了，箭头函数也会跟着变！
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 箭头函数的 this 在定义时锁定为外层普通函数的 this。如果外层 this 丢了，箭头函数也救不了。
 
@@ -585,7 +595,7 @@ Step 3: 箭头函数 inner 的 this = greet 的 this = window
 
 ```javascript
 const obj = {
-  name: '链式',
+  name: "链式",
   setName(name) {
     this.name = name;
     return this;
@@ -596,10 +606,10 @@ const obj = {
   print() {
     console.log(this.name);
     return this;
-  }
+  },
 };
 
-obj.setName('新名字').print().getName();  // 输出什么？
+obj.setName("新名字").print().getName(); // 输出什么？
 ```
 
 ```text
@@ -628,7 +638,9 @@ obj.setName('新名字')     .print()          .getName()
 ```javascript
 const obj = {
   value: 42,
-  getValue() { return this.value; }
+  getValue() {
+    return this.value;
+  },
 };
 
 // 陷阱：解构后链式调用
@@ -640,7 +652,7 @@ getValue(); // undefined — 隐式绑定丢失
 // map 的回调独立调用，this = window
 ```
 
-<Note title="💡 一句话总结">
+<Note title="一句话总结">
 
 链式调用中 this 不变，前提是每次调用都是 obj.method() 形式。一旦脱离对象独立调用，this 立即丢失。
 
@@ -653,8 +665,12 @@ getValue(); // undefined — 隐式绑定丢失
 ```javascript
 function myNew(Constructor, ...args) {
   const obj = Object.create(Constructor.prototype); // 1. 创建空对象，链接原型
-  const result = Constructor.apply(obj, args);       // 2. 执行构造函数
-  return (result !== null && typeof result === 'object') ? result : obj; // 3. 防御性判断
+  const result = Constructor.apply(obj, args); // 2. 执行构造函数
+  // 3. 返回对象或函数时以返回值优先，否则返回新实例
+  return result !== null &&
+    (typeof result === "object" || typeof result === "function")
+    ? result
+    : obj;
 }
 ```
 
@@ -674,8 +690,11 @@ function myNew(Constructor, ...args) {
   const obj = Object.create(Constructor.prototype);
   // 第三步：执行构造函数，this 指向新对象
   const result = Constructor.apply(obj, args);
-  // 第四步：防御性判断
-  return (result !== null && typeof result === 'object') ? result : obj;
+  // 第四步：构造函数返回对象（含函数）时以它为准，否则返回新实例
+  return result !== null &&
+    (typeof result === "object" || typeof result === "function")
+    ? result
+    : obj;
 }
 ```
 
@@ -684,9 +703,11 @@ function myNew(Constructor, ...args) {
 当函数被 `bind` 绑定后，再用 `new` 调用，`this` 会指向新实例而非 `bind` 的目标。这是规范明确规定的：`[[Construct]]` 内部方法会强制覆盖之前的 `this` 上下文。
 
 ```javascript
-function Foo(name) { this.name = name; }
-const Bound = Foo.bind({ name: 'obj' });
-const instance = new Bound('newFoo');
+function Foo(name) {
+  this.name = name;
+}
+const Bound = Foo.bind({ name: "obj" });
+const instance = new Bound("newFoo");
 console.log(instance.name); // 'newFoo'（不是 'obj'）
 ```
 
@@ -699,7 +720,7 @@ console.log(instance.name); // 'newFoo'（不是 'obj'）
 let instance = null;
 function Singleton() {
   if (instance) return instance;
-  this.name = 'singleton';
+  this.name = "singleton";
   instance = this;
 }
 const a = new Singleton();
@@ -719,24 +740,24 @@ ES6 的 `class` 被称为**原型链的语法糖**。但 V8 对 `class` 做了�
 
 ### class 与 ES5 构造函数的本质区别
 
-| 对比维度 | ES5 构造函数 | ES6 class |
-|---------|-------------|-----------|
-| 调用方式 | 可直接调用 `fn()` | 必须 `new`，否则报错 |
-| 严格模式 | 需手动声明 | 内部自动开启 |
-| 方法枚举 | `enumerable: true` | `enumerable: false` |
-| 变量提升 | 函数声明提升 | 暂时性死区（TDZ） |
+| 对比维度         | ES5 构造函数              | ES6 class                |
+| ---------------- | ------------------------- | ------------------------ |
+| 调用方式         | 可直接调用 `fn()`         | 必须 `new`，否则报错     |
+| 严格模式         | 需手动声明                | 内部自动开启             |
+| 方法枚举         | `enumerable: true`        | `enumerable: false`      |
+| 变量提升         | 函数声明提升              | 暂时性死区（TDZ）        |
 | 继承原生构造函数 | `Array.call(this)` 不生效 | `extends Array` 完美支持 |
 
 ### extends 与 super 做了什么？
 
 继承的核心在于 `super` 关键字的两种形态：
+
 1. **当作函数调用**：`super(name)` 本质上是 `Parent.call(this, name)`
 2. **当作对象访问**：`super.method()` 本质上是在父类的 `prototype` 上去查找方法，然后**强行把当前子类的实例作为 `this` 传进去执行**
 
-<Warning title="⚠️ 致命踩坑: 为什么子类 constructor 必须先调用 super()?">
+<Warning title="致命踩坑: 为什么子类 constructor 必须先调用 super()?">
 
 在 ES5 中，继承是"先创造子类实例的 `this`，再把父类的属性强加给它"。而在 ES6 Class 中，继承机制完全反转：**子类根本没有自己的 `this`**！它必须先调用 `super()`，由父类完成底层的 `this` 构建和实例化，然后子类才能拿到这个 `this` 进行加工。如果你在 `super()` 之前访问 `this`，引擎会直接抛出 `ReferenceError`。
-
 
 </Warning>
 
@@ -753,38 +774,35 @@ class MyArray extends Array {
 }
 const arr = new MyArray(1, 2, 3);
 arr instanceof MyArray; // true
-arr instanceof Array;   // true
+arr instanceof Array; // true
 ```
 
 ---
 
-## 🔍 底层源码：V8 中的 this 与 class
+## 底层源码：V8 中的 this 与 class
 
-<div class="follow-up">
-this 在 V8 底层究竟是怎么解析的？
-</div>
+<div class="follow-up">this 在 V8 底层究竟是怎么解析的？</div>
 
 `this` 的四种绑定规则并不是引擎里面写了四个 if-else 分支，而是依赖底层对象结构的设计（详见 [V8 源码：src/objects/js-function.h](https://github.com/v8/v8/blob/main/src/objects/js-function.h)）：
 
 - **普通函数**：通过内部方法 `[[Call]]` 执行，它的 `this` 参数是在运行时动态传入的。
 - **箭头函数**：在 V8 底层的 `SharedFunctionInfo` 中，其 `[[ThisMode]]` 被死死标记为 `kLexical`。当引擎准备为它解析 `this` 时，一旦发现是 `kLexical`，会**直接跳过运行时动态绑定阶段**，强行去读取闭包上下文 `Context` 中的 `this`。
 
-<div class="follow-up">
-ES6 Class 到底比 ES5 函数高级在哪里？
-</div>
+<div class="follow-up">ES6 Class 到底比 ES5 函数高级在哪里？</div>
 
 V8 专门给 Class 赋予了 `FunctionSyntaxKind::kClassConstructor` 的标记，这会直接改变编译器的内联缓存（Inline Cache）策略。更关键的是，Class 继承原生构造函数（如 `Array`）能正确工作，是因为 ES6 的 `[[Construct]]` 内部机制引入了 `new.target` 这一隐藏指针。子类在调用 `super()` 时，`new.target` 会指向子类，导致底层分配的内部槽（Internal Slots）是完美的子类结构，这是 ES5 的 `Array.call(this)` 做不到的。
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 十、及格回答 vs 满分回答
 
 ### 问题："说说 JavaScript 中的 this 机制？"
 
 **及格回答（60-70分）：**
+
 > "this 指向调用它的对象。四种绑定规则：默认绑定指向 window，隐式绑定指向调用对象，显式绑定通过 call/apply/bind 强制改 this，new 绑定指向新出来的实例。优先级是 new > bind > 隐式 > 默认。"
 
-面试官评价：**死记硬背型选手。** 能背出规则表，但一旦放到复杂的 React 闭包或者箭头函数嵌套里必挂无疑。
+问题出在：**死记硬背型选手。** 能背出规则表，但一旦放到复杂的 React 闭包或者箭头函数嵌套里必挂无疑。
 
 **满分回答（90-100分）：**
 
@@ -794,7 +812,7 @@ V8 专门给 Class 赋予了 `FunctionSyntaxKind::kClassConstructor` 的标记�
 
 > "在 React 类组件回调传参等实际业务中，由于独立调用导致的'隐式绑定丢失'是报错重灾区。通过 `constructor` 中的提前 `bind` 或使用箭头函数属性是标准的工程化解法。ES6 Class 继承原生构造函数（如 `Array`）能正确工作，是因为 `new.target` 隐藏指针保证了子类内部槽的正确分配。<sup>[3]</sup>"
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
@@ -825,12 +843,16 @@ V8 专门给 Class 赋予了 `FunctionSyntaxKind::kClassConstructor` 的标记�
 
     **高分回答：**
     "new 的优先级最高。即使函数已经被 `bind` 强行死绑到了某个对象上，一旦遭遇 `new` 关键字，`bind` 指定的 `this` 也会被直接废弃，`this` 被强行指向了新创建的实例。验证代码：
-  ```javascript
-    function Foo() { this.name = 'Foo'; }
-    const bound = Foo.bind({ name: 'obj' });
-    const instance = new bound();
-    console.log(instance.name); // 'Foo'（不是 'obj'）
-  ```
+
+```javascript
+function Foo() {
+  this.name = "Foo";
+}
+const bound = Foo.bind({ name: "obj" });
+const instance = new bound();
+console.log(instance.name); // 'Foo'（不是 'obj'）
+```
+
     优先级：new > bind > call/apply > 隐式 > 默认。"
 
   </Accordion>
@@ -897,7 +919,7 @@ V8 专门给 Class 赋予了 `FunctionSyntaxKind::kClassConstructor` 的标记�
 
   </Accordion>
 
-  <Accordion title='🔥 在 React 中如何彻底解决 this 丢失问题?' icon="skull">
+  <Accordion title='在 React 中如何彻底解决 this 丢失问题?' icon="skull">
 
     **答题要点：**
     对比四种方案的优劣，推荐最佳实践。
@@ -908,7 +930,7 @@ V8 专门给 Class 赋予了 `FunctionSyntaxKind::kClassConstructor` 的标记�
     2. **箭头函数类属性**：最简洁，需要 babel 插件支持，底层每次创建新函数引用。
     3. **render 中 bind**：`<button onClick={this.handleClick.bind(this)}>`，每次 render 创建新函数，影响子组件 diff。
     4. **render 中箭头函数**：同上，每次 render 创建新函数。
-    
+
     最佳实践：函数组件 + Hooks 彻底消除了 `this` 的问题，这是 React 团队推荐的方向。"
 
   </Accordion>
@@ -916,8 +938,8 @@ V8 专门给 Class 赋予了 `FunctionSyntaxKind::kClassConstructor` 的标记�
 
 ---
 
-## 📚 延伸阅读与引用参考
+## 延伸阅读与引用参考
 
-- 🔗 [MDN Web Docs: this](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Operators/this)：*MDN 官方对 this 机制的详尽文档。* <sup>[1]</sup>
-- 📖 [V8 Blog: JavaScript ES6 class semantics](https://v8.dev/blog/classes)：*V8 团队深度解析 ES6 class 在引擎中的底层优化。* <sup>[2]</sup>
-- 🟢 [V8 Source Code: js-function.h](https://github.com/v8/v8/blob/main/src/objects/js-function.h)：*V8 中关于函数对象的 C++ 头文件，定义了箭头函数的 `kLexical` ThisMode。* <sup>[3]</sup>
+- [MDN Web Docs: this](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Operators/this)：_MDN 官方对 this 机制的详尽文档。_ <sup>[1]</sup>
+- [V8 Blog: JavaScript ES6 class semantics](https://v8.dev/blog/classes)：_V8 团队解析 ES6 class 在引擎中的实现细节。_ <sup>[2]</sup>
+- [V8 Source Code: js-function.h](https://github.com/v8/v8/blob/main/src/objects/js-function.h)：_V8 中函数对象的 C++ 头文件，包含箭头函数的 this 模式定义。_ <sup>[3]</sup>

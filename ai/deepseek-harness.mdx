@@ -1,0 +1,1035 @@
+---
+title: "DeepSeek Harness：插件化 Agent 运行时"
+description: "DeepSeek Harness 的插件内核、能力接缝与运行时面试考点"
+---
+
+> 插件化 Harness 我关注的是"内核"和"扩展"的边界：依赖注入、事件分发、副作用回收这些细节，决定了它能不能长期演进。
+
+---
+
+## Q1: DeepSeek 为什么要在模型之外再做一个 Harness？
+
+DeepSeek Harness 是 DeepSeek 开源的 Agent 运行时框架，官方当前定位为**开发者预览（developer preview）**，采用 MIT 协议。命令行入口是 `dsh`，可以通过 `npx @deepseek-ai/dsh web` 直接启动 Web UI 体验。具体版本号、许可证与命令参数以官方仓库 README 为准。官方对它的定位可以压成一句公式：
+
+```text
+Model + Harness = Agent
+```
+
+模型只负责推理和决策；真正让一次任务跑完的，是工具、上下文、循环、会话、权限、沙箱和 UI。DeepSeek 把这一层单独开源，解决的是三类现实问题：
+
+| 传统做法                      | 痛点                           | Harness 的解法     |
+| ----------------------------- | ------------------------------ | ------------------ |
+| 每个 API 硬编码 Function Call | 换模型、换平台就要重写适配     | 模型适配器插件化   |
+| Agent 框架一体化封闭          | 想改循环或上下文策略必须改源码 | 主循环本身也是插件 |
+| 出问题靠日志猜                | 无法回放、无法定位是哪一步错   | 仅追加式会话日志   |
+
+<Note title="关键认知">
+
+模型厂商做 Harness，目的是把"Agent 怎么跑"变成可替换的基础设施，与绑定自家模型无关。模型可以换，运行时协议不能乱。
+
+</Note>
+
+---
+
+## Q2: "一切皆插件"具体指什么？Cordis 微内核是怎么撑起来的？
+
+DeepSeek Harness 的核心设计原则是 **Everything is a Plugin**。模型适配器、工具注册表、Skill、会话日志、存储、沙箱、执行循环、调度、甚至 Web UI，都以插件形式存在。
+
+底层用的是 Cordis——一个源自聊天机器人框架 Koishi 的 JavaScript 插件框架<sup>[7]</sup>。
+
+### Cordis 的五个核心概念
+
+| 概念               | 作用                                                   | 类比               |
+| ------------------ | ------------------------------------------------------ | ------------------ |
+| Plugin             | 实现服务的独立模块，生命周期由内核管理                 | 一个可插拔的零件   |
+| Context            | 服务容器，每个服务占一个稳定键位                       | 零件插在哪个插槽   |
+| inject             | 声明依赖，内核按依赖关系决定加载顺序                   | 零件之间的接口约定 |
+| Typed Events       | `emit`、`waterfall`、`parallel`、`serial` 四种分发模式 | 零件之间的信号总线 |
+| Reversible Effects | 插件产生的副作用可追踪、卸载时自动撤销                 | 拔出零件不留残胶   |
+
+```text
+┌──────────────────────────────────────────────────────┐
+│                   Cordis 微内核                      │
+│                                                      │
+│  ctx.llm      ctx.tools     ctx.sessions    ctx.fs   │
+│    ▲             ▲              ▲             ▲      │
+│    │             │              │             │      │
+│ ┌──┴───┐     ┌───┴────┐    ┌────┴─────┐  ┌───┴────┐ │
+│ │模型适配│     │工具注册表│    │会话日志  │  │沙箱    │ │
+│ └──────┘     └────────┘    └──────────┘  └────────┘ │
+│                                                      │
+│  依赖注入 + 类型化事件 + 可逆副作用 + 热插拔         │
+└──────────────────────────────────────────────────────┘
+```
+
+### 依赖注入：`inject` 决定"什么时候能加载"
+
+Cordis 的插件不写"我依赖谁"的命令式代码，而是声明 `inject`，由内核推导加载顺序。这个设计解决的是插件生态里最现实的问题：**插件之间不能靠约定顺序，必须靠依赖图**。
+
+```typescript
+export const inject = ["llm", "tools", "sessions"];
+
+export function apply(ctx: Context, config: Config) {
+  // 只有 llm/tools/sessions 三个服务都就绪时，apply 才会被调用
+  ctx.tools.register(myTool);
+}
+```
+
+| 设计         | 好处                                 | 代价                                   |
+| ------------ | ------------------------------------ | -------------------------------------- |
+| 声明式依赖   | 加载顺序自动可解，不用手写 boot 脚本 | 循环依赖必须在设计期拆开               |
+| 服务键位稳定 | 插件只认接口，不认具体实现           | 接口变更需要版本化                     |
+| 延迟加载     | 依赖缺失时插件不启动，而不是半残运行 | 缺失依赖表现为"功能消失"，需要可观测性 |
+
+### 类型化事件：四种分发模式的语义差别
+
+Cordis 提供 `emit`、`waterfall`、`parallel`、`serial` 四种事件分发。它们的区别在**返回值语义**，不在风格：
+
+| 模式        | 语义                           | 典型用途                   |
+| ----------- | ------------------------------ | -------------------------- |
+| `emit`      | 广播，不关心返回值             | 审计、日志、指标           |
+| `waterfall` | 依次传递并可改写结果           | 中间件：权限拦截、结果改写 |
+| `parallel`  | 并发执行所有监听器，等全部完成 | 独立的副作用、通知         |
+| `serial`    | 依次执行，前一个失败即中断     | 有顺序依赖的校验链         |
+
+面试里容易答错的是 `waterfall`：它让监听器可以"接管并改写"，这既是中间件的实现方式，也是**隐式耦合**的来源——多个插件都改同一个值时，最终行为取决于注册顺序。
+
+### 为什么"可逆副作用"很关键
+
+传统框架卸载插件经常留下脏状态：注册了事件没解绑、开了连接没关闭、改了全局配置没恢复。Cordis 用 `ctx.effect()` 把副作用登记到插件作用域，卸载时自动回收。
+
+```typescript
+export function apply(ctx: Context) {
+  const timer = setInterval(tick, 1000);
+  ctx.effect(() => () => clearInterval(timer)); // 返回 disposer
+
+  const off = ctx.on("session/event", onEvent);
+  ctx.effect(() => off);
+}
+```
+
+这带来两个直接收益：
+
+1. **热插拔。** 安装或卸载插件不需要重启整个系统。
+2. **热重载。** 改一个插件可以只重载该插件，不用重启 Agent 进程。
+
+但要注意边界：`ctx.effect()` 只能回收**通过它登记的**副作用。插件如果直接调用外部 SDK、写全局变量、启动子进程而不登记 disposer，内核一样管不了。所以"可逆副作用"是**契约能力**，不是魔法。
+
+<Warning title="面试易错点">
+
+"一切皆插件"不等于"所有功能都在插件里、内核什么都不做"。内核仍然负责插件加载、依赖解析、事件分发和副作用回收。区别在于：内核没有业务特权，业务能力全部通过插件提供。
+
+</Warning>
+
+---
+
+## Q3: 什么是"能力接缝"？为什么它能让替换一个插件改变整个产品？
+
+能力接缝（Capability Seam）是 DeepSeek Harness 最值得学的抽象。一个接缝包含三个角色：
+
+```text
+Service Definition  →  声明接口
+        ▲
+        │
+Service Provider    →  提供一个或多个实现
+        ▲
+        │
+Consumer            →  面向模型的工具（消费方）
+```
+
+以 Shell 能力为例：
+
+| 角色       | 插件               | 作用                     |
+| ---------- | ------------------ | ------------------------ |
+| Definition | `dsh-shell`        | 定义 Shell 接口          |
+| Provider   | `dsh-bash-local`   | 在本机执行               |
+| Provider   | `dsh-bash-sandbox` | 在沙箱执行               |
+| Consumer   | `dsh-tool-bash`    | 暴露给模型的 `bash` 工具 |
+
+当你把文件系统与进程的 Provider 指向远程沙箱时，Bash、PTY、LSP 会一起迁移，因为它们的"执行世界"是同一套。**换一个 Provider，整个产品的行为就变了**，而消费者和模型侧完全无感。
+
+### 这对企业架构意味着什么
+
+| 场景                         | 改动点                   |
+| ---------------------------- | ------------------------ |
+| 从本地开发切到云端沙箱       | 替换执行 Provider        |
+| 从 DeepSeek 切到自建模型网关 | 替换模型适配器           |
+| 从本地文件切到对象存储       | 替换存储 Provider        |
+| 增加审计                     | 订阅会话事件，不改主循环 |
+
+### 一个接缝的最小契约（TypeScript 示意）
+
+接缝不是"写个 interface 再 new 一个实现"。要让它真的可替换，Definition 必须把**语义**也定义清楚，而不只是方法签名：
+
+```typescript
+// dsh-shell：Definition
+export interface ShellService {
+  exec(input: {
+    command: string;
+    cwd: string;
+    timeoutMs: number;
+    env?: Record<string, string>;
+    signal?: AbortSignal;
+  }): Promise<{
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+    truncated: boolean;
+  }>;
+}
+
+export const name = "shell";
+
+// dsh-bash-local：Provider
+export const inject = ["fs"];
+export function apply(ctx: Context) {
+  ctx.set("shell", {
+    async exec({ command, cwd, timeoutMs, signal }) {
+      return runLocal(command, { cwd, timeoutMs, signal });
+    },
+  });
+}
+
+// dsh-tool-bash：Consumer（暴露给模型的工具）
+export const inject = ["shell"];
+export function apply(ctx: Context) {
+  ctx.tools.register({
+    name: "bash",
+    description: "在沙箱中执行 shell 命令",
+    async execute(toolCallId, params, signal) {
+      return ctx.shell.exec({ ...params, signal, timeoutMs: 120_000 });
+    },
+  });
+}
+```
+
+这条链路里，真正保证"可替换"的是四件事：
+
+| 契约项   | 必须写死什么                         | 不写会怎样                    |
+| -------- | ------------------------------------ | ----------------------------- |
+| 超时语义 | 谁来杀进程、杀进程组还是只杀壳       | 超时后子进程继续写文件        |
+| 取消语义 | `AbortSignal` 是否端到端传递         | 用户点了停止，命令还在跑      |
+| 截断语义 | 截断阈值、是否保留头尾、完整内容去哪 | 模型只看到半截输出，误判成功  |
+| 错误语义 | `exitCode` 非零时是抛错还是返回结果  | Consumer 各自处理，行为不一致 |
+
+**为什么这比"依赖注入"更进一步？** 依赖注入只解决"拿到一个实现"，接缝还要求"所有实现对外表现一致"。本地 Bash 和远程沙箱 Bash 的进程模型、路径语义、网络策略都不同，只有把差异收敛在 Provider 内，Consumer 和模型才能无感切换。
+
+**什么场景会坏：** Provider 换到远程沙箱后，`cwd` 语义从"宿主路径"变成"容器路径"，工具传相对路径仍然能跑，传绝对路径就失败；本地 Provider 支持交互式命令，沙箱 Provider 不支持，模型却按旧能力调用。
+
+**怎么验证：** 给同一组 shell 用例跑两个 Provider，断言 exitCode、stdout/stderr、截断标记一致；在工具执行中触发 abort，确认两个 Provider 都能在时限内终止；用路径穿越用例验证沙箱 Provider 的边界。
+
+这就是"无特权内核"的价值：扩展系统的正常方式，是在已有插件旁边挂一个新插件，而不是给核心打补丁。
+
+---
+
+## Q4: 一次任务在 DeepSeek Harness 里是怎么跑完的？运行时状态机长什么样？
+
+先看控制流，再看状态落在哪。DeepSeek Harness 的公开描述把一次会话拆成 **turn / step** 两层：一次用户输入触发一个 turn，turn 内可以有多轮"模型决策 → 工具执行"的 step。
+
+```text
+用户目标（turn 开始）
+   │
+   ▼
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│ 组装上下文   │ →  │ 模型决策     │ →  │ 执行工具     │
+│ 系统提示     │    │ 思考/工具调用 │    │ 沙箱/权限    │
+│ 会话历史     │    │             │    │ 结果截断     │
+└─────────────┘    └──────┬──────┘    └──────┬──────┘
+        ▲                  │                  │
+        │                  ▼                  ▼
+        │           ┌──────────────────────────────┐
+        └───────────│ 追加会话事件（turn/step/tool）│
+                    └──────────────────────────────┘
+```
+
+### 状态层级：run / turn / step / tool call
+
+| 层        | 含义                        | 典型事件                                 | 恢复时需要什么         |
+| --------- | --------------------------- | ---------------------------------------- | ---------------------- |
+| run       | 一次完整任务，可跨多个 turn | `run/started`、`run/finished`            | runId、入口、结束原因  |
+| turn      | 一次用户输入到助手停止      | `turn/started`、`turn/finished`          | 当前 turn 的输入       |
+| step      | 一次模型往返 + 其工具执行   | `step/started`、`step/finished`          | 模型输出、待执行工具   |
+| tool call | 单个工具调用                | `tool/call`、`tool/result`、`tool/error` | 幂等键、是否有外部结果 |
+
+这里最关键的设计判断是：**step 是恢复的最小单位**。如果只有消息日志，崩溃后你只能知道"最后一条消息是什么"；有 step 和 tool call 事件，你才能知道"模型已经决定了要调用哪个工具，但结果还没回来"——这正是需要专门处理的窗口。
+
+### 两种事件：session events 与 agent events
+
+公开资料把事件分成两类，理解这个区分比背事件名重要：
+
+| 类型           | 是什么                                               | 谁产生      | 是否持久化       | 用途                   |
+| -------------- | ---------------------------------------------------- | ----------- | ---------------- | ---------------------- |
+| session events | 会话的权威事实：输入、模型输出、工具结果、压缩、分支 | 运行时/内核 | 是，append-only  | 回放、恢复、审计、fork |
+| agent events   | 运行过程中的通知：流式增量、状态变化、UI 更新        | Agent/插件  | 通常否，或降采样 | 实时 UI、指标、进度    |
+
+为什么必须分开？因为**可回放的事实**和**实时通知**的可靠性要求完全不同。把每个流式 token 都持久化，日志会爆炸；把 UI 通知当成事实，又会丢关键状态。分开之后，session log 只记录"重放所需的最小事实"，agent events 可以丢、可以合并。
+
+### 回放、分支、恢复、检索：四个能力，四种代价
+
+| 能力   | 机制               | 能回答的问题                     | 代价                                 |
+| ------ | ------------------ | -------------------------------- | ------------------------------------ |
+| replay | 按事件顺序重放     | 当时模型看到了什么、哪一步开始错 | 事件必须自包含，不能依赖外部可变状态 |
+| fork   | 从某个事件开新分支 | 换一种策略会怎样                 | 分支要记录 parent，UI 和存储变复杂   |
+| resume | 从最后一个事件继续 | 进程崩了怎么接着跑               | 工具副作用不会自动回滚               |
+| search | 在事件流里检索     | 哪个会话出现过这个错误           | 需要索引，且要处理敏感数据           |
+
+一个常见的误解是"有 append-only 日志就能精确回放"。实际上回放有两种：
+
+- **record-replay**：记录模型输出和工具结果，回放时不重新调用外部系统。可重复、便宜，但只能看"当时发生了什么"。
+- **re-execute**：用记录下来的输入重新调用模型/工具。能验证"现在会不会有不同结果"，但外部副作用会重放，必须靠幂等或沙箱隔离。
+
+DeepSeek Harness 的公开材料强调的是前者的能力（回放定位、分支调试），没有承诺"重放时自动重做工具副作用"。生产上要把这个边界写进文档。
+
+### 状态是事件的 fold
+
+```typescript
+type SessionEvent =
+  | { type: "turn/started"; turnId: string; input: string; ts: number }
+  | {
+      type: "step/finished";
+      stepId: string;
+      output: AssistantOutput;
+      ts: number;
+    }
+  | {
+      type: "tool/call";
+      toolCallId: string;
+      name: string;
+      args: unknown;
+      ts: number;
+    }
+  | {
+      type: "tool/result";
+      toolCallId: string;
+      ok: boolean;
+      result: unknown;
+      ts: number;
+    }
+  | {
+      type: "turn/finished";
+      turnId: string;
+      reason: "done" | "aborted" | "error";
+      ts: number;
+    };
+
+type RunState = {
+  turnId?: string;
+  step: number;
+  pendingToolCalls: Map<string, { name: string; args: unknown }>;
+  messages: Message[];
+  finished: boolean;
+};
+
+function fold(events: SessionEvent[]): RunState {
+  const s: RunState = {
+    step: 0,
+    pendingToolCalls: new Map(),
+    messages: [],
+    finished: false,
+  };
+  for (const e of events) {
+    switch (e.type) {
+      case "turn/started":
+        s.turnId = e.turnId;
+        s.finished = false;
+        break;
+      case "step/finished":
+        s.step += 1;
+        s.messages.push(...e.output.messages);
+        break;
+      case "tool/call":
+        s.pendingToolCalls.set(e.toolCallId, { name: e.name, args: e.args });
+        break;
+      case "tool/result":
+        s.pendingToolCalls.delete(e.toolCallId);
+        break;
+      case "turn/finished":
+        s.finished = true;
+        break;
+    }
+  }
+  return s;
+}
+```
+
+这段伪代码的意义不在实现，而在**暴露恢复时必须回答的问题**：`pendingToolCalls` 非空说明崩溃点落在工具执行中；`step` 是重试的基准；`finished` 决定要不要继续。任何 Harness 只要能把这三个量从持久化事件里算出来，就具备了基本的崩溃恢复能力。
+
+### 恢复的真实边界
+
+| 问题           | DeepSeek Harness 的公开能力       | 仍需自建的部分                               |
+| -------------- | --------------------------------- | -------------------------------------------- |
+| 进程崩溃后继续 | append-only 日志 + resume         | 调度层的租约，防止两个进程同时恢复同一会话   |
+| 工具执行到一半 | 事件里有 tool/call 与 tool/result | pending 调用的外部结果对账、幂等键           |
+| 状态机版本升级 | 事件带类型，可按类型处理          | 事件 schema 版本迁移、旧事件兼容             |
+| 分支实验       | fork                              | 分支与工作区文件的一致性（代码不会自动回滚） |
+
+**什么场景会坏：** 崩溃恢复后重跑了一个已经成功的 `git push`；fork 到旧节点后，工作区文件却是新分支的；事件里只记了工具结果没记参数，回放时无法解释为什么这么调用。
+
+**怎么验证：** 在 `tool/call` 写入后、`tool/result` 写入前 kill 进程，恢复后检查是否识别为 pending；对同一会话并发触发两次 resume，确认只有一个能拿到执行权；构造旧版本事件，验证新版本读取端能降级而不是崩溃。
+
+<Note title="一句话总结">
+
+DeepSeek Harness 把 Agent 拆成"可替换的接缝 + 可回放的事件流"，让企业能在不改内核的前提下替换模型、工具、沙箱和调度策略。
+
+</Note>
+
+---
+
+## Q5: 四种运行模式分别解决什么问题？
+
+DeepSeek Harness 提供四种预设模式，官方名称是 **Standard / Code / Minimal / Creator**，对应不同的自由度与安全要求<sup>[2]</sup>。国内资料里常说的"PTC 模式"就是 Code 模式：它的核心能力是 Programmatic Tool Calling。
+
+| 模式     | 官方名      | 核心特点                     | 适合场景                     |
+| -------- | ----------- | ---------------------------- | ---------------------------- |
+| 标准模式 | Standard    | 常规工具调用循环             | 日常开发、文件编辑、命令执行 |
+| 代码模式 | Code（PTC） | 模型生成程序批量编排工具调用 | 多步骤、可编程的数据处理     |
+| 极简模式 | Minimal     | 更少工具、更短上下文         | 受控环境、成本敏感任务       |
+| 创造模式 | Creator     | 更开放的工具与探索空间       | 研究、原型、非确定性任务     |
+
+**为什么要设计四种模式？** 因为"能力、成本、风险"三者绑在一起。给模型更多工具和更长上下文，能力上去了，成本和攻击面也上去了；极简模式把风险预算压到最低，并非"阉割版"。模式本质是**预设的权限与上下文组合**，与模型档位无关。
+
+### PTC 为什么重要
+
+普通 Function Calling 是"模型每轮选一个工具"，几十步的任务会产生几十次模型往返。PTC 允许模型生成一段程序，在受控运行时里批量调用工具，把"决策"和"执行"分离：
+
+```text
+普通模式：
+  模型 → 工具 A → 模型 → 工具 B → 模型 → 工具 C → ...
+
+PTC 模式：
+  模型 → 生成脚本（调用 A/B/C）→ 沙箱执行 → 返回汇总结果
+```
+
+收益是**往返次数和 token 消耗下降**。一个需要读取 50 个文件再汇总的任务，普通模式可能产生上百次模型调用；PTC 让模型写一段循环，一次执行完。代价是安全边界更复杂，必须同时满足四件事：
+
+| 约束           | 做法                                 | 不做会怎样                     |
+| -------------- | ------------------------------------ | ------------------------------ |
+| 执行隔离       | 脚本跑在沙箱里，限制文件、网络、进程 | 模型生成的代码直接拿到宿主权限 |
+| 工具 allowlist | 只暴露脚本允许调用的工具子集         | 脚本可以调用任意工具，绕过审批 |
+| 返回值校验     | 对工具返回值做 schema 校验和大小限制 | 脚本拿到畸形数据继续执行       |
+| 资源上限       | 超时、内存、输出大小、循环次数       | 死循环或大对象把沙箱打爆       |
+
+一个常被忽略的点：PTC 把"工具调用"变成"代码里的函数调用"，意味着**权限检查不能只在工具入口做**。如果脚本可以自己拼参数、循环调用，审批策略必须能识别"批量、高频、越权组合"这类模式，否则一次批准会被放大成一千次执行。
+
+### 模式选择的判断矩阵
+
+| 判断维度     | 倾向 Standard | 倾向 Code（PTC） | 倾向 Minimal |
+| ------------ | ------------- | ---------------- | ------------ |
+| 任务步骤数   | 少，5 步以内  | 多，且模式重复   | 少且固定     |
+| 数据处理量   | 小            | 大，适合批处理   | 小           |
+| 可解释性要求 | 高            | 中（要看脚本）   | 高           |
+| 安全预算     | 中            | 低（需要强沙箱） | 高           |
+| 成本敏感度   | 中            | 高（省往返）     | 高           |
+
+**什么场景会坏：** 用 Standard 跑一个需要处理上千条记录的任务，模型在往返里耗尽上下文；用 Code 模式但沙箱只限制网络没限制文件，脚本把工作区外的东西读走；用 Minimal 却期待它完成复杂重构。
+
+**怎么验证：** 用同一任务分别跑 Standard 和 Code，对比模型往返次数、总 token、成功率；对 PTC 做负向测试（死循环、超大输出、越权工具）；检查脚本执行日志能否还原"哪一行调用了哪个工具"。
+
+### 沙箱与工作区
+
+- **工作区**是 Agent 被允许读写的目录，不应直接指向用户主目录或系统盘根目录。
+- **沙箱**限制高危命令、文件越权访问和网络出口。
+- **权限策略**决定哪些操作需要人工审批，Web UI 会在执行前询问。
+
+---
+
+## Q6: Profiles、Bundles、patch layers 是什么？为什么配置也要分层？
+
+插件化的代价是"要装的插件太多"。如果每个团队都从零勾选插件、写配置，插件化就会变成配置地狱。DeepSeek Harness 用三层配置解决这个问题：
+
+| 层          | 是什么                                                   | 谁维护        | 变化频率 |
+| ----------- | -------------------------------------------------------- | ------------- | -------- |
+| Profile     | 一套完整的能力组合：装哪些插件、用哪个模型、开哪些模式   | 平台团队      | 低       |
+| Bundle      | 可复用的插件/配置打包，一个 Bundle 可被多个 Profile 引用 | 插件作者/平台 | 中       |
+| patch layer | 在基础配置上做局部覆盖，不动原文件                       | 使用者        | 高       |
+
+```text
+Profile（企业代码助手）
+├── Bundle: base-tools        （read / write / bash / grep）
+├── Bundle: deepseek-models   （模型适配器 + 路由）
+├── Bundle: sandbox           （执行 Provider）
+└── patch: team-frontend.yaml （加前端专属工具、调小上下文预算）
+```
+
+**为什么用 patch 而不是 fork 配置？** 因为 fork 会产生"配置漂移"：上游修了 bug，下游的副本不会自动获得。patch layer 让定制只记录差异，升级基础 Profile 时冲突面更小。代价是 patch 的合并顺序必须定义清楚，否则"后写的覆盖先写的"会变成隐式行为。
+
+**什么场景会坏：** 两个 patch 同时改同一个工具配置，加载顺序不同导致行为不同；Profile 里引用了已被删除的 Bundle，启动时才报错；patch 覆盖了安全相关配置（沙箱 Provider），没人注意到。
+
+**怎么验证：** 对 Profile 做快照测试，断言最终解析出的插件集合和关键配置；给 patch 合并写冲突用例；在启动日志里打印每个配置项的来源（base / bundle / patch），让覆盖关系可追溯。
+
+---
+
+## Q7: MCP、Skill、Harness 三者到底是什么关系？
+
+这是面试里最容易答混的一题。它们不在同一层：
+
+| 层      | 回答的问题                             | 典型载体                         |
+| ------- | -------------------------------------- | -------------------------------- |
+| Prompt  | 这次要做什么                           | 用户输入、系统提示               |
+| Skill   | 这类事通常怎么做                       | `SKILL.md`、操作手册             |
+| MCP     | 可以连接哪些外部工具                   | MCP Server、Tool/Resource/Prompt |
+| Harness | 怎么把以上部分组织成一段持续运行的任务 | 主循环、会话、权限、沙箱、调度   |
+
+```text
+┌──────────────────────────────────────────────┐
+│                  Harness                     │
+│   循环 / 会话 / 权限 / 沙箱 / 子 Agent 调度   │
+│                                              │
+│   ┌─────────┐   ┌─────────┐   ┌─────────┐   │
+│   │ Prompt  │   │ Skill   │   │   MCP   │   │
+│   │ 本次目标 │   │ 方法    │   │ 外部工具 │   │
+│   └─────────┘   └─────────┘   └─────────┘   │
+└──────────────────────────────────────────────┘
+```
+
+<CardGroup cols={2}>
+
+<Card title="🚫 只堆 Prompt">
+
+你把所有流程、规则、工具说明都塞进系统提示，上下文越来越长，模型开始遗忘和忽略。工具调用没有权限边界，出错只能靠猜。
+
+</Card>
+<Card title="分层组织">
+
+Prompt 说目标，Skill 说方法，MCP 提供工具，Harness 负责循环、权限、沙箱和回放。每层职责单一，替换一层不影响其他层。
+
+</Card>
+</CardGroup>
+
+---
+
+## Q8: 会话产物怎么落到工作区/沙箱/对象存储，并被下一个 Agent 读取？
+
+DeepSeek Harness 的公开材料强调会话日志和沙箱工作区，但没有把它描述成一套"产物服务"。所以工程上要自己补一层：**会话记录过程，产物记录结果，两者用 ID 关联**。
+
+### 参考架构
+
+```text
+Agent A（沙箱 A）
+  └─ 写工作区 /workspace/report.md
+       │
+       │ 1. stage：临时文件 + sha256 + mediaType
+       ▼
+  ArtifactService.commit()
+       │ 2. 原子写入对象存储（tenant/run 前缀）
+       │ 3. 登记 manifest（id/version/lineage/owner/ttl）
+       ▼
+  对象存储 + 元数据库
+       │
+       ├─ 同一 run 的下一步：artifact.read(id, offset, length)
+       ├─ Agent B（另一个沙箱/进程）：按 id 读取，校验 sha256 与鉴权
+       └─ 生命周期任务：TTL / 引用计数 / 合规保留
+```
+
+这个设计的关键是**产物不依赖沙箱存活**。沙箱是"手"，可以随时销毁重建；产物在对象存储里，有独立生命周期。这和 Anthropic 在 Managed Agents 里把 session / harness / sandbox 解耦的思路一致：执行环境是 cattle，可替换；事实（事件、产物）要持久<sup>[5]</sup>。
+
+### Manifest：产物的身份证
+
+```typescript
+export type ArtifactManifest = {
+  id: string; // 全局唯一，建议带租户前缀
+  version: number; // 同一逻辑产物的递增版本
+  sha256: string; // 内容寻址，防止就地篡改
+  mediaType: string;
+  bytes: number;
+  visibility: "run" | "tenant" | "public";
+  owner: { tenantId: string; userId: string };
+  producedBy: {
+    sessionId: string;
+    turnId?: string;
+    toolCallId?: string;
+    agentId?: string;
+  };
+  inputs?: string[]; // 上游产物 id，形成 lineage
+  createdAt: string;
+  expiresAt?: string;
+  labels?: Record<string, string>;
+};
+```
+
+| 字段         | 为什么必须有              | 缺失的后果                     |
+| ------------ | ------------------------- | ------------------------------ |
+| `sha256`     | 内容寻址、防篡改          | 下游读到被改过的文件却不知道   |
+| `version`    | 允许覆盖式更新            | 只能靠文件名区分版本，最终失控 |
+| `producedBy` | 追溯是哪个 Agent/工具产的 | 出问题无法定位责任方           |
+| `inputs`     | 形成 lineage              | 无法回答"这个产物基于什么生成" |
+| `visibility` | 控制跨 run/租户访问       | 越权读取                       |
+| `expiresAt`  | 自动清理                  | 存储无限增长                   |
+
+### 提交与交接：TypeScript / Python 伪代码
+
+```typescript
+async function commitArtifact(input: {
+  bytes: Uint8Array;
+  mediaType: string;
+  visibility: "run" | "tenant" | "public";
+  producedBy: ArtifactManifest["producedBy"];
+  inputs?: string[];
+}): Promise<ArtifactManifest> {
+  const sha256 = await hashSha256(input.bytes);
+  const id = `art_${sha256.slice(0, 16)}`;
+  const key = `${tenantId}/${runId}/${id}`;
+
+  await objectStore.putIfAbsent(key, input.bytes, { checksum: sha256 });
+  const manifest = await metaDb.upsertArtifact({
+    ...input,
+    id,
+    sha256,
+    key,
+    version: 1,
+  });
+  await eventBus.emit("artifact.committed", {
+    id,
+    sha256,
+    bytes: input.bytes.length,
+  });
+  return manifest;
+}
+```
+
+```python
+def handoff(artifact: ArtifactManifest, acceptance: dict) -> dict:
+    """跨 Agent 交接：传引用 + 验收契约，不传裸路径。"""
+    return {
+        "artifact_id": artifact.id,
+        "version": artifact.version,
+        "sha256": artifact.sha256,
+        "media_type": artifact.mediaType,
+        "read_with": "artifact.read(id, offset, length)",
+        "acceptance": acceptance,  # 例如 {"schema": "report.v2", "must_parse": True}
+    }
+```
+
+**为什么不直接传工作区路径？** 因为路径只在一个沙箱里有效。沙箱销毁、换机、换租户之后，路径就是悬空的。传 `id + sha256 + media type`，下游可以用自己的方式读取和校验。
+
+### 生命周期与权限
+
+| 阶段    | 动作                           | 失败处理               |
+| ------- | ------------------------------ | ---------------------- |
+| stage   | 写临时文件、算 checksum        | 失败不向模型报成功     |
+| commit  | 原子写对象存储 + 登记 manifest | 重试；成功后删临时文件 |
+| verify  | 读回校验 sha256/schema         | 失败视为工具失败       |
+| promote | 从 run 可见提升到 tenant 可见  | 需要显式授权           |
+| expire  | TTL / 引用计数 / 合规保留      | 被引用时禁止删除       |
+
+**什么场景会坏：** 沙箱先被销毁，产物还没上传；`../../.ssh` 路径穿越把宿主文件写进产物；两个租户共用 bucket 前缀导致越权；manifest 登记了但文件被就地覆盖。
+
+**怎么验证：** 在 commit 前注入 kill，确认不会产生"半成品"；用 Agent B 真实读取并跑 schema 校验；做路径穿越和跨租户读取的负向测试；GC 时断言被引用的产物不能删。
+
+---
+
+## Q9: 多模型 Provider、失败切换和成本分级怎么做？
+
+DeepSeek Harness 的卖点之一是模型适配器插件化，官方文档也说明它可以接第三方 Provider、企业内部网关和 OpenAI 兼容 API<sup>[4]</sup>。但"能接"不等于"会自动降级"——**路由策略仍然要自己定义**。
+
+### 路由的五个维度
+
+| 维度 | 要回答的问题                               | 典型做法                   |
+| ---- | ------------------------------------------ | -------------------------- |
+| 能力 | 这个模型支持工具调用/长上下文/结构化输出吗 | 维护能力表，不满足直接跳过 |
+| 成本 | 每百万 token 输入/输出多少钱               | 按任务阶段分级             |
+| 延迟 | 首 token 与整体 P95                        | 交互式任务优先低延迟       |
+| 配额 | 429、并发上限、订阅额度                    | 令牌桶 + 退避              |
+| 合规 | 数据能否出境、能否进某个 Provider          | 按租户/数据等级做硬约束    |
+
+### 降级阶梯：先降能力，再降可用性
+
+```typescript
+type Route = {
+  provider: string;
+  model: string;
+  supportsTools: boolean;
+  maxContext: number;
+  tier: "cheap" | "standard" | "strong";
+};
+
+async function callWithFallback(req: ModelRequest, ladder: Route[]) {
+  for (const r of ladder) {
+    if (!r.supportsTools && req.needsTools) continue;
+    if (req.tokens > r.maxContext) continue;
+    if (breaker(r).isOpen()) continue;
+    try {
+      return await llm.complete({
+        ...req,
+        provider: r.provider,
+        model: r.model,
+      });
+    } catch (e) {
+      if (!isRetryable(e)) throw e; // 参数错误不降级，直接暴露
+      breaker(r).recordFailure();
+      await sleep(backoffWithJitter(r));
+    }
+  }
+  throw new Error("no route available");
+}
+```
+
+三个容易被忽略的细节：
+
+1. **降级不是无脑重试。** 4xx（参数错误、内容违规）重试没有意义，只有 429/5xx/超时才降级。把不可重试错误也丢进降级链，会把一个明确的 bug 变成"随机换模型"。
+2. **跨 Provider 的工具契约不一致。** 有的模型不支持并行工具调用，有的对 JSON Schema 支持有限。切换后工具调用可能静默丢失，必须做契约测试。
+3. **缓存粘性。** 同一会话频繁换模型会让 Prompt Cache 失效，降级省下的钱可能被缓存损失吃掉。
+
+### 成本分级的三条原则
+
+| 原则       | 做法                                     | 代价                 |
+| ---------- | ---------------------------------------- | -------------------- |
+| 按阶段分级 | 探索/摘要用便宜模型，规划/难推理用强模型 | 切换点判断错会掉质量 |
+| 预算硬约束 | 每 run / 每租户设 token 与金额上限       | 需要准确成本核算     |
+| 失败可归因 | 每次降级记录原因和最终模型               | 日志与指标要配套     |
+
+**什么场景会坏：** 主模型 429 后自动切到不支持工具调用的模型，Agent 突然"不会用工具"；降级链里所有 Provider 共用同一个密钥，配额一挂全挂；没有预算上限，死循环把额度跑光。
+
+**怎么验证：** 用故障代理制造 429/500/超时，统计降级成功率与最终模型分布；对每个 Provider 跑同一组工具调用契约测试；对比"降级前后单任务成本 + 缓存命中率"，确认降级真的省钱。
+
+---
+
+## Q10: 可观测性接点怎么设计？怎么对接 OTLP / Langfuse？
+
+DeepSeek Harness 的可观测性建立在**事件流**上，公开资料提到它提供 OTLP 可观测插件，可以把运行事件导出到标准观测后端<sup>[1]</sup>。但接点设计仍然要想清楚"哪些事件必须发、哪些字段必须带"。
+
+### 最小事件集
+
+| 事件                     | 关键字段                                        | 回答什么问题             |
+| ------------------------ | ----------------------------------------------- | ------------------------ |
+| `run.started/finished`   | runId、sessionId、mode、model、结束原因         | 这次为什么慢/贵          |
+| `turn.started/finished`  | turnId、输入摘要、耗时                          | 用户哪一轮开始跑偏       |
+| `step.started/finished`  | stepId、上下文 token、耗时                      | 哪一步上下文膨胀         |
+| `tool.call/result`       | toolCallId、name、参数摘要、ok、耗时、truncated | 工具误调用率、慢工具     |
+| `artifact.committed`     | artifactId、sha256、bytes、producer             | 产物从哪来、被谁消费     |
+| `plugin.loaded/unloaded` | plugin、version、依赖                           | 插件变更是否影响行为     |
+| `error`                  | code、retryable、关联 id                        | 区分模型错误与运行时故障 |
+
+### 映射到 OTel 与 Langfuse
+
+```text
+trace: agent.run
+├── span: turn[0]
+│   ├── span: step[0]
+│   │   ├── generation: model.complete   (model, tokens, cache, finish_reason)
+│   │   └── span: tool.bash              (tool.name, call.id, ok, duration)
+│   └── span: step[1]
+└── span: artifact.commit                (artifact.id, bytes, sha256)
+```
+
+抓三个要点：
+
+1. **层级要固定**：run → turn → step → tool/model。层级一乱，聚合和归因都做不了。
+2. **模型调用单独成 generation/span**：记录 input/output token、cache read/write、首 token 延迟、结束原因，才能算真实成本。
+3. **默认脱敏**：工具参数和结果可能含密钥、用户数据。日志记摘要或哈希，完整内容留在会话归档里按权限访问。
+
+### 事件流可观测性的优势与缺口
+
+| 项         | 情况                     | 结论                       |
+| ---------- | ------------------------ | -------------------------- |
+| 会话级回放 | append-only 事件流       | 强于多数黑盒 Agent         |
+| 插件级归因 | 事件里可带 plugin 信息   | 能定位"哪个插件改坏了行为" |
+| 标准导出   | OTLP 插件                | 可接现有观测平台           |
+| 成本聚合   | 需自行从 token 事件计算  | 要补聚合与告警             |
+| 敏感数据   | 事件可能包含原始输入输出 | 必须在写入前脱敏           |
+
+**什么场景会坏：** 只记录 run 级结果，出问题无法下钻到 step；把完整工具输入打进日志，密钥进了观测平台；插件卸载后事件源消失，指标出现断崖却没人知道原因。
+
+**怎么验证：** 跑一个固定任务，检查能否从 run 根 span 下钻到具体 tool span；人为卸载一个插件，确认有 `plugin.unloaded` 事件且指标可解释；做一次日志脱敏扫描，确认无密钥模式。
+
+---
+
+## Q11: 企业落地 DeepSeek Harness 要关注哪些工程点？
+
+| 工程点     | 关键问题             | 建议                        |
+| ---------- | -------------------- | --------------------------- |
+| 工作区隔离 | Agent 能读写哪些目录 | 单独建工作区，最小权限      |
+| 沙箱       | 命令与网络边界       | 默认沙箱执行，危险命令审批  |
+| 凭据管理   | API Key 与会话日志   | 凭据加密存储，日志脱敏      |
+| 回放与审计 | 谁在什么时候做了什么 | 追加日志归档，保留 trace    |
+| 插件治理   | 插件来源与版本       | 私有 npm 源，锁定版本       |
+| 成本       | 长任务 token 消耗    | 上下文预算、模型分级、缓存  |
+| 评测       | 换插件/模型后的回归  | 固定任务集 + 工具级 fixture |
+| 多租户     | 不同团队共享运行时   | 按租户隔离工作区与凭据      |
+
+### 插件治理：比"装哪个插件"更难的是"版本组合"
+
+插件化最大的运维风险是**版本组合爆炸**，单点故障反而容易处理。A 插件升级后改变了事件顺序，B 插件就出错；两个插件都订阅同一个 `waterfall` 事件，最终结果取决于加载顺序。
+
+生产要做三件事：
+
+1. **锁定与可重复构建**：Profile 里锁死插件版本，构建产物可复现。
+2. **兼容矩阵**：对核心插件组合跑集成测试，而不是只测单个插件。
+3. **回滚能力**：插件升级不能只靠"重新安装旧版"，要能回滚配置和事件 schema。
+
+### 一个容易被忽略的点：日志也会泄漏
+
+追加式会话日志会把系统提示、工具输入输出、文件片段全部记录下来。如果日志里包含用户数据、密钥或内部文档，审计系统本身就会变成数据泄漏面。生产环境必须做：
+
+1. 写入前脱敏（密钥、手机号、身份证、token）。
+2. 日志分级存储，敏感级别高的加密。
+3. 回放权限与原始会话权限一致，不能"能看日志就能看全部数据"。
+
+### 上线前的最小验收清单
+
+| 检查项       | 通过标准                                           |
+| ------------ | -------------------------------------------------- |
+| 沙箱逃逸测试 | 读写工作区外文件、访问内网均被拒绝                 |
+| 崩溃恢复     | tool/call 与 tool/result 之间 kill，能识别 pending |
+| 插件回滚     | 卸载插件后无残留事件监听与连接                     |
+| 审计完整性   | 能从事件流还原一次完整任务的输入、决策、工具、产物 |
+| 成本上限     | 单 run 超预算时能硬停并告警                        |
+| 多租户       | 跨租户读取产物、会话均被拒绝                       |
+
+---
+
+## Q12: DeepSeek Harness 与 Pi、Claude Code、Codex、LangGraph 怎么对比？
+
+| 维度     | DeepSeek Harness                | Pi                  | Claude Code          | Codex CLI                | LangGraph                 |
+| -------- | ------------------------------- | ------------------- | -------------------- | ------------------------ | ------------------------- |
+| 架构     | 微内核 + 全插件                 | 极简内核 + 扩展     | 完整产品             | 完整产品                 | 编排库                    |
+| 主循环   | 可替换插件                      | 核心内置、可改源码  | 内置                 | 内置                     | 自行定义                  |
+| 扩展方式 | Cordis 插件 + 可逆副作用        | 运行时 TS 扩展      | hooks / skills / MCP | skills / MCP / AGENTS.md | 加节点与边                |
+| 子 Agent | 官方插件                        | 需扩展              | 内置                 | 内置（实验性）           | 自行编排                  |
+| 会话模型 | 追加事件流 + replay/fork/resume | JSONL 会话树        | 会话 + 恢复          | rollout / 会话           | checkpointer（thread_id） |
+| 沙箱     | 内置沙箱 + Provider 替换        | 可选（gondolin 等） | OS 级沙箱 + 审批     | OS 级沙箱 + 审批         | 无                        |
+| 企业审计 | 强（事件流 + 插件归因）         | 需自建              | 中                   | 中                       | 依赖外部 tracing          |
+| 学习曲线 | 中高                            | 低                  | 低                   | 低                       | 高                        |
+
+### 机制级差异：四种"可扩展"不是一回事
+
+| 问题                   | DeepSeek Harness         | Pi                     | Claude Code / Codex | LangGraph        |
+| ---------------------- | ------------------------ | ---------------------- | ------------------- | ---------------- |
+| 能不能换掉主循环       | 能，主循环本身也是插件   | 能，改源码             | 不能                | 主循环就是你的图 |
+| 能不能保证卸载干净     | 能，`ctx.effect()` 回收  | 不能，无 unregister    | 不适用              | 不适用           |
+| 能不能精确回放到某一步 | 能，事件流 + step        | 近似，靠消息与工具结果 | 有限                | 能，checkpoint   |
+| 权限边界在哪           | 能力接缝 + 沙箱 Provider | 扩展 + 外部沙箱        | 运行时沙箱          | 自己包           |
+
+### 选择建议与决策树
+
+```text
+你要解决的是什么？
+├─ 单个 Agent 长任务
+│   ├─ 要插件化、审计、可回放、私有化  → DeepSeek Harness
+│   ├─ 要极小内核、完全掌控上下文      → Pi
+│   └─ 要开箱即用的编码体验            → Claude Code / Codex
+├─ 多 Agent 业务流程编排
+│   ├─ 需要可视化图与 checkpoint       → LangGraph
+│   └─ 需要运行时隔离与事件审计        → LangGraph 编排 + Harness 执行
+└─ 只是接模型做 Chat                    → 官方 SDK
+```
+
+三个反向排除问题：
+
+| 问题                                | 如果是 | 结论                          |
+| ----------------------------------- | ------ | ----------------------------- |
+| 团队没有精力理解插件依赖？          | 是     | 不要选 DSH，选开箱即用产品    |
+| 需要的是流程编排而非 Agent 运行时？ | 是     | LangGraph，而不是任何 Harness |
+| 安全边界要求极高、不能跑任意插件？  | 是     | 先收敛插件集，再用沙箱兜底    |
+
+<Warning title='不要把它当成"DeepSeek 专用"'>
+
+Harness 支持 DeepSeek 模型路由，也兼容其他 Provider、企业内部网关、本地模型服务和 OpenAI 兼容 API<sup>[4]</sup>。它的卖点是运行时架构，不是模型绑定。
+
+</Warning>
+
+---
+
+## Q13: 深度面试追问（插件化运行时方向）
+
+<AccordionGroup>
+
+  <Accordion title="一切皆插件是不是等于没有内核?" icon="layer-group">
+
+    **及格回答（60-70 分）：**
+    "不是，内核还是负责加载插件和分发事件。"
+
+    **满分回答（90-100 分）：**
+    "内核仍然存在，但它只做四件事：插件加载、依赖解析、事件分发、副作用回收，没有业务特权。业务能力——模型适配、工具、会话、沙箱、循环——全部通过插件提供。这样做的价值是替换成本低：换沙箱只换执行 Provider，换模型只换适配器，加审计只订阅事件。代价是抽象层更多、调试链路更长，团队必须理解依赖图。判断一个'插件化'架构是否真实，看它能不能在不改内核的情况下换掉主循环和存储。"
+
+  </Accordion>
+
+  <Accordion title="可逆副作用能保证卸载干净吗?" icon="skull">
+
+    **及格回答（60-70 分）：**
+    "能，卸载插件时会自动撤销注册的东西。"
+
+    **满分回答（90-100 分）：**
+    "只能保证通过 `ctx.effect()` 登记的副作用被回收。插件如果直接开子进程、写全局变量、调用外部 SDK 而不登记 disposer，内核管不了。所以它是契约能力，不是魔法：插件作者必须把定时器、连接、事件监听、临时文件都登记成 effect。验证方法是写一个故意不登记的插件，卸载后观察句柄和连接是否残留——残留就说明治理不能只靠框架。"
+
+  </Accordion>
+
+  <Accordion title="append-only 日志为什么不能直接当成事件溯源?" icon="node">
+
+    **及格回答（60-70 分）：**
+    "因为日志可以重放，所以就是事件溯源。"
+
+    **满分回答（90-100 分）：**
+    "append-only 只保证不丢、不改，事件溯源还要求事件是语义明确的事实、状态由事件 fold 得出、并且能处理快照与版本迁移。只有消息日志，恢复时你只知道最后一条消息；有 turn/step/tool 事件，才知道崩溃点是否落在工具执行中、重试是否安全。另外要区分 record-replay 和 re-execute：前者不重放外部副作用，后者会，必须靠幂等或沙箱隔离。"
+
+  </Accordion>
+
+  <Accordion title="PTC 模式最大的安全风险是什么?" icon="skull">
+
+    **及格回答（60-70 分）：**
+    "模型写的代码可能删文件，所以要沙箱。"
+
+    **满分回答（90-100 分）：**
+    "风险不只是代码本身，而是**权限放大**。普通模式下每次工具调用都能被审批，PTC 把调用变成脚本里的循环，一次批准可能被放大成上千次执行；模型还可以自己拼参数、组合工具，绕过针对单次调用的检查。所以要在四层设边界：沙箱限制文件和网络、工具 allowlist 限制可调用集合、返回值 schema 校验、资源上限（超时/内存/输出/循环次数）。验证要做红队测试，而不是只看'能不能跑通'。"
+
+  </Accordion>
+
+  <Accordion title="能力接缝和普通依赖注入的本质区别是什么?" icon="layer-group">
+
+    **及格回答（60-70 分）：**
+    "接缝是更彻底的依赖注入。"
+
+    **满分回答（90-100 分）：**
+    "依赖注入解决'谁依赖谁'，接缝额外定义了三方角色和语义契约：Definition 声明接口与行为，Provider 提供一个实现，Consumer 是面向模型的工具。换 Provider 时 Consumer 和模型无感，但行为整体切换。要真正做到可替换，接口必须写死超时、取消、截断、错误四类语义，否则本地实现和沙箱实现表现不一致。区别在于：依赖注入让你'拿到一个对象'，接缝让你'换掉一个世界'。"
+
+  </Accordion>
+
+  <Accordion title="为什么会话日志和产物要分开存?" icon="node">
+
+    **及格回答（60-70 分）：**
+    "日志记录过程，产物是文件，本来就不一样。"
+
+    **满分回答（90-100 分）：**
+    "因为生命周期和访问模式不同。会话日志是事实流，必须不可变、可回放、按权限访问；产物是大对象，需要版本、校验、TTL、跨租户可见性。混在一起会有两个问题：日志被大文件撑爆；沙箱销毁时产物跟着丢。正确做法是日志记 manifest 和事件，产物放对象存储，用 artifactId 关联。这样沙箱可以随时重建，下游 Agent 仍能按 id + sha256 读取并验收。"
+
+  </Accordion>
+
+  <Accordion title="多 Provider 路由为什么不能只做失败重试?" icon="stopwatch">
+
+    **及格回答（60-70 分）：**
+    "因为有的 Provider 会挂，所以要换一个重试。"
+
+    **满分回答（90-100 分）：**
+    "重试只解决可用性，不解决能力差异。不同 Provider 对工具调用、并行调用、JSON Schema、长上下文、结构化输出的支持不一样，切过去可能'能返回但不会用工具'。所以路由要先过滤能力，再考虑成本、延迟、配额和合规；降级只对 429/5xx/超时触发，4xx 应该直接暴露。还要注意缓存粘性：频繁换模型会让 Prompt Cache 失效，省下的钱可能被缓存损失吃掉。"
+
+  </Accordion>
+
+  <Accordion title="插件化运行时最难治理的是什么?" icon="skull">
+
+    **及格回答（60-70 分）：**
+    "插件质量参差不齐。"
+
+    **满分回答（90-100 分）：**
+    "最难的是**版本组合与隐式耦合**。单个插件都能测，但组合起来的行为没人完整验证：A 插件改了事件顺序，B 插件就出错；两个插件都订阅同一个 waterfall 事件，结果取决于加载顺序。治理手段是锁定版本、维护兼容矩阵、在 CI 里跑组合集成测试、让每个配置项可追溯到来源（Profile/Bundle/patch），并保留回滚能力。自由组合的前提是可重复构建。"
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## Q14: 满分回答 vs 及格回答
+
+### 问题："DeepSeek Harness 的'一切皆插件'到底解决了什么问题？"
+
+**及格回答（60-70分）：**
+
+> "它把所有东西都做成插件，所以很灵活，可以换模型、换工具。"
+
+问题出在：**只说了结论，没有说清代价和边界**。
+
+**满分回答（90-100分）：**
+
+> "它解决的是 Agent 框架的耦合问题：传统框架把主循环、工具调用、上下文策略写死，想改就得动源码。DeepSeek Harness 把这些都定义成服务接缝，通过 Cordis 的依赖注入、类型化事件和可逆副作用管理插件生命周期。"
+
+> "价值在替换成本：换沙箱只换执行 Provider，换模型只换适配器，加审计只订阅事件。代价是抽象层更多、调试链路更长，团队需要理解插件依赖关系。它适合平台型团队，不适合只想快速做一个 Demo 的团队。"
+
+### 常见追问
+
+<AccordionGroup>
+
+  <Accordion title="Cordis 的可逆副作用是怎么帮助热插拔的?" icon="layer-group">
+
+    **答题要点：**
+    追踪注册行为，卸载时自动回收。
+
+    **高分回答：**
+    "插件注册事件、工具、服务时产生的副作用会被内核记录，卸载插件时按记录反向撤销，所以不会留下悬空监听、未关闭连接或残留配置。没有这个机制，热插拔几次后进程状态就脏了，只能重启。"
+
+  </Accordion>
+
+  <Accordion title="能力接缝和普通依赖注入有什么区别?" icon="layer-group">
+
+    **答题要点：**
+    接缝是三方契约，依赖注入只是解耦。
+
+    **高分回答：**
+    "依赖注入解决'谁依赖谁'，能力接缝还定义了 Definition、Provider、Consumer 三方角色，并且消费者是面向模型暴露的工具。换 Provider 时，消费者和模型看到的接口不变，行为却整体切换，例如本地 Bash 换成沙箱 Bash。"
+
+  </Accordion>
+
+  <Accordion title="为什么会话日志要设计成仅追加?" icon="stopwatch">
+
+    **答题要点：**
+    可回放、可审计、避免状态被篡改。
+
+    **高分回答：**
+    "仅追加保证事件顺序不可变，回放时能精确重建当时上下文；审计上也能证明'系统当时看到了什么'。如果允许就地修改，回放结果和线上行为可能不一致，故障溯源就失去意义。"
+
+  </Accordion>
+
+  <Accordion title="PTC 模式相比普通 Function Calling 的收益和风险?" icon="stopwatch">
+
+    **答题要点：**
+    减少往返，但扩大攻击面。
+
+    **高分回答：**
+    "收益是把多步工具调用压成一段脚本，减少模型往返和 token 消耗，适合批量数据处理。风险是脚本执行面更大，必须沙箱化、工具 allowlist、返回值校验，并限制网络与文件访问。没有这些边界，PTC 等于让模型直接跑代码。"
+
+  </Accordion>
+
+  <Accordion title="MCP 和 Harness 会不会重复?" icon="node">
+
+    **答题要点：**
+    协议 vs 运行时，不重复。
+
+    **高分回答：**
+    "MCP 只定义模型如何连接外部工具、资源和提示模板，不负责主循环、会话、权限和沙箱。Harness 消费 MCP 提供的工具，并决定什么时候调用、失败怎么重试、结果怎么记录。两者是插头和电路的关系。"
+
+  </Accordion>
+
+  <Accordion title="DeepSeek Harness 的沙箱能替代权限系统吗?" icon="node">
+
+    **答题要点：**
+    不能，沙箱限制破坏半径，权限决定能不能做。
+
+    **高分回答：**
+    "沙箱解决'即使被攻破也出不去'，权限解决'这个操作是否被允许'。比如删除生产数据库，沙箱可能允许执行，但权限层必须拦截并要求人工审批。生产环境要两层都有：默认沙箱执行，高风险操作再走审批。"
+
+  </Accordion>
+
+  <Accordion title="如何评估一个 Harness 是否适合企业?" icon="skull">
+
+    **答题要点：**
+    从替换成本、审计能力、失败恢复、生态四方面。
+
+    **高分回答：**
+    "看四件事：换模型/换沙箱的改动量；会话能否回放和审计；工具失败后能否重试、降级、人工接管；插件生态是否足够支撑你的业务。功能列表不重要，重要的是出问题时你能不能定位和恢复。"
+
+  </Accordion>
+
+  <Accordion title="插件化架构最大的运维风险是什么?" icon="skull">
+
+    **答题要点：**
+    依赖漂移与版本组合爆炸。
+
+    **高分回答：**
+    "插件可以独立升级，组合出来的行为却没人完整测过。A 插件的新版本可能改变事件顺序，B 插件就出错。治理方式是锁定版本、维护兼容矩阵、在 CI 里跑插件组合的集成测试，并保留回滚能力。自由组合的前提是可重复构建。"
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## 延伸阅读与引用参考
+
+- [1] [@deepseek-ai/dsh（npm）](https://www.npmjs.com/package/@deepseek-ai/dsh)：官方包与 `npx @deepseek-ai/dsh web` 入口、开发者预览说明、OTLP 可观测插件相关说明。
+- [2] [DeepSeek Harness - 阿里云 ECS 文档](https://help.aliyun.com/en/ecs/user-guide/deepseek-harness)：插件化架构、四种模式、沙箱与部署方式。
+- [3] [DeepSeek Harness - 火山引擎文档](https://www.volcengine.com/docs/82379/2637928)：模型接入、Provider 配置与 Web UI 使用。
+- [4] [DeepSeek Harness - 阿里云 Model Studio](https://www.alibabacloud.com/help/en/model-studio/deepseek-harness)：`settings.yaml` 配置、多 Provider 与多套餐接入。
+- [5] [Anthropic: Managed Agents](https://www.anthropic.com/engineering/managed-agents)：session / harness / sandbox 解耦、`wake` / `getSession` / `emitEvent` 接口与凭据隔离思路。
+- [6] [OpenTelemetry GenAI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)：`gen_ai.*` 属性与 agent/tool span 命名约定。
+- [7] [什么是 DeepSeek Harness - 腾讯云](https://cloud.tencent.cn/developer/techpedia/2698)：Cordis 内核、能力接缝、可逆副作用的概念整理。
+
+> 说明：DeepSeek Harness 仍处于开发者预览阶段，插件名、事件名和配置字段可能变化。本文涉及"公开资料未明确说明"的部分（如工具幂等账本、租约/fencing、产物服务）均标注为需要自建的工程能力，不代表官方已提供。

@@ -1,10 +1,9 @@
 ---
 title: "单元测试"
+description: "覆盖断言与 Mock 原理、Testing Library 测试哲学、覆盖率陷阱，以及 Jest 与 Vitest 的 API 差异。"
 ---
 
-> **面试官为什么问这个？**
->
-> 单元测试是工程化能力的核心指标。面试官问这个，本质上是在考察你：**你写的代码有没有"可验证性"？** 如果你写了一个函数却无法证明它在各种边界条件下都能正确工作，说明你对代码质量的理解还停留在"跑通就行"的层面。
+> 单元测试说到底是让自己能安全改代码的保险，覆盖率不是目标。
 
 ---
 
@@ -13,7 +12,7 @@ title: "单元测试"
 ```text
 ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
 │  1950 年代   │ → │  1990 年代   │ → │  2010 年代   │ → │  2020 年+    │
-│  人工验证    │ │  xUnit 体系  │ │  Jest/Vitest │ │  AI 辅助测试 │
+│  人工验证    │ │  xUnit 体系  │ │  Jest 时代   │ │  AI 辅助测试 │
 │  手动断言    │ │  自动化框架  │ │  零配置时代  │ │  智能生成    │
 └──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
 ```
@@ -37,7 +36,7 @@ title: "单元测试"
   </Step>
   <Step title="2020 年+ Vitest 与 AI 辅助测试">
 
-    Vitest 基于 Vite 的原生 ESM 支持，实现了比 Jest 快 10 倍的测试执行速度。AI 代码补全工具开始能自动生成测试用例，但核心的测试设计思路仍然需要工程师自己把控。
+    Vitest 基于 Vite 的按需转换能力，在大型项目里通常比 Jest 启动和执行得更快，但具体差距取决于项目结构。AI 代码补全工具开始能自动生成测试用例，但核心的测试设计思路仍然需要工程师自己把控。
 
   </Step>
 
@@ -77,7 +76,7 @@ npm test → 全部通过 → 放心提交 → CI 自动验证 → 安全部署
 
 <Tip title="💡 面试技巧">
 
-回答时先说"为什么"（手动回归的痛点），再说"怎么做"（自动化测试的收益）。面试官想听的是你理解测试的本质是"降低修改代码的风险"，而不是"追求 100% 覆盖率"。
+回答时先说"为什么"（手动回归的痛点），再说"怎么做"（自动化测试的收益）。想听的是你对测试本质的理解——它降低的是修改代码的风险，而不是追求 100% 覆盖率。
 
 </Tip>
 
@@ -150,8 +149,8 @@ Mock 的核心是**用可控的假行为替换不可控的真实行为**。Jest 
 // Jest 的 Mock 本质上是对函数的代理包装
 function createMockFn() {
   const mock = function (...args) {
-    mock.calls.push(args);        // 记录调用次数和参数
-    mock.results.push({ type: 'return', value: undefined });
+    mock.calls.push(args); // 记录调用次数和参数
+    mock.results.push({ type: "return", value: undefined });
     if (mock._implementation) {
       return mock._implementation(...args);
     }
@@ -159,8 +158,12 @@ function createMockFn() {
   mock.calls = [];
   mock.results = [];
   mock._implementation = null;
-  mock.mockImplementation = (fn) => { mock._implementation = fn; };
-  mock.mockReturnValue = (val) => { mock._implementation = () => val; };
+  mock.mockImplementation = (fn) => {
+    mock._implementation = fn;
+  };
+  mock.mockReturnValue = (val) => {
+    mock._implementation = () => val;
+  };
   return mock;
 }
 ```
@@ -173,13 +176,15 @@ function createMockFn() {
 // 快照测试的简化原理
 function toMatchSnapshot(actual) {
   const serialized = serialize(actual); // 序列化为字符串
-  const stored = loadSnapshotFile();     // 从 .snap 文件读取上次的结果
+  const stored = loadSnapshotFile(); // 从 .snap 文件读取上次的结果
   if (!stored) {
-    saveSnapshot(serialized);            // 首次运行：保存基准
+    saveSnapshot(serialized); // 首次运行：保存基准
     return;
   }
   if (serialized !== stored) {
-    throw new Error(`Snapshot mismatch:\nExpected: ${stored}\nReceived: ${serialized}`);
+    throw new Error(
+      `Snapshot mismatch:\nExpected: ${stored}\nReceived: ${serialized}`,
+    );
   }
 }
 ```
@@ -188,26 +193,26 @@ function toMatchSnapshot(actual) {
 
 ## Q3: Testing Library 设计哲学（测试行为不测试实现）
 
-很多候选人只会写 `expect(component.state.count).toBe(1)`，但大厂面试官真正在意的是：**你是否理解"测试行为"和"测试实现"的本质区别？**
+很多人只会写 `expect(component.state.count).toBe(1)`，但实际更在意的是：**你是否理解"测试行为"和"测试实现"的本质区别？**
 
 Kent C. Dodds 提出 Testing Library 的核心理念是：<strong>The more your tests resemble the way your software is used, the more confidence they can give you.</strong>（你的测试越像用户使用软件的方式，它给你的信心就越大。）<sup>[2]</sup>
 
 ```javascript
 // ❌ 测试实现细节：关注组件内部状态和方法
-test('计数器', () => {
+test("计数器", () => {
   const wrapper = mount(<Counter />);
-  expect(wrapper.state().count).toBe(0);        // 耦合内部状态
-  wrapper.instance().increment();                // 耦合内部方法
+  expect(wrapper.state().count).toBe(0); // 耦合内部状态
+  wrapper.instance().increment(); // 耦合内部方法
   expect(wrapper.state().count).toBe(1);
 });
 // 如果重构组件从 class 改为 hooks，测试全部报废
 
 // ✅ 测试行为：关注用户能看到什么、能做什么
-test('计数器', () => {
+test("计数器", () => {
   render(<Counter />);
-  expect(screen.getByText('当前计数: 0')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: '增加' }));
-  expect(screen.getByText('当前计数: 1')).toBeInTheDocument();
+  expect(screen.getByText("当前计数: 0")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "增加" }));
+  expect(screen.getByText("当前计数: 1")).toBeInTheDocument();
 });
 // 无论内部用 class、hooks 还是 Zustand，只要行为不变测试就通过
 ```
@@ -216,21 +221,21 @@ test('计数器', () => {
 
 Testing Library 定义了一套查询优先级，核心思想是**优先使用无障碍友好的查询方式**：
 
-| 优先级 | 查询方式 | 适用场景 |
-|--------|---------|---------|
-| 1 | `getByRole` | 按钮、输入框、标题等有语义的角色 |
-| 2 | `getByLabelText` | 表单控件，通过 label 关联 |
-| 3 | `getByPlaceholderText` | 输入框的占位符 |
-| 4 | `getByText` | 非交互元素的文本内容 |
-| 5 | `getByTestId` | 最后的手段，`data-testid` 属性 |
+| 优先级 | 查询方式               | 适用场景                         |
+| ------ | ---------------------- | -------------------------------- |
+| 1      | `getByRole`            | 按钮、输入框、标题等有语义的角色 |
+| 2      | `getByLabelText`       | 表单控件，通过 label 关联        |
+| 3      | `getByPlaceholderText` | 输入框的占位符                   |
+| 4      | `getByText`            | 非交互元素的文本内容             |
+| 5      | `getByTestId`          | 最后的手段，`data-testid` 属性   |
 
 ```javascript
 // 优先使用 getByRole——它同时验证了元素类型和可访问性
-screen.getByRole('button', { name: '提交' });     // 是按钮 + 文字是"提交"
-screen.getByRole('textbox', { name: '用户名' });  // 是输入框 + label 是"用户名"
+screen.getByRole("button", { name: "提交" }); // 是按钮 + 文字是"提交"
+screen.getByRole("textbox", { name: "用户名" }); // 是输入框 + label 是"用户名"
 
 // 最后才用 getByTestId——它不验证任何语义
-screen.getByTestId('submit-button');  // 只检查 data-testid，不验证是否是按钮
+screen.getByTestId("submit-button"); // 只检查 data-testid，不验证是否是按钮
 ```
 
 ### 为什么不要测试实现细节？
@@ -250,34 +255,34 @@ screen.getByTestId('submit-button');  // 只检查 data-testid，不验证是否
 
 **关键区别：**
 
-| 策略 | 优点 | 缺点 | 适用场景 |
-|------|------|------|---------|
-| **手动 Mock** | 完全可控，行为精确 | 编写成本高 | 外部 API、第三方 SDK |
-| **自动 Mock** | 零成本，快速生成 | 行为不可控 | 只关心"是否被调用" |
-| **Mock 模块** | 替换整个模块 | 跨测试文件污染 | 网络请求、定时器 |
+| 策略          | 优点               | 缺点           | 适用场景             |
+| ------------- | ------------------ | -------------- | -------------------- |
+| **手动 Mock** | 完全可控，行为精确 | 编写成本高     | 外部 API、第三方 SDK |
+| **自动 Mock** | 零成本，快速生成   | 行为不可控     | 只关心"是否被调用"   |
+| **Mock 模块** | 替换整个模块       | 跨测试文件污染 | 网络请求、定时器     |
 
 **❌/✅ 代码对比（展示错误做法和正确做法）：**
 
 ```javascript
 // ❌ 错误做法：Mock 了不该 Mock 的东西
 // Mock 了工具函数，导致测试无法发现工具函数本身的 bug
-jest.mock('./utils', () => ({
-  calculatePrice: jest.fn(() => 100),  // 硬编码返回值
+jest.mock("./utils", () => ({
+  calculatePrice: jest.fn(() => 100), // 硬编码返回值
 }));
 
 // ✅ 正确做法：只 Mock 外部依赖，保留内部逻辑
 // 内部工具函数走真实逻辑，只 Mock 外部 API 调用
-jest.mock('./api', () => ({
-  fetchUser: jest.fn(() => Promise.resolve({ name: '张三' })),
+jest.mock("./api", () => ({
+  fetchUser: jest.fn(() => Promise.resolve({ name: "张三" })),
 }));
 
-import { calculatePrice } from './utils';  // 真实逻辑
-import { fetchUser } from './api';          // Mock 的外部依赖
+import { calculatePrice } from "./utils"; // 真实逻辑
+import { fetchUser } from "./api"; // Mock 的外部依赖
 
-test('计算价格时考虑用户折扣', async () => {
+test("计算价格时考虑用户折扣", async () => {
   const user = await fetchUser();
   const price = calculatePrice(100, user.discount);
-  expect(price).toBe(90);  // 同时验证了工具函数和业务逻辑
+  expect(price).toBe(90); // 同时验证了工具函数和业务逻辑
 });
 ```
 
@@ -291,16 +296,16 @@ Mock 的黄金法则是：**只 Mock 你无法控制的东西**（网络请求�
 
 ```javascript
 // Mock axios——替换整个 HTTP 客户端
-jest.mock('axios');
-import axios from 'axios';
+jest.mock("axios");
+import axios from "axios";
 
-test('获取用户列表', async () => {
+test("获取用户列表", async () => {
   axios.get.mockResolvedValue({
-    data: [{ id: 1, name: '张三' }],
+    data: [{ id: 1, name: "张三" }],
   });
   const users = await fetchUsers();
   expect(users).toHaveLength(1);
-  expect(axios.get).toHaveBeenCalledWith('/api/users');
+  expect(axios.get).toHaveBeenCalledWith("/api/users");
 });
 ```
 
@@ -310,7 +315,7 @@ test('获取用户列表', async () => {
 // 控制时间流逝——让 setTimeout/setInterval 立即执行
 jest.useFakeTimers();
 
-test('防抖函数', () => {
+test("防抖函数", () => {
   const fn = jest.fn();
   const debounced = debounce(fn, 300);
 
@@ -318,9 +323,37 @@ test('防抖函数', () => {
   debounced();
   debounced();
 
-  jest.advanceTimersByTime(300);  // 快进 300ms
-  expect(fn).toHaveBeenCalledTimes(1);  // 只调用了一次
+  jest.advanceTimersByTime(300); // 快进 300ms
+  expect(fn).toHaveBeenCalledTimes(1); // 只调用了一次
 });
+```
+
+### Jest 与 Vitest 的 API 对应关系
+
+两者的断言 API 基本一致，迁移时主要替换全局对象和模块 Mock：
+
+| 能力        | Jest                   | Vitest               |
+| ----------- | ---------------------- | -------------------- |
+| Mock 函数   | `jest.fn()`            | `vi.fn()`            |
+| 模块 Mock   | `jest.mock()`          | `vi.mock()`          |
+| 定时器      | `jest.useFakeTimers()` | `vi.useFakeTimers()` |
+| 类型化 Mock | `jest.Mocked<T>`       | `vi.mocked()`        |
+
+在 Vitest 中，`describe`/`it`/`expect`/`vi` 默认需要从 `vitest` 显式导入；开启 `test.globals` 后才和 Jest 一样作为全局变量使用。
+
+`jest.mock` 和 `vi.mock` 都有**提升（hoist）**行为：调用会被移到文件顶部、先于 `import` 执行。因此 Mock 工厂里不能直接引用外部变量——Jest 只允许引用以 `mock` 开头的变量，Vitest 则提供 `vi.hoisted()`：
+
+```javascript
+import { vi } from "vitest";
+
+// Vitest：vi.hoisted 的内容会先于 import 执行
+const mockUser = vi.hoisted(() => ({ name: "张三" }));
+
+vi.mock("./api", () => ({
+  fetchUser: vi.fn(() => Promise.resolve(mockUser)),
+}));
+
+// Jest 的等价写法：变量名必须以 mock 开头，否则提升后会报初始化错误
 ```
 
 ---
@@ -343,23 +376,25 @@ test('防抖函数', () => {
 
 ```javascript
 function classify(score) {
-  if (score >= 60) {              // 分支 1
-    if (score >= 90) return 'A';  // 分支 2
-    return 'B';
-  } else {                        // 分支 3
-    return 'C';
+  if (score >= 60) {
+    // 分支 1
+    if (score >= 90) return "A"; // 分支 2
+    return "B";
+  } else {
+    // 分支 3
+    return "C";
   }
 }
 
 // 语句覆盖：每个语句至少执行一次（2 个用例即可 100%）
-classify(95);  // 覆盖 分支1(>=60) + 分支2(>=90) → 'A'
-classify(50);  // 覆盖 分支3(< 60) → 'C'
+classify(95); // 覆盖 分支1(>=60) + 分支2(>=90) → 'A'
+classify(50); // 覆盖 分支3(< 60) → 'C'
 // 语句覆盖率 100%，但 score=70 的路径（>=60 但 <90）没测到！
 
 // 分支覆盖：每个分支至少执行一次（3 个用例）
-classify(95);  // >=60 且 >=90
-classify(70);  // >=60 且 <90
-classify(50);  // <60
+classify(95); // >=60 且 >=90
+classify(70); // >=60 且 <90
+classify(50); // <60
 // 分支覆盖率 100%，覆盖了所有 if-else 分支
 ```
 
@@ -369,16 +404,16 @@ classify(50);  // <60
 
 ```javascript
 // ❌ 为了刷覆盖率而写的测试——测了等于没测
-test('getUserName 返回用户名', () => {
-  const result = getUserName({ name: '张三' });
-  expect(result).toBeDefined();  // 只检查不是 undefined，不检查值对不对
+test("getUserName 返回用户名", () => {
+  const result = getUserName({ name: "张三" });
+  expect(result).toBeDefined(); // 只检查不是 undefined，不检查值对不对
 });
 
 // ✅ 有意义的测试——验证具体行为
-test('getUserName 返回用户名', () => {
-  expect(getUserName({ name: '张三' })).toBe('张三');
-  expect(getUserName({})).toBe('匿名用户');
-  expect(getUserName(null)).toBe('未知');
+test("getUserName 返回用户名", () => {
+  expect(getUserName({ name: "张三" })).toBe("张三");
+  expect(getUserName({})).toBe("匿名用户");
+  expect(getUserName(null)).toBe("未知");
 });
 ```
 
@@ -390,7 +425,7 @@ test('getUserName 返回用户名', () => {
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 十、及格回答 vs 满分回答
 
 ### 问题："你们项目中是怎么做单元测试的？覆盖率多少？"
 
@@ -398,7 +433,7 @@ test('getUserName 返回用户名', () => {
 
 > "我们项目用 Jest 写单元测试，覆盖率大概 70% 左右。核心业务逻辑都会写测试，用 Mock 处理外部依赖。"
 
-面试官评价：**知道工具但不理解策略**。
+问题出在：**知道工具但不理解策略**。
 
 **满分回答（90-100分）：**
 
@@ -408,7 +443,7 @@ test('getUserName 返回用户名', () => {
 
 > "覆盖率方面，我们设置了 80% 的语句覆盖率阈值，CI 上低于这个数会阻止合并。但我更关注分支覆盖率——一个 `if-else` 两边都要测到，否则表面覆盖率 100% 实际只走了一半的逻辑。在一次重构支付模块时，正是因为分支覆盖全面的测试用例发现了优惠券叠加计算的边界 bug，避免了线上资损。"<sup>[1]</sup>
 
-### 大厂高频连环拷问
+### 常见追问
 
 > 题目来源于真实面经（字节/腾讯/阿里前端面试、牛客网、haizlin/fe-interview），按难度递进。每个模块 **8 个 Accordion**，覆盖 4 个难度层级。
 
@@ -417,7 +452,7 @@ test('getUserName 返回用户名', () => {
   <Accordion title="单元测试和集成测试有什么区别？什么时候该用哪个？" icon="layer-group">
 
     **答题要点：**
-    很多候选人混淆单元测试和集成测试的边界。核心区别在于"测试范围"和"外部依赖的处理方式"。
+    很多人混淆单元测试和集成测试的边界。核心区别在于"测试范围"和"外部依赖的处理方式"。
 
     **高分回答：**
 
@@ -468,7 +503,7 @@ test('getUserName 返回用户名', () => {
     });
     ```
 
-    另外 Vitest 支持**按需转换**——只转换被测试文件实际 import 的模块，而 Jest 会转换所有匹配的文件。在大型项目中，这个差异可以带来 5-10 倍的速度提升。
+    另外 Vitest 支持**按需转换**——只转换被测试文件实际 import 的模块，而 Jest 会转换所有匹配的文件。在大型项目中，这个差异会明显影响启动和执行耗时。
 
   </Accordion>
 
@@ -575,7 +610,7 @@ test('getUserName 返回用户名', () => {
     **高分回答：**
 
     ```javascript
-    import { renderHook, act } from '@testing-library/react';
+    import { renderHook, act, waitFor } from '@testing-library/react';
 
     // 测试 useCounter Hook
     test('useCounter 管理计数状态', () => {
@@ -596,11 +631,10 @@ test('getUserName 返回用户名', () => {
 
     // 测试带副作用的 Hook（如 useFetch）
     test('useFetch 加载数据', async () => {
-      const { result, waitForNextUpdate } = renderHook(() => useFetch('/api/user'));
+      const { result } = renderHook(() => useFetch('/api/user'));
       expect(result.current.loading).toBe(true);
 
-      await waitForNextUpdate();
-      expect(result.current.loading).toBe(false);
+      await waitFor(() => expect(result.current.loading).toBe(false));
       expect(result.current.data).toEqual({ name: '张三' });
     });
     ```
@@ -651,7 +685,7 @@ test('getUserName 返回用户名', () => {
 
     **第二步：从核心业务逻辑开始。** 不要从 UI 组件开始，先测工具函数和业务规则。这些函数通常没有外部依赖，不需要 Mock，测试编写成本最低。
 
-    **第三步：设置覆盖率阈值，但只看增量。** CI 中对新提交的代码设置 80% 覆盖率阈值（用 `--changedSince` 只检查本次修改的文件），而不是强制全局 80%。这样不阻塞现有代码，但确保新代码有测试。
+    **第三步：设置覆盖率阈值，但只看增量。** CI 中对新提交的代码设置 80% 覆盖率阈值（Jest 用 `--changedSince`、Vitest 用 `--changed` 只检查本次修改的文件），而不是强制全局 80%。这样不阻塞现有代码，但确保新代码有测试。
 
     **第四步：引入测试文化。** Code Review 时要求新功能必须附带测试，而不是靠制度强制。当团队习惯了"改代码 → 跑测试 → 安心提交"的流程后，测试就变成了自然习惯。
 

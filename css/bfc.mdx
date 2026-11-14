@@ -1,10 +1,9 @@
 ---
 title: "BFC (块格式化上下文)"
+description: "BFC 的触发条件、清除浮动与 margin 折叠，以及它与 FFC/GFC 的边界。"
 ---
 
-> **面试官为什么问这个？**
->
-> 面试官问这个，本质上是在考察你是否具备在复杂的乱序流中构建**安全隔离沙箱**的架构意识。如果遇到浮动元素导致父级高度塌陷，或是相邻组件 margin 互相吞噬污染，你只会到处加 `margin-top: 999px` 或空 `<div>` 补救，说明你对浏览器的渲染上下文结界一无所知。
+> 我对 BFC 的理解是分几次补的：先用它清浮动，后来才弄懂 margin 合并，最后是隔离。
 
 ---
 
@@ -14,27 +13,27 @@ title: "BFC (块格式化上下文)"
 
   <Step title="混沌的普通流世界">
 
-  在 CSS 默认的普通流（Normal Flow）中，块级元素就像一个个没有边界的军阀。它们的外边距（margin）会互相穿透合并，如果里面有浮动（float）的士兵飞天脱离了地面，军阀首领（父容器）就根本无法感知到士兵的存在，导致自身高度塌陷为 0。
+在 CSS 默认的普通流（Normal Flow）中，块级元素就像一个个没有边界的军阀。它们的外边距（margin）会互相穿透合并，如果里面有浮动（float）的士兵飞天脱离了地面，军阀首领（父容器）就根本无法感知到士兵的存在，导致自身高度塌陷为 0。
 
   </Step>
   <Step title='致命痛点：高度塌陷与 margin 重叠'>
 
-  两个相邻 div 的上下 margin 会合并成一个（取较大值），导致间距异常；浮动元素脱离文档流后父容器高度变成 0，后续排版全部崩溃重叠。在真实项目中，这两大问题曾是前端开发者最头疼的排版噩梦。
+两个相邻 div 的上下 margin 会合并成一个（取较大值），导致间距异常；浮动元素脱离文档流后父容器高度变成 0，后续排版全部崩溃重叠。在真实项目中，这两大问题曾是前端开发者最头疼的排版噩梦。
 
   </Step>
   <Step title="降维隔离结界: BFC 的诞生">
 
-  BFC 的全称是 **Block Formatting Context（块级格式化上下文）**。你可以把它理解为张鑫旭在《BFC 详解》中定义的**"结界'**。一旦某个元素通过特定属性触发了 BFC，它就会在引擎内部化身为一个物理隔离的堡垒。
+BFC 的全称是 **Block Formatting Context（块级格式化上下文）**。你可以把它理解为张鑫旭在《BFC 详解》中定义的**"结界'**。一旦某个元素通过特定属性触发了 BFC，它就会在引擎内部化身为一个物理隔离的堡垒。
 
   </Step>
   <Step title="触发条件与引擎判定">
 
-  在 Blink 的 `BlockLayoutAlgorithm` 中，`CreatesNewFormattingContext` 是一个布尔值判定函数--只要元素的 `float` 不为 `none`、`position` 为 `absolute/fixed`、`display` 为 `inline-block/flow-root/flex/grid`、或 `overflow` 不为 `visible`，BFC 结界瞬间开启。其中 `display: flow-root` 是最纯净无副作用的触发器，它就是为创建 BFC 而生的。
+在 Blink 的 `BlockLayoutAlgorithm` 中，`CreatesNewFormattingContext` 是一个布尔值判定函数--只要元素的 `float` 不为 `none`、`position` 为 `absolute/fixed`、`display` 为 `inline-block/flow-root`、或 `overflow` 不为 `visible`，BFC 结界瞬间开启。注意 `display: flex/grid` 建立的是 FFC/GFC 而不是 BFC，但同样能隔离子元素的外边距。其中 `display: flow-root` 是最纯净无副作用的 BFC 触发器，它就是为创建 BFC 而生的。
 
   </Step>
   <Step title='关键洞察：从 hack 到标准的工程演进'>
 
-  在 `flow-root` 标准诞生前，开发者只能用 Nicolas Gallagher 发明的 `clearfix` 微黑客写法或有副作用的 `overflow: hidden` 来清除浮动。现代方案中，新业务全面采用 Flex 或 Grid 布局体系，它们底层建立的 FFC/GFC 同样自带绝对隔离属性，让浮动清除和 margin 重叠这类上古问题彻底从历史舞台消失。
+在 `flow-root` 标准诞生前，开发者只能用 Nicolas Gallagher 发明的 `clearfix` 微黑客写法或有副作用的 `overflow: hidden` 来清除浮动。现代方案中，新业务全面采用 Flex 或 Grid 布局体系，它们底层建立的 FFC/GFC 同样自带绝对隔离属性，让浮动清除和 margin 重叠这类上古问题彻底从历史舞台消失。
 
   </Step>
 
@@ -132,19 +131,19 @@ BFC 的是一个**布尔值开关判定机制**，关键逻辑是 1 步：
 
 ### 基础梳理
 
-| 对比维度 | BFC（块级格式化上下文） | FFC（弹性格式化上下文） | GFC（网格格式化上下文） |
-|---------|----------------------|----------------------|----------------------|
-| **触发方式** | `overflow: hidden`、`float`、`position: absolute` 等 | `display: flex` | `display: grid` |
-| **布局模型** | 块级盒子垂直排列 | 弹性盒子一维排列（行或列） | 网格盒子二维排列（行+列） |
-| **清除浮动** | 是 | 是（浮动被忽略） | 是（浮动被忽略） |
-| **阻止 margin 重叠** | 是 | 是 | 是 |
-| **子元素 float 生效** | 生效 | **无效**（被引擎物理忽略） | **无效**（被引擎忽略） |
+| 对比维度              | BFC（块级格式化上下文）                              | FFC（弹性格式化上下文）    | GFC（网格格式化上下文）   |
+| --------------------- | ---------------------------------------------------- | -------------------------- | ------------------------- |
+| **触发方式**          | `overflow: hidden`、`float`、`position: absolute` 等 | `display: flex`            | `display: grid`           |
+| **布局模型**          | 块级盒子垂直排列                                     | 弹性盒子一维排列（行或列） | 网格盒子二维排列（行+列） |
+| **清除浮动**          | 是                                                   | 是（浮动被忽略）           | 是（浮动被忽略）          |
+| **阻止 margin 重叠**  | 是                                                   | 是                         | 是                        |
+| **子元素 float 生效** | 生效                                                 | **无效**（被引擎物理忽略） | **无效**（被引擎忽略）    |
 
 ### 专家视角深度剖析
 
-很多候选人只能背诵上面的表格，但大厂面试官真正在意的是：**为什么 Flex/GFC 中 float 会被"物理无效化"？这是 W3C 的设计失误还是刻意为之？**
+很多人只能背下上面的表格，但实际更在意的是：**为什么 Flex/GFC 中 float 会被"物理无效化"？这是 W3C 的设计失误还是刻意为之？**
 
-这是 W3C 规范的**刻意突破**。W3C 在 [CSS Flexible Box Layout Module Level 1](https://www.w3.org/TR/css-flexbox-1/) 中严苛地写明：一旦一个元素成为了 Flex Container，它的直接子元素就会瞬间发生"阶级跃迁"，成为 Flex Items。在这个强大的 FFC 上下文中，所有作用于子元素上的浮动魔法（`float`、`clear`）和多列魔法（`vertical-align`）会被浏览器的 C++ 引擎**完全忽略、物理无效化**。它甚至连个错误都不会报，就仿佛那个 `float` 属性压根不存在一样。
+这是 W3C 规范的**刻意突破**。W3C 在 [CSS Flexible Box Layout Module Level 1](https://www.w3.org/TR/css-flexbox-1/) 中严苛地写明：一旦一个元素成为了 Flex Container，它的直接子元素就会瞬间发生"阶级跃迁"，成为 Flex Items。在这个强大的 FFC 上下文中，所有作用于子元素上的浮动魔法（`float`、`clear`）会被浏览器的 C++ 引擎**完全忽略、物理无效化**；`vertical-align` 同样会被忽略——它本身是用于行内元素垂直对齐的属性，在 flex item 上不生效。它甚至连个错误都不会报，就仿佛那个 `float` 属性压根不存在一样。
 
 这样设计的底层原因是为了**保证弹性布局系统的纯净性**。如果允许 float 在 Flex 容器内生效，就意味着同一套排版算法需要同时处理"流式浮动"和"弹性对齐"两种互相矛盾的模型，复杂度会指数级爆炸，性能和可预测性都会崩溃。
 
@@ -176,11 +175,11 @@ margin 重叠（margin collapsing）是 BFC 相关的高频踩坑题。它只发
 
 **关键区别：**
 
-| 场景 | margin 重叠？ | 触发 BFC 后 |
-|------|-------------|-----------|
-| 相邻兄弟 div | 合并为较大值 | 各自独立（BFC 隔离） |
-| 父子元素（无 border/padding） | 子 margin 穿透到父外 | 子 margin 被限制在父内 |
-| 空块元素 | 上下 margin 合并 | 不适用（元素本身无子内容） |
+| 场景                          | margin 重叠？        | 触发 BFC 后                |
+| ----------------------------- | -------------------- | -------------------------- |
+| 相邻兄弟 div                  | 合并为较大值         | 各自独立（BFC 隔离）       |
+| 父子元素（无 border/padding） | 子 margin 穿透到父外 | 子 margin 被限制在父内     |
+| 空块元素                      | 上下 margin 合并     | 不适用（元素本身无子内容） |
 
 <Tip title="建议: ">
 
@@ -192,18 +191,15 @@ margin 重叠（margin collapsing）是 BFC 相关的高频踩坑题。它只发
 
 ## 🔍 源码：Blink 引擎是如何实现的？
 
-<div class="follow-up">
-Blink 引擎中 BFC 的判定和高度计算是怎么实现的？
-</div>
+<div class="follow-up">Blink 引擎中 BFC 的判定和高度计算是怎么实现的？</div>
 
-在 Chrome 的 Blink 渲染引擎源码中，是否创建 BFC 是一个布尔值判定函数（详见 [Blink 源码 src/core/layout/block_layout_algorithm.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/layout/block_layout_algorithm.cc)）：
+在 Chrome 的 Blink 渲染引擎源码中，是否创建 BFC 是一个布尔值判定（详见 [Blink 源码 src/core/layout/block_layout_algorithm.cc](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/layout/block_layout_algorithm.cc)）。BFC 对应的布局对象是 `LayoutBlockFlow`，它自己维护一份浮动元素列表（`floating_objects_`）：
 
 ```cpp
 // 详见：Blink 源码 src/core/layout/block_layout_algorithm.cc
+// 判定当前样式是否需要开启新的格式化上下文（伪代码，保留判定条件）
 
-// 引擎开关：判断当前样式是否足以开启新结界
 bool CreatesNewFormattingContext(const ComputedStyle& style) {
-  // 严格比对触发法则
   return style.IsFloating() ||
          style.HasOutOfFlowPosition() ||          // absolute / fixed
          style.IsDisplayInlineBlock() ||
@@ -214,19 +210,12 @@ bool CreatesNewFormattingContext(const ComputedStyle& style) {
          style.Overflow() != EOverflow::kVisible;
 }
 
-// 在计算高度时，核心的一步干预：
-void LayoutBlockFlow::ComputeLogicalHeight() {
-  if (CreatesNewFormattingContext(style())) {
-    // 结界爆发：如果自己是 BFC，引擎会强行拉取所有浮动对象（floating_objects_）的极值高度
-    // 强制将浮动高度累加到自身的高度计算体系中！彻底修复高度塌陷！
-  IncludeFloatingObjectsHeight();
-  }
-}
+// 高度计算阶段：BFC 在计算自身逻辑高度时，
+// 会把 floating_objects_ 中浮动盒的边界一并纳入，
+// 这就是父容器能包住浮动子元素、不再高度塌陷的原因。
 ```
 
-<div class="follow-up">
-`display: flow-root` 在 Blink 中是怎么判定的？
-</div>
+<div class="follow-up">`display: flow-root` 在 Blink 中是怎么判定的？</div>
 
 `display: flow-root` 在 Blink 中通过 [`IsDisplayFlowRoot()`](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/style/computed_style.h) 方法判定，该方法直接检查 `display` 属性的枚举值是否为 `EDisplay::kFlowRoot`。它是最为"纯净"的 BFC 触发器--没有任何视觉副作用，不裁剪内容、不影响定位、不改变尺寸计算规则，唯一的效果就是创建一个新的块级格式化上下文。
 
@@ -239,14 +228,15 @@ inline bool IsDisplayFlowRoot() const {
 
 ---
 
-## 十、面试官视角：满分回答 vs 及格回答
+## 十、及格回答 vs 满分回答
 
 ### 问题："什么是 BFC？怎么触发？它主要解决什么业务问题？"
 
 **及格回答（60-70分）：**
+
 > "BFC 就是块级格式化上下文。触发条件有 float、position absolute、overflow hidden 还有 display flex 之类的。主要用来解决父元素里面有浮动元素导致高度塌陷的问题，还有解决上下两个相邻 div 的 margin 塌陷重叠问题。"
 
-面试官评价：**知道规则但不理解设计**。
+问题出在：**知道规则但不理解设计**。
 
 **满分回答（90-100分）：**
 
@@ -256,109 +246,109 @@ inline bool IsDisplayFlowRoot() const {
 
 > 在真实的工业老项目中，最大的屎山代码往往来自于滥用 `overflow: hidden` 来触发 BFC 清除浮动，这极易导致复杂的弹窗和下拉菜单遭遇**无情裁剪**。在 `flow-root` 标准诞生前的至暗时刻，Nicolas Gallagher 发明了"微 clearfix"黑客写法（`::after` + `clear: both` + `display: table`），成为工业界清除浮动的事实标准。张鑫旭在《CSS Display 之 flow-root 详解》中指出，`display: flow-root` 是最纯净无副作用的 BFC 触发器，它就是为创建 BFC 而生的。在现代架构中，对于新业务，我们则会全面采用 Flex 或 Grid 布局体系，它们在底层建立的 FFC/GFC 同样自带绝对隔离属性，让浮动清除和 margin 重叠这类上古问题彻底从历史舞台消失。<sup>[3]</sup>
 
-### 大厂高频连环拷问
+### 常见追问
 
 <AccordionGroup>
 
   <Accordion title="第一层: overflow: hidden 会导致菜单裁剪, 有没有不裁剪的经典 Hack?" icon="layer-group">
 
-  **答题要点：**
-  不能只答 `overflow: hidden`，必须提到 `clearfix` 和 `flow-root` 两种替代方案。
+**答题要点：**
+不能只答 `overflow: hidden`，必须提到 `clearfix` 和 `flow-root` 两种替代方案。
 
-  **高分回答：**
-  "在 `flow-root` 标准诞生前的至暗时刻，前端圈推崇 Nicolas Gallagher 发明的 `clearfix` 微黑客写法。原理是不在父元素身上动刀子，而是利用 `::after` 伪元素在父容器的最后强行生成一个无形的隐式内联元素，并对其设置 `clear: both;` 以及 `display: table;`。这并不是让父元素变成 BFC，而是利用了 `clear` 属性的底层物理强制力：强行迫使这最后一块隐形的砖头必须被放置在所有浮动元素的正下方！父容器为了包裹住这块砖头，自然就顺带着把上面那些浮动的元素全都包裹进去了。现代方案则直接使用 `display: flow-root`，一行代码零副作用。"
+**高分回答：**
+"在 `flow-root` 标准诞生前的至暗时刻，前端圈推崇 Nicolas Gallagher 发明的 `clearfix` 微黑客写法。原理是不在父元素身上动刀子，而是利用 `::after` 伪元素在父容器的最后强行生成一个无形的隐式内联元素，并对其设置 `clear: both;` 以及 `display: table;`。这并不是让父元素变成 BFC，而是利用了 `clear` 属性的底层物理强制力：强行迫使这最后一块隐形的砖头必须被放置在所有浮动元素的正下方！父容器为了包裹住这块砖头，自然就顺带着把上面那些浮动的元素全都包裹进去了。现代方案则直接使用 `display: flow-root`，一行代码零副作用。"
 
   </Accordion>
 
   <Accordion title="第二层: Flex 容器中的子元素设置 float: left 会发生什么?" icon="layer-group">
 
-  **答题要点：**
-  结合 W3C 规范解释"突破"机制。
+**答题要点：**
+结合 W3C 规范解释"突破"机制。
 
-  **高分回答：**
-  "W3C 规范严格地写明：一旦一个元素成为了 Flex Container，它的直接子元素就会瞬间发生'阶级跃迁'，成为 Flex Items。在这个强大的 FFC 上下文中，所有作用于子元素上的浮动魔法（`float`、`clear`）和多列魔法（`vertical-align`）会被浏览器的 C++ 引擎**完全忽略、物理无效化**！它甚至连个错误都不会报，就仿佛那个 `float` 属性压根不存在一样。这就保证了现代弹性布局系统不会受到上古流体规则的污染。"
+**高分回答：**
+"W3C 规范严格地写明：一旦一个元素成为了 Flex Container，它的直接子元素就会瞬间发生'阶级跃迁'，成为 Flex Items。在这个强大的 FFC 上下文中，所有作用于子元素上的浮动魔法（`float`、`clear`）会被浏览器的 C++ 引擎**完全忽略、物理无效化**；`vertical-align` 同样在 flex item 上被忽略（它本身是用于行内元素垂直对齐的属性）。它甚至连个错误都不会报，就仿佛那个 `float` 属性压根不存在一样。这就保证了现代弹性布局系统不会受到上古流体规则的污染。"
 
   </Accordion>
 
   <Accordion title="第三层: BFC 会阻止所有 margin 重叠吗?只阻止相邻兄弟的吗?" icon="stopwatch">
 
-  **答题要点：**
-  必须分场景讨论！BFC 阻止的是 BFC 边界两侧的 margin 重叠，而非"内部所有"。
+**答题要点：**
+必须分场景讨论！BFC 阻止的是 BFC 边界两侧的 margin 重叠，而非"内部所有"。
 
-  **高分回答：**
-  "分三种情况：
-  **1. 相邻兄弟元素**：如果两个兄弟各自处于不同的 BFC 中（如其中一个被 BFC 容器包裹），它们的 margin 不会重叠。
-  **2. 父子元素**：给父容器触发 BFC 后，子元素的 margin 会被'锁'在父容器内部，不会再穿透到外部。
-  **3. BFC 内部的子元素之间**：如果 BFC 内部有多个子元素，它们之间的 margin **仍然会正常重叠**！BFC 只阻止的是'跨结界'的 margin 穿透，结界内部的普通流规则依然有效。"
+**高分回答：**
+"分三种情况：
+**1. 相邻兄弟元素**：如果两个兄弟各自处于不同的 BFC 中（如其中一个被 BFC 容器包裹），它们的 margin 不会重叠。
+**2. 父子元素**：给父容器触发 BFC 后，子元素的 margin 会被'锁'在父容器内部，不会再穿透到外部。
+**3. BFC 内部的子元素之间**：如果 BFC 内部有多个子元素，它们之间的 margin **仍然会正常重叠**！BFC 只阻止的是'跨结界'的 margin 穿透，结界内部的普通流规则依然有效。"
 
   </Accordion>
 
   <Accordion title="第四层: display: flow-root 在哪些场景下是最佳选择?" icon="stopwatch">
 
-  **答题要点：**
-  结合实际工程场景解释 flow-root 的适用范围。
+**答题要点：**
+结合实际工程场景解释 flow-root 的适用范围。
 
-  **高分回答：**
-  "`display: flow-root` 是最纯净的 BFC 触发器，没有任何视觉副作用。最佳使用场景：
-  **1. 清除浮动**：替代 `overflow: hidden`，不会裁剪内容（如下拉菜单、弹窗）。
-  **2. 隔离 margin**：阻止子元素的 margin 穿透到父容器外部。
-  **3. 包含浮动子元素**：让父容器的高度包含浮动的子元素。
-  **兼容性**：Chrome 58+、Firefox 53+、Safari 10.1+、Edge 79+。对于需要支持 IE 的项目，仍需使用 `clearfix` hack。"
+**高分回答：**
+"`display: flow-root` 是最纯净的 BFC 触发器，没有任何视觉副作用。最佳使用场景：
+**1. 清除浮动**：替代 `overflow: hidden`，不会裁剪内容（如下拉菜单、弹窗）。
+**2. 隔离 margin**：阻止子元素的 margin 穿透到父容器外部。
+**3. 包含浮动子元素**：让父容器的高度包含浮动的子元素。
+**兼容性**：Chrome 58+、Firefox 53+、Safari 11+、Edge 79+。对于需要支持 IE 的项目，仍需使用 `clearfix` hack。"
 
   </Accordion>
 
   <Accordion title="第五层: 在 Grid 布局中, BFC 的行为有什么变化?" icon="node">
 
-  **答题要点：**
-  必须分场景讨论！Grid 容器自带隔离属性。
+**答题要点：**
+必须分场景讨论！Grid 容器自带隔离属性。
 
-  **高分回答：**
-  "Grid 容器（`display: grid`）会创建一个新的格式化上下文（GFC），它具有与 BFC 相同的隔离特性：
-  **1. 浮动无效**：Grid 子元素上的 `float` 属性会被忽略。
-  **2. margin 隔离**：Grid 子元素的 margin 不会穿透到 Grid 容器外部。
-  **3. 高度包含**：Grid 容器的高度会包含所有子元素。
-  所以在 Grid 布局中，你不需要额外触发 BFC 来解决浮动和 margin 问题。但如果 Grid 容器内部有嵌套的普通流元素，BFC 规则仍然适用。"
+**高分回答：**
+"Grid 容器（`display: grid`）会创建一个新的格式化上下文（GFC），它具有与 BFC 相同的隔离特性：
+**1. 浮动无效**：Grid 子元素上的 `float` 属性会被忽略。
+**2. margin 隔离**：Grid 子元素的 margin 不会穿透到 Grid 容器外部。
+**3. 高度包含**：Grid 容器的高度会包含所有子元素。
+所以在 Grid 布局中，你不需要额外触发 BFC 来解决浮动和 margin 问题。但如果 Grid 容器内部有嵌套的普通流元素，BFC 规则仍然适用。"
 
   </Accordion>
 
   <Accordion title="🔥 杀手锏追问: 为什么 margin 重叠只发生在垂直方向, 水平方向为什么不重叠?" icon="skull">
 
-  **答题要点：**
-  对比垂直与水平的布局语义，点出 W3C 的设计哲学。
+**答题要点：**
+对比垂直与水平的布局语义，点出 W3C 的设计哲学。
 
-  **高分回答：**
-  "这是因为 W3C 在设计 CSS 时借鉴了传统排版的语义--**垂直方向是'流式排版'，水平方向是'容器约束'**。
-  在垂直方向上，块级元素是从上到下依次排列的，相邻元素之间的 margin 合并是为了'连续文本段落'的排版美观--想象一篇文章中每段的 `margin-bottom: 10px` 和下一段的 `margin-top: 10px`，合并后间距是 10px 而不是 20px，这符合传统出版物的排版审美。
-  而在水平方向上，块级元素的宽度是由容器约束的（`width: 100%`），两个兄弟块级元素根本不会出现在同一行上，所以水平 margin 没有'相邻'的概念，自然无法重叠。只有在 `display: inline` 或 `display: inline-block` 的行内元素上，水平 margin 才会生效，但行内元素有自己独立的排版规则，不参与块级 margin 重叠。"
+**高分回答：**
+"这是因为 W3C 在设计 CSS 时借鉴了传统排版的语义--**垂直方向是'流式排版'，水平方向是'容器约束'**。
+在垂直方向上，块级元素是从上到下依次排列的，相邻元素之间的 margin 合并是为了'连续文本段落'的排版美观--想象一篇文章中每段的 `margin-bottom: 10px` 和下一段的 `margin-top: 10px`，合并后间距是 10px 而不是 20px，这符合传统出版物的排版审美。
+而在水平方向上，块级元素的宽度是由容器约束的（`width: 100%`），两个兄弟块级元素根本不会出现在同一行上，所以水平 margin 没有'相邻'的概念，自然无法重叠。只有在 `display: inline` 或 `display: inline-block` 的行内元素上，水平 margin 才会生效，但行内元素有自己独立的排版规则，不参与块级 margin 重叠。"
 
   </Accordion>
 
   <Accordion title="🔥 杀手锏追问: BFC 在移动端滚动穿透问题中有什么应用?" icon="skull">
 
-  **答题要点：**
-  结合移动端实际场景解释 BFC 的工程应用。
+**答题要点：**
+结合移动端实际场景解释 BFC 的工程应用。
 
-  **高分回答：**
-  "移动端的滚动穿透问题（Scroll Chaining）是指：当弹窗（Modal）打开时，背景页面仍然可以滚动。BFC 在这个问题中的应用有限，但可以辅助解决：
-  **1. 弹窗容器触发 BFC**：给弹窗容器设置 `overflow: auto` 或 `overflow: hidden`，创建独立的滚动上下文。
-  **2. 配合 overscroll-behavior**：使用 CSS 属性 `overscroll-behavior: contain` 阻止滚动传播到父容器。
-  **3. 弹窗内容超出时**：如果弹窗内容超出视口，BFC 容器会创建独立的滚动区域，不会影响背景页面。
-  但 BFC 本身不能完全解决滚动穿透，还需要配合 `position: fixed` 或 `touch-action` 等属性。"
+**高分回答：**
+"移动端的滚动穿透问题（Scroll Chaining）是指：当弹窗（Modal）打开时，背景页面仍然可以滚动。BFC 在这个问题中的应用有限，但可以辅助解决：
+**1. 弹窗容器触发 BFC**：给弹窗容器设置 `overflow: auto` 或 `overflow: hidden`，创建独立的滚动上下文。
+**2. 配合 overscroll-behavior**：使用 CSS 属性 `overscroll-behavior: contain` 阻止滚动传播到父容器。
+**3. 弹窗内容超出时**：如果弹窗内容超出视口，BFC 容器会创建独立的滚动区域，不会影响背景页面。
+但 BFC 本身不能完全解决滚动穿透，还需要配合 `position: fixed` 或 `touch-action` 等属性。"
 
   </Accordion>
 
   <Accordion title="🔥 杀手锏追问: BFC 和 Flex/Grid 布局在性能上有什么区别?" icon="skull">
 
-  **答题要点：**
-  对比不同布局方式的性能差异。
+**答题要点：**
+对比不同布局方式的性能差异。
 
-  **高分回答：**
-  "BFC 和 Flex/Grid 布局在性能上有显著差异：
-  **1. BFC**：只是创建一个隔离的格式化上下文，不改变布局算法。性能开销很小，主要是阻止 margin 穿透和包含浮动。
-  **2. Flex 布局**：使用一维布局算法，需要计算主轴和交叉轴的空间分配。性能开销中等，适合简单的线性布局。
-  **3. Grid 布局**：使用二维布局算法，需要同时计算行和列。性能开销较大，适合复杂的网格布局。
-  **4. 性能对比**：在相同元素数量下，BFC 的性能最好，Flex 次之，Grid 最差。但在复杂布局中，Grid 可以减少 DOM 嵌套层级，反而可能提升整体性能。
-  **最佳实践**：根据布局复杂度选择合适的方案。简单的隔离用 BFC，线性布局用 Flex，复杂网格用 Grid。"
+**高分回答：**
+"BFC 和 Flex/Grid 布局在性能上有显著差异：
+**1. BFC**：只是创建一个隔离的格式化上下文，不改变布局算法。性能开销很小，主要是阻止 margin 穿透和包含浮动。
+**2. Flex 布局**：使用一维布局算法，需要计算主轴和交叉轴的空间分配。性能开销中等，适合简单的线性布局。
+**3. Grid 布局**：使用二维布局算法，需要同时计算行和列。性能开销较大，适合复杂的网格布局。
+**4. 性能对比**：在相同元素数量下，BFC 的性能最好，Flex 次之，Grid 最差。但在复杂布局中，Grid 可以减少 DOM 嵌套层级，反而可能提升整体性能。
+**最佳实践**：根据布局复杂度选择合适的方案。简单的隔离用 BFC，线性布局用 Flex，复杂网格用 Grid。"
 
   </Accordion>
 </AccordionGroup>
